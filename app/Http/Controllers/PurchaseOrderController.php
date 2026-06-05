@@ -116,15 +116,18 @@ class PurchaseOrderController extends Controller
                 $taxAmt = 0; $taxId = $itemData['tax_id'] ?? null;
                 if ($taxId && $tax = \App\Models\Tax::find($taxId)) $taxAmt = ($dpp * $tax->percent) / 100;
 
+                $masterItem = \App\Models\Item::find($itemData['item_id']);
+
                 PurchaseOrderItem::create([
                     'purchase_order_id'        => $po->id,
                     'item_id'                  => $itemData['item_id'],
                     'purchase_request_item_id' => $itemData['pr_item_id'] ?? null,
                     'qty_ordered'              => $qty,
                     'unit_price'               => $price,
-                    // 🔥 REKAM UOM SEBAGAI TEKS MURNI 🔥
-                    'uom'                      => $itemData['uom'] ?? (\App\Models\Item::find($itemData['item_id'])->unit ?? 'Unit'),
-                    'description'              => $itemData['notes'] ?? (\App\Models\Item::find($itemData['item_id'])->name ?? '-'),
+                    // 🔥 UOM_ID Disimpan untuk Matematika, UOM Teks disimpan untuk Layar 🔥
+                    'uom_id'                   => $itemData['uom_id'] ?? null,
+                    'uom'                      => $itemData['uom'] ?? ($masterItem->unit ?? 'Unit'),
+                    'description'              => $itemData['notes'] ?? ($masterItem->name ?? '-'),
                     'discount_amount'          => $discAmt,
                     'tax_amount'               => $taxAmt,
                     'tax_id'                   => $taxId,
@@ -158,7 +161,6 @@ class PurchaseOrderController extends Controller
                 'grand_total'    => ($grandSubtotal - $globalDiscAmount) + $grandTax + $totalCharges
             ]);
 
-            // 🔥 SELF-HEALING PR 🔥
             if (!empty($prItemIdsToHeal)) {
                 foreach(array_unique($prItemIdsToHeal) as $pid) $this->recalculatePrItemFulfillment($pid);
                 $this->checkAndUpdatePrStatus($request->pr_id);
@@ -216,7 +218,7 @@ class PurchaseOrderController extends Controller
 
                         $discVal = (float) ($itemData['discount_value'] ?? 0);
                         $discType = strtoupper($itemData['discount_type'] ?? 'FIXED');
-                        $discAmt = ($discType === 'PERCENT') ? ($gross * ($discVal / 100)) : $discVal;
+                        $discAmt = ($discType === 'PERCENT') ? ($gross * $discVal / 100) : $discVal;
                         $dpp = $gross - $discAmt;
 
                         $taxAmt = 0; $taxId = $itemData['tax_id'] ?? null;
@@ -264,8 +266,10 @@ class PurchaseOrderController extends Controller
                             'purchase_order_id'        => $po->id,
                             'item_id'                  => $itemData['item_id'],
                             'purchase_request_item_id' => $itemData['pr_item_id'],
-                            'description'              => $itemData['notes'] ?? (\App\Models\Item::find($itemData['item_id'])->name ?? '-'),
+                            // 🔥 UOM_ID Disimpan untuk Matematika, UOM Teks disimpan untuk Layar 🔥
+                            'uom_id'                   => $itemData['uom_id'] ?? null,
                             'uom'                      => $itemData['uom'] ?? (\App\Models\PurchaseRequestItem::find($itemData['pr_item_id'])->uom_short ?? 'PCS'),
+                            'description'              => $itemData['notes'] ?? (\App\Models\Item::find($itemData['item_id'])->name ?? '-'),
                             'tax_id'                   => $line['taxId'],
                             'qty_ordered'              => $line['qty'],
                             'unit_price'               => $line['price'],
@@ -380,6 +384,7 @@ class PurchaseOrderController extends Controller
                     $poSubtotalGross += $gross; $poTotalItemDiscount += $discAmt; $poTotalTax += $taxAmt;
 
                     $poItem->update([
+                        'uom_id'          => $itemData['uom_id'] ?? $poItem->uom_id,
                         'uom'             => $itemData['uom'] ?? $poItem->uom,
                         'description'     => $itemData['notes'] ?? $poItem->description,
                         'vendor_id'       => $itemData['vendor_id'] ?? $poItem->vendor_id,
@@ -484,7 +489,10 @@ class PurchaseOrderController extends Controller
                 $this->checkAndUpdatePrStatus($po->purchase_request_id);
             }
 
-            \App\Models\DocumentApproval::where('document_id', $po->id)->where('document_type', get_class($po))->update(['status' => 'REJECTED', 'note' => 'Batal Otomatis (PO di-Cancel). Alasan: ' . $cancelReason]);
+            \App\Models\DocumentApproval::where('document_id', $po->id)
+                ->where('document_type', get_class($po))
+                ->update(['status' => 'REJECTED', 'note' => 'Batal Otomatis (PO di-Cancel). Alasan: ' . $cancelReason]);
+
             $this->logHistory($po->id, 'PO Dibatalkan', 'Dokumen PO telah dibatalkan. Alasan: **' . $cancelReason . '**');
 
             DB::commit();
@@ -497,7 +505,7 @@ class PurchaseOrderController extends Controller
     }
 
     // =========================================================================
-    // HELPER 1: HITUNG ULANG QTY PR SECARA ABSOLUT (MATEMATIKA TERAMAN)
+    // HELPER 1: HITUNG ULANG QTY PR SECARA ABSOLUT MENGGUNAKAN UOM_ID
     // =========================================================================
     private function recalculatePrItemFulfillment($prItemId)
     {
@@ -515,14 +523,29 @@ class PurchaseOrderController extends Controller
 
         $totalOrderedInPrUom = 0;
 
-        $prUomFactor = $this->getUomFactor($prItem->item_id, $prItem->uom);
+        // 1. CARI FAKTOR PR DARI UOM_ID (Prioritas Utama)
+        $prUomFactor = 1;
+        if (!empty($prItem->uom_id)) {
+            $uomDb = \App\Models\ItemUom::find($prItem->uom_id);
+            if ($uomDb) $prUomFactor = (float) $uomDb->conversion_qty;
+        } else {
+            $prUomFactor = $this->getUomFactor($prItem->item_id, $prItem->uom);
+        }
         if ($prUomFactor <= 0) $prUomFactor = 1;
 
         foreach ($poItems as $poItem) {
-            $poUomFactor = $this->getUomFactor($poItem->item_id, $poItem->uom);
+            $poUomFactor = 1;
+
+            // 2. CARI FAKTOR PO DARI UOM_ID (Prioritas Utama)
+            if (!empty($poItem->uom_id)) {
+                $uomDb = \App\Models\ItemUom::find($poItem->uom_id);
+                if ($uomDb) $poUomFactor = (float) $uomDb->conversion_qty;
+            } else {
+                $poUomFactor = $this->getUomFactor($poItem->item_id, $poItem->uom);
+            }
             if ($poUomFactor <= 0) $poUomFactor = 1;
 
-            // KALKULASI ABSOLUT TANPA CEK NAMA
+            // 3. KALKULASI ABSOLUT (Apple to Apple)
             $qtyInBase = $poItem->qty_ordered * $poUomFactor;
             $qtyInPrUnit = $qtyInBase / $prUomFactor;
 
@@ -569,20 +592,22 @@ class PurchaseOrderController extends Controller
     }
 
     // =========================================================================
-    // HELPER 3: PENDETEKSI ANGKA REGEX KELAS DEWA
+    // HELPER 3: BACA FAKTOR KONVERSI UOM
     // =========================================================================
     private function getUomFactor($itemId, $uomString)
     {
         if (empty($uomString)) return 1;
 
-        // Mencari angka setelah tulisan "Isi", "Qty", dll (Mengabaikan Pieces, Pcs, dll)
-        // Contoh yang sukses ditangkap: "(Isi: 20 Pieces)" -> Angka 20!
-        if (preg_match('/Isi\s*[:=]\s*([0-9.]+)/i', $uomString, $matches)) {
+        if (is_numeric($uomString)) {
+            $altUom = \App\Models\ItemUom::find($uomString);
+            if ($altUom) return (float) $altUom->conversion_qty;
+        }
+
+        if (preg_match('/(?:Isi|Qty|Konversi)\s*[:=]?\s*([0-9.]+)/i', $uomString, $matches)) {
             return (float) $matches[1];
         }
 
-        // Kalau gagal cari pakai teks murni ke DB
-        $cleanUom = trim(preg_replace('/\[.*?\]|\(.*?\)/', '', $uomString));
+        $cleanUom = trim(preg_replace('/[\[\(\{].*?[\]\)\}]/', '', $uomString));
         if (!empty($cleanUom)) {
             $altUom = \App\Models\ItemUom::where('item_id', $itemId)
                         ->whereRaw('LOWER(uom_name) = ?', [strtolower($cleanUom)])
@@ -608,7 +633,11 @@ class PurchaseOrderController extends Controller
         $prefix = "PO-{$companyCode}-{$dateStr}-";
 
         $latestPo = \App\Models\PurchaseOrder::where('po_number', 'like', $prefix . '%')->orderBy('id', 'desc')->lockForUpdate()->first();
-        $newSequence = $latestPo ? ((int) end(explode('-', $latestPo->po_number)) + 1) : 1;
+        $newSequence = 1;
+        if ($latestPo && $latestPo->po_number) {
+            $parts = explode('-', $latestPo->po_number);
+            $newSequence = ((int) end($parts)) + 1;
+        }
 
         return $prefix . str_pad($newSequence, 4, '0', STR_PAD_LEFT);
     }

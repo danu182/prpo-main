@@ -53,7 +53,7 @@
             $statusSlug = strtolower(optional($po->status)->slug ?? 'draft');
         @endphp
 
-        <div class="d-flex gap-2">
+        <div class="gap-2 d-flex">
             {{-- 1. TOMBOL EDIT PO (Terkunci Otomatis Jika Sudah Ada Approval) --}}
             @if(in_array($statusSlug, ['draft', '', 'pending_approval', 'rejected']))
                 @if(!$hasBeenPartiallyApproved)
@@ -186,45 +186,45 @@
             </div>
 
             {{-- TABEL ITEM --}}
-            <div class="table-responsive mb-4">
-                <table class="table table-hover align-middle border mb-0">
+            <div class="mb-4 table-responsive">
+                <table class="table mb-0 align-middle border table-hover">
                     <thead class="bg-primary bg-opacity-10 text-primary">
                         <tr>
-                            <th width="5%" class="text-center py-3">NO</th>
+                            <th width="5%" class="py-3 text-center">NO</th>
                             <th width="15%" class="py-3">KODE ITEM</th>
                             <th width="35%" class="py-3">NAMA BARANG & SPESIFIKASI</th>
-                            <th width="10%" class="text-center py-3">QTY</th>
-                            <th width="15%" class="text-end py-3">HARGA SATUAN</th>
-                            <th width="10%" class="text-center py-3">DISKON/PAJAK</th>
-                            <th width="10%" class="text-end py-3 pe-3">SUBTOTAL</th>
+                            <th width="10%" class="py-3 text-center">QTY</th>
+                            <th width="15%" class="py-3 text-end">HARGA SATUAN</th>
+                            <th width="10%" class="py-3 text-center">DISKON/PAJAK</th>
+                            <th width="10%" class="py-3 text-end pe-3">SUBTOTAL</th>
                         </tr>
                     </thead>
                     <tbody>
                         @forelse($po->items as $index => $item)
                             <tr>
                                 <td class="text-center fw-bold text-muted">{{ $index + 1 }}</td>
-                                
+
                                 {{-- KOLOM 1: KODE BARANG --}}
                                 <td>
-                                    <span class="badge bg-secondary-subtle text-secondary border border-secondary-subtle p-2">
+                                    <span class="p-2 border badge bg-secondary-subtle text-secondary border-secondary-subtle">
                                         {{ optional($item->item)->code ?? 'SKU-UNKNOWN' }}
                                     </span>
                                 </td>
 
                                 {{-- KOLOM 2: NAMA BARANG + SPESIFIKASI + LAMPIRAN --}}
                                 <td>
-                                    <div class="fw-bolder text-dark mb-2" style="font-size: 0.95rem;">
+                                    <div class="mb-2 fw-bolder text-dark" style="font-size: 0.95rem;">
                                         {{ optional($item->item)->name ?? 'Item Terhapus / Tidak Ditemukan' }}
                                     </div>
-                                    
-                                    <div class="text-muted bg-light p-2 rounded border border-light" style="font-size: 0.85rem;">
+
+                                    <div class="p-2 border rounded text-muted bg-light border-light" style="font-size: 0.85rem;">
                                         {!! $item->description ?? '-' !!}
                                     </div>
 
                                     @if($item->attachments && $item->attachments->count() > 0)
-                                        <div class="mt-2 pt-2 border-top border-light d-flex flex-wrap gap-2">
+                                        <div class="flex-wrap gap-2 pt-2 mt-2 border-top border-light d-flex">
                                             @foreach($item->attachments as $idx => $vFile)
-                                                <a href="{{ asset('storage/' . $vFile->file_path) }}" target="_blank" class="badge bg-info-subtle text-info-emphasis text-decoration-none border border-info-subtle px-2 py-1" title="{{ $vFile->file_name }}">
+                                                <a href="{{ asset('storage/' . $vFile->file_path) }}" target="_blank" class="px-2 py-1 border badge bg-info-subtle text-info-emphasis text-decoration-none border-info-subtle" title="{{ $vFile->file_name }}">
                                                     <i class="bi bi-paperclip"></i> Lampiran {{ $idx + 1 }}
                                                 </a>
                                             @endforeach
@@ -233,9 +233,9 @@
 
                                     {{-- 🔥 TAMPILKAN LAMPIRAN PAKSA DARI DATABASE RAW 🔥 --}}
                                     {{-- @if(isset($item->raw_attachments) && count($item->raw_attachments) > 0)
-                                        <div class="mt-2 pt-2 border-top border-light d-flex flex-wrap gap-2">
+                                        <div class="flex-wrap gap-2 pt-2 mt-2 border-top border-light d-flex">
                                             @foreach($item->raw_attachments as $idx => $vFile)
-                                                <a href="{{ asset('storage/' . $vFile->file_path) }}" target="_blank" class="badge bg-info-subtle text-info-emphasis text-decoration-none border border-info-subtle px-2 py-1" title="{{ $vFile->file_name }}">
+                                                <a href="{{ asset('storage/' . $vFile->file_path) }}" target="_blank" class="px-2 py-1 border badge bg-info-subtle text-info-emphasis text-decoration-none border-info-subtle" title="{{ $vFile->file_name }}">
                                                     <i class="bi bi-paperclip"></i> Lampiran {{ $idx + 1 }}
                                                 </a>
                                             @endforeach
@@ -247,8 +247,32 @@
 
                                 {{-- KOLOM 3: QTY & UOM --}}
                                 <td class="text-center">
-                                    <div class="fw-bolder text-dark fs-6">{{ $item->qty_ordered }}</div>
-                                    <span class="badge bg-primary-subtle text-primary mt-1">{{ $item->uom }}</span>
+                                    <div class="fw-bolder text-dark fs-6">{{ (float) $item->qty_ordered }}</div>
+
+                                    @php
+                                        $uomDisplay = $item->uom;
+
+                                        // 🔥 JIKA UOM KOSONG ATAU HANYA BERISI ANGKA ID (EFEK BUG LAMA) 🔥
+                                        if (empty($uomDisplay) || is_numeric($uomDisplay)) {
+                                            // Coba tarik nama aslinya dari UOM_ID
+                                            if (!empty($item->uom_id)) {
+                                                $uomMaster = \App\Models\ItemUom::find($item->uom_id);
+                                                if ($uomMaster) {
+                                                    $baseUnit = optional($item->item)->unit ?? 'Pcs';
+                                                    $uomDisplay = $uomMaster->uom_name . ' (Isi: ' . (float)$uomMaster->conversion_qty . ' ' . $baseUnit . ')';
+                                                }
+                                            }
+                                        }
+
+                                        // Jika ternyata masih kosong juga, ambil satuan dasar pabrik
+                                        if (empty($uomDisplay) || is_numeric($uomDisplay)) {
+                                            $uomDisplay = optional($item->item)->unit ?? 'PCS';
+                                        }
+                                    @endphp
+
+                                    <span class="mt-1 badge bg-primary-subtle text-primary" style="font-size: 0.75rem;">
+                                        {{ $uomDisplay }}
+                                    </span>
                                 </td>
 
                                 {{-- KOLOM 4: HARGA --}}
@@ -258,7 +282,7 @@
 
                                 {{-- KOLOM 5: DISKON & PAJAK --}}
                                 <td class="text-center" style="font-size: 0.75rem;">
-                                    <div class="text-danger mb-1 fw-bold">Disc: {{ number_format($item->discount_amount, 2, '.', ',') }}</div>
+                                    <div class="mb-1 text-danger fw-bold">Disc: {{ number_format($item->discount_amount, 2, '.', ',') }}</div>
                                     <div class="text-info fw-bold">Tax: {{ number_format($item->tax_amount, 2, '.', ',') }}</div>
                                 </td>
 
@@ -269,7 +293,7 @@
                             </tr>
                         @empty
                             <tr>
-                                <td colspan="7" class="text-center text-muted py-4 fst-italic">Tidak ada item barang dalam PO ini.</td>
+                                <td colspan="7" class="py-4 text-center text-muted fst-italic">Tidak ada item barang dalam PO ini.</td>
                             </tr>
                         @endforelse
                     </tbody>
@@ -342,22 +366,22 @@
                                 ->get();
             @endphp
 
-            <div class="signature-container mt-5 pt-4 d-flex justify-content-between text-center" style="font-size: 0.85rem; page-break-inside: avoid;">
-                
-                <div class="signature-box px-2">
+            <div class="pt-4 mt-5 text-center signature-container d-flex justify-content-between" style="font-size: 0.85rem; page-break-inside: avoid;">
+
+                <div class="px-2 signature-box">
                     <p class="mb-1 text-muted">Dibuat Oleh,</p>
                     <div class="sign-space" style="height: 80px; display: flex; align-items: center; justify-content: center;">
                         <span class="stamp-approved" style="color: #198754; border: 2px solid #198754; padding: 5px 10px; font-weight: bold; transform: rotate(-5deg); opacity: 0.8; letter-spacing: 2px;">ISSUED</span>
                     </div>
                     <p class="mb-0"><u><strong>{{ $creator->name ?? '....................................' }}</strong></u></p>
-                    <p class="text-muted mb-0" style="font-size: 0.75rem;">{{ $creatorRole ? $creatorRole->name : 'Procurement Dept' }}</p>
-                    <p class="text-muted mb-0" style="font-size: 0.7rem;">Tgl: {{ \Carbon\Carbon::parse($po->created_at)->format('d/m/Y') }}</p>
+                    <p class="mb-0 text-muted" style="font-size: 0.75rem;">{{ $creatorRole ? $creatorRole->name : 'Procurement Dept' }}</p>
+                    <p class="mb-0 text-muted" style="font-size: 0.7rem;">Tgl: {{ \Carbon\Carbon::parse($po->created_at)->format('d/m/Y') }}</p>
                 </div>
 
                 @foreach($approvals as $approval)
-                    <div class="signature-box px-2">
+                    <div class="px-2 signature-box">
                         <p class="mb-1 text-muted">Disetujui Oleh,</p>
-                        
+
                         <div class="sign-space" style="height: 80px; display: flex; align-items: center; justify-content: center;">
                             @if(in_array(strtolower(optional($po->status)->slug), ['canceled', 'cancelled']))
                                 <span class="stamp-rejected" style="color: #dc3545; border: 2px solid #dc3545; padding: 5px 10px; font-weight: bold; transform: rotate(-10deg); opacity: 0.8; letter-spacing: 2px;">VOID / CANCELLED</span>
@@ -369,30 +393,30 @@
                         </div>
 
                         @if($approval->status === 'APPROVED' || $approval->status === 'REJECTED')
-                            @php 
-                                $approverName = optional($approval->approver)->name ?? (\App\Models\User::find($approval->approved_by)->name ?? '....................................'); 
+                            @php
+                                $approverName = optional($approval->approver)->name ?? (\App\Models\User::find($approval->approved_by)->name ?? '....................................');
                             @endphp
                             <p class="mb-0"><u><strong>{{ $approverName }}</strong></u></p>
-                            <p class="text-muted mb-0" style="font-size: 0.75rem;">{{ optional($approval->role)->name ?? 'Atasan' }}</p>
-                            <p class="text-muted mb-0" style="font-size: 0.7rem;">Tgl: {{ \Carbon\Carbon::parse($approval->approved_at)->format('d/m/Y') }}</p>
+                            <p class="mb-0 text-muted" style="font-size: 0.75rem;">{{ optional($approval->role)->name ?? 'Atasan' }}</p>
+                            <p class="mb-0 text-muted" style="font-size: 0.7rem;">Tgl: {{ \Carbon\Carbon::parse($approval->approved_at)->format('d/m/Y') }}</p>
                         @else
                             <p class="mb-0"><u><strong>....................................</strong></u></p>
-                            <p class="text-muted mb-0" style="font-size: 0.75rem;">{{ optional($approval->role)->name ?? 'Atasan' }}</p>
-                            <p class="text-muted mb-0" style="font-size: 0.7rem;">Tgl: ........................</p>
+                            <p class="mb-0 text-muted" style="font-size: 0.75rem;">{{ optional($approval->role)->name ?? 'Atasan' }}</p>
+                            <p class="mb-0 text-muted" style="font-size: 0.7rem;">Tgl: ........................</p>
                         @endif
                     </div>
                 @endforeach
 
-                <div class="signature-box px-2">
+                <div class="px-2 signature-box">
                     <p class="mb-1 text-muted">Diterima Oleh Vendor,</p>
                     <div class="sign-space" style="height: 80px;"></div>
                     <p class="mb-0"><u><strong>....................................</strong></u></p>
-                    <p class="text-muted mb-0" style="font-size: 0.75rem;">Cap & Tanda Tangan</p>
-                    <p class="text-muted mb-0" style="font-size: 0.7rem;">Tgl: ........................</p>
+                    <p class="mb-0 text-muted" style="font-size: 0.75rem;">Cap & Tanda Tangan</p>
+                    <p class="mb-0 text-muted" style="font-size: 0.7rem;">Tgl: ........................</p>
                 </div>
             </div>
 
-            <div class="print-footer mt-4 pt-3 border-top text-center text-muted" style="font-size: 0.7rem;">
+            <div class="pt-3 mt-4 text-center print-footer border-top text-muted" style="font-size: 0.7rem;">
                 * Dokumen elektronik ini telah diaudit dan diterbitkan oleh sistem ProcureApp pada {{ \Carbon\Carbon::now()->translatedFormat('d F Y H:i:s') }} WIB
             </div>
 
@@ -410,12 +434,12 @@
             </div>
             <h6 class="mb-0 fw-bold text-dark">Lampiran Penawaran & Dokumen Pendukung (Header PO)</h6>
         </div>
-        <div class="card-body p-4">
+        <div class="p-4 card-body">
            {{-- 🔥 TAMPILKAN LAMPIRAN PAKSA DARI DATABASE RAW 🔥 --}}
                 @if(isset($item->raw_attachments) && count($item->raw_attachments) > 0)
-                    <div class="mt-2 pt-2 border-top border-light d-flex flex-wrap gap-2">
+                    <div class="flex-wrap gap-2 pt-2 mt-2 border-top border-light d-flex">
                         @foreach($item->raw_attachments as $idx => $vFile)
-                            <a href="{{ asset('storage/' . $vFile->file_path) }}" target="_blank" class="badge bg-info-subtle text-info-emphasis text-decoration-none border border-info-subtle px-2 py-1" title="{{ $vFile->file_name }}">
+                            <a href="{{ asset('storage/' . $vFile->file_path) }}" target="_blank" class="px-2 py-1 border badge bg-info-subtle text-info-emphasis text-decoration-none border-info-subtle" title="{{ $vFile->file_name }}">
                                 <i class="bi bi-paperclip"></i> Lampiran {{ $idx + 1 }}
                             </a>
                         @endforeach

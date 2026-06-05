@@ -14,19 +14,19 @@ return new class extends Migration
         Schema::create('purchase_request_items', function (Blueprint $table) {
             $table->id();
 
-
             $table->foreignId('purchase_request_id')->constrained('purchase_requests')->cascadeOnDelete();
             $table->foreignId('item_id')->constrained('items');
-            $table->integer('qty');
+
+            // 🔥 PERBAIKAN: Gunakan decimal agar konsisten dan presisi 🔥
+            $table->decimal('qty', 10, 2)->default(0.00);
 
             // User bisa menyarankan vendor & harga, tapi procurement yang putuskan nanti
             $table->foreignId('suggested_vendor_id')->nullable()->constrained('vendors');
             $table->decimal('estimated_price', 15, 2)->default(0);
 
             // Tracking status per item (Penting untuk Split PO)
-            // Jika qty = 10, ordered_qty = 5, berarti sisa 5 belum di PO
-            $table->integer('ordered_qty')->default(0);
-
+            // 🔥 INI DIA BIANG KEROKNYA! DIUBAH DARI INTEGER KE DECIMAL 🔥
+            $table->decimal('ordered_qty', 10, 2)->default(0.00);
 
             $table->timestamps();
         });
