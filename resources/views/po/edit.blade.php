@@ -16,7 +16,7 @@
         border-color: #0d6efd;
         box-shadow: 0 0 0 0.25rem rgba(13, 110, 253, 0.15);
     }
-    
+
     /* Modern Input Styling */
     .form-input-custom {
         border: 1px solid #dee2e6;
@@ -84,25 +84,25 @@
 
 @section('content')
 
-{{-- Pastikan method di web.php untuk rute ini adalah PUT (Atau hapus @method('PUT') jika di web.php pakai POST) --}}
+{{-- Jika di web.php menggunakan PUT, hapus komentar @method('PUT') --}}
 <form action="{{ route('po.update', $po->po_number) }}" method="POST" id="poForm" enctype="multipart/form-data" novalidate>
     @csrf
 
     {{-- HEADER --}}
-    <div class="mb-4 d-flex justify-content-between align-items-center border-bottom pb-3">
+    <div class="pb-3 mb-4 d-flex justify-content-between align-items-center border-bottom">
         <div>
             <h4 class="mb-1 fw-bolder text-dark"><i class="bi bi-pencil-square me-2 text-warning"></i> Edit Purchase Order</h4>
             <div class="text-muted small">Mengubah dokumen PO <strong class="text-primary">{{ $po->po_number }}</strong>.</div>
         </div>
-        <div class="d-flex gap-2">
-            <a href="{{ route('po.index') }}" class="btn btn-light border fw-bold rounded-pill px-4"><i class="bi bi-arrow-left me-1"></i> Kembali</a>
-            <button type="submit" class="btn btn-success fw-bold rounded-pill px-4"><i class="bi bi-save-fill me-1"></i> Simpan Perubahan</button>
+        <div class="gap-2 d-flex">
+            <a href="{{ route('po.index') }}" class="px-4 border btn btn-light fw-bold rounded-pill"><i class="bi bi-arrow-left me-1"></i> Kembali</a>
+            <button type="submit" class="px-4 btn btn-success fw-bold rounded-pill"><i class="bi bi-save-fill me-1"></i> Simpan Perubahan</button>
         </div>
     </div>
 
     @if($errors->any())
-        <div class="alert alert-danger rounded-4 shadow-sm border-0 mb-4">
-            <div class="fw-bold mb-1"><i class="bi bi-exclamation-triangle-fill me-2"></i>Gagal Menyimpan:</div>
+        <div class="mb-4 border-0 shadow-sm alert alert-danger rounded-4">
+            <div class="mb-1 fw-bold"><i class="bi bi-exclamation-triangle-fill me-2"></i>Gagal Menyimpan:</div>
             <ul class="mb-0 small">
                 @foreach ($errors->all() as $error) <li>{{ $error }}</li> @endforeach
             </ul>
@@ -114,19 +114,19 @@
         <div class="col-xl-8 col-lg-7">
 
             {{-- 1. INFORMASI VENDOR & PENAGIHAN --}}
-            <div class="card shadow-sm border-0 rounded-4 mb-4">
-                <div class="card-header bg-white py-3 border-bottom d-flex align-items-center">
-                    <div class="bg-primary bg-opacity-10 text-primary rounded-circle p-2 me-3 d-flex align-items-center justify-content-center" style="width: 35px; height: 35px;">
+            <div class="mb-4 border-0 shadow-sm card rounded-4">
+                <div class="py-3 bg-white card-header border-bottom d-flex align-items-center">
+                    <div class="p-2 bg-primary bg-opacity-10 text-primary rounded-circle me-3 d-flex align-items-center justify-content-center" style="width: 35px; height: 35px;">
                         <i class="bi bi-geo-alt-fill"></i>
                     </div>
                     <h6 class="mb-0 fw-bold">Penagihan & Pengiriman</h6>
                 </div>
-                <div class="card-body p-4">
+                <div class="p-4 card-body">
                     <div class="row g-4">
                         <div class="col-md-5">
                             <label class="form-label small fw-bold text-dark">Vendor Penerima PO</label>
                             <div class="p-2 border rounded bg-light fw-bold text-primary"><i class="bi bi-shop me-1"></i> {{ optional($po->vendor)->name ?? 'Vendor Tidak Ditemukan' }}</div>
-                            <div class="form-text text-danger mt-1" style="font-size: 0.65rem;">*Vendor tidak bisa diubah. Jika ganti vendor, silakan Batalkan PO ini.</div>
+                            <div class="mt-1 form-text text-danger" style="font-size: 0.65rem;">*Vendor tidak bisa diubah. Jika ganti vendor, silakan Batalkan PO ini.</div>
                         </div>
                         <div class="col-md-3">
                             <label class="form-label small fw-bold text-dark">Mata Uang <span class="text-danger">*</span></label>
@@ -145,9 +145,9 @@
                             </select>
                         </div>
                         <div class="col-12">
-                            <div class="d-flex justify-content-between align-items-end mb-2">
-                                <label class="form-label small fw-bold text-dark mb-0">Lokasi Pengiriman (Ship To) <span class="text-danger">*</span></label>
-                                <button type="button" class="btn btn-sm btn-link text-decoration-none p-0" onclick="updateShippingAddress(true)"><i class="bi bi-arrow-counterclockwise"></i> Reset ke Alamat PT</button>
+                            <div class="mb-2 d-flex justify-content-between align-items-end">
+                                <label class="mb-0 form-label small fw-bold text-dark">Lokasi Pengiriman (Ship To) <span class="text-danger">*</span></label>
+                                <button type="button" class="p-0 btn btn-sm btn-link text-decoration-none" onclick="updateShippingAddress(true)"><i class="bi bi-arrow-counterclockwise"></i> Reset ke Alamat PT</button>
                             </div>
                             <textarea name="shipping_address" id="shippingAddressInput" rows="2" class="form-control form-input-custom bg-light" required>{{ old('shipping_address', $po->shipping_address) }}</textarea>
                         </div>
@@ -156,8 +156,8 @@
             </div>
 
             {{-- 2. DETAIL PESANAN BARANG --}}
-            <h5 class="fw-bolder text-dark mb-3 mt-5"><i class="bi bi-box-seam me-2 text-primary"></i>Daftar Barang Pesanan</h5>
-            
+            <h5 class="mt-5 mb-3 fw-bolder text-dark"><i class="bi bi-box-seam me-2 text-primary"></i>Daftar Barang Pesanan</h5>
+
             <div id="itemsContainer">
                 @foreach($po->items as $item)
                     @php
@@ -165,99 +165,77 @@
                         $masterItem = $item->item;
                         $baseUomName = optional($masterItem->uom)->name ?? 'PCS';
 
-                        // CARI UOM ASLI PR & KONVERSINYA
+                        // MENCARI BATAS MAX (SISA PR) SECARA AKURAT
                         $prConvRate = 1;
-                        $safePrUom = $baseUomName;
-
-                        if ($prItem) {
-                            if (!empty($prItem->uom_id)) {
-                                $altUom = collect(optional($masterItem)->itemUoms)->where('id', $prItem->uom_id)->first();
-                                if ($altUom) {
-                                    $prConvRate = (float) $altUom->conversion_qty;
-                                    $safePrUom = $altUom->uom_name . ' (Isi: ' . $prConvRate . ')';
-                                } else {
-                                    $safePrUom = optional(optional($masterItem)->uom)->name ?? 'PCS';
-                                }
-                            } else {
-                                $raw = $prItem->getRawOriginal('uom') ?? $baseUomName;
-                                if (is_string($raw) && !str_starts_with(trim($raw), '{')) {
-                                    $safePrUom = $raw;
-                                    if (preg_match('/\(Isi:\s*([0-9.]+)\)/i', $raw, $matches)) {
-                                        $prConvRate = (float) $matches[1];
-                                    }
-                                }
-                            }
+                        if ($prItem && !empty($prItem->uom_id)) {
+                            $prUomDb = collect(optional($masterItem)->itemUoms)->where('id', $prItem->uom_id)->first();
+                            if ($prUomDb) $prConvRate = (float) $prUomDb->conversion_qty;
                         }
 
-                        // CARI UOM PO SAAT INI & KONVERSINYA
                         $currentConvRate = 1;
-                        $safeCurrentUom = $item->getRawOriginal('uom') ?? $baseUomName;
-                        
-                        if (is_string($safeCurrentUom) && str_starts_with(trim($safeCurrentUom), '{')) {
-                            $safeCurrentUom = $baseUomName;
-                        }
+                        $safeCurrentUomName = $item->uom; // Simpan Teks (Pack isi 20) untuk jaga-jaga
 
-                        if (preg_match('/\(Isi:\s*([0-9.]+)\)/i', $safeCurrentUom, $matches)) {
-                            $currentConvRate = (float) $matches[1];
-                        } else {
-                            $cleanUom = trim(preg_replace('/ \(Isi:.*\)/i', '', $safeCurrentUom));
-                            $alt = collect(optional($masterItem)->itemUoms)->where('uom_name', $cleanUom)->first();
-                            if ($alt) {
-                                $currentConvRate = (float) $alt->conversion_qty;
-                                $safeCurrentUom = $alt->uom_name . ' (Isi: ' . $currentConvRate . ')';
+                        // Menarik data Konversi UOM PO dari Database
+                        if (!empty($item->uom_id)) {
+                            $poUomDb = collect(optional($masterItem)->itemUoms)->where('id', $item->uom_id)->first();
+                            if ($poUomDb) {
+                                $currentConvRate = (float) $poUomDb->conversion_qty;
+                                $safeCurrentUomName = $poUomDb->uom_name . ' (Isi: ' . $currentConvRate . ' ' . $baseUomName . ')';
                             }
                         }
 
-                        // KALKULATOR SISA JATAH PR
+                        // Menghitung Sisa Logika
                         $targetBaseQty = $prItem ? ((float)$prItem->qty * $prConvRate) : ((float)$item->qty_ordered * $currentConvRate);
-                        $orderedBaseQty = $prItem ? (float)($prItem->ordered_qty ?? 0) : ((float)$item->qty_ordered * $currentConvRate);
+                        $orderedBaseQty = $prItem ? (float)($prItem->ordered_qty ?? 0) * $prConvRate : ((float)$item->qty_ordered * $currentConvRate);
                         $currentPoBaseQty = (float)$item->qty_ordered * $currentConvRate;
-                        
+
                         $sisaBaseQty = max(0, $targetBaseQty - $orderedBaseQty) + $currentPoBaseQty;
                         $remainingNominal = $currentConvRate > 0 ? ($sisaBaseQty / $currentConvRate) : 0;
                         $remainingNominal = round($remainingNominal, 2);
                     @endphp
 
-                    <div class="card mb-4 shadow-sm item-row border-0" style="border-radius: 12px; overflow: hidden;">
-                        <div class="card-header bg-light border-bottom d-flex justify-content-between align-items-center py-3 px-4">
+                    <div class="mb-4 border-0 shadow-sm card item-row" style="border-radius: 12px; overflow: hidden;">
+                        <div class="px-4 py-3 card-header bg-light border-bottom d-flex justify-content-between align-items-center">
                             <div>
                                 <div class="fw-bolder text-dark fs-6">{{ optional($item->item)->name ?? 'Item Terhapus' }}</div>
-                                <span class="badge bg-secondary-subtle text-secondary border mt-1">{{ optional($item->item)->code }}</span>
+                                <span class="mt-1 border badge bg-secondary-subtle text-secondary">{{ optional($item->item)->code }}</span>
                                 <input type="hidden" name="po_items[{{ $item->id }}][pr_item_id]" value="{{ $item->purchase_request_item_id }}">
+                                {{-- Sisipkan ID Vendor otomatis (karena Edit tidak boleh ganti Vendor) --}}
+                                <input type="hidden" name="po_items[{{ $item->id }}][vendor_id]" value="{{ $po->vendor_id }}">
                             </div>
                             <div class="text-end">
-                                <div class="small text-muted fw-bold text-uppercase mb-1">Netto Item</div>
-                                <h5 class="fw-bolder text-primary mb-0"><span class="currency-label fs-6 text-muted me-1">{{ $po->currency }}</span><span class="subtotal-display">{{ number_format($item->subtotal + $item->tax_amount, 2, '.', '') }}</span></h5>
+                                <div class="mb-1 small text-muted fw-bold text-uppercase">Netto Item</div>
+                                <h5 class="mb-0 fw-bolder text-primary"><span class="currency-label fs-6 text-muted me-1">{{ $po->currency }}</span><span class="subtotal-display">{{ number_format($item->subtotal + $item->tax_amount, 2, '.', '') }}</span></h5>
                                 <input type="hidden" class="subtotal-input" value="{{ $item->subtotal + $item->tax_amount }}">
                             </div>
                         </div>
 
-                        <div class="card-body p-4">
-                            
+                        <div class="p-4 card-body">
+
                             {{-- BARIS 1: Spesifikasi & File Upload --}}
-                            <div class="row g-3 mb-4 pb-4 border-bottom">
+                            <div class="pb-4 mb-4 row g-3 border-bottom">
                                 <div class="col-md-7">
                                     <label class="form-label small fw-bold text-dark">Spesifikasi Detail (Bisa diedit)</label>
                                     <textarea name="po_items[{{ $item->id }}][notes]" id="spec_{{ $item->id }}" class="form-control ckeditor-spec">{!! $item->description !!}</textarea>
                                 </div>
                                 <div class="col-md-5">
                                     <label class="form-label small fw-bold text-dark"><i class="bi bi-paperclip text-primary"></i> Dokumen Pendukung Item</label>
-                                    <div class="p-3 border rounded bg-light border-secondary-subtle shadow-sm">
-                                        
+                                    <div class="p-3 border rounded shadow-sm bg-light border-secondary-subtle">
+
                                         <div class="mb-2">
                                             <span class="small fw-bold text-muted">File Lampiran PO:</span>
                                         </div>
-                                        
+
                                         {{-- 🔥 TAMPILKAN FILE YANG SUDAH TERSIMPAN DI SINI 🔥 --}}
                                         @if(isset($item->raw_attachments) && count($item->raw_attachments) > 0)
-                                            <div class="d-flex flex-column gap-1 mb-2">
+                                            <div class="gap-1 mb-2 d-flex flex-column">
                                                 @foreach($item->raw_attachments as $file)
-                                                    <div class="bg-white border border-info border-opacity-50 rounded p-1 shadow-sm d-flex justify-content-between align-items-center">
+                                                    <div class="p-1 bg-white border border-opacity-50 rounded shadow-sm border-info d-flex justify-content-between align-items-center">
                                                         <a href="{{ asset('storage/' . $file->file_path) }}" target="_blank" class="text-truncate small text-decoration-none text-primary fw-bold ms-1" style="font-size: 0.7rem; max-width: 80%;" title="{{ $file->file_name }}">
                                                             <i class="bi bi-file-earmark-text-fill text-danger me-1"></i> {{ $file->file_name }}
                                                         </a>
                                                         {{-- 🔥 TOMBOL HAPUS LAMPIRAN ITEM 🔥 --}}
-                                                        <a href="{{ route('po.po.delete_item_attachment', $file->id) }}" class="btn btn-sm text-danger p-0 px-1" onclick="return confirm('Hapus lampiran ini secara permanen?')">
+                                                        <a href="{{ route('po.delete_item_attachment', $file->id) }}" class="p-0 px-1 btn btn-sm text-danger" onclick="return confirm('Hapus lampiran ini secara permanen?')">
                                                             <i class="bi bi-trash-fill"></i>
                                                         </a>
                                                     </div>
@@ -267,10 +245,10 @@
                                         @endif
 
                                         {{-- Tempat file baru yang akan diupload --}}
-                                        <div id="fileListContainer_{{ $item->id }}" class="d-flex flex-column gap-1 mb-2"></div>
+                                        <div id="fileListContainer_{{ $item->id }}" class="gap-1 mb-2 d-flex flex-column"></div>
                                         <div id="hiddenFileInputs_{{ $item->id }}" style="display: none;"></div>
-                                        
-                                        <button type="button" class="btn btn-sm btn-outline-primary w-100 fw-bold py-2 mb-3 bg-white" style="border-style: dashed; border-width: 2px;" onclick="triggerFilePicker('{{ $item->id }}')">
+
+                                        <button type="button" class="py-2 mb-3 bg-white btn btn-sm btn-outline-primary w-100 fw-bold" style="border-style: dashed; border-width: 2px;" onclick="triggerFilePicker('{{ $item->id }}')">
                                             <i class="bi bi-plus-lg me-1"></i> Tambah File Baru
                                         </button>
 
@@ -280,13 +258,13 @@
                                         @endphp
                                         @if($prQuotes && $prQuotes->count() > 0)
                                         <div class="pt-2 border-top">
-                                            <button class="btn btn-outline-secondary btn-sm w-100 rounded-3 fw-bold d-flex justify-content-between align-items-center bg-white shadow-sm" type="button" data-bs-toggle="collapse" data-bs-target="#vendorData{{ $item->id }}" aria-expanded="false">
+                                            <button class="bg-white shadow-sm btn btn-outline-secondary btn-sm w-100 rounded-3 fw-bold d-flex justify-content-between align-items-center" type="button" data-bs-toggle="collapse" data-bs-target="#vendorData{{ $item->id }}" aria-expanded="false">
                                                 <span class="text-primary"><i class="bi bi-search me-1"></i> Intip Penawaran PR</span>
                                                 <span class="badge bg-primary rounded-pill">{{ $prQuotes->count() }} Vendor</span>
                                             </button>
-                                            
-                                            <div class="collapse mt-2" id="vendorData{{ $item->id }}">
-                                                <div class="d-flex flex-column gap-2">
+
+                                            <div class="mt-2 collapse" id="vendorData{{ $item->id }}">
+                                                <div class="gap-2 d-flex flex-column">
                                                     @foreach($prQuotes as $vq)
                                                         @php
                                                             $vqCurr = 'IDR';
@@ -295,9 +273,9 @@
                                                                 if($currObj) $vqCurr = $currObj->code;
                                                             }
                                                         @endphp
-                                                        
-                                                        <div class="bg-white border border-info border-opacity-25 rounded-3 p-2 shadow-sm relative">
-                                                            <div class="d-flex justify-content-between border-bottom border-light pb-1 mb-1">
+
+                                                        <div class="relative p-2 bg-white border border-opacity-25 shadow-sm border-info rounded-3">
+                                                            <div class="pb-1 mb-1 d-flex justify-content-between border-bottom border-light">
                                                                 <span class="fw-bold text-dark text-truncate pe-2" style="font-size: 0.75rem;"><i class="bi bi-shop text-muted me-1"></i>{{ optional($vq->vendor)->name }}</span>
                                                                 <span class="text-success fw-bolder" style="font-size: 0.75rem;">{{ $vqCurr }} {{ number_format($vq->quoted_price ?? $vq->price ?? 0, 0, ',', '.') }}</span>
                                                             </div>
@@ -306,11 +284,11 @@
                                                                     <a href="{{ $vq->reference_link }}" target="_blank" onclick="event.stopPropagation();" class="text-decoration-none fw-bold me-2"><i class="bi bi-link-45deg"></i> Link Toko</a>
                                                                 @endif
                                                                 <span class="text-muted fst-italic">{{ $vq->notes ?? 'Tidak ada catatan.' }}</span>
-                                                                
+
                                                                 @if($vq->attachments && $vq->attachments->count() > 0)
-                                                                    <div class="mt-1 pt-1 border-top border-light d-flex flex-wrap gap-1">
+                                                                    <div class="flex-wrap gap-1 pt-1 mt-1 border-top border-light d-flex">
                                                                         @foreach($vq->attachments as $idx => $vFile)
-                                                                            <a href="{{ asset('storage/' . $vFile->file_path) }}" target="_blank" class="badge bg-info-subtle text-info-emphasis text-decoration-none border border-info-subtle"><i class="bi bi-file-earmark-pdf-fill"></i> File {{ $idx + 1 }}</a>
+                                                                            <a href="{{ asset('storage/' . $vFile->file_path) }}" target="_blank" class="border badge bg-info-subtle text-info-emphasis text-decoration-none border-info-subtle"><i class="bi bi-file-earmark-pdf-fill"></i> File {{ $idx + 1 }}</a>
                                                                         @endforeach
                                                                     </div>
                                                                 @endif
@@ -321,7 +299,7 @@
                                             </div>
                                         </div>
                                         @endif
-                                        
+
                                     </div>
                                 </div>
                             </div>
@@ -331,32 +309,37 @@
                                 {{-- QTY & SATUAN --}}
                                 <div class="col-md-3">
                                     <label class="form-label small fw-bold text-dark">Qty & Satuan <span class="text-danger">*</span></label>
-                                    <div class="input-group-modern shadow-sm mb-1">
-                                        <input type="number" name="po_items[{{ $item->id }}][qty]" id="qty-input-{{ $item->id }}" class="form-control fw-bolder text-center qty-input text-primary" value="{{ (float)$item->qty_ordered }}" max="{{ $remainingNominal }}" min="0.01" step="0.01" data-base-remaining="{{ $sisaBaseQty }}" oninput="calculateRow(this)" required>
+                                    <div class="mb-1 shadow-sm input-group-modern">
+                                        <input type="number" name="po_items[{{ $item->id }}][qty]" id="qty-input-{{ $item->id }}" class="text-center form-control fw-bolder qty-input text-primary" value="{{ (float)$item->qty_ordered }}" max="{{ $remainingNominal }}" min="0.01" step="0.01" data-base-remaining="{{ $sisaBaseQty }}" oninput="calculateRow(this)" required>
                                     </div>
-                                    
-                                    <select name="po_items[{{ $item->id }}][uom]" class="form-select border-primary text-primary fw-bold uom-selector shadow-sm" data-current-conv="{{ $currentConvRate }}" onchange="updateRowUom(this, {{ $item->id }})">
-                                        <option value="{{ $safeCurrentUom }}" data-conv="{{ $currentConvRate }}" selected>{{ $safeCurrentUom }} [Dipilih]</option>
-                                        
-                                        @if($prItem && strtolower($safeCurrentUom) !== strtolower($safePrUom))
-                                            <option value="{{ $safePrUom }}" data-conv="{{ $prConvRate }}">{{ $safePrUom }} [PR]</option>
+
+                                    {{-- 🔥 PERBAIKAN DROPDOWN UOM BERDASARKAN ID 🔥 --}}
+                                    <select name="po_items[{{ $item->id }}][uom_id]" class="shadow-sm form-select border-primary text-primary fw-bold uom-selector" data-current-conv="{{ $currentConvRate }}" onchange="updateRowUom(this, {{ $item->id }})">
+                                        {{-- 1. Tampilkan Satuan yang Sedang Dipilih Saat Ini --}}
+                                        <option value="{{ $item->uom_id }}" data-name="{{ $safeCurrentUomName }}" data-conv="{{ $currentConvRate }}" selected>{{ $safeCurrentUomName }} [Terpilih]</option>
+
+                                        {{-- 2. Tampilkan Satuan Dasar Jika Berbeda --}}
+                                        @if(empty($item->uom_id))
+                                            <option value="" data-name="{{ $baseUomName }}" data-conv="1" selected>{{ $baseUomName }} (Dasar)</option>
+                                        @else
+                                            <option value="" data-name="{{ $baseUomName }}" data-conv="1">{{ $baseUomName }} (Dasar)</option>
                                         @endif
-                                
-                                        @if(strtolower($baseUomName) !== strtolower(trim(preg_replace('/ \(Isi:.*\)/i', '', $safeCurrentUom))) && strtolower($baseUomName) !== strtolower(trim(preg_replace('/ \(Isi:.*\)/i', '', $safePrUom))))
-                                            <option value="{{ $baseUomName }}" data-conv="1">{{ $baseUomName }} (Eceran Dasar)</option>
-                                        @endif
-                                        
+
+                                        {{-- 3. Tampilkan Sisa UOM yang Tersedia di Database Item --}}
                                         @if(optional($item->item)->itemUoms)
                                             @foreach($item->item->itemUoms as $altUom)
-                                                @php $valString = $altUom->uom_name . ' (Isi: ' . (float)$altUom->conversion_qty . ')'; @endphp
-                                                @if(strtolower($valString) !== strtolower($safeCurrentUom) && strtolower($valString) !== strtolower($safePrUom))
-                                                    <option value="{{ $valString }}" data-conv="{{ (float)$altUom->conversion_qty }}">{{ $altUom->uom_name }} (Isi: {{ (float)$altUom->conversion_qty }})</option>
+                                                @if($altUom->id != $item->uom_id)
+                                                    <option value="{{ $altUom->id }}" data-name="{{ $altUom->uom_name }} (Isi: {{ (float)$altUom->conversion_qty }} {{ $baseUomName }})" data-conv="{{ (float)$altUom->conversion_qty }}">
+                                                        {{ $altUom->uom_name }} (Isi: {{ (float)$altUom->conversion_qty }})
+                                                    </option>
                                                 @endif
                                             @endforeach
                                         @endif
                                     </select>
-                                    
-                                    <div class="text-muted mt-1" style="font-size: 0.7rem;" id="max-help-{{ $item->id }}">
+                                    {{-- Teks UOM Disimpan Sembunyi --}}
+                                    <input type="hidden" name="po_items[{{ $item->id }}][uom]" id="uom-name-{{ $item->id }}" value="{{ $safeCurrentUomName }}">
+
+                                    <div class="mt-1 text-muted" style="font-size: 0.7rem;" id="max-help-{{ $item->id }}">
                                         Batas Max PR: <strong class="text-danger" id="max-val-{{ $item->id }}">{{ $remainingNominal }}</strong>
                                     </div>
                                 </div>
@@ -364,7 +347,7 @@
                                 {{-- HARGA --}}
                                 <div class="col-md-3">
                                     <label class="form-label small fw-bold text-dark">Harga Satuan <span class="text-danger">*</span></label>
-                                    <div class="input-group-modern shadow-sm">
+                                    <div class="shadow-sm input-group-modern">
                                         <span class="input-group-text currency-label">{{ $po->currency }}</span>
                                         <input type="number" name="po_items[{{ $item->id }}][unit_price]" class="form-control text-end fw-bold price-input" value="{{ (float)$item->unit_price }}" min="0" step="any" oninput="calculateRow(this)" required>
                                     </div>
@@ -373,8 +356,8 @@
                                 {{-- DISKON --}}
                                 <div class="col-md-3">
                                     <label class="form-label small fw-bold text-dark">Diskon per Item</label>
-                                    <div class="input-group-modern shadow-sm">
-                                        <select name="po_items[{{ $item->id }}][discount_type]" class="form-select text-center fw-bold text-secondary disc-type" style="max-width: 65px;" onchange="calculateRow(this)">
+                                    <div class="shadow-sm input-group-modern">
+                                        <select name="po_items[{{ $item->id }}][discount_type]" class="text-center form-select fw-bold text-secondary disc-type" style="max-width: 65px;" onchange="calculateRow(this)">
                                             <option value="PERCENT" {{ $item->discount_type == 'PERCENT' ? 'selected' : '' }}>%</option>
                                             <option value="FIXED" {{ $item->discount_type == 'FIXED' ? 'selected' : '' }}>Nom</option>
                                         </select>
@@ -386,7 +369,7 @@
                                 {{-- PAJAK --}}
                                 <div class="col-md-3">
                                     <label class="form-label small fw-bold text-dark">Pajak (VAT/PPN)</label>
-                                    <select name="po_items[{{ $item->id }}][tax_id]" class="form-select form-input-custom shadow-sm tax-select fw-bold text-muted" onchange="calculateRow(this)">
+                                    <select name="po_items[{{ $item->id }}][tax_id]" class="shadow-sm form-select form-input-custom tax-select fw-bold text-muted" onchange="calculateRow(this)">
                                         <option value="" data-percent="0">- Tanpa Pajak -</option>
                                         @foreach($taxes as $tax)
                                             <option value="{{ $tax->id }}" data-percent="{{ $tax->percent }}" {{ $item->tax_id == $tax->id ? 'selected' : '' }}>+ {{ $tax->name }} ({{ $tax->percent }}%)</option>
@@ -395,21 +378,22 @@
                                     <input type="hidden" name="po_items[{{ $item->id }}][tax_amount]" class="tax-amt-hidden" value="{{ (float)$item->tax_amount }}">
                                 </div>
                             </div>
+
                         </div>
                     </div>
                 @endforeach
             </div>
 
             {{-- 3. BIAYA LAIN & POTONGAN LAIN --}}
-            <div class="row g-4 mb-4 mt-2">
+            <div class="mt-2 mb-4 row g-4">
                 <div class="col-md-6">
-                    <div class="card shadow-sm border-0 rounded-4 h-100">
-                        <div class="card-header bg-white py-3 d-flex justify-content-between align-items-center border-bottom">
+                    <div class="border-0 shadow-sm card rounded-4 h-100">
+                        <div class="py-3 bg-white card-header d-flex justify-content-between align-items-center border-bottom">
                             <h6 class="mb-0 fw-bold text-dark"><i class="bi bi-truck text-success me-2"></i>Biaya Tambahan (+)</h6>
-                            <button type="button" class="btn btn-sm btn-light border text-primary rounded-pill fw-bold" onclick="addChargeRow()"><i class="bi bi-plus-lg"></i> Baris</button>
+                            <button type="button" class="border btn btn-sm btn-light text-primary rounded-pill fw-bold" onclick="addChargeRow()"><i class="bi bi-plus-lg"></i> Baris</button>
                         </div>
-                        <div class="card-body p-3 bg-light rounded-bottom-4">
-                            <table class="table table-borderless table-sm mb-0">
+                        <div class="p-3 card-body bg-light rounded-bottom-4">
+                            <table class="table mb-0 table-borderless table-sm">
                                 <tbody id="chargesContainer">
                                     @foreach($charges as $idx => $charge)
                                         <tr class="charge-row border-bottom">
@@ -420,7 +404,7 @@
                                                 <input type="number" name="charges[{{ $idx }}][amount]" class="form-control form-input-custom text-end fw-bold text-success charge-input" value="{{ (float)$charge->amount }}" min="0" step="any" oninput="calculateGrandTotal()" required>
                                             </td>
                                             <td width="10%" class="p-1 pb-2 text-center">
-                                                <button type="button" class="btn text-danger p-0 mt-1" onclick="removeRow(this)"><i class="bi bi-trash-fill fs-5"></i></button>
+                                                <button type="button" class="p-0 mt-1 btn text-danger" onclick="removeRow(this)"><i class="bi bi-trash-fill fs-5"></i></button>
                                             </td>
                                         </tr>
                                     @endforeach
@@ -430,13 +414,13 @@
                     </div>
                 </div>
                 <div class="col-md-6">
-                    <div class="card shadow-sm border-0 rounded-4 h-100">
-                        <div class="card-header bg-white py-3 d-flex justify-content-between align-items-center border-bottom">
+                    <div class="border-0 shadow-sm card rounded-4 h-100">
+                        <div class="py-3 bg-white card-header d-flex justify-content-between align-items-center border-bottom">
                             <h6 class="mb-0 fw-bold text-dark"><i class="bi bi-ticket-perforated text-danger me-2"></i>Potongan Voucher (-)</h6>
-                            <button type="button" class="btn btn-sm btn-light border text-danger rounded-pill fw-bold" onclick="addExtraDiscRow()"><i class="bi bi-plus-lg"></i> Baris</button>
+                            <button type="button" class="border btn btn-sm btn-light text-danger rounded-pill fw-bold" onclick="addExtraDiscRow()"><i class="bi bi-plus-lg"></i> Baris</button>
                         </div>
-                        <div class="card-body p-3 bg-light rounded-bottom-4">
-                            <table class="table table-borderless table-sm mb-0">
+                        <div class="p-3 card-body bg-light rounded-bottom-4">
+                            <table class="table mb-0 table-borderless table-sm">
                                 <tbody id="extraDiscContainer">
                                     @foreach($extraDiscounts as $idx => $disc)
                                         <tr class="extradisc-row border-bottom">
@@ -447,7 +431,7 @@
                                                 <input type="number" name="extra_discounts[{{ $idx }}][amount]" class="form-control form-input-custom text-end fw-bold text-danger extradisc-input" value="{{ (float)$disc->amount }}" min="0" step="any" oninput="calculateGrandTotal()" required>
                                             </td>
                                             <td width="10%" class="p-1 pb-2 text-center">
-                                                <button type="button" class="btn text-danger p-0 mt-1" onclick="removeRow(this)"><i class="bi bi-trash-fill fs-5"></i></button>
+                                                <button type="button" class="p-0 mt-1 btn text-danger" onclick="removeRow(this)"><i class="bi bi-trash-fill fs-5"></i></button>
                                             </td>
                                         </tr>
                                     @endforeach
@@ -457,21 +441,21 @@
                     </div>
                 </div>
             </div>
-            
+
             {{-- Dokumen Header & Catatan --}}
-            <div class="card shadow-sm border-0 rounded-4 mb-4">
-                <div class="card-body p-4">
+            <div class="mb-4 border-0 shadow-sm card rounded-4">
+                <div class="p-4 card-body">
                     <div class="row">
                         <div class="col-md-6">
                             <label class="form-label fw-bold text-dark"><i class="bi bi-file-text me-2 text-primary"></i>Catatan Internal / Pesan Utama PO</label>
                             <textarea name="notes" class="form-control form-input-custom bg-light" rows="3">{{ $po->notes }}</textarea>
                         </div>
-                        <div class="col-md-6 border-start pl-4">
+                        <div class="pl-4 col-md-6 border-start">
                             <label class="form-label fw-bold text-dark"><i class="bi bi-paperclip me-2 text-primary"></i>File Master PO (Eksisting)</label>
                             @if($po->attachments && $po->attachments->count() > 0)
                                 <div class="mb-2">
                                     @foreach($po->attachments as $file)
-                                        <div class="d-flex justify-content-between border rounded p-2 mb-1 bg-light">
+                                        <div class="p-2 mb-1 border rounded d-flex justify-content-between bg-light">
                                             <a href="{{ asset('storage/' . $file->file_path) }}" target="_blank" class="small text-decoration-none fw-bold"><i class="bi bi-search text-success me-1"></i> {{ $file->file_name }}</a>
                                             {{-- 🔥 TOMBOL HAPUS LAMPIRAN HEADER 🔥 --}}
                                             <a href="{{ route('po.delete_header_attachment', $file->id) }}" class="text-danger small" onclick="return confirm('Hapus file master ini secara permanen?')"><i class="bi bi-trash"></i></a>
@@ -479,10 +463,10 @@
                                     @endforeach
                                 </div>
                             @else
-                                <div class="text-muted small fst-italic py-2">Belum ada file terlampir.</div>
+                                <div class="py-2 text-muted small fst-italic">Belum ada file terlampir.</div>
                             @endif
-                            
-                            <label class="form-label fw-bold text-dark mt-3"><i class="bi bi-cloud-upload me-1 text-primary"></i>Upload Tambahan Header PO</label>
+
+                            <label class="mt-3 form-label fw-bold text-dark"><i class="bi bi-cloud-upload me-1 text-primary"></i>Upload Tambahan Header PO</label>
                             <input type="file" name="header_attachments[]" class="form-control form-control-sm border-secondary-subtle" multiple accept=".pdf,.jpg,.jpeg,.png,.xls,.xlsx,.doc,.docx">
                         </div>
                     </div>
@@ -493,30 +477,30 @@
 
         {{-- ================= AREA KANAN (RINGKASAN & JADWAL) ================= --}}
         <div class="col-xl-4 col-lg-5">
-            <div class="card summary-card shadow-lg bg-white overflow-hidden">
-                <div class="bg-primary p-4 text-white text-center">
-                    <div class="small fw-bolder text-white-50 text-uppercase mb-2" style="letter-spacing: 1.5px;">Estimasi Total PO</div>
+            <div class="overflow-hidden bg-white shadow-lg card summary-card">
+                <div class="p-4 text-center text-white bg-primary">
+                    <div class="mb-2 small fw-bolder text-white-50 text-uppercase" style="letter-spacing: 1.5px;">Estimasi Total PO</div>
                     <div class="d-flex justify-content-center align-items-center">
-                        <span class="currency-label fs-5 me-2 opacity-75 fw-bold">{{ $po->currency }}</span>
+                        <span class="opacity-75 currency-label fs-5 me-2 fw-bold">{{ $po->currency }}</span>
                         <h1 class="mb-0 fw-bolder" id="lblGrandTotal" style="font-size: 2.5rem;">0</h1>
                     </div>
                 </div>
 
-                <div class="card-body p-4">
-                    <div class="mb-4 bg-light p-3 rounded-3 border border-warning-subtle">
-                        <label class="form-label small fw-bold text-dark mb-2">Diskon Global (Header PO)</label>
-                        <div class="input-group input-group-sm mb-1 shadow-sm rounded-2 overflow-hidden border">
-                            <select name="global_discount_type" id="globalDiscType" class="px-1 text-center form-select border-0 bg-white fw-bold" style="max-width: 60px;" onchange="calculateGrandTotal()">
+                <div class="p-4 card-body">
+                    <div class="p-3 mb-4 border bg-light rounded-3 border-warning-subtle">
+                        <label class="mb-2 form-label small fw-bold text-dark">Diskon Global (Header PO)</label>
+                        <div class="mb-1 overflow-hidden border shadow-sm input-group input-group-sm rounded-2">
+                            <select name="global_discount_type" id="globalDiscType" class="px-1 text-center bg-white border-0 form-select fw-bold" style="max-width: 60px;" onchange="calculateGrandTotal()">
                                 <option value="PERCENT" {{ $po->global_discount_type == 'PERCENT' ? 'selected' : '' }}>%</option>
                                 <option value="FIXED" {{ $po->global_discount_type == 'FIXED' ? 'selected' : '' }}>Nom</option>
                             </select>
-                            <input type="number" name="global_discount_value" id="globalDiscValue" class="px-2 form-control text-end border-0 fw-bold text-danger" value="{{ (float)$po->global_discount_value }}" min="0" step="any" oninput="calculateGrandTotal()">
+                            <input type="number" name="global_discount_value" id="globalDiscValue" class="px-2 border-0 form-control text-end fw-bold text-danger" value="{{ (float)$po->global_discount_value }}" min="0" step="any" oninput="calculateGrandTotal()">
                         </div>
                     </div>
 
-                    <div class="mb-4 bg-light p-3 rounded-3 border border-primary-subtle">
-                        <label class="form-label small fw-bold text-dark mb-2"><i class="bi bi-magic me-1 text-primary"></i> Terapkan Pajak ke Semua Item</label>
-                        <select id="globalTaxSelect" class="form-select form-select-sm border-0 fw-bold text-muted shadow-sm" onchange="applyGlobalTax(this)">
+                    <div class="p-3 mb-4 border bg-light rounded-3 border-primary-subtle">
+                        <label class="mb-2 form-label small fw-bold text-dark"><i class="bi bi-magic me-1 text-primary"></i> Terapkan Pajak ke Semua Item</label>
+                        <select id="globalTaxSelect" class="border-0 shadow-sm form-select form-select-sm fw-bold text-muted" onchange="applyGlobalTax(this)">
                             <option value="">-- Pilih Pajak --</option>
                             <option value="RESET">Hapus Semua Pajak</option>
                             @foreach($taxes as $tax)
@@ -526,17 +510,17 @@
                     </div>
 
                     {{-- Rincian Hitungan --}}
-                    <h6 class="fw-bold text-dark mb-3 border-bottom pb-2">Rincian Kalkulasi</h6>
-                    <div class="d-flex justify-content-between mb-2 small text-muted"><span>Total Bruto (Item)</span><span class="fw-bold text-dark" id="lblSubtotal">0</span></div>
-                    <div class="d-flex justify-content-between mb-2 small text-danger"><span>Total Diskon Item (-)</span><span class="fw-bold" id="lblTotalItemDisc">0</span></div>
-                    <div class="d-flex justify-content-between mb-2 small text-primary fw-bolder"><span>DPP (Dasar Pajak)</span><span id="lblDpp">0</span></div>
-                    <div class="d-flex justify-content-between mb-2 small text-danger fw-bolder"><span>Diskon Global (-)</span><span id="lblGlobalDisc">0</span></div>
-                    <div class="d-flex justify-content-between mb-2 small text-muted"><span>Total Pajak PPN (+)</span><span class="fw-bold text-dark" id="lblTax">0</span></div>
-                    <div class="d-flex justify-content-between mb-2 small text-success"><span>Biaya Tambahan (+)</span><span class="fw-bold" id="lblCharges">0</span></div>
-                    <div class="d-flex justify-content-between mb-4 small text-danger border-bottom pb-3"><span>Potongan Voucher (-)</span><span class="fw-bold" id="lblExtraDisc">0</span></div>
+                    <h6 class="pb-2 mb-3 fw-bold text-dark border-bottom">Rincian Kalkulasi</h6>
+                    <div class="mb-2 d-flex justify-content-between small text-muted"><span>Total Bruto (Item)</span><span class="fw-bold text-dark" id="lblSubtotal">0</span></div>
+                    <div class="mb-2 d-flex justify-content-between small text-danger"><span>Total Diskon Item (-)</span><span class="fw-bold" id="lblTotalItemDisc">0</span></div>
+                    <div class="mb-2 d-flex justify-content-between small text-primary fw-bolder"><span>DPP (Dasar Pajak)</span><span id="lblDpp">0</span></div>
+                    <div class="mb-2 d-flex justify-content-between small text-danger fw-bolder"><span>Diskon Global (-)</span><span id="lblGlobalDisc">0</span></div>
+                    <div class="mb-2 d-flex justify-content-between small text-muted"><span>Total Pajak PPN (+)</span><span class="fw-bold text-dark" id="lblTax">0</span></div>
+                    <div class="mb-2 d-flex justify-content-between small text-success"><span>Biaya Tambahan (+)</span><span class="fw-bold" id="lblCharges">0</span></div>
+                    <div class="pb-3 mb-4 d-flex justify-content-between small text-danger border-bottom"><span>Potongan Voucher (-)</span><span class="fw-bold" id="lblExtraDisc">0</span></div>
 
                     {{-- TANGGAL & TERMIN --}}
-                    <h6 class="fw-bold text-dark mb-3 border-bottom pb-2 pt-3">Jadwal & Pembayaran</h6>
+                    <h6 class="pt-3 pb-2 mb-3 fw-bold text-dark border-bottom">Jadwal & Pembayaran</h6>
                     <div class="mb-3">
                         <label class="form-label small fw-bold text-muted">Tanggal PO <span class="text-danger">*</span></label>
                         <input type="date" name="po_date" id="poDateInput" class="form-control form-input-custom fw-bold" value="{{ \Carbon\Carbon::parse($po->po_date)->format('Y-m-d') }}" required onchange="calculateDueDate()">
@@ -575,7 +559,7 @@
     <tr class="charge-row border-bottom">
         <td width="55%" class="p-1 pb-2"><input type="text" name="charges[INDEX][charge_type_id]" class="form-control form-input-custom" list="chargeTypeList" placeholder="Ketik Biaya..." required></td>
         <td width="35%" class="p-1 pb-2"><input type="number" name="charges[INDEX][amount]" class="form-control form-input-custom text-end fw-bold text-success charge-input" placeholder="0" min="0" step="any" oninput="calculateGrandTotal()" required></td>
-        <td width="10%" class="p-1 pb-2 text-center"><button type="button" class="btn text-danger p-0 mt-1" onclick="removeRow(this)"><i class="bi bi-trash-fill fs-5"></i></button></td>
+        <td width="10%" class="p-1 pb-2 text-center"><button type="button" class="p-0 mt-1 btn text-danger" onclick="removeRow(this)"><i class="bi bi-trash-fill fs-5"></i></button></td>
     </tr>
 </template>
 
@@ -583,7 +567,7 @@
     <tr class="extradisc-row border-bottom">
         <td width="55%" class="p-1 pb-2"><input type="text" name="extra_discounts[INDEX][discount_type_id]" class="form-control form-input-custom" list="discountTypeList" placeholder="Ketik Voucher..." required></td>
         <td width="35%" class="p-1 pb-2"><input type="number" name="extra_discounts[INDEX][amount]" class="form-control form-input-custom text-end fw-bold text-danger extradisc-input" placeholder="0" min="0" step="any" oninput="calculateGrandTotal()" required></td>
-        <td width="10%" class="p-1 pb-2 text-center"><button type="button" class="btn text-danger p-0 mt-1" onclick="removeRow(this)"><i class="bi bi-trash-fill fs-5"></i></button></td>
+        <td width="10%" class="p-1 pb-2 text-center"><button type="button" class="p-0 mt-1 btn text-danger" onclick="removeRow(this)"><i class="bi bi-trash-fill fs-5"></i></button></td>
     </tr>
 </template>
 @endsection
@@ -600,7 +584,7 @@
 
     function initCKEditor(selectorId) {
         let domElement = document.querySelector('#' + selectorId);
-        if (domElement && !domElement.ckeditorInstance) { 
+        if (domElement && !domElement.ckeditorInstance) {
             ClassicEditor.create(domElement, { toolbar: [ 'heading', '|', 'bold', 'italic', 'bulletedList', 'numberedList', 'blockQuote', '|', 'undo', 'redo' ] })
                 .then(editor => { myEditors[selectorId] = editor; domElement.ckeditorInstance = editor; })
                 .catch(err => console.error(err));
@@ -609,9 +593,9 @@
 
     $(document).ready(function() {
         $('.select2-init').select2({ theme: 'bootstrap-5', width: '100%' });
-        
+
         document.querySelectorAll('.ckeditor-spec').forEach(ta => initCKEditor(ta.id));
-        
+
         document.querySelectorAll('.item-row').forEach(row => calculateRow(row.querySelector('.qty-input')));
         updateCurrencySymbol();
         calculateGrandTotal();
@@ -638,7 +622,7 @@
         chargeIdx++;
         document.getElementById('chargesContainer').insertAdjacentHTML('beforeend', document.getElementById('chargeRowTemplate').innerHTML.replace(/INDEX/g, chargeIdx));
     }
-    
+
     function addExtraDiscRow() {
         discIdx++;
         document.getElementById('extraDiscContainer').insertAdjacentHTML('beforeend', document.getElementById('extraDiscRowTemplate').innerHTML.replace(/INDEX/g, discIdx));
@@ -650,17 +634,21 @@
         let selectedOption = selectEl.options[selectEl.selectedIndex];
         let newConvRate = parseFloat(selectedOption.getAttribute('data-conv')) || 1;
         let oldConvRate = parseFloat(selectEl.getAttribute('data-current-conv')) || 1;
-        
+        let newUomName = selectedOption.getAttribute('data-name') || '';
+
+        let uomNameInput = document.getElementById(`uom-name-${index}`);
+        if(uomNameInput) uomNameInput.value = newUomName;
+
         let qtyInput = document.getElementById(`qty-input-${index}`);
         let currentQty = parseFloat(qtyInput.value) || 0;
         let sisaBaseQty = parseFloat(qtyInput.getAttribute('data-base-remaining')) || 0;
-        
+
         let newQty = (currentQty * oldConvRate) / newConvRate;
         let newMaxVal = sisaBaseQty / newConvRate;
-        
+
         qtyInput.max = newMaxVal;
         qtyInput.value = parseFloat(newQty.toFixed(2));
-        
+
         if(parseFloat(qtyInput.value) > newMaxVal) {
             qtyInput.value = newMaxVal;
         }
@@ -673,11 +661,10 @@
         calculateRow(qtyInput);
     }
 
-    // 🔥 JURUS NAMA FLAT ARRAY: item_attachments_X[] 🔥
     function triggerFilePicker(index) {
         let fileInput = document.createElement('input');
         fileInput.type = 'file';
-        fileInput.name = `item_attachments_${index}[]`; 
+        fileInput.name = `item_attachments_${index}[]`;
         fileInput.multiple = true;
         fileInput.accept = '.pdf,.jpg,.jpeg,.png,.doc,.docx,.xls,.xlsx';
 
@@ -686,19 +673,19 @@
                 let hiddenContainer = document.getElementById('hiddenFileInputs_' + index);
                 let listContainer = document.getElementById('fileListContainer_' + index);
                 let inputId = 'fileInput_' + Date.now() + Math.random().toString(36).substr(2, 5);
-                
+
                 this.id = inputId;
                 hiddenContainer.appendChild(this);
 
                 Array.from(this.files).forEach((file, fileIndex) => {
                     let pillId = 'pill_' + inputId + '_' + fileIndex;
                     let pillHTML = `
-                        <div id="${pillId}" class="file-pill d-flex align-items-center justify-content-between bg-white border rounded-3 p-1 shadow-sm mt-1">
-                            <div class="d-flex align-items-center overflow-hidden">
+                        <div id="${pillId}" class="p-1 mt-1 bg-white border shadow-sm file-pill d-flex align-items-center justify-content-between rounded-3">
+                            <div class="overflow-hidden d-flex align-items-center">
                                 <div class="bg-primary bg-opacity-10 text-primary rounded-circle d-flex justify-content-center align-items-center me-2" style="width: 25px; height: 25px; font-size: 0.7rem;"><i class="bi bi-file-earmark-text-fill"></i></div>
                                 <div class="text-truncate"><div class="fw-bold text-dark text-truncate" style="max-width: 100px; font-size: 0.65rem;" title="${file.name}">${file.name}</div></div>
                             </div>
-                            <button type="button" class="btn btn-link text-danger p-0 ms-1" onclick="removeSpecificFile('${inputId}', ${fileIndex}, '${pillId}')" title="Hapus File"><i class="bi bi-x-circle-fill"></i></button>
+                            <button type="button" class="p-0 btn btn-link text-danger ms-1" onclick="removeSpecificFile('${inputId}', ${fileIndex}, '${pillId}')" title="Hapus File"><i class="bi bi-x-circle-fill"></i></button>
                         </div>
                     `;
                     listContainer.insertAdjacentHTML('beforeend', pillHTML);
@@ -714,7 +701,7 @@
             let dt = new DataTransfer();
             let files = inputEle.files;
             for(let i = 0; i < files.length; i++) {
-                if(i !== fileIndexToRemove) dt.items.add(files[i]); 
+                if(i !== fileIndexToRemove) dt.items.add(files[i]);
             }
             inputEle.files = dt.files;
             if(inputEle.files.length === 0) inputEle.remove();
@@ -790,9 +777,9 @@
     function updateCurrencySymbol() {
         let currencySelect = document.getElementById('currencySelect');
         if(!currencySelect) return;
-        
+
         let currency = currencySelect.value;
-        
+
         document.querySelectorAll('.currency-label').forEach(el => {
             el.innerText = currency;
         });
@@ -806,11 +793,11 @@
         e.preventDefault();
         let form = this;
 
-        for (let editorId in myEditors) { 
-            if (myEditors[editorId]) myEditors[editorId].updateSourceElement(); 
+        for (let editorId in myEditors) {
+            if (myEditors[editorId]) myEditors[editorId].updateSourceElement();
         }
-        
-        if(!this.checkValidity()) { 
+
+        if(!this.checkValidity()) {
             let invalidElements = this.querySelectorAll(':invalid');
             if(invalidElements.length > 0) {
                 let firstInvalid = invalidElements[0];
@@ -831,11 +818,11 @@
                     firstInvalid.focus();
                 });
             }
-            return; 
+            return;
         }
 
-        $('input[type="file"]').each(function() { 
-            if ($(this).val() === '') $(this).prop('disabled', true); 
+        $('input[type="file"]').each(function() {
+            if ($(this).val() === '') $(this).prop('disabled', true);
         });
 
         // Validasi Sisa Jatah PR
@@ -867,27 +854,27 @@
         }
 
         if(!isValidSisa) {
-            $('input[type="file"]').prop('disabled', false); 
+            $('input[type="file"]').prop('disabled', false);
             Swal.fire({
                 title: 'Melebihi Jatah PR!', html: errorMessage, icon: 'error', confirmButtonColor: '#dc3545', confirmButtonText: 'Oke, Saya Revisi'
             });
-            return; 
+            return;
         }
 
-        Swal.fire({ 
-            title: 'Simpan Perubahan?', 
-            text: "Perubahan akan disimpan permanen.", 
-            icon: 'question', 
-            showCancelButton: true, 
-            confirmButtonColor: '#198754', 
-            cancelButtonColor: '#6c757d', 
-            confirmButtonText: 'Ya, Simpan!' 
+        Swal.fire({
+            title: 'Simpan Perubahan?',
+            text: "Perubahan akan disimpan permanen.",
+            icon: 'question',
+            showCancelButton: true,
+            confirmButtonColor: '#198754',
+            cancelButtonColor: '#6c757d',
+            confirmButtonText: 'Ya, Simpan!'
         }).then((result) => {
             if (result.isConfirmed) {
                 Swal.fire({ title: 'Menyimpan...', allowOutsideClick: false, didOpen: () => Swal.showLoading() });
                 form.submit();
             } else {
-                $('input[type="file"]').prop('disabled', false); 
+                $('input[type="file"]').prop('disabled', false);
             }
         });
     });
