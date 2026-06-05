@@ -98,4 +98,12 @@ class PurchaseRequestItem extends Model
 
 
 
+    // Relasi untuk menarik data PO yang nyangkut ke Item PR ini
+    public function purchaseOrderItems()
+    {
+        return $this->hasMany(PurchaseOrderItem::class, 'purchase_request_item_id');
+    }
+
+
+
 }

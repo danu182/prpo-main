@@ -69,7 +69,7 @@ Route::middleware('auth')->group(function () {
 
         // Rute untuk AJAX Search (Harus di atas rute pr/{id} jika ada)
         Route::get('/pr/search-items', [App\Http\Controllers\PurchaseRequestController::class, 'searchItems'])->name('pr.search-items');
-       
+
 
     });
 
@@ -78,11 +78,11 @@ Route::middleware('auth')->group(function () {
     // ====================================================
     Route::prefix('po')->name('po.')->group(function () {
         Route::get('/', [PurchaseOrderController::class, 'index'])->name('index')->middleware('can:view_po');
-        
+
         // Memproses dari PR (Tetap pakai ID/Slug PR sebagai acuan awal)
         Route::get('/process-pr/{slug}', [PurchaseOrderController::class, 'processPr'])->name('process_pr')->middleware('can:view_po');
         Route::post('/store-from-pr/{slug}', [PurchaseOrderController::class, 'storeFromPr'])->name('store_from_pr')->middleware('can:view_po');
-        
+
         // Rute PO menggunakan Slug (Nomor PO)
         Route::get('/show/{slug}', [PurchaseOrderController::class, 'show'])->name('show')->middleware('can:view_po');
         Route::get('/edit/{slug}', [PurchaseOrderController::class, 'edit'])->name('edit')->middleware('can:view_po');
@@ -109,7 +109,7 @@ Route::middleware('auth')->group(function () {
 
     });
 
-    
+
     // ====================================================
     // 3. MODUL PENERIMAAN BARANG (GR) -> Izin: view_gr
     // ====================================================
@@ -228,12 +228,12 @@ Route::middleware('auth')->group(function () {
         Route::get('/', [GoodsIssueController::class, 'index'])->name('index');
         Route::get('/create', [GoodsIssueController::class, 'create'])->name('create');
         Route::post('/', [GoodsIssueController::class, 'store'])->name('store');
-        
+
         // Rute API Pencarian
         Route::get('/api/search-items', [GoodsIssueController::class, 'searchItems'])->name('search-items');
         Route::get('/api/search-assets', [GoodsIssueController::class, 'searchFixedAssets'])->name('search-assets');
         Route::get('/api/search-batches', [GoodsIssueController::class, 'searchBatches'])->name('search-batches');
-        
+
         // 🔥 SEMUA RUTE SPESIFIK MENGGUNAKAN SLUG SEKARANG 🔥
         Route::get('/{slug}', [GoodsIssueController::class, 'show'])->name('show');
         Route::get('/{slug}/print', [GoodsIssueController::class, 'print'])->name('print');
@@ -297,13 +297,13 @@ Route::middleware('auth')->group(function () {
     // ====================================================
     Route::prefix('rtv')->name('rtv.')->group(function () {
         Route::get('/', [\App\Http\Controllers\ReturnToVendorController::class, 'index'])->name('index');
-        
+
         // 🔥 PASTIKAN ADA ->where('slug', '.*') DI BAGIAN AKHIR INI 🔥
         Route::get('/create/{slug}', [\App\Http\Controllers\ReturnToVendorController::class, 'create'])->name('create')->where('slug', '.*');
         Route::post('/store/{slug}', [\App\Http\Controllers\ReturnToVendorController::class, 'store'])->name('store')->where('slug', '.*');
 
         Route::get('/{slug}/show', [\App\Http\Controllers\ReturnToVendorController::class, 'show'])->name('show')->where('slug', '.*');
-        
+
         // 🔥 TAMBAHKAN RUTE PRINT INI KOMANDAN! 🔥
         Route::get('/{slug}/print', [\App\Http\Controllers\ReturnToVendorController::class, 'print'])->name('print')->where('slug', '.*');
     });
@@ -423,7 +423,7 @@ Route::middleware('auth')->group(function () {
     // ====================================================
     Route::prefix('vendor-invoices')->name('vendor-invoices.')->middleware(['can:view_invoices'])->group(function () {
         Route::get('/', [VendorInvoiceController::class, 'index'])->name('index');
-        
+
         // PENTING: Tambahkan ->where('slug', '.*') di semua rute yang punya parameter {slug}
         Route::post('/from-gr/{slug}', [VendorInvoiceController::class, 'createFromGr'])->name('createFromGr')->where('slug', '.*');
         Route::get('/{slug}', [VendorInvoiceController::class, 'show'])->name('show')->where('slug', '.*');
@@ -439,10 +439,10 @@ Route::middleware('auth')->group(function () {
         // Rute Void
         Route::delete('/{slug}/cancel-invoice', [VendorInvoiceController::class, 'cancelInvoice'])->name('cancelInvoice')->where('slug', '.*');
         Route::delete('/payment/{id}/cancel', [VendorInvoiceController::class, 'cancelPayment'])->name('cancelPayment');
-    
+
     });
 
-    
+
 
     Route::prefix('bills')->name('bills.')->middleware(['can:view_bills'])->group(function () {
         Route::get('/', [BillRequestController::class, 'index'])->name('index');
@@ -479,6 +479,13 @@ Route::middleware('auth')->group(function () {
         Route::get('/finance', [FinanceReportController::class, 'index'])->name('finance');
         Route::get('/finance/pdf', [FinanceReportController::class, 'exportPdf'])->name('finance.pdf');
         Route::get('/finance/excel', [FinanceReportController::class, 'exportExcel'])->name('finance.excel');
+
+
+
+
+        // Route untuk Laporan 3-Way Matching
+        Route::get('/three-way-matching', [\App\Http\Controllers\ReportController::class, 'threeWayMatching'])->name('3way');
+
     });
 
     // ====================================================

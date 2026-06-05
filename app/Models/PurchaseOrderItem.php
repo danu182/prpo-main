@@ -41,4 +41,11 @@ class PurchaseOrderItem extends Model
 
 
 
+    // Relasi untuk menarik data Penerimaan Barang (GR) yang nyangkut ke Item PO ini
+    public function goodsReceiptItems()
+    {
+        return $this->hasMany(GoodsReceiptItem::class, 'purchase_order_item_id');
+    }
+
+
 }
