@@ -31,7 +31,7 @@
         background-color: rgba(255, 255, 255, 0.5);
     }
 </style>
-    
+
 @endpush
 
 @section('content')
@@ -42,7 +42,7 @@
     <div class="void-stamp-container">
         <div class="void-stamp">VOID</div>
     </div>
-    
+
     {{-- Sisanya sama seperti sebelumnya... --}}
 
     {{-- HEADER HALAMAN & TOMBOL AKSI --}}
@@ -74,7 +74,7 @@
                 <a href="{{ route('goods-issues.print_labels', $gi->gi_number) }}" target="_blank" class="shadow-sm btn btn-dark rounded-pill fw-bold">
                     <i class="bi bi-upc-scan me-1"></i> Cetak Label
                 </a>
-                
+
                 {{-- 🔥 PERBAIKAN: Gunakan gi_number (slug) bukan id 🔥 --}}
                 <a href="{{ route('goods-issues.bast', $gi->gi_number) }}" target="_blank" class="btn btn-danger rounded-pill fw-bold">
                     <i class="bi bi-printer me-1"></i> Cetak BAST
@@ -171,9 +171,12 @@
                             </td>
 
                             {{-- TAMPILAN QTY KELUAR (SUDAH DITAMBAHKAN UOM) --}}
-                            <td class="text-center fw-bold text-danger fs-6">
-                                <i class="bi bi-box-arrow-up-right me-1"></i>{{ (float) $item->qty_issued }} {{ $item->item->uom->name ?? 'Unit' }}<br>
-                                <span class="fw-normal text-muted" style="font-size: 0.7rem;">{{ optional($item->item)->unit }}</span>
+                            <td class="py-3 text-center fw-bold text-danger fs-5">
+                                <i class="bi bi-box-arrow-up-right me-1"></i> {{ (float) $item->qty_issued }} <br>
+                                <span class="text-nowrap fw-bold text-muted text-uppercase" style="font-size: 0.65rem;">
+                                    {{-- Gunakan getRawOriginal untuk memanggil teks "Pack (Isi 10 Pieces)" dari tabel transaksi --}}
+                                    {{ $item->getRawOriginal('uom') ?: (optional(optional($item->item)->uom)->name ?? 'PCS') }}
+                                </span>
                             </td>
 
                             {{-- TAMPILAN QTY RETUR --}}

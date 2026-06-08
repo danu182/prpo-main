@@ -14,7 +14,9 @@ class GoodsIssueItem extends Model
         'item_id',
         'qty_issued',
         'qty_returned',
-        'notes'
+        'notes',
+        'uom_id', // <--- Pastikan ini ada
+        'uom',    // <--- Pastikan ini ada
     ];
 
     // Relasi balik ke Header GI

@@ -45,6 +45,7 @@
                     <div class="fw-bold text-dark"><i class="bi bi-person-badge text-primary me-1"></i> {{ optional($gr->receiver)->name ?? 'Sistem' }}</div>
                 </div>
 
+                {{-- BARIS BAWAH: PO, VENDOR, GUDANG, CATATAN --}}
                 <div class="pt-3 col-md-3 border-top">
                     <label class="mb-1 small fw-bold text-muted text-uppercase">Referensi PO</label>
                     <div class="fw-bolder text-primary">
@@ -53,14 +54,29 @@
                         </a>
                     </div>
                 </div>
-                <div class="pt-3 col-md-5 border-top">
+
+                <div class="pt-3 col-md-3 border-top">
                     <label class="mb-1 small fw-bold text-muted text-uppercase">Vendor Pengirim</label>
-                    <div class="fw-bold text-dark"><i class="bi bi-shop text-warning me-1"></i> {{ optional(optional($gr->purchaseOrder)->vendor)->name ?? '-' }}</div>
+                    <div class="fw-bold text-dark text-truncate" title="{{ optional(optional($gr->purchaseOrder)->vendor)->name ?? '-' }}">
+                        <i class="bi bi-shop text-warning me-1"></i> {{ optional(optional($gr->purchaseOrder)->vendor)->name ?? '-' }}
+                    </div>
                 </div>
-                <div class="pt-3 col-md-4 border-top">
-                    <label class="mb-1 small fw-bold text-muted text-uppercase">Catatan Penerimaan Umum</label>
-                    <div class="text-dark fst-italic" style="font-size: 0.85rem;">{{ $gr->notes ?? 'Tidak ada catatan khusus.' }}</div>
+
+                {{-- 🔥 INI KOLOM GUDANG PENERIMA YANG BARU 🔥 --}}
+                <div class="pt-3 col-md-3 border-top">
+                    <label class="mb-1 small fw-bold text-muted text-uppercase">Gudang Penerima</label>
+                    <div class="fw-bold text-dark">
+                        <span class="px-2 py-1 border shadow-sm badge bg-light text-dark">
+                            <i class="bi bi-box-seam text-info me-1"></i> {{ optional($gr->warehouse)->name ?? 'Gudang Utama / Default' }}
+                        </span>
+                    </div>
                 </div>
+
+                <div class="pt-3 col-md-3 border-top">
+                    <label class="mb-1 small fw-bold text-muted text-uppercase">Catatan Penerimaan</label>
+                    <div class="text-dark fst-italic" style="font-size: 0.85rem;">{{ $gr->notes ?: 'Tidak ada catatan khusus.' }}</div>
+                </div>
+
             </div>
         </div>
     </div>
@@ -114,9 +130,33 @@
 
                         {{-- QTY PO --}}
                         <td class="py-3 text-center fw-bold text-secondary">
-                            {{ (float)optional($item->purchaseOrderItem)->qty_ordered }} <br>
-                            <span class="text-nowrap fw-normal" style="font-size: 0.65rem;">
-                                {{ is_string(optional($item->purchaseOrderItem)->uom) ? optional($item->purchaseOrderItem)->uom : (optional(optional($item->purchaseOrderItem)->uom)->name ?? 'PCS') }}
+                            @php
+                                $poItem = $item->purchaseOrderItem;
+                                $poUomText = 'PCS'; // Default cadangan
+
+                                if ($poItem) {
+                                    // 1. Cek apakah PO menggunakan uom_id (Relasi ke master satuan Pack/Dus)
+                                    if (!empty($poItem->uom_id) && optional($item->item)->itemUoms) {
+                                        $uomMaster = collect($item->item->itemUoms)->where('id', $poItem->uom_id)->first();
+                                        if ($uomMaster) {
+                                            $poUomText = $uomMaster->uom_name;
+                                            if ($uomMaster->conversion_qty > 1) {
+                                                // Rangkai teks: Pack (Isi 20 Pcs)
+                                                $baseName = optional(optional($item->item)->uom)->name ?? 'Pcs';
+                                                $poUomText .= ' (Isi ' . (float)$uomMaster->conversion_qty . ' ' . $baseName . ')';
+                                            }
+                                        }
+                                    }
+                                    // 2. Fallback jika PO hanya menggunakan teks biasa
+                                    elseif (!empty($poItem->uom)) {
+                                        $poUomText = is_string($poItem->uom) ? $poItem->uom : (optional($poItem->uom)->name ?? 'PCS');
+                                    }
+                                }
+                            @endphp
+
+                            {{ (float)optional($poItem)->qty_ordered }} <br>
+                            <span class="text-nowrap fw-normal text-uppercase" style="font-size: 0.65rem;">
+                                {{ $poUomText }}
                             </span>
                         </td>
 

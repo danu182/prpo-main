@@ -70,4 +70,10 @@ class GoodsReceipt extends Model implements HasMedia
     }
 
 
+    public function warehouse()
+    {
+        return $this->belongsTo(Warehouse::class, 'warehouse_id');
+    }
+
+
 }

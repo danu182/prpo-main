@@ -389,7 +389,9 @@ class GoodsReceiptController extends Controller
         $gr = \App\Models\GoodsReceipt::with([
             'purchaseOrder.vendor',
             'purchaseOrder.company',
+            'warehouse', // <--- TAMBAHKAN INI AGAR DATA GUDANG IKUT TERBAWA
             'items.item.uom',
+            'items.item.itemUoms',
             'items.item.serials' => function($query) use ($slug) {
                 $query->where('serial_number', 'like', "%")
                     ->orWhere('notes', 'like', "%")

@@ -7,10 +7,10 @@
 <style>
     /* 🔥 TAMBAHAN UNTUK MERAPIKAN KOTAK BIRU ASET 🔥 */
     .select2-container--bootstrap-5 .select2-selection--multiple .select2-selection__choice {
-        max-width: 95%; 
+        max-width: 95%;
         overflow: hidden;
-        text-overflow: ellipsis; 
-        white-space: nowrap; 
+        text-overflow: ellipsis;
+        white-space: nowrap;
         display: inline-block;
         vertical-align: middle;
     }
@@ -135,7 +135,7 @@
 
             {{-- ⚠️ PERINGATAN GUDANG (MUNCUL JIKA GUDANG BELUM DIPILIH) --}}
             <div class="px-4 py-3 text-center bg-warning-subtle text-warning-emphasis small fw-bold border-bottom" id="warehouse-warning">
-                <i class="bi bi-exclamation-circle fs-5 d-block mb-1"></i> 
+                <i class="mb-1 bi bi-exclamation-circle fs-5 d-block"></i>
                 SILAKAN PILIH "ASAL GUDANG" DI ATAS TERLEBIH DAHULU UNTUK MEMUNCULKAN DAFTAR BARANG.
             </div>
 
@@ -183,7 +183,7 @@
     // 🔥 FUNGSI SIHIR: DESAIN KARTU DROPDOWN ASET 🔥
     // =========================================================================
     function formatAssetList(state) {
-        if (!state.id) return state.text; 
+        if (!state.id) return state.text;
 
         // Sapu bersih tag HTML (seperti <p>) yang bocor dari database
         let tempDiv = document.createElement("div");
@@ -191,8 +191,8 @@
         let cleanText = tempDiv.textContent || tempDiv.innerText || "";
 
         // Pecah teks asli dari backend yang formatnya: "AST/2026/05/001 (solar) | SN: SKU-..."
-        let astNumber = cleanText.split(' (')[0] || cleanText; 
-        
+        let astNumber = cleanText.split(' (')[0] || cleanText;
+
         let descMatch = cleanText.match(/\((.*?)\)/);
         let description = descMatch ? descMatch[1] : '';
 
@@ -201,12 +201,12 @@
 
         // Bangun ulang UI yang sangat rapi (DENGAN TEKS WRAP AGAR SN FULL TERBACA)
         let $html = $(`
-            <div class="d-flex flex-column py-1 border-bottom border-light">
+            <div class="py-1 d-flex flex-column border-bottom border-light">
                 <span class="fw-bold text-dark" style="font-size: 0.85rem;">
                     <i class="bi bi-box me-1 text-primary"></i> ${astNumber}
                 </span>
-                ${description ? `<span class="text-muted text-truncate mt-1" style="font-size: 0.7rem; max-width: 100%;">Spec: ${description}</span>` : ''}
-                ${serialNumber ? `<div class="mt-1"><span class="badge bg-warning-subtle text-warning-emphasis border border-warning text-wrap text-start" style="font-size: 0.7rem; line-height: 1.4; word-break: break-word; width: 100%;"><i class="bi bi-upc-scan me-1"></i> SN: ${serialNumber}</span></div>` : ''}
+                ${description ? `<span class="mt-1 text-muted text-truncate" style="font-size: 0.7rem; max-width: 100%;">Spec: ${description}</span>` : ''}
+                ${serialNumber ? `<div class="mt-1"><span class="border badge bg-warning-subtle text-warning-emphasis border-warning text-wrap text-start" style="font-size: 0.7rem; line-height: 1.4; word-break: break-word; width: 100%;"><i class="bi bi-upc-scan me-1"></i> SN: ${serialNumber}</span></div>` : ''}
             </div>
         `);
         return $html;
@@ -214,7 +214,7 @@
 
     function formatAssetSelection(state) {
         if (!state.id) return state.text;
-        
+
         // Bersihkan HTML
         let tempDiv = document.createElement("div");
         tempDiv.innerHTML = state.text;
@@ -300,7 +300,7 @@
                     </td>
                     <td class="py-3">
                         <div class="qty-container">
-                            <div class="input-group input-group-sm shadow-sm">
+                            <div class="shadow-sm input-group input-group-sm">
                                 <input type="number" name="items[${rowCount}][qty_issued]" class="text-center form-control qty-input fw-bold text-danger border-danger" step="0.01" min="0.1" required placeholder="Qty">
                                 <select name="items[${rowCount}][uom_info]" class="form-select bg-light text-dark uom-select border-danger fw-bold" style="min-width: 140px; cursor: pointer;"></select>
                             </div>
@@ -382,7 +382,7 @@
 
                 assetContainer.removeClass('d-none');
                 if(assetSelect.hasClass("select2-hidden-accessible")) { assetSelect.select2('destroy'); }
-                
+
                 assetSelect.prop('required', true).select2({
                     theme: 'bootstrap-5', width: '100%', placeholder: 'Klik untuk pilih SN Aset...',
                     ajax: {
@@ -397,8 +397,8 @@
 
                 generalNotes.removeClass('d-none');
                 snContainer.addClass('d-none').empty();
-            } 
-            
+            }
+
             // ========================================================
             // SCENARIO 2: BARANG MURNI BULK (Hanya ada stok biasa)
             // ========================================================
@@ -412,11 +412,25 @@
 
                 let uomSelect = tr.find('.uom-select');
                 uomSelect.empty();
-                
-                if (data.uoms && data.uoms.length > 0) {
-                    data.uoms.forEach(u => { uomSelect.append(`<option value="${u.name}|${u.conversion}" data-conv="${u.conversion}">${u.name}</option>`); });
+
+                // 🔥 1. SELALU TAMBAHKAN SATUAN TERKECIL (BASE UOM) PERTAMA KALI 🔥
+                // Ambil dari data relasi item (data.uom.name) jika ada, atau default ke 'PCS'
+                let baseUomName = (data.uom && data.uom.name) ? data.uom.name : 'PCS';
+                uomSelect.append(`<option value="" data-conv="1">${baseUomName}</option>`);
+
+                // 🔥 2. BARU MASUKKAN SATUAN PACK/DUS JIKA ADA 🔥
+                let listUom = data.uoms || data.item_uoms || [];
+                if (listUom.length > 0) {
+                    listUom.forEach(u => {
+                        let namaUom = u.uom_name || u.name || 'PCS';
+                        let konversi = parseFloat(u.conversion_qty || u.conversion || 1);
+                        let idUom = u.id || '';
+
+                        let teksTampil = konversi > 1 ? `${namaUom} (Isi ${konversi})` : namaUom;
+                        uomSelect.append(`<option value="${idUom}" data-conv="${konversi}">${teksTampil}</option>`);
+                    });
                 } else {
-                    uomSelect.append(`<option value="Unit|1" data-conv="1">Unit</option>`);
+                    uomSelect.append(`<option value="" data-conv="1">PCS</option>`);
                 }
 
                 qtyInput.attr('max', data.available_bulk).prop('required', true).attr('placeholder', 'Max: ' + data.available_bulk);
@@ -457,7 +471,7 @@
 
                         assetContainer.removeClass('d-none');
                         if(assetSelect.hasClass("select2-hidden-accessible")) { assetSelect.select2('destroy'); }
-                        
+
                         assetSelect.prop('required', true).select2({
                             theme: 'bootstrap-5', width: '100%', placeholder: 'Klik untuk pilih SN Aset...',
                             ajax: {
@@ -481,10 +495,20 @@
 
                         let uomSelect = tr.find('.uom-select');
                         uomSelect.empty();
-                        if (data.uoms && data.uoms.length > 0) {
-                            data.uoms.forEach(u => { uomSelect.append(`<option value="${u.name}|${u.conversion}" data-conv="${u.conversion}">${u.name}</option>`); });
+
+                        let listUom = data.uoms || data.item_uoms || [];
+
+                        if (listUom.length > 0) {
+                            listUom.forEach(u => {
+                                let namaUom = u.uom_name || u.name || 'PCS';
+                                let konversi = parseFloat(u.conversion_qty || u.conversion || 1);
+                                let idUom = u.id || '';
+
+                                let teksTampil = konversi > 1 ? `${namaUom} (Isi ${konversi})` : namaUom;
+                                uomSelect.append(`<option value="${idUom}" data-conv="${konversi}">${teksTampil}</option>`);
+                            });
                         } else {
-                            uomSelect.append(`<option value="Unit|1" data-conv="1">Unit</option>`);
+                            uomSelect.append(`<option value="" data-conv="1">PCS</option>`);
                         }
 
                         qtyInput.attr('max', data.available_bulk).prop('required', true).attr('placeholder', 'Max: ' + data.available_bulk);
