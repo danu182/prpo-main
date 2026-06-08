@@ -17,7 +17,9 @@ class GoodsReceiptItem extends Model
         'qty_returned', // <--- TAMBAHKAN BARIS INI
         'qty_received',
         'condition_id',
-        'notes'
+        'notes',
+        'uom_id',
+        'uom',
 
     ];
 
