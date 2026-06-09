@@ -21,7 +21,6 @@ class GoodsIssueReturnController extends Controller
     {
         $search = $request->input('search');
 
-        // 🔥 PERBAIKAN: Tarik relasi 'warehouse' sekalian agar loadingnya ngebut!
         $returns = GoodsIssueReturn::with(['goodsIssue', 'receiver', 'warehouse'])
             ->when($search, function ($query) use ($search) {
                 $query->where('return_number', 'like', "%{$search}%")
@@ -29,7 +28,6 @@ class GoodsIssueReturnController extends Controller
                       ->orWhereHas('goodsIssue', function ($q) use ($search) {
                           $q->where('gi_number', 'like', "%{$search}%");
                       })
-                      // 🔥 BISA CARI BERDASARKAN NAMA GUDANG
                       ->orWhereHas('warehouse', function ($q) use ($search) {
                           $q->where('name', 'like', "%{$search}%");
                       });
@@ -41,11 +39,11 @@ class GoodsIssueReturnController extends Controller
         return view('goods_issue_returns.index', compact('returns', 'search'));
     }
 
+    // 2. Tampilkan Form Retur
     public function create($gi_id)
     {
         $gi = GoodsIssue::with('items.item')->findOrFail($gi_id);
 
-        // Hanya tampilkan item yang masih bisa diretur (belum diretur semua)
         $returnableItems = $gi->items->filter(function ($item) {
             $sisaBisaRetur = $item->qty_issued - ($item->qty_returned ?? 0);
             return $sisaBisaRetur > 0;
@@ -66,19 +64,13 @@ class GoodsIssueReturnController extends Controller
             if ($mutasiPengeluaran) $asalGudangId = $mutasiPengeluaran->warehouse_id;
         }
 
-        // ==============================================================
-        // 🔥 LOGIKA BARU: CARI ASET YANG SEDANG DIPEGANG OLEH USER 🔥
-        // ==============================================================
-        // Cari user ID berdasarkan nama peminjam di dokumen GI
         $userPenerima = \App\Models\User::where('name', $gi->requester_name)->first();
         $assignedToId = $userPenerima ? $userPenerima->id : null;
 
         foreach ($returnableItems as $giItem) {
             if ($giItem->item && $giItem->item->is_asset) {
-                // Ambil daftar aset spesifik yang jenisnya sama dan sedang dipegang user ini
                 $giItem->held_assets = \App\Models\FixedAsset::where('item_id', $giItem->item_id)
                                         ->where('assigned_to', $assignedToId)
-                                        // Pastikan hanya aset yang statusnya "In Use" (Sesuaikan ID status Anda, misal 31)
                                         ->where('status_id', 31)
                                         ->get();
             }
@@ -87,12 +79,11 @@ class GoodsIssueReturnController extends Controller
         return view('goods_issue_returns.create', compact('gi', 'returnableItems', 'warehouses', 'asalGudangId'));
     }
 
-
     // 3. Proses Simpan Retur & Kembalikan Stok (IN)
     public function store(Request $request, $gi_id)
     {
         $request->validate([
-            'warehouse_id'     => 'required|exists:warehouses,id', // 🔥 Target Gudang Retur
+            'warehouse_id'     => 'required|exists:warehouses,id',
             'return_date'      => 'required|date|before_or_equal:today',
             'returned_by_name' => 'required|string|max:255',
             'notes'            => 'nullable|string',
@@ -106,8 +97,6 @@ class GoodsIssueReturnController extends Controller
 
             DB::transaction(function () use ($request, $gi_id, &$newReturn) {
                 $gi = GoodsIssue::findOrFail($gi_id);
-
-                // 🔥 KUNCI GUDANG TUJUAN DI SINI AGAR TIDAK MENGGUNAKAN GUDANG ASAL!
                 $targetWarehouseId = $request->warehouse_id;
 
                 // A. Generate Nomor Retur
@@ -124,7 +113,7 @@ class GoodsIssueReturnController extends Controller
                 // B. Simpan Header Retur
                 $newReturn = GoodsIssueReturn::create([
                     'goods_issue_id'   => $gi->id,
-                    'warehouse_id'     => $targetWarehouseId, // Simpan ke Header
+                    'warehouse_id'     => $targetWarehouseId,
                     'return_number'    => $retNumber,
                     'return_date'      => $request->return_date,
                     'returned_by_name' => $request->returned_by_name,
@@ -134,62 +123,103 @@ class GoodsIssueReturnController extends Controller
 
                 // C. Proses Detail Item & TAMBAH STOK
                 foreach ($request->items as $data) {
-                    $qtyReturned = (float) $data['qty_returned'];
-
-                    if ($qtyReturned <= 0) continue;
+                    $qtyReturnedInput = (float) $data['qty_returned'];
+                    if ($qtyReturnedInput <= 0) continue;
 
                     $giItem = GoodsIssueItem::findOrFail($data['gi_item_id']);
-                    $masterItem = Item::lockForUpdate()->findOrFail($giItem->item_id);
+                    $masterItem = Item::with('itemUoms')->lockForUpdate()->findOrFail($giItem->item_id);
+                    $baseUomName = optional($masterItem->uom)->name ?? 'PCS';
 
-                    // VALIDASI
-                    $sisaBolehRetur = (float) $giItem->qty_issued - (float) $giItem->qty_returned;
-                    if ($qtyReturned > $sisaBolehRetur) {
-                        throw new \Exception("Gagal! Anda mencoba meretur {$qtyReturned} unit untuk barang '{$masterItem->name}'. Maksimal retur: {$sisaBolehRetur} unit.");
+                    // =======================================================
+                    // 🔥 1. LOGIKA EKSTRAKSI UOM DAN KONVERSI 🔥
+                    // =======================================================
+
+                    // A. Cari UOM & Konversi Asli saat Barang Dikeluarkan (GI)
+                    $rawGiUom = $giItem->getRawOriginal('uom') ?: 'PCS';
+                    $giConvFactor = 1;
+                    if (preg_match('/Isi\s*([0-9.]+)/i', $rawGiUom, $matches)) {
+                        $giConvFactor = (float) $matches[1];
+                    } elseif ($giItem->uom_id) {
+                        $giUomDb = collect($masterItem->itemUoms)->where('id', $giItem->uom_id)->first();
+                        if ($giUomDb) $giConvFactor = (float) $giUomDb->conversion_qty;
                     }
 
-                    // 1. Catat ke Detail Retur
+                    // B. Cari UOM & Konversi Inputan Saat Diretur
+                    $inputUom = $data['uom'] ?? $rawGiUom;
+                    $cleanInputUom = trim(preg_replace('/ \(Isi:?.*\)/i', '', $inputUom));
+                    $inputConvFactor = 1;
+                    $inputUomDb = collect($masterItem->itemUoms)->where('uom_name', $cleanInputUom)->first();
+
+                    if (preg_match('/Isi\s*([0-9.]+)/i', $inputUom, $matches)) {
+                        $inputConvFactor = (float) $matches[1];
+                    } elseif ($inputUomDb) {
+                        $inputConvFactor = (float) $inputUomDb->conversion_qty;
+                    }
+
+                    // =======================================================
+                    // 🔥 2. VALIDASI KETAT BERDASARKAN BASE QTY 🔥
+                    // =======================================================
+                    $baseQtyReturned = $qtyReturnedInput * $inputConvFactor;
+                    $baseQtyIssuedSoFar = $giItem->qty_issued * $giConvFactor;
+                    $baseQtyReturnedSoFar = ($giItem->qty_returned ?? 0) * $giConvFactor;
+
+                    $sisaBaseBolehRetur = round($baseQtyIssuedSoFar - $baseQtyReturnedSoFar, 4);
+
+                    if (round($baseQtyReturned, 4) > $sisaBaseBolehRetur) {
+                        throw new \Exception("Gagal! Anda meretur {$baseQtyReturned} {$baseUomName}, padahal sisa maksimal yang boleh diretur untuk '{$masterItem->name}' hanya {$sisaBaseBolehRetur} {$baseUomName}.");
+                    }
+
+                    // Siapkan Teks Satuan untuk Disimpan
+                    $finalUomString = $cleanInputUom;
+                    if ($inputConvFactor > 1) {
+                        $finalUomString .= ' (Isi ' . (float)$inputConvFactor . ' ' . $baseUomName . ')';
+                    }
+
+                    // =======================================================
+                    // 🔥 3. CATAT DETAIL RETUR & KEMBALIKAN QTY GI 🔥
+                    // =======================================================
                     GoodsIssueReturnItem::create([
                         'goods_issue_return_id' => $newReturn->id,
                         'goods_issue_item_id'   => $giItem->id,
                         'item_id'               => $masterItem->id,
-                        'qty_returned'          => $qtyReturned,
-                        'notes'                 => $data['notes'] ?? null,
+                        'qty_returned'          => $qtyReturnedInput,
+                        // Catat uom ke notes jika kolom 'uom' belum ada di tabel ini
+                        'notes'                 => "Satuan: {$finalUomString} | " . ($data['notes'] ?? ''),
                     ]);
 
-                    // 2. Update status Qty Returned di histori pengeluaran asli
-                    $giItem->increment('qty_returned', $qtyReturned);
+                    // Update qty_returned di dokumen GI (Kembalikan ke format GI aslinya)
+                    $qtyToReturnFormatGi = $baseQtyReturned / $giConvFactor;
+                    $giItem->increment('qty_returned', $qtyToReturnFormatGi);
 
                     // =======================================================
-                    // 🔥 3. SIHIR BATCH STOK: PASTIKAN MASUK KE GUDANG BARU 🔥
+                    // 🔥 4. SIHIR BATCH STOK: MASUKKAN KE GUDANG BARU 🔥
                     // =======================================================
                     if ($masterItem->is_stockable) {
                         $balanceBefore = (float) $masterItem->current_stock;
-                        $balanceAfter  = $balanceBefore + $qtyReturned;
+                        $balanceAfter  = $balanceBefore + $baseQtyReturned; // Pakai Base Qty!
 
-                        // CEK KE GUDANG TUJUAN (Bukan gudang asal GI)
                         $invStock = InventoryStock::where('item_id', $masterItem->id)
-                                                  ->where('warehouse_id', $targetWarehouseId) // 🔥 WAJIB $targetWarehouseId
+                                                  ->where('warehouse_id', $targetWarehouseId)
                                                   ->first();
 
                         if ($invStock) {
-                            $invStock->increment('stock_qty', $qtyReturned);
+                            $invStock->increment('stock_qty', $baseQtyReturned);
                         } else {
                             InventoryStock::create([
                                 'company_id'       => auth()->user()->company_id ?? 1,
-                                'warehouse_id'     => $targetWarehouseId, // 🔥 WAJIB $targetWarehouseId
+                                'warehouse_id'     => $targetWarehouseId,
                                 'item_id'          => $masterItem->id,
-                                'stock_qty'        => $qtyReturned,
+                                'stock_qty'        => $baseQtyReturned,
                                 'reference_number' => $retNumber,
-                                'notes'            => "Retur Lintas Gudang dari: {$request->returned_by_name}",
+                                'notes'            => "Retur Internal dari: {$request->returned_by_name}",
                             ]);
                         }
 
-                        // Catat di Kartu Stok Mutasi (IN)
                         StockMutation::create([
                             'item_id'          => $masterItem->id,
-                            'warehouse_id'     => $targetWarehouseId, // 🔥 WAJIB $targetWarehouseId
+                            'warehouse_id'     => $targetWarehouseId,
                             'type'             => 'IN',
-                            'qty'              => $qtyReturned,
+                            'qty'              => $baseQtyReturned,
                             'balance_before'   => $balanceBefore,
                             'balance_after'    => $balanceAfter,
                             'reference_number' => $retNumber,
@@ -201,13 +231,13 @@ class GoodsIssueReturnController extends Controller
                     }
 
                     // =======================================================
-                    // 🔥 4. LOGIKA HISTORI ASSET (PINDAH KTP ASET) 🔥
+                    // 🔥 5. KEMBALIKAN ASET TETAP 🔥
                     // =======================================================
                     if ($masterItem->is_asset) {
                         $selectedAssetNumbers = $data['returned_asset_numbers'] ?? [];
-                        if (empty($selectedAssetNumbers)) throw new \Exception("Gagal: Pilih Nomor Aset yang dikembalikan.");
+                        if (empty($selectedAssetNumbers)) throw new \Exception("Gagal: Pilih Nomor Aset yang dikembalikan untuk barang {$masterItem->name}.");
 
-                        $assetsToReturn = \App\Models\FixedAsset::whereIn('asset_number', $selectedAssetNumbers)->whereNotNull('assigned_to')->get();
+                        $assetsToReturn = \App\Models\FixedAsset::whereIn('asset_number', $selectedAssetNumbers)->get();
                         $statusIdAvailable = \App\Models\Status::where('type', 'AST')->where('slug', 'available')->value('id');
 
                         foreach ($assetsToReturn as $asset) {
@@ -222,30 +252,30 @@ class GoodsIssueReturnController extends Controller
                             $asset->update([
                                 'status_id'    => $statusIdAvailable,
                                 'assigned_to'  => null,
-                                'warehouse_id' => $targetWarehouseId, // 🔥 ASET MASUK KE GUDANG BARU
+                                'warehouse_id' => $targetWarehouseId,
                             ]);
                         }
                     }
 
                     // =======================================================
-                    // 🔥 5. HAPUS TANGGUNGAN INVENTARIS KARYAWAN (MINOR) 🔥
+                    // 🔥 6. HAPUS TANGGUNGAN INVENTARIS KARYAWAN (MINOR) 🔥
                     // =======================================================
                     if (!$masterItem->is_asset && array_key_exists('is_trackable', $masterItem->getAttributes()) && $masterItem->is_trackable) {
                         $returnedSns = $data['returned_minor_sns'] ?? [];
-                        if (empty($returnedSns)) throw new \Exception("Gagal: Pilih S/N yang dikembalikan.");
+                        if (empty($returnedSns)) throw new \Exception("Gagal: Pilih S/N yang dikembalikan untuk barang {$masterItem->name}.");
 
                         $empInventory = \App\Models\EmployeeInventory::where(['employee_name' => $gi->requester_name, 'item_id' => $masterItem->id])->first();
                         if ($empInventory) {
                             $currentSns = array_filter(array_map('trim', explode('|', $empInventory->specific_details)));
                             $empInventory->specific_details = implode(' | ', array_diff($currentSns, $returnedSns));
-                            $empInventory->qty = max(0, $empInventory->qty - $qtyReturned);
+                            $empInventory->qty = max(0, $empInventory->qty - $baseQtyReturned);
                             $empInventory->save();
 
                             \App\Models\EmployeeInventoryHistory::create([
                                 'employee_name'    => $gi->requester_name,
                                 'item_id'          => $masterItem->id,
                                 'type'             => 'OUT',
-                                'qty'              => $qtyReturned,
+                                'qty'              => $baseQtyReturned,
                                 'reference_number' => $retNumber,
                                 'notes'            => "Mengembalikan SN: [" . implode(', ', $returnedSns) . "]",
                             ]);
@@ -254,29 +284,23 @@ class GoodsIssueReturnController extends Controller
                 }
 
                 // =======================================================
-                // 🔥 6. UPDATE STATUS DOKUMEN INDUK (GOODS ISSUE) 🔥
+                // 🔥 7. UPDATE STATUS DOKUMEN INDUK (GOODS ISSUE) 🔥
                 // =======================================================
-                // Tarik ulang data GI beserta itemnya agar perhitungannya fresh
                 $giToUpdate = GoodsIssue::with('items')->find($gi->id);
-
                 $totalIssued = $giToUpdate->items->sum('qty_issued');
                 $totalReturned = $giToUpdate->items->sum('qty_returned');
 
-                $newStatusSlug = 'active'; // Default
-
+                $newStatusSlug = 'active';
                 if ($totalReturned >= $totalIssued) {
-                    $newStatusSlug = 'full_return'; // Retur Penuh
+                    $newStatusSlug = 'full_return';
                 } elseif ($totalReturned > 0) {
-                    $newStatusSlug = 'partial_return'; // Retur Sebagian
+                    $newStatusSlug = 'partial_return';
                 }
 
-                // Cari ID status di database berdasarkan slug
                 $statusId = \App\Models\Status::where('type', 'GI')->where('slug', $newStatusSlug)->value('id');
-
                 if ($statusId) {
                     $giToUpdate->update(['status_id' => $statusId]);
                 }
-
             });
 
             if (!$newReturn) throw new \Exception("Gagal menyimpan dokumen retur.");
@@ -287,7 +311,7 @@ class GoodsIssueReturnController extends Controller
             ]);
 
         } catch (\Exception $e) {
-            \Illuminate\Support\Facades\Log::error('Error Goods Issue Return: ' . $e->getMessage());
+            \Illuminate\Support\Facades\Log::error('Error Goods Issue Return: ' . $e->getMessage() . ' - L: ' . $e->getLine());
             return back()->withInput()->with('error', $e->getMessage());
         }
     }
@@ -299,31 +323,22 @@ class GoodsIssueReturnController extends Controller
         return view('goods_issue_returns.show', compact('return'));
     }
 
-
+    // 5. Void Transaksi
     public function voidTransaction($id)
     {
         $gi = GoodsIssue::findOrFail($id);
-
-        // 1. Ambil Bulan & Tahun Transaksi vs Bulan & Tahun Sekarang
         $txMonthYear = \Carbon\Carbon::parse($gi->created_at)->format('Y-m');
         $currentMonthYear = \Carbon\Carbon::now()->format('Y-m');
 
-        // 2. VALIDASI KUNCI PERIODE (PERIOD LOCK)
         if ($txMonthYear !== $currentMonthYear) {
             return back()->with('error', '⚠️ GAGAL VOID: Transaksi ini terjadi pada bulan yang berbeda (' . $txMonthYear . '). Laporan bulan tersebut sudah ditutup. Untuk memperbaiki kesalahan, silakan gunakan menu "Retur Barang" atau "Penyesuaian Stok (Adjustment)".');
         }
 
-        // 3. JIKA BULAN SAMA, LANJUTKAN PROSES VOID
         DB::transaction(function () use ($gi) {
-            // A. Ubah Status Dokumen jadi 'VOID'
             $gi->update(['status' => 'VOID', 'notes' => $gi->notes . ' [VOID]']);
-
-            // B. Kembalikan Stok (Looping detail item, increment stok di InventoryStock)
-            // C. Catat di StockMutation (Tipe: 'VOID-IN') agar riwayatnya jelas kenapa stok nambah.
+            // Logika void stok dll
         });
 
         return back()->with('success', 'Transaksi berhasil di-Void. Stok telah dikembalikan ke Gudang asal.');
     }
-
-
 }
