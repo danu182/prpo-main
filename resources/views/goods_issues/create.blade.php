@@ -433,7 +433,13 @@
                     uomSelect.append(`<option value="" data-conv="1">PCS</option>`);
                 }
 
-                qtyInput.attr('max', data.available_bulk).prop('required', true).attr('placeholder', 'Max: ' + data.available_bulk);
+                // 🔥 SIMPAN STOK ASLI & HITUNG MAX BERDASARKAN SATUAN PERTAMA 🔥
+                qtyInput.data('stock-bulk', data.available_bulk);
+                let initialConv = parseFloat(uomSelect.find(':selected').data('conv')) || 1;
+                let initialMax = Math.floor(data.available_bulk / initialConv); // Gunakan Math.floor agar tidak ada desimal aneh
+
+                qtyInput.attr('max', initialMax).prop('required', true).attr('placeholder', 'Max: ' + initialMax);
+
 
                 $.ajax({
                     url: "{{ route('goods-issues.search-batches') }}", type: "GET",
@@ -528,32 +534,31 @@
             }
         });
 
-        // 🔥 LOGIKA AJAIB: MEMBUAT KOTAK SN SEJUMLAH QTY 🔥
-        tbody.on('input', '.qty-input', function() {
+        // 🔥 LOGIKA AJAIB: MENGHITUNG ULANG MAX QTY SAAT SATUAN UOM DIUBAH 🔥
+        tbody.on('change', '.uom-select', function() {
             let tr = $(this).closest('tr');
-            if (tr.data('is_trackable')) {
-                let qty = parseInt($(this).val()) || 0;
-                let snContainer = tr.find('.minor-sn-container');
-                let nameAttr = $(this).attr('name');
-                let match = nameAttr.match(/items\[(\d+)\]/);
-                let idx = match ? match[1] : 0;
+            let qtyInput = tr.find('.qty-input');
 
-                if (qty > 0) {
-                    let html = `
-                        <div class="gap-1 mt-1 d-flex flex-column">
-                            <span class="border badge bg-warning-subtle text-warning-emphasis border-warning-subtle text-start w-100" style="font-size: 0.65rem; padding: 5px 8px;">
-                                <i class="bi bi-upc-scan me-1"></i> Wajib isi SN / Detail:
-                            </span>
-                            <div class="custom-scrollbar" style="max-height: 105px; overflow-y: auto; padding-right: 3px;">
-                    `;
-                    for(let i=0; i<qty; i++) {
-                        html += `<input type="text" name="items[${idx}][sn][]" class="mb-1 shadow-sm form-control form-control-sm border-warning" placeholder="SN Unit ke-${i+1} *" required style="font-size: 0.75rem; height: 30px;">`;
-                    }
-                    html += `</div></div>`;
-                    snContainer.removeClass('mt-2 d-none').html(html);
-                } else {
-                    snContainer.empty().addClass('d-none');
-                }
+            // Ambil stok asli (Pcs) yang tadi kita simpan
+            let bulkStock = parseFloat(qtyInput.data('stock-bulk')) || 0;
+
+            // Ambil nilai konversi dari UOM yang baru saja dipilih
+            let conv = parseFloat($(this).find(':selected').data('conv')) || 1;
+
+            // Hitung Max yang baru (Contoh: 20 Pcs / 10 (Isi Pack) = Max 2)
+            let newMax = Math.floor(bulkStock / conv);
+
+            // Update atribut input
+            qtyInput.attr('max', newMax).attr('placeholder', 'Max: ' + newMax);
+
+            // Jika user terlanjur ngetik angka 5, tapi max-nya ternyata 2, otomatis turunkan angkanya!
+            let currentVal = parseFloat(qtyInput.val());
+            if (currentVal > newMax) {
+                qtyInput.val(newMax);
+                Swal.fire({
+                    toast: true, position: 'top-end', showConfirmButton: false, timer: 3000,
+                    icon: 'info', title: 'Kuantitas disesuaikan dengan sisa stok (' + newMax + ')'
+                });
             }
         });
 

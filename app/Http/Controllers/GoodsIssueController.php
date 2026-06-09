@@ -77,11 +77,21 @@ class GoodsIssueController extends Controller
             $gi = null;
 
             \DB::transaction(function () use ($request, &$gi) {
+                // A. Generate Nomor GI (DENGAN KODE COMPANY)
                 $year = date('Y', strtotime($request->issue_date));
                 $month = date('m', strtotime($request->issue_date));
-                $lastGi = \App\Models\GoodsIssue::whereYear('created_at', $year)->whereMonth('created_at', $month)->orderBy('id', 'desc')->first();
+
+                // Ambil kode company dari user login. Jika kosong, default 'HO'
+                $companyCode = auth()->user()->company->code ?? 'HO';
+                $prefix = "GI-{$companyCode}-{$year}-{$month}-";
+
+                // Cari urutan terakhir berdasarkan prefix bulan & company ini
+                $lastGi = \App\Models\GoodsIssue::where('gi_number', 'like', "{$prefix}%")
+                                ->orderBy('id', 'desc')
+                                ->first();
+
                 $nextId = $lastGi ? ((int) substr($lastGi->gi_number, -4)) + 1 : 1;
-                $giNumber = 'GI-' . $year . '-' . $month . '-' . str_pad($nextId, 4, '0', STR_PAD_LEFT);
+                $giNumber = $prefix . str_pad($nextId, 4, '0', STR_PAD_LEFT);
 
                 $statusActiveId = \App\Models\Status::where('type', 'GI')->where('slug', 'active')->value('id') ?? 1;
 
