@@ -35,4 +35,11 @@ class ReturnToVendor extends Model
     {
         return $this->hasMany(ReturnToVendorItem::class);
     }
+
+
+    // 🔥 TAMBAHKAN RELASI INI 🔥
+    public function attachments()
+    {
+        return $this->hasMany(ReturnToVendorAttachment::class, 'return_to_vendor_id');
+    }
 }

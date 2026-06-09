@@ -60,7 +60,7 @@
                         <input type="text" name="delivery_note_number" class="shadow-sm form-control" placeholder="Cth: SJ-OUT/2026/001">
                         <small class="text-muted" style="font-size: 0.7rem;">Nomor SJ untuk dibawa supir vendor.</small>
                     </div>
-                    
+
                     {{-- WADAH MULTI UPLOAD LAMPIRAN --}}
                     <div class="col-md-5">
                         <div class="mb-2 d-flex justify-content-between align-items-center">
@@ -76,8 +76,8 @@
                             </div>
                         </div>
                     </div>
-                    
-                    <div class="col-12 mt-2">
+
+                    <div class="mt-2 col-12">
                         <label class="mb-1 fw-bold small text-muted">Catatan Umum</label>
                         <input type="text" name="notes" class="shadow-sm form-control" placeholder="Catatan tambahan retur...">
                     </div>
@@ -103,82 +103,76 @@
                     <tbody>
                         @foreach($returnableItems as $item)
                         @php
-                            $poItem = $item->purchaseOrderItem;
                             $masterItem = $item->item;
                             $baseUomName = optional($masterItem->uom)->name ?? 'PCS';
 
-                            // Konversi & UOM
-                            $rawPoUom = is_string($poItem->uom) ? $poItem->uom : (optional($poItem->uom)->name ?? 'PCS');
-                            $cleanPoUom = trim(preg_replace('/ \(Isi:.*\)/i', '', $rawPoUom));
-                            $poConvRate = 1;
-                            if (preg_match('/\(Isi:\s*([0-9.]+)\)/i', $rawPoUom, $matches)) $poConvRate = (float) $matches[1];
-                            else {
-                                $poUomModel = collect(optional($masterItem)->itemUoms)->where('uom_name', $cleanPoUom)->first();
-                                if ($poUomModel) $poConvRate = (float) $poUomModel->conversion_qty;
-                            }
-
+                            // Ambil data yang sudah dirapikan dari Controller
+                            $grUomText = $item->gr_uom_text;
+                            $grConvRate = $item->gr_conv_rate;
                             $maxReturnable = (float) $item->max_returnable;
-                            $maxBaseQty = $maxReturnable * $poConvRate;
-                            $displayPoUom = $poConvRate > 1 ? "{$cleanPoUom} (Isi: {$poConvRate})" : $cleanPoUom;
-                            
-                            // Logika SN Legacy vs Baru
+
+                            // Hitung Max Base Qty (Eceran maksimal yang bisa diretur)
+                            $maxBaseQty = $maxReturnable * $grConvRate;
+
+                            $cleanGrUomName = trim(preg_replace('/ \(Isi:.*\)/i', '', $grUomText));
+
                             $isSnItem = ($masterItem->is_trackable || $masterItem->is_asset);
                             $hasSnList = !empty($item->available_sn_list);
                             $requiresSnAction = ($isSnItem && $hasSnList);
                         @endphp
-                        
+
                         <tr class="item-row" id="row_{{ $item->id }}">
                             <td class="py-3 ps-4">
                                 <h6 class="mb-1 fw-bold text-dark">{{ $masterItem->name }}</h6>
                                 <span class="border badge bg-secondary-subtle text-secondary border-secondary-subtle">{{ $masterItem->code }}</span>
                                 @if($requiresSnAction)
-                                    <span class="badge bg-warning-subtle text-warning-emphasis border border-warning ms-1"><i class="bi bi-upc-scan me-1"></i>Pilih SN Wajib</span>
+                                    <span class="border badge bg-warning-subtle text-warning-emphasis border-warning ms-1"><i class="bi bi-upc-scan me-1"></i>Pilih SN Wajib</span>
                                 @endif
                             </td>
-                            
+
                             <td class="text-center fw-bold text-success fs-6">
                                 {{ (float) $item->qty_received }} <br>
-                                <span class="text-muted fw-normal" style="font-size: 0.65rem;">{{ $displayPoUom }}</span>
+                                <span class="text-muted fw-normal" style="font-size: 0.65rem;">{{ $grUomText }}</span>
                                 <input type="hidden" id="max_{{ $item->id }}" value="{{ $maxReturnable }}">
                             </td>
-                            
+
                             <td>
-                                <div class="input-group input-group-sm shadow-sm mb-1">
-                                    {{-- KUNCI INPUT HANYA JIKA ADA CHECKBOX SN --}}
+                                <div class="mb-1 shadow-sm input-group input-group-sm">
                                     <input type="number" name="items[{{ $item->id }}][qty_returned]"
                                            id="qty-input-{{ $item->id }}"
                                            class="text-center form-control fw-bold text-danger border-danger qty-input"
                                            value="0" min="0" max="{{ $maxReturnable }}" step="any"
+                                           placeholder="Maks: {{ $maxReturnable }}"
                                            {{ $requiresSnAction ? 'readonly' : "oninput=checkQty({$item->id})" }}>
-                                           
-                                    <select name="items[{{ $item->id }}][uom]" class="form-select border-danger bg-danger-subtle text-danger fw-bold" style="max-width: 140px;" data-current-conv="{{ $poConvRate }}" onchange="changeUomRTV(this, {{ $item->id }}, {{ $maxBaseQty }})">
-                                        <option value="{{ $displayPoUom }}" data-conv="{{ $poConvRate }}">{{ $displayPoUom }} [PO]</option>
-                                        @if(strtolower($baseUomName) !== strtolower($cleanPoUom))
+
+                                    <select name="items[{{ $item->id }}][uom]" class="form-select border-danger bg-danger-subtle text-danger fw-bold" style="max-width: 140px;" data-current-conv="{{ $grConvRate }}" onchange="changeUomRTV(this, {{ $item->id }}, {{ $maxBaseQty }})">
+                                        <option value="{{ $grUomText }}" data-conv="{{ $grConvRate }}">{{ $grUomText }} [GR]</option>
+                                        @if(strtolower($baseUomName) !== strtolower($cleanGrUomName))
                                             <option value="{{ $baseUomName }}" data-conv="1">{{ $baseUomName }} (Ecer)</option>
                                         @endif
                                     </select>
                                 </div>
-                                <div class="mt-1 text-muted text-center" style="font-size: 0.65rem;" id="help-text-{{ $item->id }}">
-                                    Maks: <strong class="text-danger" id="max-val-{{ $item->id }}">{{ $maxReturnable }}</strong> <span id="uom-text-{{ $item->id }}">{{ $displayPoUom }}</span>
+                                <div class="mt-1 text-center text-muted" style="font-size: 0.65rem;" id="help-text-{{ $item->id }}">
+                                    Maks: <strong class="text-danger" id="max-val-{{ $item->id }}">{{ $maxReturnable }}</strong> <span id="uom-text-{{ $item->id }}">{{ $cleanGrUomName }}</span>
                                 </div>
                             </td>
-                            
-                            <td class="pe-4 py-3">
-                                <select name="items[{{ $item->id }}][return_reason_id]" id="reason_{{ $item->id }}" class="form-select form-select-sm reason-select mb-2" disabled required>
+
+                            <td class="py-3 pe-4">
+                                <select name="items[{{ $item->id }}][return_reason_id]" id="reason_{{ $item->id }}" class="mb-2 form-select form-select-sm reason-select" disabled required>
                                     <option value="">-- Pilih Alasan Retur --</option>
                                     @foreach($reasons as $reason)
                                         <option value="{{ $reason->id }}">{{ $reason->name }}</option>
                                     @endforeach
                                 </select>
-                                <input type="text" name="items[{{ $item->id }}][notes]" class="form-control form-control-sm mb-2" placeholder="Catatan item (opsional)...">
-                                
-                                {{-- DAFTAR CHECKBOX SERIAL NUMBER --}}
+                                <input type="text" name="items[{{ $item->id }}][notes]" class="mb-2 form-control form-control-sm" placeholder="Catatan item (opsional)...">
+
                                 @if($requiresSnAction)
                                     <div class="p-2 border rounded bg-light border-warning-subtle sn-checkbox-wrapper">
-                                        <div class="mb-1 text-dark fw-bold" style="font-size: 0.7rem;"><i class="bi bi-upc-scan me-1"></i>Centang Unit yang Rusak/Retur:</div>
+                                        <div class="mb-1 fw-bold text-dark" style="font-size: 0.7rem;"><i class="bi bi-upc-scan me-1"></i>Centang Unit yang Rusak/Retur:</div>
                                         @foreach($item->available_sn_list as $sn)
-                                            <div class="form-check mb-1">
-                                                <input class="form-check-input sn-check-{{ $item->id }}" type="checkbox" name="items[{{ $item->id }}][sn][]" value="{{ $sn }}" id="sn_{{ $item->id }}_{{ $loop->index }}" onchange="countCheckedSn({{ $item->id }}, {{ $poConvRate }})">
+                                            <div class="mb-1 form-check">
+                                                {{-- HAPUS $poConvRate dari onchange JS agar dinamis! --}}
+                                                <input class="form-check-input sn-check-{{ $item->id }}" type="checkbox" name="items[{{ $item->id }}][sn][]" value="{{ $sn }}" id="sn_{{ $item->id }}_{{ $loop->index }}" onchange="countCheckedSn({{ $item->id }})">
                                                 <label class="form-check-label fw-bold text-primary" style="font-size: 0.75rem;" for="sn_{{ $item->id }}_{{ $loop->index }}">
                                                     {{ $sn }}
                                                 </label>
@@ -186,7 +180,7 @@
                                         @endforeach
                                     </div>
                                 @elseif($isSnItem && !$hasSnList)
-                                    <div class="text-warning small fst-italic mt-1"><i class="bi bi-info-circle"></i> Item wajib lacak, tapi diretur sbg stok biasa (Data Sebelum Peraturan).</div>
+                                    <div class="mt-1 text-warning small fst-italic"><i class="bi bi-info-circle"></i> Item wajib lacak, tapi diretur sbg stok biasa (Data Sebelum Peraturan).</div>
                                 @endif
                             </td>
                         </tr>
@@ -197,7 +191,7 @@
         </div>
 
         {{-- ACTION BAR --}}
-        <div class="p-3 bg-white shadow-lg fixed-bottom border-top" style="z-index: 1050;">
+        <div class="p-3 bg-white shadow-lg border-top fixed-bottom" style="z-index: 1050;">
             <div class="container gap-3 d-flex justify-content-end align-items-center">
                 <span class="text-muted small me-3"><i class="bi bi-info-circle me-1"></i>Centang SN atau isi Qty pada barang yang diretur.</span>
                 <button type="button" class="px-5 shadow btn btn-danger rounded-pill fw-bold" id="btnSubmitRTV">
@@ -230,47 +224,54 @@
         else btn.closest('.rtv-file-row').querySelector('input[type="file"]').value = '';
     }
 
-    // PENGHITUNG OTOMATIS JIKA CHECKBOX SN DICENTANG
-    function countCheckedSn(itemId, poConvRate) {
+    // PENGHITUNG OTOMATIS JIKA CHECKBOX SN DICENTANG (Diperbarui agar selalu membaca uom saat ini)
+    function countCheckedSn(itemId) {
         let checkboxes = document.querySelectorAll('.sn-check-' + itemId + ':checked');
         let totalBaseDicentang = checkboxes.length;
-        
-        let qtyInput = document.getElementById('qty-input-' + itemId);
+
         let selectElement = document.querySelector(`select[name="items[${itemId}][uom]"]`);
-        let currentConvRate = parseFloat(selectElement.options[selectElement.selectedIndex].getAttribute('data-conv')) || 1;
-        
-        // Kalkulasi ke Satuan yang sedang dipilih
+        let currentConvRate = parseFloat(selectElement.getAttribute('data-current-conv')) || 1;
+
         let autoQty = totalBaseDicentang / currentConvRate;
-        
+
+        let qtyInput = document.getElementById('qty-input-' + itemId);
         qtyInput.value = autoQty;
-        checkQty(itemId); 
+        checkQty(itemId);
     }
 
+    // UPDATE MAX PLACEHOLDER OTOMATIS JIKA UOM DIGANTI
     function changeUomRTV(selectElement, itemId, sisaBaseQty) {
         let selectedOption = selectElement.options[selectElement.selectedIndex];
         let newConvRate = parseFloat(selectedOption.getAttribute('data-conv')) || 1;
         let oldConvRate = parseFloat(selectElement.getAttribute('data-current-conv')) || 1;
-        
+
         let qtyInput = document.getElementById(`qty-input-${itemId}`);
         let currentQty = parseFloat(qtyInput.value) || 0;
-        
+
+        // Kalkulasi qty yang ada di dalam box
         let newQty = (currentQty * oldConvRate) / newConvRate;
-        let newMaxVal = parseFloat((sisaBaseQty / newConvRate).toFixed(4));
-        
+
+        // Hitung batas Max baru menggunakan Math.floor agar membulatkan ke bawah (tidak ada 0.5 Pack)
+        let newMaxVal = Math.floor(sisaBaseQty / newConvRate);
+
         qtyInput.setAttribute('max', newMaxVal);
-        qtyInput.value = parseFloat(newQty.toFixed(2));
-        if (parseFloat(qtyInput.value) > newMaxVal) qtyInput.value = newMaxVal;
+        qtyInput.setAttribute('placeholder', 'Maks: ' + newMaxVal);
+
+        if (currentQty > 0) {
+            qtyInput.value = parseFloat(newQty.toFixed(2));
+            if (parseFloat(qtyInput.value) > newMaxVal) qtyInput.value = newMaxVal;
+        }
 
         selectElement.setAttribute('data-current-conv', newConvRate);
 
         let helpMax = document.getElementById(`max-val-${itemId}`);
         let helpUom = document.getElementById(`uom-text-${itemId}`);
         let hiddenMax = document.getElementById(`max_${itemId}`);
-        
+
         if (helpMax) helpMax.innerText = newMaxVal;
         if (hiddenMax) hiddenMax.value = newMaxVal;
-        
-        let cleanUomName = selectedOption.text.replace(/ \[PO\]|\(Ecer\)/gi, '').trim();
+
+        let cleanUomName = selectedOption.text.replace(/ \[GR\]|\(Ecer\)/gi, '').trim();
         if (helpUom) helpUom.innerText = cleanUomName;
 
         checkQty(itemId);
