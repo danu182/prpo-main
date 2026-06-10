@@ -225,27 +225,22 @@ Route::middleware('auth')->group(function () {
 
    // Modul Pengeluaran Barang (Goods Issue)
     Route::prefix('goods-issues')->name('goods-issues.')->group(function () {
-        Route::get('/', [GoodsIssueController::class, 'index'])->name('index');
-        Route::get('/create', [GoodsIssueController::class, 'create'])->name('create');
-        Route::post('/', [GoodsIssueController::class, 'store'])->name('store');
+        Route::get('/', [App\Http\Controllers\GoodsIssueController::class, 'index'])->name('index');
+        Route::get('/create', [App\Http\Controllers\GoodsIssueController::class, 'create'])->name('create');
+        Route::post('/', [App\Http\Controllers\GoodsIssueController::class, 'store'])->name('store');
 
-        // Rute API Pencarian
-        Route::get('/api/search-items', [GoodsIssueController::class, 'searchItems'])->name('search-items');
-        Route::get('/api/search-assets', [GoodsIssueController::class, 'searchFixedAssets'])->name('search-assets');
-        Route::get('/api/search-batches', [GoodsIssueController::class, 'searchBatches'])->name('search-batches');
+        // 🔥 Rute API Pencarian (HARUS DI ATAS RUTE SLUG AGAR TIDAK BENTROK) 🔥
+        Route::get('/api/search-items', [App\Http\Controllers\GoodsIssueController::class, 'searchItems'])->name('search-items');
+        Route::get('/api/search-assets', [App\Http\Controllers\GoodsIssueController::class, 'searchFixedAssets'])->name('search-assets');
+        Route::get('/api/search-batches', [App\Http\Controllers\GoodsIssueController::class, 'searchBatches'])->name('search-batches');
+        Route::get('/api/search-sns', [App\Http\Controllers\GoodsIssueController::class, 'searchSns'])->name('search-sns'); // <--- INI SUDAH BENAR
 
         // 🔥 SEMUA RUTE SPESIFIK MENGGUNAKAN SLUG SEKARANG 🔥
-        Route::get('/{slug}', [GoodsIssueController::class, 'show'])->name('show');
-        Route::get('/{slug}/print', [GoodsIssueController::class, 'print'])->name('print');
-        Route::get('/{slug}/print-labels', [GoodsIssueController::class, 'printLabels'])->name('print_labels');
-        Route::post('/{slug}/void', [GoodsIssueController::class, 'voidTransaction'])->name('void');
-
-
+        Route::get('/{slug}', [App\Http\Controllers\GoodsIssueController::class, 'show'])->name('show');
+        Route::get('/{slug}/print', [App\Http\Controllers\GoodsIssueController::class, 'print'])->name('print');
+        Route::get('/{slug}/print-labels', [App\Http\Controllers\GoodsIssueController::class, 'printLabels'])->name('print_labels');
+        Route::post('/{slug}/void', [App\Http\Controllers\GoodsIssueController::class, 'voidTransaction'])->name('void');
         Route::get('/{slug}/bast', [App\Http\Controllers\GoodsIssueController::class, 'printBast'])->name('bast');
-        // Ganti baris route BAST yang lama menjadi seperti ini:
-        // Route::get('/{slug}/bast', [App\Http\Controllers\GoodsIssueController::class, 'printBast'])->name('goods-issues.bast');
-
-
     });
 
 

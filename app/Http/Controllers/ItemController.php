@@ -177,6 +177,10 @@ class ItemController extends Controller
                     'min_stock'      => $request->min_stock ?? 0,
                     'max_stock'      => $request->max_stock ?? 0,
                     'is_trackable'   => $request->has('is_trackable') ? 1 : 0,
+
+                    // 🔥 TAMBAHKAN BARIS INI: Paksa jadi 0 (Bukan Aset)
+                    'is_asset'       => 0,
+
                     'is_active'      => 1,
                     'specification'  => $request->specification,
                     'uom_id'         => $request->uom_id,
@@ -245,30 +249,30 @@ class ItemController extends Controller
 
         try {
             DB::transaction(function () use ($request, $item) {
-                // 1. Update slug jika nama berubah
                 if ($item->name !== $request->name) {
                     $item->slug = \Illuminate\Support\Str::slug($request->name) . '-' . \Illuminate\Support\Str::random(4);
                 }
 
-                // 2. Eksekusi Update Tabel Utama (items)
                 $item->update([
                     'category_id'    => $request->category_id,
                     'name'           => $request->name,
                     'slug'           => $item->slug,
                     'min_stock'      => $request->min_stock ?? 0,
                     'max_stock'      => $request->max_stock ?? 0,
+
                     'is_trackable'   => $request->has('is_trackable') ? 1 : 0,
+
+                    // 🔥 TAMBAHKAN BARIS INI JALAN KELUARNYA: Reset data lama paksa jadi 0
+                    'is_asset'       => 0,
+
                     'is_active'      => $request->has('is_active') ? 1 : 0,
                     'specification'  => $request->specification,
                     'uom_id'         => $request->uom_id,
                     'item_type_code' => $request->item_type_code,
                 ]);
 
-                // 3. Sinkronisasi Tabel Kemasan (item_uoms)
-                // Hapus kemasan lama terlebih dahulu (Reset)
                 \Illuminate\Support\Facades\DB::table('item_uoms')->where('item_id', $item->id)->delete();
 
-                // Insert kemasan yang baru dari form edit
                 if ($request->has('uoms')) {
                     foreach ($request->uoms as $uomData) {
                         if (!empty($uomData['uom_name']) && !empty($uomData['conversion_qty'])) {
@@ -285,7 +289,7 @@ class ItemController extends Controller
                 }
             });
 
-            return redirect()->route('items.index')->with('success', 'Data Master Barang & Kemasan berhasil diperbarui!');
+            return redirect()->route('items.index')->with('success', 'Data Master Barang berhasil diperbarui!');
 
         } catch (\Exception $e) {
             return back()->withInput()->with('error', 'Gagal memperbarui barang: ' . $e->getMessage());
@@ -434,16 +438,23 @@ class ItemController extends Controller
     {
         $detail = ItemImportDetail::findOrFail($id);
         $request->validate([
-            'name' => 'required|string', 'category_code' => 'required', 'uom_code' => 'required',
-            'item_type_code' => 'required', // 🔥 Ganti is_stockable
-            'is_asset' => 'required|boolean', 'is_trackable' => 'required|boolean'
+            'name'           => 'required|string',
+            'category_code'  => 'required',
+            'uom_code'       => 'required',
+            'item_type_code' => 'required',
+            // is_asset dihapus dari validasi
+            'is_trackable'   => 'required|boolean'
         ]);
 
         $detail->update([
-            'name' => strtoupper($request->name), 'category_code' => $request->category_code,
-            'uom_code' => $request->uom_code, 'specification' => $request->specification,
-            'item_type_code' => $request->item_type_code, // 🔥 Ganti is_stockable
-            'is_asset' => $request->is_asset, 'is_trackable' => $request->is_trackable,
+            'name'           => strtoupper($request->name),
+            'category_code'  => $request->category_code,
+            'uom_code'       => $request->uom_code,
+            'specification'  => $request->specification,
+            'item_type_code' => $request->item_type_code,
+            'is_trackable'   => $request->is_trackable,
+            // Jika ada field is_asset di tabel staging, paksa saja jadi 0
+            'is_asset'       => 0,
         ]);
 
         // RE-VALIDASI BISNIS
@@ -452,10 +463,10 @@ class ItemController extends Controller
         if (!\App\Models\Uom::where('code', $detail->uom_code)->exists()) $errors[] = "Satuan tidak ditemukan";
         if (!\App\Models\ItemType::where('code', $detail->item_type_code)->where('is_active', true)->exists()) $errors[] = "Tipe Barang tidak valid/tidak aktif";
 
-        // Logika Bisnis Aset & Jasa
-        if ($detail->is_asset == 1 && $detail->item_type_code === 'JSA') $errors[] = "Jasa tidak bisa dijadikan Aset";
-        if ($detail->item_type_code === 'JSA' && $detail->is_trackable == 1) $errors[] = "Jasa tidak bisa dilacak fisik";
-        if ($detail->is_asset == 1 && $detail->is_trackable == 0) $errors[] = "Aset WAJIB Dilacak";
+        // 🔥 Logika Bisnis Aset dihapus, hanya sisakan validasi Jasa 🔥
+        if ($detail->item_type_code === 'JSA' && $detail->is_trackable == 1) {
+            $errors[] = "Jasa tidak bisa dilacak fisik (Tidak butuh SN)";
+        }
 
         $detail->update([
             'is_valid' => empty($errors),

@@ -89,7 +89,7 @@ class EmployeeInventoryController extends Controller
                     'qty_or_sn'        => ($item->type == 'IN' ? '+' : '-') . ' ' . (float)$item->qty . ' unit',
                     'sn_list'          => $snList,
                     'reference_number' => $item->reference_number,
-                    'notes'            => $item->notes
+                    'notes'            => "Diserahkan ke karyawan via GI: {$giNumber}. Unit: " . $invStringForNote,
                 ];
             });
 

@@ -30,7 +30,10 @@ class ItemsSeeder extends Seeder
             if ($type === 'STK') {
                 $itemTypeCode = 'STK';
 
-                $currentStock = $faker->numberBetween(0, 150);
+                // 🔥 PERBAIKAN: Stok Master Barang WAJIB 0.
+                // Stok fisik harus masuk melalui Goods Receipt atau Adjusment Stock!
+                $currentStock = 0;
+
                 $minStock = $faker->numberBetween(5, 20);
                 $maxStock = $faker->numberBetween(100, 500);
 
@@ -61,10 +64,12 @@ class ItemsSeeder extends Seeder
                 $name = $faker->randomElement(['Service AC', 'Maintenance Server', 'Jasa Konsultan']);
                 $uomId = $uomIds['PKT'] ?? $defaultUomId;
                 $is_trackable = 0;
-                $currentStock = 0; $minStock = 0; $maxStock = 0;
+                $currentStock = 0;
+                $minStock = 0;
+                $maxStock = 0;
             }
 
-            // 🔥 SOLUSI: GABUNGKAN SLUG DENGAN VARIABEL $i AGAR DIJAMIN 1000% UNIK 🔥
+            // GABUNGKAN SLUG DENGAN VARIABEL $i AGAR DIJAMIN 1000% UNIK
             $slug = Str::slug($name) . '-' . str_pad($i, 3, '0', STR_PAD_LEFT);
 
             DB::table('items')->insert([

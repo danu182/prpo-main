@@ -5,7 +5,6 @@
 <link href="https://cdn.jsdelivr.net/npm/select2-bootstrap-5-theme@1.3.0/dist/select2-bootstrap-5-theme.min.css" rel="stylesheet" />
 
 <style>
-    /* Desain Elegan Select2 & Chip Aset */
     .select2-container--bootstrap-5 .select2-selection--multiple .select2-selection__choice {
         max-width: 95%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; display: inline-block; vertical-align: middle;
         background-color: #0dcaf0; color: white; border: none; border-radius: 4px; padding: 2px 8px; font-size: 0.8rem; font-weight: 600;
@@ -14,8 +13,6 @@
     .select2-container--bootstrap-5 .select2-selection--single .select2-selection__rendered { color: #495057; padding-top: 2px; font-weight: 600; }
     .select2-results__option { font-size: 0.85rem; padding: 8px 12px; }
     .select2-container--bootstrap-5 .select2-selection--multiple { min-height: 38px; padding-bottom: 0px; }
-
-    /* Scrollbar Minimalis */
     .custom-scrollbar::-webkit-scrollbar { width: 4px; }
     .custom-scrollbar::-webkit-scrollbar-track { background: #f1f1f1; border-radius: 4px; }
     .custom-scrollbar::-webkit-scrollbar-thumb { background: #c1c1c1; border-radius: 4px; }
@@ -108,7 +105,6 @@
                             </tr>
                         </thead>
                         <tbody id="item-tbody">
-                            {{-- Baris JS --}}
                         </tbody>
                     </table>
                 </div>
@@ -142,7 +138,6 @@
         let toWarehouseSelect = $('#to_warehouse_id');
         let rowCount = 0;
 
-        // Reset Daftar Barang Jika Gudang Asal Diubah
         fromWarehouseSelect.on('change', function() {
             let currentRows = tbody.find('tr.item-row').length;
             if (currentRows > 0) {
@@ -175,7 +170,10 @@
                     </td>
                     <td class="py-3">
                         <div class="qty-container">
-                            <input type="number" name="items[${rowCount}][qty]" class="text-center shadow-sm form-control qty-input fw-bold text-primary border-primary" step="0.01" min="0.1" required>
+                            <div class="mb-1 shadow-sm input-group input-group-sm">
+                                <input type="number" name="items[${rowCount}][qty]" class="text-center form-control qty-input fw-bold text-primary border-primary" step="any" min="0" required>
+                                <select name="items[${rowCount}][uom_info]" class="form-select bg-light text-dark uom-select border-primary fw-bold" style="min-width: 140px; cursor: pointer;"></select>
+                            </div>
                         </div>
                         <div class="asset-container d-none">
                             <select name="items[${rowCount}][asset_ids][]" class="shadow-sm form-select asset-select border-info" multiple="multiple"></select>
@@ -194,7 +192,6 @@
             let $tr = $(tr);
             tbody.append($tr);
 
-            // 🔥 PERBAIKAN: MENGGUNAKAN ROUTE STOCK TRANSFER SENDIRI 🔥
             $tr.find('.item-select-ajax').select2({
                 theme: 'bootstrap-5',
                 placeholder: '-- Cari & Ketik Barang --',
@@ -227,7 +224,6 @@
             }
         });
 
-        // 🔥 LOGIKA METAMORFOSIS FORM (MIRIP GI) 🔥
         tbody.on('select2:select', '.item-select-ajax', function (e) {
             let data = e.params.data;
             let tr = $(this).closest('tr');
@@ -237,6 +233,7 @@
 
             let qtyContainer = tr.find('.qty-container');
             let qtyInput = tr.find('.qty-input');
+            let uomSelect = tr.find('.uom-select');
             let assetContainer = tr.find('.asset-container');
             let assetSelect = tr.find('.asset-select');
             let batchSelect = tr.find('.batch-select');
@@ -273,7 +270,22 @@
                 assetSelect.prop('required', false).empty();
 
                 qtyContainer.removeClass('d-none');
-                qtyInput.attr('max', data.stock).val('').prop('required', true);
+
+                // 🔥 SIHIR UOM: Bangun Select UOM 🔥
+                uomSelect.empty();
+                let baseUomName = data.base_uom || 'PCS';
+                uomSelect.append(`<option value="" data-conv="1">${baseUomName}</option>`);
+
+                if (data.uoms && data.uoms.length > 0) {
+                    data.uoms.forEach(u => {
+                        let konversi = parseFloat(u.conversion_qty);
+                        uomSelect.append(`<option value="${u.id}" data-conv="${konversi}">${u.uom_name} (Isi ${konversi})</option>`);
+                    });
+                }
+
+                qtyInput.data('stock-bulk', data.stock);
+                qtyInput.attr('max', data.stock).val('').prop('required', true).attr('placeholder', 'Max: ' + data.stock);
+
                 batchSelect.prop('disabled', false).removeClass('bg-light').html('<option value="">⏳ Memuat Batch...</option>');
 
                 $.ajax({
@@ -295,6 +307,27 @@
                     generalNotes.removeClass('d-none').prop('required', false);
                     snContainer.addClass('d-none').empty();
                 }
+            }
+        });
+
+        // 🔥 LOGIKA AJAIB: MENGHITUNG ULANG MAX QTY SAAT SATUAN UOM DIUBAH 🔥
+        tbody.on('change', '.uom-select', function() {
+            let tr = $(this).closest('tr');
+            let qtyInput = tr.find('.qty-input');
+
+            let bulkStock = parseFloat(qtyInput.data('stock-bulk')) || 0;
+            let conv = parseFloat($(this).find(':selected').data('conv')) || 1;
+            let newMax = Math.floor(bulkStock / conv);
+
+            qtyInput.attr('max', newMax).attr('placeholder', 'Max: ' + newMax);
+
+            let currentVal = parseFloat(qtyInput.val());
+            if (currentVal > newMax) {
+                qtyInput.val(newMax);
+                Swal.fire({
+                    toast: true, position: 'top-end', showConfirmButton: false, timer: 3000,
+                    icon: 'info', title: 'Kuantitas disesuaikan dengan sisa stok (' + newMax + ')'
+                });
             }
         });
 
@@ -327,7 +360,6 @@
             }
         });
 
-        // VALIDASI SUBMIT
         $('#form-stock-transfer').on('submit', function(e) {
             e.preventDefault();
             let form = this;

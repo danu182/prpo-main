@@ -92,20 +92,19 @@ class GoodsReceiptController extends Controller
         return view('gr.index', compact('grs', 'readyPOs'));
     }
 
-    // ========================================================
-    // CREATE GR (MENGGUNAKAN LOGIKA UOM_ID YANG PRESISI)
-    // ========================================================
     public function create($slug)
     {
         $po = \App\Models\PurchaseOrder::with([
             'vendor',
             'items.item.itemUoms',
-            'items.item.uom'
+            'items.item.uom' // Memanggil relasi satuan dasar
         ])->where('po_number', $slug)->firstOrFail();
 
         $pendingItems = $po->items->filter(function ($item) {
-            // 🔥 TARIK SATUAN UOM PO SECARA ABSOLUT MENGGUNAKAN ID 🔥
             $poConvFactor = 1;
+
+            // 🔥 TANGKAP NAMA SATUAN ASLI DARI MASTER BARANG 🔥
+            $baseUomName = optional(optional($item->item)->uom)->name ?? 'Unit';
 
             if (!empty($item->uom_id)) {
                 $uomDb = collect(optional(optional($item->item)->itemUoms))->where('id', $item->uom_id)->first();
@@ -113,21 +112,21 @@ class GoodsReceiptController extends Controller
                     $poConvFactor = (float) $uomDb->conversion_qty;
                 }
             } else {
-                // Fallback jika uom_id kosong (PO lama)
-                $rawPoUom = is_string($item->uom) ? $item->uom : (optional($item->uom)->name ?? $item->getRawOriginal('uom') ?? 'PCS');
+                // Jika PO UOM kosong, gunakan uom asli atau fallback ke baseUomName
+                $rawPoUom = is_string($item->uom) ? $item->uom : (optional($item->uom)->name ?? $item->getRawOriginal('uom') ?? $baseUomName);
                 if (preg_match('/Isi\s*[:=]\s*([0-9.]+)/i', $rawPoUom, $matches)) {
                     $poConvFactor = (float) $matches[1];
                 }
             }
 
-            // Karena qty_received dan qty_ordered di dalam database tabel PO itu "Apple to Apple" (satuannya sama-sama PO)
-            // Jadi kita tinggal kurangkan saja langsung!
             $sisaPoUom = (float)$item->qty_ordered - (float)($item->qty_received ?? 0);
 
-            // Simpan variabel sisa ke dalam objek agar bisa dibaca di Blade
             $item->sisa_po_uom = $sisaPoUom;
             $item->po_conv_factor = $poConvFactor;
-            $item->raw_po_uom = $item->uom; // Simpan teks untuk tampilan layar
+
+            // Simpan variabel dinamis untuk ditampilkan di Blade (HTML)
+            $item->base_uom_name = $baseUomName;
+            $item->raw_po_uom = is_string($item->uom) ? $item->uom : $baseUomName;
 
             return round($sisaPoUom, 4) > 0;
         });
@@ -143,7 +142,7 @@ class GoodsReceiptController extends Controller
     }
 
     // ========================================================
-    // STORE GR (DENGAN LOGIKA UOM_ID YANG SAMA KOKOHNYA)
+    // STORE GR (LENGKAP DENGAN TRANSLATOR [AUTO] & BEBAS BENTROK)
     // ========================================================
     public function store(Request $request, $slug, \App\Services\SystemSettingService $settingService)
     {
@@ -161,8 +160,11 @@ class GoodsReceiptController extends Controller
         try {
             $newGrNumber = DB::transaction(function () use ($request, $slug, $settingService) {
                 $po = \App\Models\PurchaseOrder::with('items')->where('po_number', $slug)->firstOrFail();
+
+                // Generate Nomor GR
                 $grNumber = $this->generateGrNumber($po->bill_to_company_id);
 
+                // 1. Simpan Header Goods Receipt
                 $gr = \App\Models\GoodsReceipt::create([
                     'purchase_order_id'    => $po->id,
                     'gr_number'            => $grNumber,
@@ -172,6 +174,7 @@ class GoodsReceiptController extends Controller
                     'notes'                => $request->notes,
                 ]);
 
+                // 2. Simpan Dokumen Lampiran jika ada
                 if ($request->hasFile('attachments')) {
                     $safeGrNumber = str_replace('/', '-', $grNumber);
                     $basePath = $settingService->getAttachmentPath('GR');
@@ -192,6 +195,7 @@ class GoodsReceiptController extends Controller
                     }
                 }
 
+                // 3. Looping Rincian Barang yang Diterima
                 foreach ($request->items as $itemId => $data) {
                     $inputQty = (float) $data['qty_received'];
 
@@ -200,7 +204,7 @@ class GoodsReceiptController extends Controller
                         $masterItem = \App\Models\Item::with('uom', 'itemUoms')->findOrFail($data['item_id']);
                         $baseUomName = optional($masterItem->uom)->name ?? 'PCS';
 
-                        // 🔥 LOGIKA UOM DARI PO ITEM 🔥
+                        // LOGIKA UOM DARI PO ITEM
                         $poConvFactor = 1;
                         if (!empty($poItem->uom_id)) {
                             $uomDb = collect($masterItem->itemUoms)->where('id', $poItem->uom_id)->first();
@@ -212,20 +216,19 @@ class GoodsReceiptController extends Controller
                             }
                         }
 
-                        // 🔥 LOGIKA UOM DARI FORM GR (Yang dipilih user saat terima barang) 🔥
+                        // LOGIKA UOM DARI FORM GR (Pilihan input user)
                         $inputConvFactor = 1;
                         $cleanInputUom = 'PCS';
-                        $selectedUomId = null; // <-- Siapkan variabel penampung ID
+                        $selectedUomId = null;
 
                         if (!empty($data['uom_id'])) {
                             $uomDb = collect($masterItem->itemUoms)->where('id', $data['uom_id'])->first();
                             if ($uomDb) {
-                                $selectedUomId = $uomDb->id; // <-- Tangkap ID-nya
+                                $selectedUomId = $uomDb->id;
                                 $inputConvFactor = (float) $uomDb->conversion_qty;
                                 $cleanInputUom = $uomDb->uom_name;
                             }
                         } else {
-                            // Coba fallback dengan teks jika tidak ada ID
                             $inputUomText = $data['uom'] ?? $poItem->uom;
                             $cleanInputUom = trim(preg_replace('/ \(Isi:.*\)/i', '', $inputUomText));
                             if (preg_match('/Isi\s*[:=]\s*([0-9.]+)/i', $inputUomText, $matches)) {
@@ -233,56 +236,115 @@ class GoodsReceiptController extends Controller
                             }
                         }
 
-                        // 🔥 RANGKAI TEKS HISTORI UOM 🔥
+                        // Rangkai teks nama kemasan untuk histori dokumen
                         $finalUomString = $cleanInputUom;
                         if ($inputConvFactor > 1) {
                             $finalUomString .= ' (Isi ' . (float)$inputConvFactor . ' ' . $baseUomName . ')';
                         }
-                        // Proteksi jika kosong
                         if (empty(trim($finalUomString))) {
                             $finalUomString = $baseUomName ?? 'PCS';
                         }
 
-                        // Pengecekan Batas Maksimal berdasarkan Satuan Dasar (Eceran)
+                        // Hitung batas maksimum dalam pecahan terkecil (Base Qty)
                         $baseQtyReceived = $inputQty * $inputConvFactor;
                         $baseQtyOrdered = $poItem->qty_ordered * $poConvFactor;
                         $baseQtyReceivedSoFar = ($poItem->qty_received ?? 0) * $poConvFactor;
                         $sisaBaseYangBolehDiterima = round($baseQtyOrdered - $baseQtyReceivedSoFar, 4);
 
                         if (round($baseQtyReceived, 4) > $sisaBaseYangBolehDiterima) {
-                            throw new \Exception("Kuantitas terima ({$baseQtyReceived} {$baseUomName}) melebihi sisa pesanan PO!");
+                            throw new \Exception("Kuantitas terima untuk barang '{$masterItem->name}' ({$baseQtyReceived} {$baseUomName}) melebihi sisa pesanan PO!");
                         }
 
-                        // ... (BAGIAN LOGIKA SERIAL NUMBER TETAP SAMA, BIARKAN SAJA) ...
-                        // (Saya skip penulisan logika SN di sini agar fokus, kode SN Anda sudah benar)
+                        // ====================================================================
+                        // 🔥 BAGIAN SAKTI: LOGIKA PENERJEMAH & TRANSLATOR TAG [AUTO] SN 🔥
+                        // ====================================================================
+                        $qtyInt = (int) $baseQtyReceived;
+                        $rawSnList = $data['sn'] ?? [];
 
-                        $snString = ''; // <--- TAMBAHKAN BARIS INI SEBAGAI PENYELAMAT
+                        // Count berapa tag '[AUTO]' yang dikirim dari form
+                        $autoCount = 0;
+                        foreach ($rawSnList as $sn) {
+                            if (strtoupper(trim($sn)) === '[AUTO]') {
+                                $autoCount++;
+                            }
+                        }
+
+                        // Generate kumpulan SN asli dari sistem jika ada [AUTO]
+                        $generatedSns = [];
+                        if ($autoCount > 0) {
+                            $generatedSns = $this->generateSnBatch($masterItem->code, $autoCount);
+                        }
+
+                        // Satukan SN manual/scan dengan SN hasil buatan sistem
+                        $finalSnList = [];
+                        $autoIdx = 0;
+                        foreach ($rawSnList as $sn) {
+                            if (strtoupper(trim($sn)) === '[AUTO]') {
+                                $finalSnList[] = $generatedSns[$autoIdx] ?? ($masterItem->code . '-ERR-' . uniqid());
+                                $autoIdx++;
+                            } else {
+                                $finalSnList[] = trim($sn); // SN ketik manual atau tembak barcode scan
+                            }
+                        }
+
+                        // Bersihkan array dan gabungkan menjadi string koma untuk mutasi teks
+                        $finalSnList = array_filter($finalSnList);
+                        $snString = implode(', ', $finalSnList);
+
+                        // Pengecekan validasi jika barang merupakan tipe Lacak Fisik (Trackable)
+                        if (isset($masterItem->is_trackable) && $masterItem->is_trackable) {
+                            if (count($finalSnList) < $qtyInt) {
+                                throw new \Exception("Wajib mengisi Serial Number sebanyak {$qtyInt} unit untuk barang {$masterItem->name}!");
+                            }
+
+                            // Simpan detail per unit SN ke database tabel item_serials
+                            foreach ($finalSnList as $sn) {
+                                \DB::table('item_serials')->insert([
+                                    'item_id'          => $masterItem->id,
+                                    'goods_receipt_id' => $gr->id, // Menyimpan relasi ID agar show/print tidak blank
+                                    'serial_number'    => $sn,
+                                    'status'           => 'AVAILABLE',
+                                    'created_at'       => now(),
+                                    'updated_at'       => now(),
+                                ]);
+                            }
+                        }
+                        // ====================================================================
 
                         $catatanAsli = $data['notes'] ?? null;
 
-                        // 🔥 SIMPAN KEDUANYA KE DATABASE 🔥
+                        // 4. Simpan ke Database Detail Item GR
                         \App\Models\GoodsReceiptItem::create([
                             'goods_receipt_id'       => $gr->id,
                             'purchase_order_item_id' => $poItem->id,
                             'item_id'                => $data['item_id'],
                             'qty_received'           => $inputQty,
-                            'uom_id'                 => $selectedUomId,  // Simpan ID untuk relasi & query laporan
-                            'uom'                    => $finalUomString, // Simpan Teks "Pack (Isi 10)" untuk histori dokumen
+                            'uom_id'                 => $selectedUomId,
+                            'uom'                    => $finalUomString,
                             'condition_id'           => $data['condition_id'],
                             'notes'                  => $catatanAsli,
                         ]);
 
-                        // UPDATE QTY_RECEIVED DI TABEL PO (Harus "Apple to Apple" dengan PO UOM)
+                        // 5. Update Progress Kuantitas Diterima di Dokumen PO Induk
                         $poItem->qty_received = ($poItem->qty_received ?? 0) + ($baseQtyReceived / $poConvFactor);
                         $poItem->save();
 
-                        if ($masterItem->is_stockable) {
+                        // 6. Update Stok dan Cetak Kartu Mutasi Logistik
+                        if ($masterItem->is_stockable ?? true) {
                             $balanceBefore = (float) $masterItem->current_stock;
                             $balanceAfter  = $balanceBefore + $baseQtyReceived;
-                            $namaSpesifik = $poItem->description ?? $masterItem->name;
 
-                            $noteMutasi = $catatanAsli ? "Masuk: {$namaSpesifik} (Ref PO: {$po->po_number}) - {$catatanAsli}" : "Masuk: {$namaSpesifik} (Ref PO: {$po->po_number})";
-                            if ($snString) $noteMutasi .= " [SN: {$snString}]";
+                            // Ambil nama spesifik, pastikan tidak ada tag HTML <ul><li> yang bikin panjang
+                            $namaSpesifik = strip_tags($poItem->description ?? $masterItem->name);
+
+                            // 🔥 PERBAIKAN FATAL: HANYA CATAT INFO DASAR 🔥
+                            // Kita HAPUS TOTAL penambahan daftar SN dari note mutasi agar tidak jebol!
+                            $noteMutasi = "Masuk: {$namaSpesifik} (Ref PO: {$po->po_number})";
+
+                            if ($catatanAsli) {
+                                // Batasi catatan dari user maksimal 100 karakter
+                                $noteMutasi .= " - " . \Illuminate\Support\Str::limit(strip_tags($catatanAsli), 100);
+                            }
 
                             \App\Models\InventoryStock::create([
                                 'company_id'       => $po->bill_to_company_id,
@@ -307,39 +369,13 @@ class GoodsReceiptController extends Controller
 
                             $masterItem->update(['current_stock' => $balanceAfter]);
                         }
-
-                        if ($masterItem->is_asset) {
-                            $yearMonth = date('Y/m');
-                            $lastAsset = \App\Models\FixedAsset::where('asset_number', 'like', "AST/{$yearMonth}/%")->orderBy('id', 'desc')->lockForUpdate()->first();
-                            $nextSeq = $lastAsset ? ((int) substr($lastAsset->asset_number, -4)) + 1 : 1;
-
-                            for ($i = 0; $i < $qtyInt; $i++) {
-                                $assetNumber = "AST/{$yearMonth}/" . str_pad($nextSeq, 4, '0', STR_PAD_LEFT);
-                                $currentSn = $finalSnList[$i] ?? null;
-
-                                \App\Models\FixedAsset::create([
-                                    'asset_number'     => $assetNumber,
-                                    'serial_number'    => $currentSn,
-                                    'item_id'          => $masterItem->id,
-                                    'warehouse_id'     => $request->warehouse_id ?? 1,
-                                    'company_id'       => $po->bill_to_company_id,
-                                    'name'             => $poItem->description ?? $masterItem->name,
-                                    'goods_receipt_id' => $gr->id,
-                                    'acquisition_date' => $request->receipt_date,
-                                    'purchase_price'   => ($poItem->unit_price / $poConvFactor),
-                                    'status_id'        => \App\Models\Status::where('type', 'AST')->where('slug', 'available')->first()->id ?? 1,
-                                    'notes'            => $catatanAsli ?? 'Aset masuk dari GR: ' . $grNumber
-                                ]);
-                                $nextSeq++;
-                            }
-                        }
                     }
                 }
 
+                // 7. Otomatis Update Status PO Berdasarkan Progress Penerimaan Fisik
                 $po->refresh();
                 $allFullyReceived = true;
                 foreach ($po->items as $item) {
-                    // Cek Sisa Penerimaan (Bandingkan QTY Ordered & Received yang satuannya sudah Apple to Apple)
                     if (round($item->qty_received ?? 0, 4) < round($item->qty_ordered, 4)) {
                         $allFullyReceived = false; break;
                     }
@@ -352,6 +388,7 @@ class GoodsReceiptController extends Controller
                 $statusText = $allFullyReceived ? 'Penerimaan Penuh (Fully Received)' : 'Penerimaan Parsial (Partial Receipt)';
                 \App\Models\PurchaseOrderHistory::create(['purchase_order_id' => $po->id, 'user_id' => auth()->id(), 'action' => 'GOODS RECEIPT', 'note' => "Barang telah tiba. Status: {$statusText}.\nNo Surat Jalan: {$request->delivery_note_number}\nNo GR: {$grNumber}"]);
 
+                // 8. Logika Sinkronisasi dengan Purchase Request (PR) Induk
                 if ($po->purchase_request_id) {
                     $pr = \App\Models\PurchaseRequest::with('items')->find($po->purchase_request_id);
                     if ($pr) {
@@ -389,7 +426,7 @@ class GoodsReceiptController extends Controller
         $gr = \App\Models\GoodsReceipt::with([
             'purchaseOrder.vendor',
             'purchaseOrder.company',
-            'warehouse', // <--- TAMBAHKAN INI AGAR DATA GUDANG IKUT TERBAWA
+            'warehouse',
             'items.item.uom',
             'items.item.itemUoms',
             'items.item.serials' => function($query) use ($slug) {
@@ -446,11 +483,12 @@ class GoodsReceiptController extends Controller
 
         $labelItems = $gr->items->filter(function ($grItem) {
             $masterItem = $grItem->item;
-            return $masterItem && ($masterItem->is_asset || $masterItem->is_trackable);
+            // 🔥 PERBAIKAN: Hanya cek is_trackable, tidak ada lagi is_asset
+            return $masterItem && $masterItem->is_trackable;
         });
 
         if ($labelItems->isEmpty()) {
-            return back()->with('error', 'Tidak ada Aset Tetap atau Inventaris Minor yang perlu dicetak labelnya pada dokumen GR ini.');
+            return back()->with('error', 'Tidak ada Inventaris yang perlu dicetak label SN-nya pada dokumen GR ini.');
         }
 
         return view('gr.print_labels', compact('gr', 'labelItems'));

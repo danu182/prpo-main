@@ -49,6 +49,7 @@ class GoodsIssueController extends Controller
         return view('goods_issues.create', compact('users', 'warehouses'));
     }
 
+
     // ==========================================
     // 2. PROSES SIMPAN PENGELUARAN BARANG
     // ==========================================
@@ -67,6 +68,9 @@ class GoodsIssueController extends Controller
             if (!empty($data['asset_ids'])) {
                 $allSelectedAssets = array_merge($allSelectedAssets, $data['asset_ids']);
             }
+            if (!empty($data['sn_list'])) {
+                $allSelectedAssets = array_merge($allSelectedAssets, $data['sn_list']);
+            }
         }
 
         if (count($allSelectedAssets) !== count(array_unique($allSelectedAssets))) {
@@ -77,22 +81,16 @@ class GoodsIssueController extends Controller
             $gi = null;
 
             \DB::transaction(function () use ($request, &$gi) {
-                // A. Generate Nomor GI (DENGAN KODE COMPANY)
                 $year = date('Y', strtotime($request->issue_date));
                 $month = date('m', strtotime($request->issue_date));
-
-                // Ambil kode company dari user login. Jika kosong, default 'HO'
                 $companyCode = auth()->user()->company->code ?? 'HO';
                 $prefix = "GI-{$companyCode}-{$year}-{$month}-";
 
-                // Cari urutan terakhir berdasarkan prefix bulan & company ini
                 $lastGi = \App\Models\GoodsIssue::where('gi_number', 'like', "{$prefix}%")
-                                ->orderBy('id', 'desc')
-                                ->first();
+                                ->orderBy('id', 'desc')->first();
 
                 $nextId = $lastGi ? ((int) substr($lastGi->gi_number, -4)) + 1 : 1;
                 $giNumber = $prefix . str_pad($nextId, 4, '0', STR_PAD_LEFT);
-
                 $statusActiveId = \App\Models\Status::where('type', 'GI')->where('slug', 'active')->value('id') ?? 1;
 
                 $gi = \App\Models\GoodsIssue::create([
@@ -114,6 +112,9 @@ class GoodsIssueController extends Controller
                     $finalUomString = $satuanDasar;
                     $uomId = null;
 
+                    $daftarInventarisBaru = [];
+                    $snStringForNote = ''; // Penampung teks SN
+
                     if ($isModeAsset) {
                         $assetIds = $data['asset_ids'];
                         $qtyRequested = count($assetIds);
@@ -121,18 +122,14 @@ class GoodsIssueController extends Controller
 
                         $assetDetails = \App\Models\FixedAsset::whereIn('id', $assetIds)->get();
                         $assetInfoArr = [];
-
                         $userPenerima = \App\Models\User::where('name', $request->requester_name)->first();
                         $assignedToId = $userPenerima ? $userPenerima->id : null;
-
                         $statusInUse = \App\Models\Status::where('type', 'AST')->where('slug', 'in_use')->first();
                         $statusIdToUse = $statusInUse ? $statusInUse->id : 31;
 
                         foreach($assetDetails as $ad) {
                             $info = $ad->asset_number;
                             if($ad->serial_number) { $info .= " (SN: " . $ad->serial_number . ")"; }
-                            if($ad->accounting_asset_number) { $info .= " [FA: " . $ad->accounting_asset_number . "]"; }
-
                             $assetInfoArr[] = "- " . $info;
 
                             \App\Models\FixedAssetHistory::create([
@@ -151,14 +148,11 @@ class GoodsIssueController extends Controller
                         }
 
                         $itemNote = "Dikeluarkan Aset:\n" . implode("\n", $assetInfoArr);
-                        if (!empty($data['notes'])) {
-                            $itemNote .= "\nCatatan: " . $data['notes'];
-                        }
+                        if (!empty($data['notes'])) $itemNote .= "\nCatatan: " . $data['notes'];
 
                     } else {
                         $qtyInput = (float) ($data['qty_issued'] ?? 0);
                         $uomId = $data['uom_info'] ?? null;
-
                         $conversionFactor = 1;
                         $cleanUomName = $satuanDasar;
 
@@ -174,18 +168,43 @@ class GoodsIssueController extends Controller
                         if ($conversionFactor > 1) {
                             $finalUomString .= ' (Isi ' . $conversionFactor . ' ' . $satuanDasar . ')';
                         }
-
                         $qtyRequested = $qtyInput * $conversionFactor;
 
                         if (isset($item->is_trackable) && $item->is_trackable) {
-                            if (empty($data['sn_list']) || count($data['sn_list']) < intval($qtyRequested)) {
-                                throw new \Exception("Wajib mengisi Nomor Seri (SN) sebanyak " . intval($qtyRequested) . " unit!");
+                            $snList = $data['sn_list'] ?? [];
+                            if (empty($snList) || count($snList) < intval($qtyRequested)) {
+                                throw new \Exception("Wajib memilih Serial Number (SN) sebanyak " . intval($qtyRequested) . " unit untuk barang " . $item->name);
                             }
-                            $itemNote = "SN Detail: " . implode(', ', $data['sn_list']);
-                        } else {
-                            $itemNote = $data['notes'] ?? '';
+
+                            // UPDATE STATUS SN DI TABEL ITEM_SERIALS JADI 'IN_USE'
+                            \DB::table('item_serials')
+                                ->whereIn('serial_number', $snList)
+                                ->update([
+                                    'status' => 'IN_USE',
+                                    'updated_at' => now()
+                                ]);
+
+                            // Generate Kode Registrasi Inventaris Karyawan
+                            $kodeCompany = auth()->user()->company->code ?? 'HO';
+                            $bulanTahun = date('ym');
+                            foreach ($snList as $sn) {
+                                $kodeUnik = strtoupper(substr(uniqid(), -4));
+                                $daftarInventarisBaru[] = "INV-{$kodeCompany}-{$bulanTahun}-{$kodeUnik} [SN: " . trim($sn) . "]";
+                            }
+
+                            // 🔥 BUAT TEKS SN PENDEK UNTUK DITAMPILKAN 🔥
+                            if (count($snList) > 3) {
+                                $snStringForNote = implode(', ', array_slice($snList, 0, 3)) . " ... (+" . (count($snList) - 3) . " unit)";
+                            } else {
+                                $snStringForNote = implode(', ', $snList);
+                            }
                         }
 
+                        // Susun catatan untuk Detail Pengeluaran (Tabel Item)
+                        $itemNote = $data['notes'] ?? '';
+                        if ($snStringForNote) {
+                            $itemNote .= ($itemNote ? " | " : "") . "SN: " . $snStringForNote;
+                        }
                         $itemNote = trim($itemNote . " | Dikeluarkan fisik: {$qtyInput} {$finalUomString}", ' |');
                     }
 
@@ -194,8 +213,7 @@ class GoodsIssueController extends Controller
                     $sortDirection = ($issueMethod === 'LIFO') ? 'desc' : 'asc';
 
                     $query = \App\Models\InventoryStock::where('warehouse_id', $request->warehouse_id)
-                                ->where('item_id', $item->id)
-                                ->where('stock_qty', '>', 0);
+                                ->where('item_id', $item->id)->where('stock_qty', '>', 0);
 
                     if (!empty($data['inventory_stock_id']) && !$isModeAsset) {
                         $query->where('id', $data['inventory_stock_id']);
@@ -218,13 +236,25 @@ class GoodsIssueController extends Controller
                     foreach ($availableStocks as $stockRow) {
                         if ($qtySisa <= 0) break;
                         $potong = min($stockRow->stock_qty, $qtySisa);
-
                         $balanceBefore = $saldoTotalSaatIni;
                         $balanceAfter = $saldoTotalSaatIni - $potong;
                         $saldoTotalSaatIni = $balanceAfter;
 
                         $stockRow->decrement('stock_qty', $potong);
                         $qtySisa -= $potong;
+
+                        // 🔥 SUSUN CATATAN UNTUK KARTU MUTASI STOK 🔥
+                        $mutasiNoteExt = "";
+                        if ($isModeAsset && !empty($assetInfoArr)) {
+                            $cleanAssets = array_map(function($val) { return ltrim($val, '- '); }, $assetInfoArr);
+                            // Tetap gunakan format [SN: ] agar tombol kuning muncul meskipun mode aset
+                            $mutasiNoteExt = " [SN: " . implode(', ', $cleanAssets) . "]";
+                        } elseif (!$isModeAsset && !empty($snStringForNote)) {
+                            // 🔥 PERBAIKAN: FORMAT HARUS PERSIS [SN: ...] TANPA TAMBAHAN KATA "KELUAR" 🔥
+                            $mutasiNoteExt = " [SN: {$snStringForNote}]";
+                        }
+
+                        $namaBarang = strip_tags($item->name);
 
                         \App\Models\StockMutation::create([
                             'item_id'          => $item->id,
@@ -234,7 +264,8 @@ class GoodsIssueController extends Controller
                             'balance_before'   => $balanceBefore,
                             'balance_after'    => $balanceAfter,
                             'reference_number' => $giNumber,
-                            'notes'            => "GI ke {$request->requester_name}. [{$modeText}]",
+                            // Note yang tersimpan akan menjadi: "Keluar ke Budi. [SN: SKU-001, SKU-002]"
+                            'notes'            => "Keluar ke {$request->requester_name}.{$mutasiNoteExt}",
                             'created_by'       => auth()->id(),
                         ]);
                     }
@@ -250,14 +281,20 @@ class GoodsIssueController extends Controller
                         'notes'          => $itemNote,
                     ]);
 
+                    // 🔥 SIMPAN INVENTARIS PEGAWAI SECARA TERPISAH (1 BARIS 1 UNIT) 🔥
                     if (!$isModeAsset && isset($item->is_trackable) && $item->is_trackable) {
-                        $empInventory = \App\Models\EmployeeInventory::firstOrNew([
-                            'employee_name'    => $request->requester_name,
-                            'item_id'          => $item->id,
-                            'specific_details' => $itemNote,
-                        ]);
-                        $empInventory->qty += $qtyRequested;
-                        $empInventory->save();
+                        foreach ($daftarInventarisBaru as $invRecord) {
+                            \App\Models\EmployeeInventory::create([
+                                'employee_name'    => $request->requester_name,
+                                'item_id'          => $item->id,
+                                'qty'              => 1,
+                                'specific_details' => $invRecord,
+                            ]);
+                        }
+
+                        $invStringForNote = count($daftarInventarisBaru) > 3
+                            ? implode(', ', array_slice($daftarInventarisBaru, 0, 3)) . ' ... (+' . (count($daftarInventarisBaru) - 3) . ' unit)'
+                            : implode(', ', $daftarInventarisBaru);
 
                         \App\Models\EmployeeInventoryHistory::create([
                             'employee_name'    => $request->requester_name,
@@ -265,20 +302,21 @@ class GoodsIssueController extends Controller
                             'type'             => 'IN',
                             'qty'              => $qtyRequested,
                             'reference_number' => $giNumber,
-                            'notes'            => "Diserahkan ke karyawan melalui GI: {$giNumber}.",
+                            'notes'            => "Diserahkan ke karyawan via GI: {$giNumber}. Unit: " . $invStringForNote,
                         ]);
                     }
                 }
             });
 
             return redirect()->route('goods-issues.show', $gi->gi_number)
-                             ->with(['success' => 'Pengeluaran Berhasil! Stok dan Data Aset otomatis diperbarui.', 'print_gi_slug' => $gi->gi_number]);
+                             ->with(['success' => 'Pengeluaran Berhasil! Inventaris telah diregistrasi otomatis ke nama Karyawan.', 'print_gi_slug' => $gi->gi_number]);
 
         } catch (\Exception $e) {
             \Log::error('Error Simpan GI: ' . $e->getMessage() . ' - L: ' . $e->getLine());
             return back()->withInput()->with('error', $e->getMessage());
         }
     }
+
 
     // ==========================================
     // 3. MENAMPILKAN DETAIL GI
@@ -332,7 +370,7 @@ class GoodsIssueController extends Controller
     }
 
     // =========================================================================
-    // 6. FUNGSI PEMBATALAN TRANSAKSI (VOID) - SUDAH DIPERBAIKI LOGIKA KONVERSINYA
+    // 6. FUNGSI PEMBATALAN TRANSAKSI (VOID)
     // =========================================================================
     public function voidTransaction($slug)
     {
@@ -362,7 +400,6 @@ class GoodsIssueController extends Controller
                 $masterItem = \App\Models\Item::lockForUpdate()->find($giItem->item_id);
                 if (!$masterItem) continue;
 
-                // 🔥 KUNCI PERBAIKAN: Hitung jumlah asli yang dipotong berdasarkan konversi!
                 $conversionFactor = 1;
                 if ($giItem->uom_id) {
                     $uomDb = \App\Models\ItemUom::find($giItem->uom_id);
@@ -516,6 +553,9 @@ class GoodsIssueController extends Controller
                 'available_bulk' => $availableBulk,
                 'available_asset' => $assetStock,
                 'uoms' => $item->uoms
+
+                // 🔥 TAMBAHKAN 1 BARIS INI UNTUK MENGIRIM NAMA SATUAN KE JAVASCRIPT 🔥
+                'base_uom_name' => optional($item->uom)->name ?? 'PCS'
             ];
         }
 
@@ -627,5 +667,34 @@ class GoodsIssueController extends Controller
             \Illuminate\Support\Facades\Log::error("Error Search Batches: " . $e->getMessage());
             return response()->json(['error' => 'Gagal memuat batch'], 500);
         }
+    }
+
+    // ========================================================
+    // 🔥 PENCARI SERIAL NUMBER (BARANG LACAK / MINOR ASSET) 🔥
+    // ========================================================
+    public function searchSns(Request $request)
+    {
+        $search = $request->search;
+        $itemId = $request->item_id;
+
+        $query = \DB::table('item_serials')
+                    ->where('item_id', $itemId)
+                    ->where('status', 'AVAILABLE');
+
+        if ($search) {
+            $query->where('serial_number', 'like', "%{$search}%");
+        }
+
+        $sns = $query->limit(50)->get();
+
+        $results = [];
+        foreach ($sns as $sn) {
+            $results[] = [
+                'id'   => $sn->serial_number,
+                'text' => $sn->serial_number
+            ];
+        }
+
+        return response()->json($results);
     }
 }

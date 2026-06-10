@@ -177,31 +177,62 @@
                         </td>
 
                         {{-- CATATAN & SERIAL NUMBER --}}
-                        <td class="py-3 pe-4">
-                            @if($item->notes)
-                                <div class="mb-2 text-dark fw-semibold" style="font-size: 0.85rem; line-height: 1.4;">
-                                    <i class="bi bi-chat-left-text text-muted me-1"></i> "{{ $item->notes }}"
-                                </div>
-                            @else
-                                <div class="mb-2 text-muted small fst-italic">Tidak ada catatan item.</div>
-                            @endif
+                        <td class="text-start">
+                            {{-- 1. Tampilkan Catatan Asli Staf --}}
+                            <div class="mb-2 text-dark">
+                                {{ $item->notes ?? 'Tidak ada catatan khusus.' }}
+                            </div>
 
+                            {{-- 2. Tampilkan Nomor Register / SN dalam bentuk Kotak-Kotak (Badge) --}}
                             @if(!empty($item->registered_sns))
-                                <div class="overflow-hidden border rounded shadow-sm border-warning-subtle">
-                                    <div class="px-2 py-1 bg-warning-subtle d-flex justify-content-between align-items-center" style="font-size: 0.65rem;">
-                                        <span class="fw-bold text-warning-emphasis"><i class="bi bi-upc-scan me-1"></i> Serial Number Diukir ke Database</span>
-                                        <span class="badge bg-warning text-dark rounded-pill">{{ count($item->registered_sns) }} Unit Terdaftar</span>
+                                <div class="p-2 border rounded bg-light border-secondary-subtle">
+                                    <span class="mb-2 d-block small text-muted fw-bold">
+                                        <i class="bi bi-upc-scan me-1"></i> Daftar SN / Register:
+                                    </span>
+
+                                    <div class="flex-wrap gap-1 d-flex">
+                                        {{-- Tampilkan maksimal 5 kotak pertama saja --}}
+                                        @foreach(array_slice($item->registered_sns, 0, 5) as $sn)
+                                            <span class="px-2 py-1 bg-white border shadow-sm badge text-dark border-secondary-subtle" style="font-size: 0.75rem;">
+                                                {{ $sn }}
+                                            </span>
+                                        @endforeach
+
+                                        {{-- Jika jumlahnya lebih dari 5, munculkan tombol Lihat Semua --}}
+                                        @if(count($item->registered_sns) > 5)
+                                            <span class="px-2 py-1 shadow-sm badge bg-primary" style="cursor: pointer;" data-bs-toggle="modal" data-bs-target="#snModal-{{ $item->id }}">
+                                                + {{ count($item->registered_sns) - 5 }} Lainnya
+                                            </span>
+                                        @endif
                                     </div>
-                                    <div class="p-2 bg-white text-start" style="max-height: 120px; overflow-y: auto;">
-                                        <div class="row row-cols-1 row-cols-sm-2 g-1">
-                                            @foreach($item->registered_sns as $sn)
-                                                <div class="col" style="font-size: 0.75rem; font-family: monospace;">
-                                                    <span class="text-success fw-bold">✓</span> <strong class="text-primary">{{ $sn }}</strong>
+                                </div>
+
+                                {{-- 3. Modal Popup untuk menampilkan keseluruhan 100 SN --}}
+                                @if(count($item->registered_sns) > 5)
+                                <div class="modal fade" id="snModal-{{ $item->id }}" tabindex="-1" aria-hidden="true">
+                                    <div class="modal-dialog modal-dialog-centered modal-dialog-scrollable">
+                                        <div class="border-0 shadow modal-content rounded-4">
+                                            <div class="modal-header bg-light border-bottom-0">
+                                                <h6 class="modal-title fw-bold text-dark">
+                                                    <i class="bi bi-upc-scan text-primary me-2"></i>Daftar Lengkap ({{ count($item->registered_sns) }} Unit)
+                                                </h6>
+                                                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                                            </div>
+                                            <div class="pt-0 modal-body bg-light">
+                                                <div class="row g-2">
+                                                    @foreach($item->registered_sns as $index => $sn)
+                                                    <div class="col-md-6 col-12">
+                                                        <div class="p-2 text-center bg-white border rounded shadow-sm text-dark fw-bold small">
+                                                            <span class="text-muted me-1">{{ $index + 1 }}.</span> {{ $sn }}
+                                                        </div>
+                                                    </div>
+                                                    @endforeach
                                                 </div>
-                                            @endforeach
+                                            </div>
                                         </div>
                                     </div>
                                 </div>
+                                @endif
                             @endif
                         </td>
                     </tr>

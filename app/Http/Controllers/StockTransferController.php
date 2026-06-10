@@ -65,16 +65,43 @@ class StockTransferController extends Controller
 
                 // 3. Proses Perpindahan Barang per Baris
                 foreach ($request->items as $data) {
-                    $item = Item::findOrFail($data['item_id']);
+                    $item = Item::with('uom', 'itemUoms')->findOrFail($data['item_id']);
+                    $baseUomName = optional($item->uom)->name ?? 'PCS';
 
-                    // Logika QTY Aset vs Non-Aset
-                    if ($item->is_asset && !empty($data['asset_ids'])) {
-                        $qtyRequested = count($data['asset_ids']);
+                    $isModeAsset = $item->is_asset && !empty($data['asset_ids']);
+
+                    $qtyInput = 0;
+                    $conversionFactor = 1;
+                    $finalUomString = $baseUomName;
+                    $uomId = null;
+
+                    if ($isModeAsset) {
+                        $qtyInput = count($data['asset_ids']);
+                        $baseQtyRequested = $qtyInput;
                     } else {
-                        $qtyRequested = (float) $data['qty'];
+                        $qtyInput = (float) $data['qty'];
+                        $uomId = $data['uom_info'] ?? null;
+
+                        $cleanUomName = $baseUomName;
+
+                        if (!empty($uomId)) {
+                            $uomDb = \App\Models\ItemUom::find($uomId);
+                            if ($uomDb) {
+                                $conversionFactor = (float) $uomDb->conversion_qty;
+                                $cleanUomName = $uomDb->uom_name;
+                            }
+                        }
+
+                        $finalUomString = $cleanUomName;
+                        if ($conversionFactor > 1) {
+                            $finalUomString .= ' (Isi ' . $conversionFactor . ' ' . $baseUomName . ')';
+                        }
+
+                        // 🔥 Hitung Base Qty (Kuantitas Terkecil)
+                        $baseQtyRequested = $qtyInput * $conversionFactor;
                     }
 
-                    if ($qtyRequested <= 0) {
+                    if ($baseQtyRequested <= 0) {
                         throw new \Exception("Gagal: Kuantitas barang {$item->name} tidak boleh kosong (0)!");
                     }
 
@@ -94,11 +121,11 @@ class StockTransferController extends Controller
                     $availableStocks = $query->lockForUpdate()->get();
                     $totalAvailable = $availableStocks->sum('stock_qty');
 
-                    if ($totalAvailable < $qtyRequested) {
-                        throw new \Exception("Stok {$item->name} di Gudang Asal tidak cukup! Diminta: {$qtyRequested}, Tersedia: {$totalAvailable}");
+                    if (round($totalAvailable, 4) < round($baseQtyRequested, 4)) {
+                        throw new \Exception("Stok {$item->name} di Gudang Asal tidak cukup! Diminta: {$baseQtyRequested} {$baseUomName}, Tersedia: {$totalAvailable} {$baseUomName}");
                     }
 
-                    $qtySisa = $qtyRequested;
+                    $qtySisa = $baseQtyRequested;
                     $sourceBatchIds = [];
 
                     foreach ($availableStocks as $stockRow) {
@@ -107,18 +134,17 @@ class StockTransferController extends Controller
 
                         $sourceBatchIds[] = $stockRow->batch_id;
 
-                        // Potong Fisik Gudang Asal
+                        $balanceBefore = $item->current_stock; // Asumsi stock global
                         $stockRow->decrement('stock_qty', $potong);
                         $qtySisa -= $potong;
 
-                        // Catat Mutasi OUT
                         StockMutation::create([
                             'item_id'          => $item->id,
                             'warehouse_id'     => $request->from_warehouse_id,
                             'type'             => 'OUT',
                             'qty'              => $potong,
-                            'balance_before'   => $item->current_stock,
-                            'balance_after'    => $item->current_stock,
+                            'balance_before'   => $balanceBefore,
+                            'balance_after'    => $balanceBefore, // Mutasi antar gudang tidak mengubah total stok perusahaan
                             'reference_number' => $tfNumber,
                             'notes'            => "Transfer KELUAR ke " . Warehouse::find($request->to_warehouse_id)->name,
                             'created_by'       => auth()->id(),
@@ -128,20 +154,28 @@ class StockTransferController extends Controller
                     // TAHAP B: MASUKKAN KE GUDANG TUJUAN (IN)
                     $companyId = auth()->user()->company_id ?? 1;
 
-                    $newStock = InventoryStock::create([
-                        'company_id'       => $companyId,
-                        'item_id'          => $item->id,
-                        'warehouse_id'     => $request->to_warehouse_id,
-                        'stock_qty'        => $qtyRequested,
-                        'batch_id'         => !empty($sourceBatchIds) ? implode(',', array_filter($sourceBatchIds)) : null,
-                        'reference_number' => $tfNumber,
-                    ]);
+                    $newStock = InventoryStock::where('item_id', $item->id)
+                                              ->where('warehouse_id', $request->to_warehouse_id)
+                                              ->first();
+
+                    if ($newStock) {
+                        $newStock->increment('stock_qty', $baseQtyRequested);
+                    } else {
+                        $newStock = InventoryStock::create([
+                            'company_id'       => $companyId,
+                            'item_id'          => $item->id,
+                            'warehouse_id'     => $request->to_warehouse_id,
+                            'stock_qty'        => $baseQtyRequested,
+                            'batch_id'         => !empty($sourceBatchIds) ? implode(',', array_filter($sourceBatchIds)) : null,
+                            'reference_number' => $tfNumber,
+                        ]);
+                    }
 
                     StockMutation::create([
                         'item_id'          => $item->id,
                         'warehouse_id'     => $request->to_warehouse_id,
                         'type'             => 'IN',
-                        'qty'              => $qtyRequested,
+                        'qty'              => $baseQtyRequested,
                         'balance_before'   => $item->current_stock,
                         'balance_after'    => $item->current_stock,
                         'reference_number' => $tfNumber,
@@ -150,7 +184,7 @@ class StockTransferController extends Controller
                     ]);
 
                     // TAHAP C: JIKA ASET TETAP
-                    if ($item->is_asset && !empty($data['asset_ids'])) {
+                    if ($isModeAsset) {
                         $assetIds = $data['asset_ids'];
                         $assetDetails = \App\Models\FixedAsset::whereIn('id', $assetIds)->get();
                         $snArr = [];
@@ -178,7 +212,9 @@ class StockTransferController extends Controller
                         'stock_transfer_id'  => $transfer->id,
                         'item_id'            => $item->id,
                         'inventory_stock_id' => $newStock->id,
-                        'qty_transferred'    => $qtyRequested,
+                        'qty_transferred'    => $qtyInput, // Simpan angka yang diketik user
+                        'uom_id'             => $uomId ?: null,
+                        'uom'                => $finalUomString,
                         'notes'              => $itemNote,
                     ]);
                 }
@@ -198,26 +234,24 @@ class StockTransferController extends Controller
     }
 
     // =========================================================================
-    // FUNGSI PENCARIAN BARANG KHUSUS MUTASI GUDANG (ANTI-GAGAL)
+    // FUNGSI PENCARIAN BARANG KHUSUS MUTASI GUDANG
     // =========================================================================
     public function searchItems(Request $request)
     {
         $search = $request->search;
         $warehouseId = $request->warehouse_id;
 
-        // 1. Cegah error jika gudang asal belum dipilih
         if (!$warehouseId) {
             return response()->json([]);
         }
 
         try {
-            // 2. JURUS AMAN: Cari ID barang apa saja yang punya stok di gudang ini
             $itemIds = \App\Models\InventoryStock::where('warehouse_id', $warehouseId)
                         ->where('stock_qty', '>', 0)
-                        ->pluck('item_id');
+                        ->pluck('item_id')->unique();
 
-            // 3. Tarik data barang berdasarkan ID yang ditemukan saja
-            $items = \App\Models\Item::whereIn('id', $itemIds)
+            $items = \App\Models\Item::with(['uom', 'uoms']) // 🔥 TARIK RELASI UOM
+                        ->whereIn('id', $itemIds)
                         ->where(function($q) use ($search) {
                             $q->where('name', 'like', "%{$search}%")
                               ->orWhere('code', 'like', "%{$search}%");
@@ -227,16 +261,16 @@ class StockTransferController extends Controller
 
             $formattedItems = [];
             foreach ($items as $item) {
-                // Hitung ulang total stoknya untuk ditampilkan di label
                 $currentStock = \App\Models\InventoryStock::where('warehouse_id', $warehouseId)
                                     ->where('item_id', $item->id)
                                     ->sum('stock_qty');
 
                 $formattedItems[] = [
                     'id'           => $item->id,
-                    'text'         => '[' . $item->code . '] ' . $item->name . ' (Tersedia: ' . (float)$currentStock . ' ' . $item->unit . ')',
+                    'text'         => '[' . $item->code . '] ' . $item->name . ' (Tersedia: ' . (float)$currentStock . ' ' . ($item->uom->name ?? 'PCS') . ')',
                     'stock'        => (float)$currentStock,
-                    'unit'         => $item->unit,
+                    'base_uom'     => $item->uom->name ?? 'PCS',
+                    'uoms'         => $item->uoms, // 🔥 Kirim data multiple kemasan
                     'is_asset'     => $item->is_asset,
                     'is_trackable' => $item->is_trackable ?? 0
                 ];
@@ -245,35 +279,20 @@ class StockTransferController extends Controller
             return response()->json($formattedItems);
 
         } catch (\Exception $e) {
-            // Jika masih error, lempar log errornya agar tidak blank
             return response()->json(['error' => $e->getMessage()], 500);
         }
     }
 
-
-
-    // =========================================================================
-    // FUNGSI CETAK SURAT JALAN MUTASI (PDF)
-    // =========================================================================
     public function printTransfer($id)
     {
-        // Tarik data transfer beserta seluruh relasinya
         $transfer = StockTransfer::with([
-            'fromWarehouse',
-            'toWarehouse',
-            'creator',
-            'items.item'
+            'fromWarehouse', 'toWarehouse', 'creator', 'items.item'
         ])->findOrFail($id);
 
-        // Render tampilan blade ke bentuk PDF
         $pdf = \Barryvdh\DomPDF\Facade\Pdf::loadView('stock_transfers.print', compact('transfer'))
                 ->setPaper('A4', 'portrait');
 
-        // Kembalikan file PDF agar langsung terbuka di browser (stream)
         $namaFile = str_replace('/', '_', $transfer->transfer_number);
         return $pdf->stream('Surat_Jalan_Mutasi_' . $namaFile . '.pdf');
     }
-
-
-
 }

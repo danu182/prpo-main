@@ -90,287 +90,48 @@ class ReturnToVendorController extends Controller
             $sisaKuotaGR = (float) $item->qty_received - (float) ($item->qty_returned ?? 0);
             $maxReturnable = $sisaKuotaGR;
 
-            // 🔥 PERBAIKAN: Baca total stok dari SEMUA GUDANG 🔥
-            if ($masterItem && $masterItem->is_stockable) {
-                $stokGudang_Base = \App\Models\InventoryStock::where('item_id', $item->item_id)->sum('stock_qty');
-                $stokGudang_GR = $stokGudang_Base / $grConvRate;
+            // =========================================================
+            // 🔥 LOGIKA BARU: HANYA ADA BARANG LACAK (SN) & BARANG BIASA 🔥
+            // =========================================================
+            $tempSnList = [];
 
-                $maxReturnable = min($sisaKuotaGR, $stokGudang_GR);
-            }
-
-            $item->max_returnable = max(0, $maxReturnable);
-            $item->gr_conv_rate = $grConvRate;
-            $item->gr_uom_text = $rawGrUom;
-
-            // Logika Serial Number
-            $item->available_sn_list = [];
-            if ($masterItem && ($masterItem->is_trackable || $masterItem->is_asset)) {
+            if (isset($masterItem->is_trackable) && $masterItem->is_trackable) {
+                // JIKA BARANG TRACKABLE (SN): Cari di tabel item_serials berdasarkan GR ID
                 $availableSerials = \DB::table('item_serials')
                     ->where('item_id', $item->item_id)
+                    ->where('goods_receipt_id', $gr->id) // Sangat akurat karena dari dokumen yang sama
                     ->where('status', 'AVAILABLE')
-                    ->whereBetween('created_at', [
-                        $gr->created_at->copy()->subMinutes(5),
-                        $gr->created_at->copy()->addMinutes(5)
-                    ])
                     ->pluck('serial_number')
                     ->toArray();
 
                 if (!empty($availableSerials)) {
-                    $item->available_sn_list = $availableSerials;
-                    $item->max_returnable = min($item->max_returnable, (count($availableSerials) / $grConvRate));
+                    $tempSnList = $availableSerials;
+                    $maxReturnable = min($sisaKuotaGR, (count($availableSerials) / $grConvRate));
                 } else {
-                    $item->max_returnable = 0; // Kunci jika item butuh SN tapi SN-nya sudah tidak ada
+                    $maxReturnable = 0; // Kunci jika SN tidak ada/sedang dipinjam
                 }
+
+            } elseif (isset($masterItem->is_stockable) && $masterItem->is_stockable) {
+                // JIKA BARANG STOK BIASA: Cari di tabel inventory_stocks
+                $stokGudang_Base = \App\Models\InventoryStock::where('item_id', $item->item_id)->sum('stock_qty');
+                $stokGudang_GR = $stokGudang_Base / $grConvRate;
+                $maxReturnable = min($sisaKuotaGR, $stokGudang_GR);
             }
+
+            $item->available_sn_list = $tempSnList;
+            $item->max_returnable = max(0, $maxReturnable);
+            $item->gr_conv_rate = $grConvRate;
+            $item->gr_uom_text = $rawGrUom;
 
             return $item->max_returnable > 0;
         });
 
         if ($returnableItems->isEmpty()) {
-            return redirect()->route('gr.show', $gr->gr_number)->with('error', 'Semua barang dari GR ini sudah diretur, ATAU stok/Serial Number-nya sudah tidak ada di gudang manapun.');
+            return redirect()->route('gr.show', $gr->gr_number)->with('error', 'Semua barang dari GR ini sudah diretur, ATAU stok/SN-nya sudah tidak ada di gudang (mungkin sedang dipinjam).');
         }
 
         return view('rtv.create', compact('gr', 'reasons', 'returnableItems'));
     }
-
-    // public function store(Request $request, $slug, \App\Services\SystemSettingService $settingService)
-    // {
-    //     $request->validate([
-    //         'return_date'          => 'required|date',
-    //         'items'                => 'required|array',
-    //         'items.*.qty_returned' => 'required|numeric|min:0',
-    //         'attachments'          => 'nullable|array',
-    //         'attachments.*'        => 'nullable|file|mimes:pdf,jpg,jpeg,png|max:5120',
-    //     ]);
-
-    //     try {
-    //         $rtvNumberToPrint = DB::transaction(function () use ($request, $slug, $settingService) {
-    //             $gr = GoodsReceipt::with('po')->where('gr_number', $slug)->firstOrFail();
-    //             $companyId = $gr->po->bill_to_company_id;
-
-    //             $rtv = ReturnToVendor::create([
-    //                 'rtv_number'           => $this->generateRtvNumber($companyId),
-    //                 'goods_receipt_id'     => $gr->id,
-    //                 'vendor_id'            => $gr->po->vendor_id,
-    //                 'return_date'          => $request->return_date,
-    //                 'delivery_note_number' => $request->delivery_note_number,
-    //                 'returned_by'          => auth()->id(),
-    //                 'notes'                => $request->notes,
-    //             ]);
-
-    //             // ==============================================================
-    //             // 🔥 PROSES UPLOAD MULTI-LAMPIRAN RTV (KONSEP SERAGAM DENGAN PR/PO/GR) 🔥
-    //             // ==============================================================
-    //             if ($request->hasFile('attachments')) {
-    //                 $safeRtvNumber = str_replace('/', '-', $rtv->rtv_number);
-
-    //                 // 1. Ambil path folder utama dari tabel system_settings (Sama seperti konsep PR/PO/GR)
-    //                 $settingPath = \DB::table('system_settings')
-    //                                  ->where('setting_key', 'path_rtv_attachment')
-    //                                  ->value('setting_value');
-
-    //                 // 2. Beri fallback (jaring pengaman) jika value di database ternyata kosong
-    //                 $basePath = $settingPath ? $settingPath : 'attachments/rtvs';
-
-    //                 // 3. Tentukan folder target spesifik per nomor dokumen RTV
-    //                 $targetFolder = $basePath . '/' . $safeRtvNumber;
-
-    //                 // Ratakan array file lampiran
-    //                 $flatFiles = \Illuminate\Support\Arr::flatten([$request->file('attachments')]);
-
-    //                 foreach ($flatFiles as $file) {
-    //                     if ($file instanceof \Illuminate\Http\UploadedFile && $file->isValid()) {
-    //                         $originalName = $file->getClientOriginalName();
-
-    //                         // Amankan nama file dengan timestamp + id unik agar tidak saling timpa
-    //                         $filename = time() . '_' . uniqid() . '_' . str_replace(' ', '_', $originalName);
-
-    //                         // Simpan file ke disk 'public' sesuai dengan path dari system_settings
-    //                         $path = $file->storeAs($targetFolder, $filename, 'public');
-
-    //                         // 4. Catat jejak file ke tabel anak return_to_vendor_attachments
-    //                         \DB::table('return_to_vendor_attachments')->insert([
-    //                             'return_to_vendor_id' => $rtv->id,
-    //                             'file_name'           => $originalName,
-    //                             'file_path'           => str_replace('\\', '/', $path), // Seragamkan slashes ke arah kanan
-    //                             'created_at'          => now(),
-    //                             'updated_at'          => now()
-    //                         ]);
-    //                     }
-    //                 }
-    //             }
-    //             $totalQtyReturnedInThisTransaction = 0;
-
-    //             foreach ($request->items as $grItemId => $data) {
-    //                 $inputQty = (float) ($data['qty_returned'] ?? 0);
-    //                 if ($inputQty > 0) {
-    //                     $totalQtyReturnedInThisTransaction += $inputQty;
-    //                     $grItem = GoodsReceiptItem::findOrFail($grItemId);
-    //                     $poItem = PurchaseOrderItem::findOrFail($grItem->purchase_order_item_id);
-    //                     $masterItem = Item::with('uom', 'itemUoms')->findOrFail($grItem->item_id);
-    //                     $baseUomName = optional($masterItem->uom)->name ?? 'PCS';
-
-    //                     $rawPoUom = is_string($poItem->uom) ? $poItem->uom : (optional($poItem->uom)->name ?? $poItem->getRawOriginal('uom') ?? 'PCS');
-    //                     $cleanPoUom = trim(preg_replace('/ \(Isi:.*\)/i', '', $rawPoUom));
-
-    //                     $poConvFactor = 1;
-    //                     if (preg_match('/\(Isi:\s*([0-9.]+)\)/i', $rawPoUom, $matches)) $poConvFactor = (float) $matches[1];
-    //                     else {
-    //                         $poUomData = \App\Models\ItemUom::where('item_id', $masterItem->id)->where('uom_name', $cleanPoUom)->first();
-    //                         if ($poUomData) $poConvFactor = (float) $poUomData->conversion_qty;
-    //                     }
-
-    //                     $inputUom = $data['uom'] ?? $rawPoUom;
-    //                     $cleanInputUom = trim(preg_replace('/ \(Isi:.*\)/i', '', $inputUom));
-
-    //                     $inputConvFactor = 1;
-    //                     if (preg_match('/\(Isi:\s*([0-9.]+)\)/i', $inputUom, $matches)) $inputConvFactor = (float) $matches[1];
-    //                     else {
-    //                         $inputUomData = \App\Models\ItemUom::where('item_id', $masterItem->id)->where('uom_name', $cleanInputUom)->first();
-    //                         if ($inputUomData) $inputConvFactor = (float) $inputUomData->conversion_qty;
-    //                     }
-
-    //                     $baseQtyReturned = $inputQty * $inputConvFactor;
-    //                     $baseQtyReceivedSoFar = ($grItem->qty_received * $poConvFactor);
-    //                     $baseQtyReturnedSoFar = ($grItem->qty_returned ?? 0) * $poConvFactor;
-    //                     $sisaBaseKuotaGR = round($baseQtyReceivedSoFar - $baseQtyReturnedSoFar, 4);
-
-    //                     if (round($baseQtyReturned, 4) > $sisaBaseKuotaGR) {
-    //                         throw new \Exception("Jumlah retur ({$baseQtyReturned} {$baseUomName}) melebihi sisa penerimaan dokumen GR!");
-    //                     }
-
-    //                     $reasonName = 'Alasan Lainnya';
-    //                     if (!empty($data['return_reason_id'])) {
-    //                         $reasonModel = \App\Models\ReturnReason::find($data['return_reason_id']);
-    //                         if ($reasonModel) $reasonName = $reasonModel->name;
-    //                     }
-
-    //                     // 🔥 PROSES RETUR SERIAL NUMBER (CARA BARU) 🔥
-    //                     $snRetur = $data['sn'] ?? []; // Array dari checkbox yang dicentang
-    //                     $snStringRetur = '';
-    //                     $isSnRequired = ($masterItem->is_asset || $masterItem->is_trackable);
-
-    //                     // Jika ada checkbox yang dicentang dari tampilan, berarti ini retur dengan SN!
-    //                     $hasCheckedSn = !empty($snRetur);
-
-    //                     if ($isSnRequired && $hasCheckedSn) {
-    //                         $jumlahSnCentang = count($snRetur);
-    //                         $jumlahHarusnya = (int)$baseQtyReturned;
-
-    //                         if ($jumlahSnCentang !== $jumlahHarusnya) {
-    //                             throw new \Exception("Jumlah centangan Serial Number ({$jumlahSnCentang}) tidak sesuai dengan Qty Retur ({$jumlahHarusnya}) untuk barang {$masterItem->name}!");
-    //                         }
-
-    //                         // Update tabel item_serials jadi RETURNED
-    //                         \DB::table('item_serials')
-    //                             ->whereIn('serial_number', $snRetur)
-    //                             ->update(['status' => 'RETURNED', 'updated_at' => now()]);
-
-    //                         $snStringRetur = implode(' | ', $snRetur);
-    //                     }
-
-    //                     $catatanKonversi = "Diretur: {$inputQty} {$inputUom} (= {$baseQtyReturned} {$baseUomName}). Alasan: {$reasonName}";
-    //                     if ($snStringRetur) $catatanKonversi .= " [SN Diretur: {$snStringRetur}]";
-
-    //                     // PEMOTONGAN STOK GLOBAL DARI BATCH
-    //                     if ($masterItem->is_stockable) {
-    //                         $availableStocks = \App\Models\InventoryStock::where('item_id', $masterItem->id)
-    //                                             ->where('stock_qty', '>', 0)
-    //                                             ->orderBy('created_at', 'asc')->lockForUpdate()->get();
-
-    //                         $totalAvailable = $availableStocks->sum('stock_qty');
-
-    //                         if (round($baseQtyReturned, 4) > round($totalAvailable, 4)) {
-    //                             throw new \Exception("Gagal! Stok fisik '{$masterItem->name}' di sistem tersisa {$totalAvailable} {$baseUomName}, tidak cukup untuk retur.");
-    //                         }
-
-    //                         $qtySisaRetur = $baseQtyReturned;
-    //                         foreach ($availableStocks as $stockRow) {
-    //                             if ($qtySisaRetur <= 0) break;
-    //                             $potong = min($stockRow->stock_qty, $qtySisaRetur);
-    //                             $balanceBefore = (float) $stockRow->stock_qty;
-    //                             $stockRow->decrement('stock_qty', $potong);
-    //                             $balanceAfter = $balanceBefore - $potong;
-    //                             $qtySisaRetur -= $potong;
-
-    //                             StockMutation::create([
-    //                                 'item_id'          => $masterItem->id,
-    //                                 'warehouse_id'     => $stockRow->warehouse_id,
-    //                                 'type'             => 'OUT',
-    //                                 'qty'              => $potong,
-    //                                 'balance_before'   => $balanceBefore,
-    //                                 'balance_after'    => $balanceAfter,
-    //                                 'reference_number' => $rtv->rtv_number,
-    //                                 'notes'            => "Retur ke Vendor. {$catatanKonversi}",
-    //                                 'created_by'       => auth()->id(),
-    //                             ]);
-    //                         }
-    //                         $masterItem->decrement('current_stock', $baseQtyReturned);
-    //                     }
-
-    //                     // JIKA ASET, UBAH STATUS FIXED ASSET (Double Protection)
-    //                     if ($masterItem->is_asset && !empty($snRetur)) {
-
-    //                         // Cari ID status Retur di Master Status, jika tidak ketemu fallback ke 1
-    //                         $statusRetur = \App\Models\Status::where('type', 'AST')
-    //                                          ->where(function($q) {
-    //                                              $q->where('slug', 'returned')
-    //                                                ->orWhere('name', 'like', '%Return%');
-    //                                          })->first();
-
-    //                         $statusIdTarget = $statusRetur ? $statusRetur->id : 1;
-
-    //                         \App\Models\FixedAsset::whereIn('serial_number', $snRetur)->update([
-    //                             'status_id' => $statusIdTarget, // Memakai status_id (Sesuai database Komandan)
-    //                             'notes'     => 'Dikembalikan ke vendor via RTV: ' . $rtv->rtv_number
-    //                         ]);
-    //                     }
-
-    //                     // Simpan Item RTV & Update GR/PO
-    //                     ReturnToVendorItem::create([
-    //                         'return_to_vendor_id'    => $rtv->id,
-    //                         'goods_receipt_item_id'  => $grItem->id,
-    //                         'purchase_order_item_id' => $poItem->id,
-    //                         'item_id'                => $masterItem->id,
-    //                         'qty_returned'           => $inputQty,
-    //                         'return_reason'          => $catatanKonversi,
-    //                     ]);
-
-    //                     $poItem->decrement('qty_received', ($baseQtyReturned / $poConvFactor));
-    //                     $grItem->increment('qty_returned', ($baseQtyReturned / $poConvFactor));
-    //                 }
-    //             }
-
-    //             if ($totalQtyReturnedInThisTransaction == 0) throw new \Exception("Isi minimal 1 qty barang yang diretur.");
-
-    //             $po = $gr->po;
-    //             $po->refresh();
-    //             $allFullyReceived = true;
-    //             foreach ($po->items as $item) {
-    //                 if (round($item->qty_received ?? 0, 4) < round($item->qty_ordered, 4)) {
-    //                     $allFullyReceived = false; break;
-    //                 }
-    //             }
-
-    //             if (!$allFullyReceived && optional($po->status)->slug === 'fully_received') {
-    //                 $statusPartial = Status::where('type', 'PO')->where('slug', 'partial_receipt')->first();
-    //                 if ($statusPartial) {
-    //                     $po->update(['status_id' => $statusPartial->id]);
-    //                     \App\Models\PurchaseOrderHistory::create([
-    //                         'purchase_order_id' => $po->id, 'user_id' => auth()->id(), 'action' => 'RETURN TO VENDOR',
-    //                         'note' => "Terdapat barang diretur (RTV: {$rtv->rtv_number}). Status PO dikembalikan ke Parsial."
-    //                     ]);
-    //                 }
-    //             }
-    //             return $rtv->rtv_number;
-    //         });
-
-    //         return redirect()->route('rtv.index')->with(['success' => 'Dokumen RTV & Lampiran berhasil disimpan!', 'print_url' => route('rtv.print', $rtvNumberToPrint)]);
-    //     } catch (\Exception $e) {
-    //         \Log::error('Error Simpan RTV: ' . $e->getMessage());
-    //         return back()->withInput()->with('error', 'Gagal memproses Retur: ' . $e->getMessage());
-    //     }
-    // }
 
 
 
@@ -402,14 +163,10 @@ class ReturnToVendorController extends Controller
                     'notes'                => $request->notes,
                 ]);
 
-                // 🔥 UPLOAD BANYAK LAMPIRAN DENGAN PATH DINAMIS 🔥
+                // UPLOAD LAMPIRAN
                 if ($request->hasFile('attachments')) {
                     $safeRtvNumber = str_replace('/', '-', $rtv->rtv_number);
-
-                    $settingPath = \DB::table('system_settings')
-                                     ->where('setting_key', 'path_rtv_attachment')
-                                     ->value('setting_value');
-
+                    $settingPath = \DB::table('system_settings')->where('setting_key', 'path_rtv_attachment')->value('setting_value');
                     $basePath = $settingPath ? $settingPath : 'attachments/rtv';
                     $targetFolder = $basePath . '/' . $safeRtvNumber;
                     $flatFiles = \Illuminate\Support\Arr::flatten([$request->file('attachments')]);
@@ -479,10 +236,10 @@ class ReturnToVendorController extends Controller
                             if ($reasonModel) $reasonName = $reasonModel->name;
                         }
 
-                        // 🔥 PROSES RETUR SERIAL NUMBER 🔥
+                        // 🔥 PROSES RETUR SERIAL NUMBER (TANPA is_asset) 🔥
                         $snRetur = $data['sn'] ?? [];
                         $snStringRetur = '';
-                        $isSnRequired = ($masterItem->is_asset || $masterItem->is_trackable);
+                        $isSnRequired = (isset($masterItem->is_trackable) && $masterItem->is_trackable);
                         $hasCheckedSn = !empty($snRetur);
 
                         if ($isSnRequired && $hasCheckedSn) {
@@ -511,9 +268,8 @@ class ReturnToVendorController extends Controller
                         // =========================================================================
                         // 🔥 PEMOTONGAN STOK GLOBAL (DARI GUDANG MANAPUN YANG ADA STOKNYA) 🔥
                         // =========================================================================
-                        if ($masterItem->is_stockable) {
+                        if ($masterItem->is_stockable ?? true) {
 
-                            // Kita hapus kuncian warehouse_id di sini agar otomatis mencari ke Gudang ATK / lainnya
                             $availableStocks = \App\Models\InventoryStock::where('item_id', $masterItem->id)
                                                 ->where('stock_qty', '>', 0)
                                                 ->orderBy('created_at', 'asc')->lockForUpdate()->get();
@@ -525,60 +281,53 @@ class ReturnToVendorController extends Controller
                             }
 
                             $qtySisaRetur = $baseQtyReturned;
+
+                            // 🔥 AMBIL SALDO GLOBAL MASTER ITEM SEBAGAI PATOKAN 🔥
+                            $saldoTotalSaatIni = (float) $masterItem->current_stock;
+
                             foreach ($availableStocks as $stockRow) {
                                 if ($qtySisaRetur <= 0) break;
                                 $potong = min($stockRow->stock_qty, $qtySisaRetur);
-                                $balanceBefore = (float) $stockRow->stock_qty;
-                                $stockRow->decrement('stock_qty', $potong);
+
+                                // 🔥 KALKULASI SALDO BERDASARKAN TOTAL GLOBAL 🔥
+                                $balanceBefore = $saldoTotalSaatIni;
                                 $balanceAfter = $balanceBefore - $potong;
+                                $saldoTotalSaatIni = $balanceAfter;
+
+                                $stockRow->decrement('stock_qty', $potong);
                                 $qtySisaRetur -= $potong;
 
                                 \App\Models\StockMutation::create([
                                     'item_id'          => $masterItem->id,
-                                    'warehouse_id'     => $stockRow->warehouse_id, // Mutasi dicatat di gudang asal stok ini ditarik
+                                    'warehouse_id'     => $stockRow->warehouse_id,
                                     'type'             => 'OUT',
                                     'qty'              => $potong,
                                     'balance_before'   => $balanceBefore,
                                     'balance_after'    => $balanceAfter,
                                     'reference_number' => $rtv->rtv_number,
-                                    'notes'            => "Retur ke Vendor. Ref GR: {$gr->gr_number}. Alasan: {$reasonName}",
+                                    'notes'            => "Retur ke Vendor. Ref GR: {$gr->gr_number}. Alasan: {$catatanKonversi}",
                                     'created_by'       => auth()->id(),
                                 ]);
                             }
-                            $masterItem->decrement('current_stock', $baseQtyReturned);
+                            // 🔥 UPDATE SALDO MASTER BARANG 🔥
+                            $masterItem->update(['current_stock' => $saldoTotalSaatIni]);
                         }
 
-                        // JIKA ASET, UBAH STATUS FIXED ASSET MEMAKAI STATUS_ID
-                        if ($masterItem->is_asset && !empty($snRetur)) {
-                            $statusRetur = \App\Models\Status::where('type', 'AST')
-                                             ->where(function($q) {
-                                                 $q->where('slug', 'returned')
-                                                   ->orWhere('name', 'like', '%Return%');
-                                             })->first();
+                        // Blok logika update `FixedAsset` sudah dihapus 100% di sini!
 
-                            $statusIdTarget = $statusRetur ? $statusRetur->id : 1;
-
-                            \App\Models\FixedAsset::whereIn('serial_number', $snRetur)->update([
-                                'status_id' => $statusIdTarget,
-                                'notes'     => 'Dikembalikan ke vendor via RTV: ' . $rtv->rtv_number
-                            ]);
-                        }
-
-                        // 🔥 SIAPKAN FORMAT SATUAN UNTUK DISIMPAN 🔥
                         $finalUomString = $cleanInputUom;
                         if ($inputConvFactor > 1) {
                             $finalUomString .= ' (Isi ' . (float)$inputConvFactor . ' ' . $baseUomName . ')';
                         }
 
-                        // Simpan Item RTV & Update GR/PO
                         ReturnToVendorItem::create([
                             'return_to_vendor_id'    => $rtv->id,
                             'goods_receipt_item_id'  => $grItem->id,
                             'purchase_order_item_id' => $poItem->id,
                             'item_id'                => $masterItem->id,
                             'qty_returned'           => $inputQty,
-                            'uom_id'                 => $inputUomData->id ?? null, // Simpan UOM ID
-                            'uom'                    => $finalUomString,           // Simpan Teks "Pack (Isi 10)"
+                            'uom_id'                 => $inputUomData->id ?? null,
+                            'uom'                    => $finalUomString,
                             'return_reason'          => $catatanKonversi,
                         ]);
 
