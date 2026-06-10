@@ -552,7 +552,7 @@ class GoodsIssueController extends Controller
                 'stock' => $totalStockDisplay,
                 'available_bulk' => $availableBulk,
                 'available_asset' => $assetStock,
-                'uoms' => $item->uoms
+                'uoms' => $item->uoms,
 
                 // 🔥 TAMBAHKAN 1 BARIS INI UNTUK MENGIRIM NAMA SATUAN KE JAVASCRIPT 🔥
                 'base_uom_name' => optional($item->uom)->name ?? 'PCS'

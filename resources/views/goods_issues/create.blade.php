@@ -155,6 +155,7 @@
 </div>
 @endsection
 
+
 @push('scripts')
 <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
@@ -297,10 +298,9 @@
 
             uomSelect.empty();
 
-            // 🔥 TANGKAP NAMA SATUAN DARI CONTROLLER 🔥
+            // 🔥 PERBAIKAN TYPO VARIABEL UOM DI SINI 🔥
             let baseUom = data.base_uom_name || 'PCS';
-
-            uomSelect.append(`<option value="" data-conv="1">${baseUomName}</option>`);
+            uomSelect.append(`<option value="" data-conv="1">${baseUom}</option>`);
 
             let listUom = data.uoms || data.item_uoms || [];
             if (listUom.length > 0) {
@@ -311,8 +311,6 @@
                     let teksTampil = konversi > 1 ? `${namaUom} (Isi ${konversi})` : namaUom;
                     uomSelect.append(`<option value="${idUom}" data-conv="${konversi}">${teksTampil}</option>`);
                 });
-            } else {
-                uomSelect.append(`<option value="" data-conv="1">PCS</option>`);
             }
 
             qtyInput.data('stock-bulk', data.available_bulk);
@@ -330,7 +328,7 @@
                 }
             });
 
-            // 🔥 PERBAIKAN: HANYA BERGANTUNG PADA is_trackable SAJA 🔥
+            // LOGIKA JIKA BARANG WAJIB LACAK SN
             if (data.is_trackable) {
                 qtyInput.prop('readonly', true).val('').attr('placeholder', 'Pilih SN 👇').addClass('bg-light text-muted');
                 snContainer.removeClass('d-none');
@@ -378,7 +376,6 @@
             assetSelect.prop('required', false);
             snSelect.prop('required', false);
 
-            // 🔥 PERBAIKAN: JIKA HANYA ADA STOK ASET 🔥
             if (data.available_asset > 0 && data.available_bulk <= 0) {
                 qtyContainer.addClass('d-none');
                 tr.find('.qty-input').val('');
@@ -399,7 +396,6 @@
                 });
                 tr.find('.general-notes').removeClass('d-none');
             }
-            // 🔥 PERBAIKAN: JIKA HANYA ADA STOK BIASA (BULK/SN) 🔥
             else if (data.available_bulk > 0 && data.available_asset <= 0) {
                 assetContainer.addClass('d-none');
                 if(assetSelect.hasClass("select2-hidden-accessible")) { assetSelect.select2('destroy'); }
@@ -407,7 +403,6 @@
 
                 setupBulkMode(tr, data);
             }
-            // 🔥 HYBRID: JIKA ADA DUA-DUANYA (BULK DAN ASET) 🔥
             else if (data.available_bulk > 0 && data.available_asset > 0) {
                 Swal.fire({
                     title: 'Pilih Mode Pengeluaran',
@@ -418,7 +413,6 @@
                     confirmButtonColor: '#0dcaf0', denyButtonColor: '#198754',
                 }).then((result) => {
                     if (result.isConfirmed) {
-                        // USER PILIH ASET
                         qtyContainer.addClass('d-none');
                         tr.find('.qty-input').val('');
                         batchSelect.prop('disabled', true).addClass('bg-light').html('<option value="">🔒 Ditentukan via Aset</option>');
@@ -438,7 +432,6 @@
                         });
                         tr.find('.general-notes').removeClass('d-none');
                     } else if (result.isDenied) {
-                        // USER PILIH STOK BIASA
                         assetContainer.addClass('d-none');
                         if(assetSelect.hasClass("select2-hidden-accessible")) { assetSelect.select2('destroy'); }
                         assetSelect.empty();
@@ -545,6 +538,4 @@
 
     });
 </script>
-
-
 @endpush

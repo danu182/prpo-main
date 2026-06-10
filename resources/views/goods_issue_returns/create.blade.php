@@ -116,37 +116,27 @@
                             {{-- 🔥 KOLOM INPUT / SELECT ASET 🔥 --}}
                             <td>
                                 @if($isAsset)
-                                    {{-- MODE MAJOR ASSET (ASET TETAP) --}}
-                                    @php
-                                        preg_match_all('/AST\/[0-9]{4}\/[0-9]{2}\/[0-9]{4}/', $item->notes, $matches);
-                                        $borrowedAssets = $matches[0];
-                                    @endphp
-                                    <select name="items[{{ $index }}][returned_asset_numbers][]" class="shadow-sm form-select border-warning select-asset-return" multiple data-index="{{ $item->id }}">
-                                        @foreach($borrowedAssets as $astNum)
-                                            <option value="{{ $astNum }}">{{ $astNum }}</option>
+                                    <select name="items[{{ $index }}][returned_asset_numbers][]" class="shadow-sm form-select border-info select-asset-return" multiple data-index="{{ $item->id }}">
+                                        @foreach($item->held_assets ?? [] as $ast)
+                                            <option value="{{ $ast->asset_number }}">{{ $ast->asset_number }}</option>
                                         @endforeach
                                     </select>
-                                    <div class="form-text small text-muted"><i class="bi bi-info-circle"></i> Tahan CTRL untuk pilih lebih dari 1.</div>
+                                    <div class="form-text small text-info"><i class="bi bi-info-circle"></i> Pilih Aset yang dikembalikan.</div>
                                     <input type="hidden" name="items[{{ $index }}][qty_returned]" class="qty-hidden-{{ $item->id }} qty-retur-input" value="0">
 
                                 @elseif($isTrackable)
-                                    {{-- MODE MINOR ASSET (INVENTARIS DENGAN SN) --}}
-                                    @php
-                                        $borrowedSns = array_filter(array_map('trim', explode('|', preg_replace('/Satuan.*/', '', $item->notes))));
-                                    @endphp
                                     <select name="items[{{ $index }}][returned_minor_sns][]" class="shadow-sm form-select border-warning select-asset-return" multiple data-index="{{ $item->id }}">
-                                        @foreach($borrowedSns as $sn)
+                                        @foreach($item->held_sns ?? [] as $sn)
                                             <option value="{{ $sn }}">{{ $sn }}</option>
                                         @endforeach
                                     </select>
-                                    <div class="form-text small text-muted"><i class="bi bi-info-circle"></i> Pilih SN yang diretur.</div>
+                                    <div class="form-text small text-warning-emphasis"><i class="bi bi-upc-scan"></i> Pilih SN yang dikembalikan.</div>
                                     <input type="hidden" name="items[{{ $index }}][qty_returned]" class="qty-hidden-{{ $item->id }} qty-retur-input" value="0">
 
                                 @else
-                                    {{-- 🔥 MODE BARANG STOK BIASA (DENGAN UOM DROPDOWN DINAMIS) 🔥 --}}
                                     <div class="mb-1 shadow-sm input-group input-group-sm">
-                                        <input type="number" name="items[{{ $index }}][qty_returned]" id="qty-input-{{ $item->id }}" class="text-center form-control qty-retur-input border-warning fw-bold text-dark" max="{{ $sisaBisaRetur }}" min="0" step="any" value="0" oninput="checkQty({{ $item->id }})">
-                                        <select name="items[{{ $index }}][uom]" class="form-select border-warning bg-warning-subtle text-dark fw-bold" style="max-width: 135px;" data-current-conv="{{ $giConvRate }}" onchange="changeUom(this, {{ $item->id }}, {{ $maxBaseQty }})">
+                                        <input type="number" name="items[{{ $index }}][qty_returned]" id="qty-input-{{ $item->id }}" class="text-center form-control qty-retur-input border-success fw-bold text-dark" max="{{ $sisaBisaRetur }}" min="0" step="any" value="0" oninput="checkQty({{ $item->id }})">
+                                        <select name="items[{{ $index }}][uom]" class="form-select border-success bg-success-subtle text-dark fw-bold" style="max-width: 135px;" data-current-conv="{{ $giConvRate }}" onchange="changeUom(this, {{ $item->id }}, {{ $maxBaseQty }})">
                                             <option value="{{ $rawGiUom }}" data-conv="{{ $giConvRate }}">{{ $rawGiUom }} [GI]</option>
                                             @if(strtolower($baseUomName) !== strtolower($cleanGiUom))
                                                 <option value="{{ $baseUomName }}" data-conv="1">{{ $baseUomName }} (Ecer)</option>
@@ -179,20 +169,36 @@
 @endsection
 
 @push('scripts')
+{{-- 🔥 Pastikan Library jQuery dan Select2 sudah dipanggil di file layout utama, jika belum tambahkan di sini --}}
+<script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
-<script>
-    // 1. Script Aset Tetap / Trackable: Hitung otomatis Qty dari opsi yang dipilih
-    document.querySelectorAll('.select-asset-return').forEach(selectEl => {
-        selectEl.addEventListener('change', function() {
-            let indexId = this.getAttribute('data-index');
-            let hiddenQtyInput = document.querySelector(`.qty-hidden-${indexId}`);
 
-            let selectedCount = Array.from(this.selectedOptions).length;
-            if(hiddenQtyInput) hiddenQtyInput.value = selectedCount;
+<script>
+    $(document).ready(function() {
+        // 1. Inisialisasi Select2 untuk pilihan Aset Tetap & Trackable SN
+        $('.select-asset-return').select2({
+            theme: 'bootstrap-5',
+            width: '100%',
+            placeholder: 'Klik untuk memilih unit...'
+        });
+
+        // 2. 🔥 SIHIR UTAMA: Hitung otomatis Qty dari opsi SN / Aset yang dipilih 🔥
+        $('.select-asset-return').on('change', function() {
+            let itemId = $(this).data('index');
+            let hiddenQtyInput = $(`.qty-hidden-${itemId}`);
+
+            // Hitung berapa jumlah unit yang dicentang / dipilih oleh user
+            let selectedCount = $(this).val() ? $(this).val().length : 0;
+
+            // Masukkan angkanya ke input kuantitas tersembunyi agar lolos validasi submit
+            if(hiddenQtyInput.length) {
+                hiddenQtyInput.val(selectedCount);
+            }
         });
     });
 
-    // 2. 🔥 FITUR AJAIB UOM: Mengonversi maksimal stok secara realtime saat UOM diganti 🔥
+    // 3. 🔥 FITUR AJAIB UOM: Mengonversi maksimal stok secara realtime saat UOM diganti 🔥
     function changeUom(selectElement, itemId, maxBaseQty) {
         let selectedOption = selectElement.options[selectElement.selectedIndex];
         let newConvRate = parseFloat(selectedOption.getAttribute('data-conv')) || 1;
@@ -231,18 +237,21 @@
         checkQty(itemId);
     }
 
-    // 3. Batasi Input agar tidak melewati Max
+    // 4. Batasi Input agar tidak melewati Max (Untuk Barang Stok Biasa)
     function checkQty(itemId) {
         const qtyInput = document.getElementById('qty-input-' + itemId);
-        const maxQty = parseFloat(document.getElementById('max_' + itemId).value);
+        const maxQtyEl = document.getElementById('max_' + itemId);
 
-        let currentQty = parseFloat(qtyInput.value) || 0;
-        if (currentQty > maxQty) {
-            qtyInput.value = maxQty;
+        if (qtyInput && maxQtyEl) {
+            const maxQty = parseFloat(maxQtyEl.value) || 0;
+            let currentQty = parseFloat(qtyInput.value) || 0;
+            if (currentQty > maxQty) {
+                qtyInput.value = maxQty;
+            }
         }
     }
 
-    // 4. Proses Submit dengan Validasi Ekstra
+    // 5. Proses Submit dengan Validasi Ekstra
     document.getElementById('btnSubmitReturn').addEventListener('click', function(e) {
         e.preventDefault();
         let form = document.getElementById('form-retur');
@@ -262,7 +271,7 @@
         if (totalRetur <= 0) {
             Swal.fire({
                 title: 'Peringatan!',
-                text: 'Anda tidak memasukkan kuantitas retur sama sekali. Silakan isi minimal 1 barang / aset yang akan dikembalikan.',
+                text: 'Anda tidak memasukkan kuantitas retur sama sekali. Silakan isi / pilih minimal 1 unit barang yang akan dikembalikan.',
                 icon: 'warning',
                 confirmButtonColor: '#ffc107',
                 customClass: { confirmButton: 'text-dark fw-bold rounded-pill px-4' }
