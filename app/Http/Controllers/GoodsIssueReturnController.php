@@ -16,7 +16,6 @@ use Illuminate\Support\Facades\Log;
 
 class GoodsIssueReturnController extends Controller
 {
-    // 1. Tampilkan Daftar Riwayat Retur
     public function index(Request $request)
     {
         $search = $request->input('search');
@@ -39,7 +38,6 @@ class GoodsIssueReturnController extends Controller
         return view('goods_issue_returns.index', compact('returns', 'search'));
     }
 
-    // 2. Tampilkan Form Retur
     public function create($gi_id)
     {
         $gi = GoodsIssue::with('items.item')->findOrFail($gi_id);
@@ -68,30 +66,52 @@ class GoodsIssueReturnController extends Controller
 
         foreach ($returnableItems as $giItem) {
             if ($giItem->item) {
-                // Tarik Aset Tetap
-                if ($giItem->item->is_asset) {
-                    $giItem->held_assets = \App\Models\FixedAsset::where('item_id', $giItem->item_id)
-                                            ->where('assigned_to', $assignedToId)
-                                            ->where('status_id', 31)->get();
-                }
-                // 🔥 Tarik Minor Asset (SN) dari Tabel Inventaris Karyawan 🔥
-                elseif ($giItem->item->is_trackable) {
-                    $empInv = \App\Models\EmployeeInventory::where('employee_name', $gi->requester_name)
-                                        ->where('item_id', $giItem->item_id)->first();
+                $giItem->held_assets = collect();
+                $giItem->held_sns = [];
 
-                    if ($empInv && $empInv->specific_details) {
-                        $giItem->held_sns = array_filter(array_map('trim', explode('|', $empInv->specific_details)));
-                    } else {
-                        $giItem->held_sns = [];
+                // 1. CARI ASET TETAP
+                $assets = \App\Models\FixedAsset::where('item_id', $giItem->item_id)
+                                        ->where('assigned_to', $assignedToId)
+                                        ->where('status_id', 31)->get();
+
+                if ($assets->isEmpty() && !empty($giItem->notes)) {
+                    preg_match_all('/AST\/[0-9]{4}\/[0-9]{2}\/[0-9]{4}/', $giItem->notes, $matches);
+                    if (!empty($matches[0])) {
+                        $assets = \App\Models\FixedAsset::whereIn('asset_number', $matches[0])->get();
                     }
                 }
+                $giItem->held_assets = $assets;
+
+                // 2. CARI SERIAL NUMBER (MINOR ASSET)
+                $empInvs = \App\Models\EmployeeInventory::where('employee_name', $gi->requester_name)
+                                    ->where('item_id', $giItem->item_id)
+                                    ->where('qty', '>', 0)
+                                    ->get();
+
+                $allSns = [];
+                foreach ($empInvs as $inv) {
+                    if (preg_match('/\[SN:\s*(.*?)\]/', $inv->specific_details, $m)) {
+                        $allSns[] = trim($m[1]);
+                    } else {
+                        $allSns[] = trim($inv->specific_details);
+                    }
+                }
+
+                if (empty($allSns) && !empty($giItem->notes)) {
+                    if (preg_match('/SN[^\:]*:\s*(.*?)(?:\s*\||$)/i', $giItem->notes, $match)) {
+                        $extractedSns = array_filter(array_map('trim', explode(',', $match[1])));
+                        foreach($extractedSns as $sn) {
+                            if (!preg_match('/\(\+[0-9]+/i', $sn)) $allSns[] = $sn;
+                        }
+                    }
+                }
+                $giItem->held_sns = array_unique($allSns);
             }
         }
 
         return view('goods_issue_returns.create', compact('gi', 'returnableItems', 'warehouses', 'asalGudangId'));
     }
 
-    // 3. Proses Simpan Retur & Kembalikan Stok (IN)
     public function store(Request $request, $gi_id)
     {
         $request->validate([
@@ -174,6 +194,10 @@ class GoodsIssueReturnController extends Controller
                         $finalUomString .= ' (Isi ' . (float)$inputConvFactor . ' ' . $baseUomName . ')';
                     }
 
+                    // 🔥 DETEKSI APA YANG DISUBMIT OLEH USER 🔥
+                    $isReturningAsset = !empty($data['returned_asset_numbers']);
+                    $isReturningSn = !empty($data['returned_minor_sns']);
+
                     GoodsIssueReturnItem::create([
                         'goods_issue_return_id' => $newReturn->id,
                         'goods_issue_item_id'   => $giItem->id,
@@ -188,11 +212,9 @@ class GoodsIssueReturnController extends Controller
                     $snStringForNote = '';
                     $assetInfoArr = [];
 
-                    // 🔥 KEMBALIKAN ASET TETAP 🔥
-                    if ($masterItem->is_asset) {
-                        $selectedAssetNumbers = $data['returned_asset_numbers'] ?? [];
-                        if (empty($selectedAssetNumbers)) throw new \Exception("Gagal: Pilih Nomor Aset yang dikembalikan untuk {$masterItem->name}.");
-
+                    // KEMBALIKAN ASET TETAP JIKA DI-SUBMIT ASET
+                    if ($isReturningAsset) {
+                        $selectedAssetNumbers = $data['returned_asset_numbers'];
                         $assetsToReturn = \App\Models\FixedAsset::whereIn('asset_number', $selectedAssetNumbers)->get();
                         $statusIdAvailable = \App\Models\Status::where('type', 'AST')->where('slug', 'available')->value('id');
 
@@ -214,12 +236,10 @@ class GoodsIssueReturnController extends Controller
                         }
                     }
 
-                    // 🔥 KEMBALIKAN BARANG LACAK (MINOR ASSET / SN) 🔥
-                    if (!$masterItem->is_asset && isset($masterItem->is_trackable) && $masterItem->is_trackable) {
-                        $returnedSns = $data['returned_minor_sns'] ?? [];
-                        if (empty($returnedSns)) throw new \Exception("Gagal: Pilih S/N yang dikembalikan untuk barang {$masterItem->name}.");
+                    // KEMBALIKAN SN JIKA DI-SUBMIT SN
+                    if ($isReturningSn) {
+                        $returnedSns = $data['returned_minor_sns'];
 
-                        // Ekstrak HANYA SN-nya saja dari format "INV-HO-2606-XXXX [SN: YYY]"
                         $pureSns = [];
                         foreach ($returnedSns as $retSn) {
                             if (preg_match('/\[SN:\s*(.*?)\]/', $retSn, $m)) {
@@ -237,30 +257,42 @@ class GoodsIssueReturnController extends Controller
                                 'updated_at' => now()
                             ]);
 
-                        // Hapus dari Tanggungan Karyawan
-                        $empInventory = \App\Models\EmployeeInventory::where(['employee_name' => $gi->requester_name, 'item_id' => $masterItem->id])->first();
-                        if ($empInventory) {
-                            $currentSns = array_filter(array_map('trim', explode('|', $empInventory->specific_details)));
-                            $empInventory->specific_details = implode(' | ', array_diff($currentSns, $returnedSns));
-                            $empInventory->qty = max(0, $empInventory->qty - $baseQtyReturned);
-                            $empInventory->save();
+                        foreach ($returnedSns as $retSnFull) {
+                            $updated = \App\Models\EmployeeInventory::where('employee_name', $gi->requester_name)
+                                ->where('item_id', $masterItem->id)
+                                ->where('specific_details', trim($retSnFull))
+                                ->update(['qty' => 0]);
 
-                            $snStringForNote = count($pureSns) > 3
-                                ? implode(', ', array_slice($pureSns, 0, 3)) . " ... (+" . (count($pureSns) - 3) . " unit)"
-                                : implode(', ', $pureSns);
+                            if (!$updated) {
+                                $oldInv = \App\Models\EmployeeInventory::where('employee_name', $gi->requester_name)
+                                    ->where('item_id', $masterItem->id)
+                                    ->where('specific_details', 'like', "%".trim($retSnFull)."%")
+                                    ->where('qty', '>', 0)->first();
 
-                            \App\Models\EmployeeInventoryHistory::create([
-                                'employee_name'    => $gi->requester_name,
-                                'item_id'          => $masterItem->id,
-                                'type'             => 'OUT',
-                                'qty'              => $baseQtyReturned,
-                                'reference_number' => $retNumber,
-                                'notes'            => "Dikembalikan ke gudang (Retur: {$retNumber}). SN: " . $snStringForNote,
-                            ]);
+                                if ($oldInv) {
+                                    $currentSns = array_filter(array_map('trim', explode('|', $oldInv->specific_details)));
+                                    $oldInv->specific_details = implode(' | ', array_diff($currentSns, [$retSnFull]));
+                                    $oldInv->qty = max(0, $oldInv->qty - 1);
+                                    $oldInv->save();
+                                }
+                            }
                         }
+
+                        $snStringForNote = count($pureSns) > 3
+                            ? implode(', ', array_slice($pureSns, 0, 3)) . " ... (+" . (count($pureSns) - 3) . " unit)"
+                            : implode(', ', $pureSns);
+
+                        \App\Models\EmployeeInventoryHistory::create([
+                            'employee_name'    => $gi->requester_name,
+                            'item_id'          => $masterItem->id,
+                            'type'             => 'OUT',
+                            'qty'              => $baseQtyReturned,
+                            'reference_number' => $retNumber,
+                            'notes'            => "Dikembalikan ke gudang (Retur: {$retNumber}). SN: " . $snStringForNote,
+                        ]);
                     }
 
-                    // 🔥 KEMBALIKAN FISIK STOK KE GUDANG 🔥
+                    // KEMBALIKAN FISIK STOK
                     if ($masterItem->is_stockable ?? true) {
                         $balanceBefore = (float) $masterItem->current_stock;
                         $balanceAfter  = $balanceBefore + $baseQtyReturned;
@@ -283,10 +315,9 @@ class GoodsIssueReturnController extends Controller
                         }
 
                         $mutasiNoteExt = "";
-                        if ($masterItem->is_asset && !empty($assetInfoArr)) {
+                        if ($isReturningAsset && !empty($assetInfoArr)) {
                             $mutasiNoteExt = " [SN: " . implode(', ', $assetInfoArr) . "]";
-                        } elseif (!$masterItem->is_asset && isset($masterItem->is_trackable) && $masterItem->is_trackable && !empty($snStringForNote)) {
-                            // 🔥 Format persis [SN: ...] agar dikenali kotak kuning di Kartu Stok 🔥
+                        } elseif ($isReturningSn && !empty($snStringForNote)) {
                             $mutasiNoteExt = " [SN: {$snStringForNote}]";
                         }
 
@@ -306,7 +337,6 @@ class GoodsIssueReturnController extends Controller
                     }
                 }
 
-                // Update Status Dokumen
                 $giToUpdate = GoodsIssue::with('items')->find($gi->id);
                 $totalIssued = $giToUpdate->items->sum('qty_issued');
                 $totalReturned = $giToUpdate->items->sum('qty_returned');
@@ -337,17 +367,14 @@ class GoodsIssueReturnController extends Controller
         }
     }
 
-    // 4. Tampilkan Detail & Cetak Form Retur
     public function show($id)
     {
         $return = GoodsIssueReturn::with(['items.item', 'goodsIssue', 'receiver'])->findOrFail($id);
         return view('goods_issue_returns.show', compact('return'));
     }
 
-    // 5. Void Transaksi
     public function voidTransaction($id)
     {
-        // Void Logic...
         return back()->with('success', 'Transaksi berhasil di-Void.');
     }
 }

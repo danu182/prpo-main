@@ -141,8 +141,9 @@ class GoodsReceiptController extends Controller
         return view('gr.create', compact('po', 'pendingItems', 'conditions', 'warehouses'));
     }
 
+
     // ========================================================
-    // STORE GR (LENGKAP DENGAN TRANSLATOR [AUTO] & BEBAS BENTROK)
+    // STORE GR (LENGKAP DENGAN TRANSLATOR [AUTO] & ANTI-PCS)
     // ========================================================
     public function store(Request $request, $slug, \App\Services\SystemSettingService $settingService)
     {
@@ -202,7 +203,9 @@ class GoodsReceiptController extends Controller
                     if ($inputQty > 0) {
                         $poItem = \App\Models\PurchaseOrderItem::findOrFail($itemId);
                         $masterItem = \App\Models\Item::with('uom', 'itemUoms')->findOrFail($data['item_id']);
-                        $baseUomName = optional($masterItem->uom)->name ?? 'PCS';
+
+                        // 🔥 Default Master UOM (Pasti bukan PCS jika masternya Galon) 🔥
+                        $baseUomName = optional($masterItem->uom)->name ?? 'Unit';
 
                         // LOGIKA UOM DARI PO ITEM
                         $poConvFactor = 1;
@@ -210,39 +213,51 @@ class GoodsReceiptController extends Controller
                             $uomDb = collect($masterItem->itemUoms)->where('id', $poItem->uom_id)->first();
                             if ($uomDb) $poConvFactor = (float) $uomDb->conversion_qty;
                         } else {
-                            $rawPoUom = $poItem->uom ?? 'PCS';
+                            $rawPoUom = $poItem->uom ?? $baseUomName;
                             if (preg_match('/Isi\s*[:=]\s*([0-9.]+)/i', $rawPoUom, $matches)) {
                                 $poConvFactor = (float) $matches[1];
                             }
                         }
 
-                        // LOGIKA UOM DARI FORM GR (Pilihan input user)
+                        // 🔥 LOGIKA UOM PENYIMPANAN YANG SUDAH DIBERSIHKAN 🔥
                         $inputConvFactor = 1;
-                        $cleanInputUom = 'PCS';
                         $selectedUomId = null;
+                        $finalUomString = $baseUomName; // Set awal langsung ke Satuan Master
 
                         if (!empty($data['uom_id'])) {
+                            // Jika user memilih dropdown khusus (Misal: Pack, Dus)
                             $uomDb = collect($masterItem->itemUoms)->where('id', $data['uom_id'])->first();
                             if ($uomDb) {
                                 $selectedUomId = $uomDb->id;
                                 $inputConvFactor = (float) $uomDb->conversion_qty;
-                                $cleanInputUom = $uomDb->uom_name;
+                                $finalUomString = $uomDb->uom_name;
+                                if ($inputConvFactor > 1) {
+                                    $finalUomString .= ' (Isi ' . $inputConvFactor . ' ' . $baseUomName . ')';
+                                }
                             }
                         } else {
-                            $inputUomText = $data['uom'] ?? $poItem->uom;
-                            $cleanInputUom = trim(preg_replace('/ \(Isi:.*\)/i', '', $inputUomText));
-                            if (preg_match('/Isi\s*[:=]\s*([0-9.]+)/i', $inputUomText, $matches)) {
-                                $inputConvFactor = (float) $matches[1];
+                            // Jika form tidak mengirimkan UOM, artinya ambil dari PO
+                            if (!empty($poItem->uom_id)) {
+                                $poUomDb = collect($masterItem->itemUoms)->where('id', $poItem->uom_id)->first();
+                                if ($poUomDb) {
+                                    $inputConvFactor = (float) $poUomDb->conversion_qty;
+                                    $finalUomString = $poUomDb->uom_name;
+                                    if ($inputConvFactor > 1) {
+                                        $finalUomString .= ' (Isi ' . $inputConvFactor . ' ' . $baseUomName . ')';
+                                    }
+                                }
+                            } elseif (!empty($poItem->uom)) {
+                                $inputConvFactor = $poConvFactor;
+                                $finalUomString = $poItem->uom;
                             }
                         }
 
-                        // Rangkai teks nama kemasan untuk histori dokumen
-                        $finalUomString = $cleanInputUom;
-                        if ($inputConvFactor > 1) {
-                            $finalUomString .= ' (Isi ' . (float)$inputConvFactor . ' ' . $baseUomName . ')';
-                        }
-                        if (empty(trim($finalUomString))) {
-                            $finalUomString = $baseUomName ?? 'PCS';
+                        // 🔥 FILTER ANTI-PCS TERAKHIR 🔥
+                        // Jika hasil akhir string ini adalah 'PCS' atau 'pcs' tapi Master Barang bilang lain,
+                        // kita paksa buang 'PCS'-nya dan ubah menjadi satuan Master Barang!
+                        $cleanUomCheck = trim(preg_replace('/ \(Isi:?.*\)/i', '', $finalUomString));
+                        if (strtoupper($cleanUomCheck) === 'PCS' && strtoupper($baseUomName) !== 'PCS') {
+                            $finalUomString = $baseUomName;
                         }
 
                         // Hitung batas maksimum dalam pecahan terkecil (Base Qty)
@@ -301,7 +316,7 @@ class GoodsReceiptController extends Controller
                             foreach ($finalSnList as $sn) {
                                 \DB::table('item_serials')->insert([
                                     'item_id'          => $masterItem->id,
-                                    'goods_receipt_id' => $gr->id, // Menyimpan relasi ID agar show/print tidak blank
+                                    'goods_receipt_id' => $gr->id,
                                     'serial_number'    => $sn,
                                     'status'           => 'AVAILABLE',
                                     'created_at'       => now(),
@@ -313,14 +328,14 @@ class GoodsReceiptController extends Controller
 
                         $catatanAsli = $data['notes'] ?? null;
 
-                        // 4. Simpan ke Database Detail Item GR
+                        // 4. 🔥 SIMPAN KE DATABASE DETAIL ITEM GR (UOM SUDAH BENAR) 🔥
                         \App\Models\GoodsReceiptItem::create([
                             'goods_receipt_id'       => $gr->id,
                             'purchase_order_item_id' => $poItem->id,
                             'item_id'                => $data['item_id'],
                             'qty_received'           => $inputQty,
                             'uom_id'                 => $selectedUomId,
-                            'uom'                    => $finalUomString,
+                            'uom'                    => $finalUomString, // <-- Galon akan masuk ke sini
                             'condition_id'           => $data['condition_id'],
                             'notes'                  => $catatanAsli,
                         ]);
@@ -337,7 +352,6 @@ class GoodsReceiptController extends Controller
                             // Ambil nama spesifik, pastikan tidak ada tag HTML <ul><li> yang bikin panjang
                             $namaSpesifik = strip_tags($poItem->description ?? $masterItem->name);
 
-                            // 🔥 PERBAIKAN FATAL: HANYA CATAT INFO DASAR 🔥
                             // Kita HAPUS TOTAL penambahan daftar SN dari note mutasi agar tidak jebol!
                             $noteMutasi = "Masuk: {$namaSpesifik} (Ref PO: {$po->po_number})";
 
@@ -421,19 +435,15 @@ class GoodsReceiptController extends Controller
         }
     }
 
-    public function show($slug)
+
+   public function show($slug)
     {
         $gr = \App\Models\GoodsReceipt::with([
             'purchaseOrder.vendor',
             'purchaseOrder.company',
             'warehouse',
-            'items.item.uom',
+            'items.item.uom', // Harus ada agar baseUomName bisa ditarik
             'items.item.itemUoms',
-            'items.item.serials' => function($query) use ($slug) {
-                $query->where('serial_number', 'like', "%")
-                    ->orWhere('notes', 'like', "%")
-                    ->orderBy('id', 'asc');
-            },
             'items.purchaseOrderItem',
             'items.condition',
             'attachments',
@@ -446,6 +456,10 @@ class GoodsReceiptController extends Controller
                 ->where('goods_receipt_id', $gr->id)
                 ->pluck('serial_number')
                 ->toArray();
+
+            // Pastikan satuan yang tampil benar
+            $baseUomName = optional(optional($grItem->item)->uom)->name ?? 'Unit';
+            $grItem->clean_uom_name = trim(preg_replace('/ \(Isi:?.*\)/i', '', $grItem->uom ?? $baseUomName));
         }
 
         return view('gr.show', compact('gr'));
@@ -493,4 +507,6 @@ class GoodsReceiptController extends Controller
 
         return view('gr.print_labels', compact('gr', 'labelItems'));
     }
+
+
 }

@@ -1,5 +1,44 @@
 @extends('layouts.app')
 
+@push('css')
+<link href="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css" rel="stylesheet" />
+<link href="https://cdn.jsdelivr.net/npm/select2-bootstrap-5-theme@1.3.0/dist/select2-bootstrap-5-theme.min.css" rel="stylesheet" />
+
+<style>
+    /* 🔥 Kustomisasi Select2 Premium 🔥 */
+    .select2-container--bootstrap-5 .select2-selection {
+        border-radius: 8px;
+        border-color: #dee2e6;
+        min-height: 38px;
+        font-size: 0.875rem;
+    }
+    .select2-container--bootstrap-5 .select2-selection--multiple {
+        padding-bottom: 2px;
+    }
+    /* Tag Biru untuk Aset */
+    .asset-select-container .select2-selection__choice {
+        background-color: #0dcaf0 !important;
+        color: #fff !important;
+        border: none !important;
+        border-radius: 6px !important;
+        font-size: 0.75rem !important;
+        font-weight: 600 !important;
+        margin-top: 4px !important;
+    }
+    /* Tag Kuning untuk SN Lacak */
+    .sn-select-container .select2-selection__choice {
+        background-color: #ffc107 !important;
+        color: #000 !important;
+        border: none !important;
+        border-radius: 6px !important;
+        font-size: 0.75rem !important;
+        font-weight: 600 !important;
+        margin-top: 4px !important;
+    }
+    .select2-results__option { font-size: 0.85rem; padding: 8px 12px; }
+</style>
+@endpush
+
 @section('content')
 <div class="container pb-5 text-dark">
     <div class="mb-4">
@@ -30,7 +69,7 @@
 
                     <div class="col-md-3">
                         <label class="form-label small fw-bold text-muted">Dikembalikan Oleh <span class="text-danger">*</span></label>
-                        <input type="text" name="returned_by_name" class="shadow-sm form-control" value="{{ $gi->requester_name }}" required>
+                        <input type="text" name="returned_by_name" class="shadow-sm form-control bg-light" value="{{ $gi->requester_name }}" required readonly>
                     </div>
 
                     <div class="col-md-3">
@@ -76,9 +115,22 @@
                         @foreach($returnableItems as $index => $item)
                         @php
                             $masterItem = $item->item;
-                            $isAsset = optional($masterItem)->is_asset;
-                            $isTrackable = optional($masterItem)->is_trackable;
                             $baseUomName = optional($masterItem->uom)->name ?? 'PCS';
+
+                            // 🔥 LOGIKA BARU: CEK HISTORI NYATA TRANSAKSI LAMA 🔥
+                            $hasHistoryAsset = isset($item->held_assets) && count($item->held_assets) > 0;
+                            $hasHistorySn = !empty($item->held_sns);
+
+                            // Jika punya histori Aset, paksa jadi Aset. Jika punya histori SN, paksa jadi SN.
+                            if ($hasHistoryAsset) {
+                                $isAsset = true; $isTrackable = false;
+                            } elseif ($hasHistorySn) {
+                                $isAsset = false; $isTrackable = true;
+                            } else {
+                                // Jika tidak ada histori sama sekali, baru ikuti Master Barang
+                                $isAsset = optional($masterItem)->is_asset;
+                                $isTrackable = optional($masterItem)->is_trackable;
+                            }
 
                             // 1. Ekstrak Data UOM & Konversi dari Histori GI Aslinya
                             $rawGiUom = $item->getRawOriginal('uom') ?: 'PCS';
@@ -94,7 +146,7 @@
 
                             // 2. Hitung Sisa Kuota
                             $sisaBisaRetur = (float)$item->qty_issued - (float)($item->qty_returned ?? 0);
-                            $maxBaseQty = $sisaBisaRetur * $giConvRate; // Konversi murni ke Pcs Eceran
+                            $maxBaseQty = $sisaBisaRetur * $giConvRate;
                         @endphp
                         <tr>
                             <td class="py-3 ps-4">
@@ -116,20 +168,24 @@
                             {{-- 🔥 KOLOM INPUT / SELECT ASET 🔥 --}}
                             <td>
                                 @if($isAsset)
-                                    <select name="items[{{ $index }}][returned_asset_numbers][]" class="shadow-sm form-select border-info select-asset-return" multiple data-index="{{ $item->id }}">
-                                        @foreach($item->held_assets ?? [] as $ast)
-                                            <option value="{{ $ast->asset_number }}">{{ $ast->asset_number }}</option>
-                                        @endforeach
-                                    </select>
+                                    <div class="asset-select-container">
+                                        <select name="items[{{ $index }}][returned_asset_numbers][]" class="shadow-sm form-select border-info select-asset-return" multiple data-index="{{ $item->id }}">
+                                            @foreach($item->held_assets ?? [] as $ast)
+                                                <option value="{{ $ast->asset_number }}">{{ $ast->asset_number }}</option>
+                                            @endforeach
+                                        </select>
+                                    </div>
                                     <div class="form-text small text-info"><i class="bi bi-info-circle"></i> Pilih Aset yang dikembalikan.</div>
                                     <input type="hidden" name="items[{{ $index }}][qty_returned]" class="qty-hidden-{{ $item->id }} qty-retur-input" value="0">
 
                                 @elseif($isTrackable)
-                                    <select name="items[{{ $index }}][returned_minor_sns][]" class="shadow-sm form-select border-warning select-asset-return" multiple data-index="{{ $item->id }}">
-                                        @foreach($item->held_sns ?? [] as $sn)
-                                            <option value="{{ $sn }}">{{ $sn }}</option>
-                                        @endforeach
-                                    </select>
+                                    <div class="sn-select-container">
+                                        <select name="items[{{ $index }}][returned_minor_sns][]" class="shadow-sm form-select border-warning select-asset-return" multiple data-index="{{ $item->id }}">
+                                            @foreach($item->held_sns ?? [] as $sn)
+                                                <option value="{{ $sn }}">{{ $sn }}</option>
+                                            @endforeach
+                                        </select>
+                                    </div>
                                     <div class="form-text small text-warning-emphasis"><i class="bi bi-upc-scan"></i> Pilih SN yang dikembalikan.</div>
                                     <input type="hidden" name="items[{{ $index }}][qty_returned]" class="qty-hidden-{{ $item->id }} qty-retur-input" value="0">
 
@@ -169,7 +225,6 @@
 @endsection
 
 @push('scripts')
-{{-- 🔥 Pastikan Library jQuery dan Select2 sudah dipanggil di file layout utama, jika belum tambahkan di sini --}}
 <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
@@ -180,7 +235,7 @@
         $('.select-asset-return').select2({
             theme: 'bootstrap-5',
             width: '100%',
-            placeholder: 'Klik untuk memilih unit...'
+            placeholder: 'Klik untuk memilih unit yang diretur...'
         });
 
         // 2. 🔥 SIHIR UTAMA: Hitung otomatis Qty dari opsi SN / Aset yang dipilih 🔥
@@ -191,14 +246,14 @@
             // Hitung berapa jumlah unit yang dicentang / dipilih oleh user
             let selectedCount = $(this).val() ? $(this).val().length : 0;
 
-            // Masukkan angkanya ke input kuantitas tersembunyi agar lolos validasi submit
+            // Masukkan angkanya ke input kuantitas tersembunyi agar terbaca saat form disubmit
             if(hiddenQtyInput.length) {
                 hiddenQtyInput.val(selectedCount);
             }
         });
     });
 
-    // 3. 🔥 FITUR AJAIB UOM: Mengonversi maksimal stok secara realtime saat UOM diganti 🔥
+    // 3. 🔥 FITUR UOM: Mengonversi maksimal stok secara realtime saat UOM diganti 🔥
     function changeUom(selectElement, itemId, maxBaseQty) {
         let selectedOption = selectElement.options[selectElement.selectedIndex];
         let newConvRate = parseFloat(selectedOption.getAttribute('data-conv')) || 1;
@@ -207,10 +262,7 @@
         let qtyInput = document.getElementById(`qty-input-${itemId}`);
         let currentQty = parseFloat(qtyInput.value) || 0;
 
-        // Pertahankan nilai riil (Jika awalnya 1 Pack, diubah ke Pcs otomatis jadi 10 Pcs)
         let newQty = (currentQty * oldConvRate) / newConvRate;
-
-        // Batas maksimal baru menggunakan pembulatan ke bawah agar tidak over-limit
         let newMaxVal = Math.floor(maxBaseQty / newConvRate);
 
         qtyInput.setAttribute('max', newMaxVal);
@@ -220,10 +272,8 @@
             if (parseFloat(qtyInput.value) > newMaxVal) qtyInput.value = newMaxVal;
         }
 
-        // Update data konversi saat ini
         selectElement.setAttribute('data-current-conv', newConvRate);
 
-        // Update Text Tampilan Bawah (Help Text)
         let helpMax = document.getElementById(`max-val-${itemId}`);
         let helpUom = document.getElementById(`uom-text-${itemId}`);
         let hiddenMax = document.getElementById(`max_${itemId}`);

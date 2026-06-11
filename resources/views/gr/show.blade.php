@@ -132,25 +132,26 @@
                         <td class="py-3 text-center fw-bold text-secondary">
                             @php
                                 $poItem = $item->purchaseOrderItem;
-                                $poUomText = 'PCS'; // Default cadangan
+                                $baseUomName = $item->clean_uom_name ?? 'Unit';
+                                $poUomText = $baseUomName;
 
                                 if ($poItem) {
-                                    // 1. Cek apakah PO menggunakan uom_id (Relasi ke master satuan Pack/Dus)
                                     if (!empty($poItem->uom_id) && optional($item->item)->itemUoms) {
                                         $uomMaster = collect($item->item->itemUoms)->where('id', $poItem->uom_id)->first();
                                         if ($uomMaster) {
                                             $poUomText = $uomMaster->uom_name;
                                             if ($uomMaster->conversion_qty > 1) {
-                                                // Rangkai teks: Pack (Isi 20 Pcs)
-                                                $baseName = optional(optional($item->item)->uom)->name ?? 'Pcs';
-                                                $poUomText .= ' (Isi ' . (float)$uomMaster->conversion_qty . ' ' . $baseName . ')';
+                                                $poUomText .= ' (Isi ' . (float)$uomMaster->conversion_qty . ' ' . $baseUomName . ')';
                                             }
                                         }
+                                    } elseif (!empty($poItem->uom)) {
+                                        $poUomText = is_string($poItem->uom) ? $poItem->uom : (optional($poItem->uom)->name ?? $baseUomName);
                                     }
-                                    // 2. Fallback jika PO hanya menggunakan teks biasa
-                                    elseif (!empty($poItem->uom)) {
-                                        $poUomText = is_string($poItem->uom) ? $poItem->uom : (optional($poItem->uom)->name ?? 'PCS');
-                                    }
+                                }
+
+                                // 🔥 FILTER ANTI-PCS: Jika dokumen PO lama bilang PCS, tapi Master bilang Galon, paksa pakai Galon! 🔥
+                                if (strtoupper(trim($poUomText)) === 'PCS' && strtoupper($baseUomName) !== 'PCS') {
+                                    $poUomText = $baseUomName;
                                 }
                             @endphp
 
@@ -164,8 +165,25 @@
                         <td class="py-3 text-center fw-bold text-success fs-5">
                             + {{ (float)$item->qty_received }} <br>
                             <span class="text-nowrap fw-bold text-muted" style="font-size: 0.65rem; text-transform: uppercase;">
-                                {{-- Menggunakan getRawOriginal() untuk memastikan kita mengambil Teks (Varchar) dari DB, bukan relasi ID --}}
-                                {{ $item->getRawOriginal('uom') ?: 'PCS' }}
+                                @php
+                                    $grUom = $item->getRawOriginal('uom');
+                                    $baseUomName = $item->clean_uom_name ?? 'Unit';
+
+                                    // 🔥 FILTER ANTI-PCS: Obat yang sama untuk kolom Penerimaan 🔥
+                                    if (!$grUom || (strtoupper(trim($grUom)) === 'PCS' && strtoupper($baseUomName) !== 'PCS')) {
+                                        $grUom = $baseUomName;
+                                    }
+                                @endphp
+                                {{ $grUom }}
+                            </span>
+                        </td>
+
+                        {{-- QTY GR (DITERIMA) --}}
+                        <td class="py-3 text-center fw-bold text-success fs-5">
+                            + {{ (float)$item->qty_received }} <br>
+                            <span class="text-nowrap fw-bold text-muted" style="font-size: 0.65rem; text-transform: uppercase;">
+                                {{-- Jika field 'uom' di tabel kosong, fallback ke clean_uom_name dari Controller --}}
+                                {{ $item->getRawOriginal('uom') ?: ($item->clean_uom_name ?? 'Unit') }}
                             </span>
                         </td>
 
