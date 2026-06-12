@@ -501,6 +501,14 @@ Route::middleware('auth')->group(function () {
 
     });
 
+    Route::prefix('asset-capitalizations')->name('asset-capitalizations.')->middleware(['can:view_inventory'])->group(function () {
+
+        // Modul Kapitalisasi / Pengakuan Aset
+        Route::get('/create', [App\Http\Controllers\AssetCapitalizationController::class, 'create'])->name('create');
+        Route::post('/asset-capitalizations', [App\Http\Controllers\AssetCapitalizationController::class, 'store'])->name('store');
+        Route::get('/get-items/{gr_id}', [App\Http\Controllers\AssetCapitalizationController::class, 'getGrItems'])->name('get-items');
+
+    });
 
     // ====================================================
     // settings

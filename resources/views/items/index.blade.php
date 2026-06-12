@@ -121,7 +121,6 @@
                 </tbody>
 
                 {{-- 2. BAGIAN DATA ASLI (Disembunyikan saat pertama load) --}}
-                {{-- 2. BAGIAN DATA ASLI (Disembunyikan saat pertama load) --}}
                 <tbody id="actual-table" class="d-none">
                     @forelse($items as $item)
                     <tr>
@@ -157,9 +156,9 @@
                                 @endif
 
                                 {{-- Menampilkan Status Aset --}}
-                                @if($item->is_asset)
+                                {{-- @if($item->is_asset)
                                     <span class="border badge bg-info-subtle text-info-emphasis border-info-subtle"><i class="bi bi-pc-display me-1"></i> Aset</span>
-                                @endif
+                                @endif --}}
 
                                 {{-- Menampilkan Status Lacak Fisik --}}
                                 @if($item->is_trackable)
