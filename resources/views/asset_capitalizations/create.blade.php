@@ -114,6 +114,7 @@
 
         // Simpan data SN dari server ke variabel global
         let globalSnData = {};
+        let globalSpecData = {}; // 🔥 Variabel baru untuk menampung spesifikasi
 
         $('#gr_select').on('change', function() {
             let grId = $(this).val();
@@ -135,11 +136,16 @@
                     tbody.empty();
                     globalSnData = {}; // Reset
 
+                    tbody.empty();
+                    globalSnData = {}; // Reset
+                    globalSpecData = {}; // 🔥 Reset juga
+
                     if (res.items.length === 0) {
                         tbody.append(`<div class="mb-0 alert alert-warning fw-bold"><i class="bi bi-info-circle me-2"></i>Tidak ada stok fisik yang bisa diakui sebagai aset dari GR ini.</div>`);
                     } else {
                         res.items.forEach(item => {
                             globalSnData[item.item_id] = item.available_sns || [];
+                            globalSpecData[item.item_id] = item.default_spec || ''; // 🔥 Simpan spesifikasi ke dictionary
 
                             let html = `
                             <div class="p-4 mb-4 bg-white border shadow-sm rounded-4">
@@ -191,6 +197,9 @@
             let container = $(`#spec-container-${itemId}`);
             let availableSns = globalSnData[itemId] || [];
 
+            // 🔥 TARIK DATA SPESIFIKASI DARI MEMORI 🔥
+            let defaultSpec = globalSpecData[itemId] || '';
+
             container.empty();
 
             for (let i = 0; i < qty; i++) {
@@ -210,7 +219,6 @@
                                 <div class="mb-3 row g-2">
                                     <div class="col-sm-6">
                                         <label class="mb-1 small text-muted fw-bold">No. Akuntansi (FA)</label>
-                                        {{-- 🔥 Tambahkan class acc-no-input di bawah ini 🔥 --}}
                                         <input type="text" name="items[${itemId}][details][${i}][accounting_no]" class="form-control form-control-sm acc-no-input" placeholder="Opsional...">
                                     </div>
                                     <div class="col-sm-6">
@@ -219,7 +227,6 @@
                                     </div>
                                 </div>
 
-                                {{-- 🔥 FORM TANGGAL, HARGA, DAN UMUR ASET (AUTO-FILL) 🔥 --}}
                                 <div class="pt-2 mt-1 mb-3 row g-2 border-top">
                                     <div class="col-sm-4">
                                         <label class="mb-1 small text-primary-emphasis fw-bold" style="font-size:0.7rem;"><i class="bi bi-calendar-check me-1"></i>Tgl Perolehan</label>
@@ -255,10 +262,22 @@
                     }
                 });
 
+                // 🔥 SUNTIKKAN SPESIFIKASI DARI PO KE DALAM EDITOR 🔥
+                if (defaultSpec) {
+                    quill.clipboard.dangerouslyPasteHTML(defaultSpec);
+                }
+
+                // 🔥 SINKRONISASI AWAL KE HIDDEN INPUT 🔥
+                // Agar jika user tidak mengetik apa-apa, teks dari PO tetap tersimpan!
+                var htmlContent = document.querySelector(`#editor-${itemId}-${i} .ql-editor`).innerHTML;
+                if(htmlContent === '<p><br></p>') htmlContent = '';
+                document.getElementById(`hidden-notes-${itemId}-${i}`).value = htmlContent;
+
+                // Sinkronisasi saat user mengetik
                 quill.on('text-change', function() {
-                    var htmlContent = document.querySelector(`#editor-${itemId}-${i} .ql-editor`).innerHTML;
-                    if(htmlContent === '<p><br></p>') htmlContent = '';
-                    document.getElementById(`hidden-notes-${itemId}-${i}`).value = htmlContent;
+                    var currentHtml = document.querySelector(`#editor-${itemId}-${i} .ql-editor`).innerHTML;
+                    if(currentHtml === '<p><br></p>') currentHtml = '';
+                    document.getElementById(`hidden-notes-${itemId}-${i}`).value = currentHtml;
                 });
             }
         });

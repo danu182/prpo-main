@@ -15,24 +15,23 @@ use Illuminate\Support\Facades\Log;
 
 class AssetCapitalizationController extends Controller
 {
+    // 1. Tampilkan Halaman Form
     public function create()
     {
         $grs = GoodsReceipt::orderBy('received_date', 'desc')->limit(50)->get();
         return view('asset_capitalizations.create', compact('grs'));
     }
 
-    // 2. AJAX: Ambil Rincian Item dari GR beserta Harga & Sisa Stoknya
+    // 2. AJAX: Ambil Rincian Item
     public function getGrItems($gr_id)
     {
-        // 🔥 Tambahkan relasi 'items.purchaseOrderItem' agar kita bisa intip harga PO-nya!
         $gr = GoodsReceipt::with(['items.item.uom', 'items.purchaseOrderItem', 'warehouse'])->findOrFail($gr_id);
-        $grDate = $gr->received_date; // Tanggal GR sebagai Tanggal Perolehan Default
+        $grDate = $gr->received_date;
 
         $items = [];
         foreach ($gr->items as $grItem) {
             $masterItem = $grItem->item;
 
-            // 1. Ekstrak Konversi GR
             $grConvRate = 1;
             if (preg_match('/Isi\s*[:=]?\s*([0-9.]+)/i', $grItem->getRawOriginal('uom'), $matches)) {
                 $grConvRate = (float) $matches[1];
@@ -41,11 +40,11 @@ class AssetCapitalizationController extends Controller
                 if ($uomDb) $grConvRate = (float) $uomDb->conversion_qty;
             }
 
-            // 2. Kalkulasi Harga Perolehan Dasar (Base Unit Price)
+            // Hitung Harga Default
             $poItem = $grItem->purchaseOrderItem;
             $poPrice = $poItem ? (float) $poItem->unit_price : 0;
-
             $poConvFactor = 1;
+
             if ($poItem) {
                 $rawPoUom = $poItem->getRawOriginal('uom') ?: 'Unit';
                 if (preg_match('/Isi\s*[:=]?\s*([0-9.]+)/i', $rawPoUom, $matches)) {
@@ -55,10 +54,8 @@ class AssetCapitalizationController extends Controller
                     if ($uomDb) $poConvFactor = (float) $uomDb->conversion_qty;
                 }
             }
-            // Jika beli 1 Dus (isi 10) Rp 10 Juta, Harga per Unit-nya jadi Rp 1 Juta
             $baseUnitPrice = $poConvFactor > 0 ? ($poPrice / $poConvFactor) : $poPrice;
 
-            // 3. Sisa yang belum diretur
             $baseQtyReceived = ($grItem->qty_received - ($grItem->qty_returned ?? 0)) * $grConvRate;
             if ($baseQtyReceived <= 0) continue;
 
@@ -79,6 +76,8 @@ class AssetCapitalizationController extends Controller
             $maxCapitalizable = min($baseQtyReceived, $currentStock);
 
             if ($maxCapitalizable > 0) {
+                $defaultSpec = $poItem ? ($poItem->description ?? $poItem->specification ?? $poItem->notes ?? '') : '';
+
                 $items[] = [
                     'item_id' => $masterItem->id,
                     'item_code' => $masterItem->code,
@@ -88,10 +87,9 @@ class AssetCapitalizationController extends Controller
                     'current_stock' => $currentStock,
                     'max_capitalizable' => floor($maxCapitalizable),
                     'available_sns' => $availableSns,
-
-                    // 🔥 DATA BARU UNTUK AUTO-FILL FORM 🔥
                     'default_price' => round($baseUnitPrice, 2),
-                    'default_date'  => date('Y-m-d', strtotime($grDate))
+                    'default_date'  => date('Y-m-d', strtotime($grDate)),
+                    'default_spec'  => $defaultSpec
                 ];
             }
         }
@@ -103,19 +101,17 @@ class AssetCapitalizationController extends Controller
         ]);
     }
 
-    // 3. Proses Simpan Pengakuan Aset
+    // 3. Proses Simpan Aset
     public function store(Request $request)
     {
         $request->validate([
             'goods_receipt_id' => 'required|exists:goods_receipts,id',
             'items'            => 'required|array',
             'items.*.qty'      => 'required|numeric|min:0',
-
-            // 🔥 VALIDASI ANTI-DUPLIKAT NOMOR AKUNTANSI 🔥
             'items.*.details.*.accounting_no' => 'nullable|string|distinct|unique:fixed_assets,accounting_asset_number',
         ], [
-            'items.*.details.*.accounting_no.distinct' => 'GAGAL: Nomor Akuntansi (FA) yang Anda ketik ada yang kembar di dalam form ini.',
-            'items.*.details.*.accounting_no.unique'   => 'GAGAL: Nomor Akuntansi (FA) tersebut sudah pernah dipakai oleh aset lain di database. Gunakan nomor yang berbeda.',
+            'items.*.details.*.accounting_no.distinct' => 'Nomor Akuntansi (FA) ada yang kembar di dalam form ini.',
+            'items.*.details.*.accounting_no.unique'   => 'Nomor Akuntansi (FA) tersebut sudah dipakai oleh aset lain.',
         ]);
 
         try {
@@ -123,20 +119,36 @@ class AssetCapitalizationController extends Controller
                 $gr = GoodsReceipt::findOrFail($request->goods_receipt_id);
                 $statusAvailableId = Status::where('type', 'AST')->where('slug', 'available')->value('id') ?? 31;
 
+                // Tarik data PO dari database murni
+                $poData = \DB::table('purchase_orders')->where('id', $gr->purchase_order_id)->first();
+
+                // 🔥 JEMBATAN PENERJEMAH MATA UANG 🔥
+                // 1. Ambil teks mata uang dari PO (Misal: 'USD' atau 'IDR')
+                $currencyCode = $poData->currency ?? 'IDR';
+
+                // 2. Cari angka ID-nya di tabel currencies berdasarkan teks tersebut
+                $currencyDb = \DB::table('currencies')->where('code', $currencyCode)->first();
+
+                // 3. Masukkan angka ID-nya (Jika ketemu 'USD', otomatis jadi 2)
+                $currencyId = $currencyDb ? $currencyDb->id : 1;
+
+                // Ambil Company ID
+                $companyId  = $poData->company_id ?? $poData->bill_to_company_id ?? null;
+
                 foreach ($request->items as $itemId => $data) {
                     $qtyToCapitalize = (int) ($data['qty'] ?? 0);
                     if ($qtyToCapitalize <= 0) continue;
 
                     $masterItem = Item::findOrFail($itemId);
-                    $baseUomName = optional($masterItem->uom)->name ?? 'Unit';
 
+                    // 1. Potong Stok Gudang
                     $availableStocks = InventoryStock::where('item_id', $itemId)
                                         ->where('stock_qty', '>', 0)
                                         ->orderBy('created_at', 'asc')->lockForUpdate()->get();
 
                     $totalAvailable = $availableStocks->sum('stock_qty');
                     if ($qtyToCapitalize > $totalAvailable) {
-                        throw new \Exception("Stok fisik {$masterItem->name} tidak cukup. Diminta: {$qtyToCapitalize}, Tersedia: {$totalAvailable}.");
+                        throw new \Exception("Stok fisik {$masterItem->name} tersisa {$totalAvailable}, tidak cukup untuk dijadikan aset.");
                     }
 
                     $qtySisaPotong = $qtyToCapitalize;
@@ -148,10 +160,7 @@ class AssetCapitalizationController extends Controller
                         $potong = min($stockRow->stock_qty, $qtySisaPotong);
                         $actualWarehouseId = $stockRow->warehouse_id;
 
-                        $balanceBefore = $saldoTotalSaatIni;
-                        $balanceAfter = $balanceBefore - $potong;
-                        $saldoTotalSaatIni = $balanceAfter;
-
+                        $saldoTotalSaatIni -= $potong;
                         $stockRow->decrement('stock_qty', $potong);
                         $qtySisaPotong -= $potong;
 
@@ -160,15 +169,16 @@ class AssetCapitalizationController extends Controller
                             'warehouse_id'     => $stockRow->warehouse_id,
                             'type'             => 'OUT',
                             'qty'              => $potong,
-                            'balance_before'   => $balanceBefore,
-                            'balance_after'    => $balanceAfter,
+                            'balance_before'   => $saldoTotalSaatIni + $potong,
+                            'balance_after'    => $saldoTotalSaatIni,
                             'reference_number' => $gr->gr_number,
-                            'notes'            => "Dikonversi menjadi Aset Tetap (Capitalized)",
+                            'notes'            => "Kapitalisasi menjadi Aset Tetap",
                             'created_by'       => auth()->id(),
                         ]);
                     }
                     $masterItem->update(['current_stock' => $saldoTotalSaatIni]);
 
+                    // 2. Suntik Serial Number
                     $autoSns = [];
                     if (isset($masterItem->is_trackable) && $masterItem->is_trackable) {
                         $autoSns = \DB::table('item_serials')
@@ -184,55 +194,64 @@ class AssetCapitalizationController extends Controller
                             ->update(['status' => 'CAPITALIZED', 'updated_at' => now()]);
                     }
 
+                    // 3. Simpan ke Tabel `fixed_assets` secara Presisi
                     $details = $data['details'] ?? [];
                     for ($i = 0; $i < $qtyToCapitalize; $i++) {
                         $detail = $details[$i] ?? [];
 
+                        // Nomor Auto Generate
                         $year = date('Y'); $month = date('m');
                         $prefix = "AST/{$year}/{$month}/";
                         $lastAsset = FixedAsset::where('asset_number', 'like', "{$prefix}%")->orderBy('id', 'desc')->first();
                         $nextSeq = $lastAsset ? ((int) substr($lastAsset->asset_number, -4)) + 1 : 1;
                         $sysAssetNumber = $prefix . str_pad($nextSeq, 4, '0', STR_PAD_LEFT);
 
+                        // Ambil Data Form
                         $accountingNo = $detail['accounting_no'] ?? null;
                         $specificName = $detail['specific_name'] ?? $masterItem->name;
-                        $notes = $detail['notes'] ?? null;
-
-                        $accValue = $detail['accounting_value'] ?? 0;
-                        $usefulLife = $detail['useful_life'] ?? 0;
-                        $acqDate = $detail['acquisition_date'] ?? date('Y-m-d');
+                        $acqDate      = $detail['acquisition_date'] ?? date('Y-m-d');
+                        $accValue     = $detail['accounting_value'] ?? 0;
+                        $usefulLife   = $detail['useful_life'] ?? '';
+                        $specDetail   = $detail['notes'] ?? ''; // Teks dari Quill
 
                         $serialNumber = $detail['serial_number'] ?? null;
                         if (empty($serialNumber) && isset($autoSns[$i])) {
                             $serialNumber = $autoSns[$i];
                         }
 
-                        // Menyimpan Data Aset (Tergantung struktur tabel Anda)
+                        // Catatan Tambahan
+                        $extraNote = "Diakui dari dokumen penerimaan: {$gr->gr_number}.";
+                        if (!empty($usefulLife)) $extraNote .= " Estimasi Umur Ekonomis: {$usefulLife} Tahun.";
+
+                        // 🔥 SESUAIKAN DENGAN STRUKTUR TABEL DATABASE ANDA 🔥
                         $newAsset = FixedAsset::create([
+                            'asset_number'            => $sysAssetNumber,
                             'item_id'                 => $masterItem->id,
                             'warehouse_id'            => $actualWarehouseId,
-                            'status_id'               => $statusAvailableId,
-                            'asset_number'            => $sysAssetNumber,
-                            'accounting_asset_number' => $accountingNo,
+                            'company_id'              => $companyId,
+                            'goods_receipt_id'        => $gr->id,
                             'name'                    => $specificName,
                             'serial_number'           => $serialNumber,
-                            'accounting_value'        => $accValue,
-                            'useful_life_years'       => $usefulLife,
-                            // Jika ada kolom purchase_date: 'purchase_date' => $acqDate,
-                            'notes'                   => "Tgl Perolehan: {$acqDate} | Diakui dari GR: {$gr->gr_number} | Nilai: Rp." . number_format($accValue,0,',','.') . " | " . $notes,
+                            'accounting_asset_number' => $accountingNo,
+                            'acquisition_date'        => $acqDate,
+                            'purchase_price'          => $accValue,
+                            'currency_id'             => $currencyId,
+                            'spesifikasi_detail'      => $specDetail,
+                            'status_id'               => $statusAvailableId,
+                            'notes'                   => $extraNote,
                         ]);
 
                         FixedAssetHistory::create([
                             'fixed_asset_id' => $newAsset->id,
                             'status'         => 'Registered (Terdaftar)',
-                            'notes'          => "Aset diregistrasi & dikapitalisasi dari Stok (Ref GR: {$gr->gr_number}).",
+                            'notes'          => "Aset diregistrasi dari Stok (Ref GR: {$gr->gr_number}).",
                             'created_by'     => auth()->id(),
                         ]);
                     }
                 }
             });
 
-            return redirect()->route('asset-capitalizations.create')->with('success', 'Luar biasa! Stok berhasil dikonversi menjadi Aset Tetap secara spesifik.');
+            return redirect()->route('asset-capitalizations.create')->with('success', 'Luar biasa! Stok berhasil dikonversi menjadi Aset Tetap secara akurat.');
 
         } catch (\Exception $e) {
             Log::error('Error Kapitalisasi Aset: ' . $e->getMessage());
