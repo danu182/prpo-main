@@ -113,7 +113,7 @@ class GoodsIssueController extends Controller
                     $uomId = null;
 
                     $daftarInventarisBaru = [];
-                    $snStringForNote = ''; // Penampung teks SN
+                    $snStringForNote = '';
 
                     if ($isModeAsset) {
                         $assetIds = $data['asset_ids'];
@@ -125,7 +125,7 @@ class GoodsIssueController extends Controller
                         $userPenerima = \App\Models\User::where('name', $request->requester_name)->first();
                         $assignedToId = $userPenerima ? $userPenerima->id : null;
                         $statusInUse = \App\Models\Status::where('type', 'AST')->where('slug', 'in_use')->first();
-                        $statusIdToUse = $statusInUse ? $statusInUse->id : 31;
+                        $statusIdToUse = $statusInUse ? $statusInUse->id : 32;
 
                         foreach($assetDetails as $ad) {
                             $info = $ad->asset_number;
@@ -176,7 +176,6 @@ class GoodsIssueController extends Controller
                                 throw new \Exception("Wajib memilih Serial Number (SN) sebanyak " . intval($qtyRequested) . " unit untuk barang " . $item->name);
                             }
 
-                            // UPDATE STATUS SN DI TABEL ITEM_SERIALS JADI 'IN_USE'
                             \DB::table('item_serials')
                                 ->whereIn('serial_number', $snList)
                                 ->update([
@@ -184,7 +183,6 @@ class GoodsIssueController extends Controller
                                     'updated_at' => now()
                                 ]);
 
-                            // Generate Kode Registrasi Inventaris Karyawan
                             $kodeCompany = auth()->user()->company->code ?? 'HO';
                             $bulanTahun = date('ym');
                             foreach ($snList as $sn) {
@@ -192,7 +190,6 @@ class GoodsIssueController extends Controller
                                 $daftarInventarisBaru[] = "INV-{$kodeCompany}-{$bulanTahun}-{$kodeUnik} [SN: " . trim($sn) . "]";
                             }
 
-                            // 🔥 BUAT TEKS SN PENDEK UNTUK DITAMPILKAN 🔥
                             if (count($snList) > 3) {
                                 $snStringForNote = implode(', ', array_slice($snList, 0, 3)) . " ... (+" . (count($snList) - 3) . " unit)";
                             } else {
@@ -200,7 +197,6 @@ class GoodsIssueController extends Controller
                             }
                         }
 
-                        // Susun catatan untuk Detail Pengeluaran (Tabel Item)
                         $itemNote = $data['notes'] ?? '';
                         if ($snStringForNote) {
                             $itemNote .= ($itemNote ? " | " : "") . "SN: " . $snStringForNote;
@@ -208,70 +204,62 @@ class GoodsIssueController extends Controller
                         $itemNote = trim($itemNote . " | Dikeluarkan fisik: {$qtyInput} {$finalUomString}", ' |');
                     }
 
-                    // Potong Stok
-                    $issueMethod = $item->issue_method ?? 'FIFO';
-                    $sortDirection = ($issueMethod === 'LIFO') ? 'desc' : 'asc';
+                    // 🔥 PERBAIKAN KRUSIAL: JANGAN POTONG STOK JIKA YANG DIKELUARKAN ADALAH ASET! 🔥
+                    if (!$isModeAsset) {
+                        $issueMethod = $item->issue_method ?? 'FIFO';
+                        $sortDirection = ($issueMethod === 'LIFO') ? 'desc' : 'asc';
 
-                    $query = \App\Models\InventoryStock::where('warehouse_id', $request->warehouse_id)
-                                ->where('item_id', $item->id)->where('stock_qty', '>', 0);
+                        $query = \App\Models\InventoryStock::where('warehouse_id', $request->warehouse_id)
+                                    ->where('item_id', $item->id)->where('stock_qty', '>', 0);
 
-                    if (!empty($data['inventory_stock_id']) && !$isModeAsset) {
-                        $query->where('id', $data['inventory_stock_id']);
-                        $modeText = "Manual Batch";
-                    } else {
-                        $query->orderBy('created_at', $sortDirection);
-                        $modeText = "Auto-{$issueMethod}";
-                    }
-
-                    $availableStocks = $query->lockForUpdate()->get();
-                    $totalAvailable = $availableStocks->sum('stock_qty');
-
-                    if ($totalAvailable < $qtyRequested) {
-                        throw new \Exception("Stok {$item->name} tidak cukup! Diminta: {$qtyRequested} {$satuanDasar}, Sisa: {$totalAvailable} {$satuanDasar}");
-                    }
-
-                    $qtySisa = $qtyRequested;
-                    $saldoTotalSaatIni = (float) $item->current_stock;
-
-                    foreach ($availableStocks as $stockRow) {
-                        if ($qtySisa <= 0) break;
-                        $potong = min($stockRow->stock_qty, $qtySisa);
-                        $balanceBefore = $saldoTotalSaatIni;
-                        $balanceAfter = $saldoTotalSaatIni - $potong;
-                        $saldoTotalSaatIni = $balanceAfter;
-
-                        $stockRow->decrement('stock_qty', $potong);
-                        $qtySisa -= $potong;
-
-                        // 🔥 SUSUN CATATAN UNTUK KARTU MUTASI STOK 🔥
-                        $mutasiNoteExt = "";
-                        if ($isModeAsset && !empty($assetInfoArr)) {
-                            $cleanAssets = array_map(function($val) { return ltrim($val, '- '); }, $assetInfoArr);
-                            // Tetap gunakan format [SN: ] agar tombol kuning muncul meskipun mode aset
-                            $mutasiNoteExt = " [SN: " . implode(', ', $cleanAssets) . "]";
-                        } elseif (!$isModeAsset && !empty($snStringForNote)) {
-                            // 🔥 PERBAIKAN: FORMAT HARUS PERSIS [SN: ...] TANPA TAMBAHAN KATA "KELUAR" 🔥
-                            $mutasiNoteExt = " [SN: {$snStringForNote}]";
+                        if (!empty($data['inventory_stock_id'])) {
+                            $query->where('id', $data['inventory_stock_id']);
+                        } else {
+                            $query->orderBy('created_at', $sortDirection);
                         }
 
-                        $namaBarang = strip_tags($item->name);
+                        $availableStocks = $query->lockForUpdate()->get();
+                        $totalAvailable = $availableStocks->sum('stock_qty');
 
-                        \App\Models\StockMutation::create([
-                            'item_id'          => $item->id,
-                            'warehouse_id'     => $request->warehouse_id,
-                            'type'             => 'OUT',
-                            'qty'              => $potong,
-                            'balance_before'   => $balanceBefore,
-                            'balance_after'    => $balanceAfter,
-                            'reference_number' => $giNumber,
-                            // Note yang tersimpan akan menjadi: "Keluar ke Budi. [SN: SKU-001, SKU-002]"
-                            'notes'            => "Keluar ke {$request->requester_name}.{$mutasiNoteExt}",
-                            'created_by'       => auth()->id(),
-                        ]);
+                        if ($totalAvailable < $qtyRequested) {
+                            throw new \Exception("Stok {$item->name} tidak cukup! Diminta: {$qtyRequested} {$satuanDasar}, Sisa: {$totalAvailable} {$satuanDasar}");
+                        }
+
+                        $qtySisa = $qtyRequested;
+                        $saldoTotalSaatIni = (float) $item->current_stock;
+
+                        foreach ($availableStocks as $stockRow) {
+                            if ($qtySisa <= 0) break;
+                            $potong = min($stockRow->stock_qty, $qtySisa);
+                            $balanceBefore = $saldoTotalSaatIni;
+                            $balanceAfter = $saldoTotalSaatIni - $potong;
+                            $saldoTotalSaatIni = $balanceAfter;
+
+                            $stockRow->decrement('stock_qty', $potong);
+                            $qtySisa -= $potong;
+
+                            $mutasiNoteExt = "";
+                            if (!empty($snStringForNote)) {
+                                $mutasiNoteExt = " [SN: {$snStringForNote}]";
+                            }
+
+                            \App\Models\StockMutation::create([
+                                'item_id'          => $item->id,
+                                'warehouse_id'     => $request->warehouse_id,
+                                'type'             => 'OUT',
+                                'qty'              => $potong,
+                                'balance_before'   => $balanceBefore,
+                                'balance_after'    => $balanceAfter,
+                                'reference_number' => $giNumber,
+                                'notes'            => "Keluar ke {$request->requester_name}.{$mutasiNoteExt}",
+                                'created_by'       => auth()->id(),
+                            ]);
+                        }
+
+                        $item->update(['current_stock' => $saldoTotalSaatIni]);
                     }
 
-                    $item->update(['current_stock' => $saldoTotalSaatIni]);
-
+                    // Simpan Detail Pengeluaran (Goods Issue Item)
                     \App\Models\GoodsIssueItem::create([
                         'goods_issue_id' => $gi->id,
                         'item_id'        => $item->id,
@@ -281,7 +269,7 @@ class GoodsIssueController extends Controller
                         'notes'          => $itemNote,
                     ]);
 
-                    // 🔥 SIMPAN INVENTARIS PEGAWAI SECARA TERPISAH (1 BARIS 1 UNIT) 🔥
+                    // Simpan Inventaris Pegawai untuk Minor Asset (Non Aset Tetap)
                     if (!$isModeAsset && isset($item->is_trackable) && $item->is_trackable) {
                         foreach ($daftarInventarisBaru as $invRecord) {
                             \App\Models\EmployeeInventory::create([
@@ -395,23 +383,47 @@ class GoodsIssueController extends Controller
                 throw new \Exception("GAGAL VOID: Laporan bulan {$txMonthYear} sudah ditutup! Gunakan fitur Retur atau Adjustment.");
             }
 
-            // PROSES KEMBALIKAN STOK & ASET
+            // PROSES KEMBALIKAN STOK ATAU ASET
             foreach ($gi->items as $giItem) {
                 $masterItem = \App\Models\Item::lockForUpdate()->find($giItem->item_id);
                 if (!$masterItem) continue;
 
-                $conversionFactor = 1;
-                if ($giItem->uom_id) {
-                    $uomDb = \App\Models\ItemUom::find($giItem->uom_id);
-                    if ($uomDb) $conversionFactor = (float) $uomDb->conversion_qty;
-                } elseif (preg_match('/Isi\s+([0-9.]+)/i', $giItem->uom, $matches)) {
-                    $conversionFactor = (float) $matches[1];
-                }
+                // 🔥 CEK APAKAH INI PENGELUARAN ASET ATAU BARANG BIASA 🔥
+                preg_match_all('/AST\/[0-9]{4}\/[0-9]{2}\/[0-9]{4}/', $giItem->notes, $matches);
+                $borrowedAssets = $matches[0];
+                $isAssetIssue = !empty($borrowedAssets);
 
-                $qtyToRestore = ((float) $giItem->qty_issued) * $conversionFactor;
+                if ($isAssetIssue) {
+                    // JIKA ASET: HANYA KEMBALIKAN STATUS ASET (STOK GUDANG TIDAK BOLEH DITAMBAH)
+                    $assetsToRestore = \App\Models\FixedAsset::whereIn('asset_number', $borrowedAssets)->get();
+                    $statusIdAvailable = \App\Models\Status::where('type', 'AST')->where('slug', 'available')->value('id');
 
-                // Kembalikan Stok Bulk
-                if ($masterItem->item_type_code === 'STK' || $masterItem->is_stockable) {
+                    foreach ($assetsToRestore as $asset) {
+                        \App\Models\FixedAssetHistory::create([
+                            'fixed_asset_id' => $asset->id,
+                            'status'         => 'Available (Tersedia)',
+                            'assigned_to'    => null,
+                            'notes'          => "Dikembalikan otomatis (Dokumen {$gi->gi_number} di-VOID).",
+                            'created_by'     => auth()->id(),
+                        ]);
+
+                        $asset->update([
+                            'status_id'    => $statusIdAvailable,
+                            'assigned_to'  => null,
+                            'warehouse_id' => $gi->warehouse_id,
+                        ]);
+                    }
+                } else {
+                    // JIKA BARANG BIASA: KEMBALIKAN STOK FISIK KE GUDANG
+                    $conversionFactor = 1;
+                    if ($giItem->uom_id) {
+                        $uomDb = \App\Models\ItemUom::find($giItem->uom_id);
+                        if ($uomDb) $conversionFactor = (float) $uomDb->conversion_qty;
+                    } elseif (preg_match('/Isi\s+([0-9.]+)/i', $giItem->uom, $matches)) {
+                        $conversionFactor = (float) $matches[1];
+                    }
+
+                    $qtyToRestore = ((float) $giItem->qty_issued) * $conversionFactor;
                     $balanceBefore = (float) $masterItem->current_stock;
                     $balanceAfter = $balanceBefore + $qtyToRestore;
 
@@ -444,54 +456,36 @@ class GoodsIssueController extends Controller
                     ]);
 
                     $masterItem->update(['current_stock' => $balanceAfter]);
-                }
 
-                // Kembalikan Aset Tetap
-                if ($masterItem->is_asset || $masterItem->item_type_code === 'AST') {
-                    preg_match_all('/AST\/[0-9]{4}\/[0-9]{2}\/[0-9]{4}/', $giItem->notes, $matches);
-                    $borrowedAssets = $matches[0];
+                    // Kembalikan Minor Asset dari Karyawan (Jika Trackable)
+                    if (isset($masterItem->is_trackable) && $masterItem->is_trackable) {
+                        // Tarik SN dan Kembalikan ke 'AVAILABLE'
+                        preg_match_all('/SN:\s*([a-zA-Z0-9\-_]+)/', $giItem->notes, $snMatches);
+                        $borrowedSns = $snMatches[1] ?? [];
 
-                    if (!empty($borrowedAssets)) {
-                        $assetsToRestore = \App\Models\FixedAsset::whereIn('asset_number', $borrowedAssets)->get();
-                        $statusIdAvailable = \App\Models\Status::where('type', 'AST')->where('slug', 'available')->value('id');
+                        if (!empty($borrowedSns)) {
+                            \DB::table('item_serials')
+                                ->whereIn('serial_number', $borrowedSns)
+                                ->update(['status' => 'AVAILABLE', 'updated_at' => now()]);
+                        }
 
-                        foreach ($assetsToRestore as $asset) {
-                            \App\Models\FixedAssetHistory::create([
-                                'fixed_asset_id' => $asset->id,
-                                'status'         => 'Available (Tersedia)',
-                                'assigned_to'    => null,
-                                'notes'          => "Dikembalikan otomatis (Dokumen {$gi->gi_number} di-VOID).",
-                                'created_by'     => auth()->id(),
-                            ]);
+                        $empInventory = \App\Models\EmployeeInventory::where(['employee_name' => $gi->requester_name, 'item_id' => $masterItem->id])->first();
 
-                            $asset->update([
-                                'status_id'    => $statusIdAvailable,
-                                'assigned_to'  => null,
-                                'warehouse_id' => $gi->warehouse_id,
+                        if ($empInventory && !empty($borrowedSns)) {
+                            $currentSns = array_filter(array_map('trim', explode('|', $empInventory->specific_details)));
+                            $empInventory->specific_details = implode(' | ', array_diff($currentSns, $borrowedSns));
+                            $empInventory->qty = max(0, $empInventory->qty - $qtyToRestore);
+                            $empInventory->save();
+
+                            \App\Models\EmployeeInventoryHistory::create([
+                                'employee_name'    => $gi->requester_name,
+                                'item_id'          => $masterItem->id,
+                                'type'             => 'OUT',
+                                'qty'              => $qtyToRestore,
+                                'reference_number' => $gi->gi_number . '-VOID',
+                                'notes'            => "Penarikan otomatis karena transaksi VOID. SN: " . implode(', ', $borrowedSns),
                             ]);
                         }
-                    }
-                }
-
-                // Kembalikan Minor Asset dari Karyawan
-                if (!$masterItem->is_asset && isset($masterItem->is_trackable) && $masterItem->is_trackable) {
-                    $borrowedSns = array_filter(array_map('trim', explode('|', preg_replace('/Satuan.*/', '', $giItem->notes))));
-                    $empInventory = \App\Models\EmployeeInventory::where(['employee_name' => $gi->requester_name, 'item_id' => $masterItem->id])->first();
-
-                    if ($empInventory && !empty($borrowedSns)) {
-                        $currentSns = array_filter(array_map('trim', explode('|', $empInventory->specific_details)));
-                        $empInventory->specific_details = implode(' | ', array_diff($currentSns, $borrowedSns));
-                        $empInventory->qty = max(0, $empInventory->qty - $qtyToRestore);
-                        $empInventory->save();
-
-                        \App\Models\EmployeeInventoryHistory::create([
-                            'employee_name'    => $gi->requester_name,
-                            'item_id'          => $masterItem->id,
-                            'type'             => 'OUT',
-                            'qty'              => $qtyToRestore,
-                            'reference_number' => $gi->gi_number . '-VOID',
-                            'notes'            => "Penarikan otomatis karena transaksi VOID. SN: " . implode(', ', $borrowedSns),
-                        ]);
                     }
                 }
             }
@@ -504,7 +498,7 @@ class GoodsIssueController extends Controller
             ]);
 
             DB::commit();
-            return back()->with('success', 'Hebat! Transaksi berhasil di-VOID dan seluruh stok telah dikembalikan ke Gudang.');
+            return back()->with('success', 'Hebat! Transaksi berhasil di-VOID dan seluruh status telah dikembalikan dengan presisi.');
 
         } catch (\Exception $e) {
             DB::rollBack();
