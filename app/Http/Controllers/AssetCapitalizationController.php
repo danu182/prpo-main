@@ -15,6 +15,35 @@ use Illuminate\Support\Facades\Log;
 
 class AssetCapitalizationController extends Controller
 {
+
+
+    // =========================================================================
+    // INDEX: Menampilkan Daftar Aset
+    // =========================================================================
+    public function index()
+    {
+        // Ambil data aset terbaru beserta relasi yang dibutuhkan (sesuaikan dengan nama relasi di model Anda)
+        $assets = \App\Models\FixedAsset::with(['item', 'status'])
+                    ->orderBy('created_at', 'desc')
+                    ->paginate(10);
+
+        return view('asset_capitalizations.index', compact('assets'));
+    }
+
+    // =========================================================================
+    // SHOW: Menampilkan Detail 1 Aset
+    // =========================================================================
+    public function show($id)
+    {
+        // Cari aset berdasarkan ID
+        $asset = \App\Models\FixedAsset::with(['item', 'status'])->findOrFail($id);
+
+        return view('asset_capitalizations.show', compact('asset'));
+    }
+
+
+
+
     public function create()
     {
         $grs = GoodsReceipt::orderBy('received_date', 'desc')->limit(50)->get();
@@ -266,4 +295,80 @@ class AssetCapitalizationController extends Controller
             return back()->withInput()->with('error', $e->getMessage());
         }
     }
+
+
+
+    // =========================================================================
+    // 3. VOID: Proses Pembatalan Pengakuan Aset (Backend Only)
+    // =========================================================================
+    public function voidAsset($id)
+    {
+        try {
+            \DB::beginTransaction();
+
+            $asset = \App\Models\FixedAsset::with('item')->findOrFail($id);
+
+            // 1. SESUAIKAN ID STATUS AVAILABLE (ID = 30)
+            if ($asset->status_id != 30) {
+                throw new \Exception("GAGAL: Aset tidak bisa dibatalkan karena sedang digunakan atau sudah diproses.");
+            }
+
+            $masterItem = $asset->item;
+            $balanceBefore = (float) $masterItem->current_stock;
+            $balanceAfter = $balanceBefore + 1;
+
+            // 2. KEMBALIKAN STOK FISIK
+            $invStock = \App\Models\InventoryStock::where('item_id', $masterItem->id)
+                            ->where('warehouse_id', $asset->warehouse_id)
+                            ->first();
+
+            if ($invStock) {
+                $invStock->increment('stock_qty', 1);
+            } else {
+                \App\Models\InventoryStock::create([
+                    'company_id'       => $asset->company_id,
+                    'warehouse_id'     => $asset->warehouse_id,
+                    'item_id'          => $masterItem->id,
+                    'stock_qty'        => 1,
+                    'reference_number' => $asset->asset_number . '-VOID',
+                    'notes'            => 'Pengembalian dari Void Aset',
+                ]);
+            }
+
+            $masterItem->update(['current_stock' => $balanceAfter]);
+
+            // 3. CATAT MUTASI MASUK (Jika modelnya ada)
+            if (class_exists(\App\Models\StockMutation::class)) {
+                \App\Models\StockMutation::create([
+                    'item_id'          => $masterItem->id,
+                    'warehouse_id'     => $asset->warehouse_id,
+                    'type'             => 'IN',
+                    'qty'              => 1,
+                    'balance_before'   => $balanceBefore,
+                    'balance_after'    => $balanceAfter,
+                    'reference_number' => $asset->asset_number,
+                    'notes'            => "Pembatalan Pengakuan Aset (VOID).",
+                    'created_by'       => auth()->id(),
+                ]);
+            }
+
+            // 4. UBAH STATUS ASET MENJADI VOID
+            // Ganti angka 43 di bawah ini dengan ID status VOID AST yang baru Anda buat di Langkah 2
+            $statusVoidId = 43;
+
+            $asset->update([
+                'status_id' => $statusVoidId,
+                'notes'     => $asset->notes . "\n[DIBATALKAN PADA " . date('d-m-Y H:i') . "]"
+            ]);
+
+            \DB::commit();
+            return back()->with('success', "Aset {$asset->asset_number} berhasil dibatalkan dan stok dikembalikan.");
+
+        } catch (\Exception $e) {
+            \DB::rollBack();
+            return back()->with('error', $e->getMessage());
+        }
+    }
+
+
 }
