@@ -4,32 +4,71 @@
     <meta charset="UTF-8">
     <title>Berita Acara Serah Terima Aset</title>
     <style>
+        /* Pengaturan Margin Kertas & Footer */
+        @page { margin: 40px 50px 70px 50px; }
+
         body { font-family: 'Helvetica', 'Arial', sans-serif; font-size: 11pt; line-height: 1.5; color: #000; }
         .header { text-align: center; border-bottom: 2px solid #000; padding-bottom: 10px; margin-bottom: 20px; }
         .header h2 { margin: 0; font-size: 16pt; text-transform: uppercase; text-decoration: underline; }
         .header p { margin: 5px 0 0 0; font-size: 10pt; }
         .content { margin-top: 20px; }
+
         .table-info { width: 100%; border-collapse: collapse; margin-top: 10px; margin-bottom: 20px; }
         .table-info td { vertical-align: top; padding: 5px 0; }
         .table-info td:first-child { width: 30%; font-weight: bold; }
         .table-info td:nth-child(2) { width: 3%; }
-        .table-asset { width: 100%; border-collapse: collapse; margin-top: 15px; margin-bottom: 20px; }
+
+        .table-asset { width: 100%; border-collapse: collapse; margin-top: 15px; margin-bottom: 10px; }
         .table-asset th, .table-asset td { border: 1px solid #000; padding: 8px; text-align: left; }
         .table-asset th { background-color: #f2f2f2; }
+
         .signature-box { width: 100%; margin-top: 40px; table-layout: fixed; }
         .signature-box td { text-align: center; vertical-align: bottom; width: 50%; }
         .signature-name { font-weight: bold; text-decoration: underline; margin-top: 70px; }
+
+        /* Cegah Kertas Bolong */
+        .table-asset { page-break-inside: auto; }
+        .table-asset tr { page-break-inside: avoid; page-break-after: auto; }
+
+        /* CSS Penjinak HTML Spesifikasi */
+        .spesifikasi-html { font-size: 8.5pt; margin-top: 5px; color: #333; text-align: justify; }
+        .spesifikasi-html p { margin: 0 0 4px 0; padding: 0; }
+        .spesifikasi-html ul, .spesifikasi-html ol { margin: 0 0 4px 0; padding-left: 15px; }
+        .spesifikasi-html li { margin-bottom: 2px; text-align: left; }
+
+        /* CSS Footer Abadi */
+        footer {
+            position: fixed;
+            bottom: -40px;
+            left: 0px;
+            right: 0px;
+            height: 30px;
+            border-top: 1px solid #888;
+            text-align: right;
+            font-size: 8.5pt;
+            color: #555;
+            padding-top: 5px;
+            font-style: italic;
+        }
+        .pagenum:before { content: "Halaman " counter(page); }
+
     </style>
 </head>
 <body>
 
+    {{-- 🔥 FOOTER OTOMATIS (Akan berulang di setiap halaman) 🔥 --}}
+    <footer>
+        Dokumen BAST Aset: {{ $asset->asset_number }} &nbsp; | &nbsp; <span class="pagenum"></span>
+    </footer>
+
     <div class="header">
         <h2>BERITA ACARA SERAH TERIMA ASET</h2>
-        <p>Nomor: BAST/{{ date('Y/m/d') }}/{{ substr($asset->asset_number, -4) }}</p>
+        <p>Nomor: {{ $asset->bast_number }}</p>
     </div>
 
     <div class="content">
-        <p>Pada hari ini, tanggal <strong>{{ \Carbon\Carbon::now()->translatedFormat('d F Y') }}</strong>, telah dilakukan serah terima barang/aset perusahaan dengan rincian pihak sebagai berikut:</p>
+        {{-- Gunakan created_at agar tanggal surat terkunci secara permanen dan tidak berubah saat dicetak ulang --}}
+        <p>Pada hari ini, tanggal <strong>{{ \Carbon\Carbon::parse($asset->created_at)->translatedFormat('d F Y') }}</strong>, telah dilakukan serah terima barang/aset perusahaan dengan rincian pihak sebagai berikut:</p>
 
         <table class="table-info">
             <tr>
@@ -70,29 +109,44 @@
 
         <p><strong>PIHAK PERTAMA</strong> menyerahkan barang/aset perusahaan kepada <strong>PIHAK KEDUA</strong>, dan <strong>PIHAK KEDUA</strong> menyatakan telah menerima barang/aset tersebut dalam kondisi <strong>BAIK</strong> dan berfungsi normal dengan rincian:</p>
 
+        {{-- TABEL HANYA UNTUK IDENTITAS INTI --}}
         <table class="table-asset">
             <thead>
                 <tr>
-                    <th width="25%">No. Aset / Label</th>
-                    <th width="45%">Nama & Spesifikasi Barang</th>
+                    <th width="30%">No. Aset / Label</th>
+                    <th width="40%">Nama Barang</th>
                     <th width="30%">Serial Number</th>
                 </tr>
             </thead>
             <tbody>
                 <tr>
-                    <td>
+                    <td style="vertical-align: top;">
                         {{ $asset->asset_number }}<br>
                         <small style="color: #555;">{{ $asset->accounting_asset_number ? 'Tag: '.$asset->accounting_asset_number : '' }}</small>
                     </td>
-                    <td>
-                        {{-- 🔥 PERBAIKAN: Tampilkan nama spesifik aset jika ada 🔥 --}}
-                        <strong>{{ $asset->name ?? optional($asset->item)->name }}</strong><br>
-                        <small>{{ $asset->spesifikasi_detail ?? optional($asset->item)->specification }}</small>
+                    <td style="vertical-align: top;">
+                        <strong>{{ $asset->name ?? optional($asset->item)->name }}</strong>
                     </td>
-                    <td>{{ $asset->serial_number ?? 'N/A' }}</td>
+                    <td style="vertical-align: top;">
+                        {{ $asset->serial_number ?? 'N/A' }}
+                    </td>
                 </tr>
             </tbody>
         </table>
+
+        {{-- SPESIFIKASI DIKELUARKAN DARI TABEL AGAR BISA TERBELAH KE HALAMAN 2 --}}
+        @php
+            $spek = $asset->spesifikasi_detail ?? optional($asset->item)->specification;
+        @endphp
+
+        @if(!empty(trim(strip_tags($spek))))
+        <div style="margin-bottom: 20px;">
+            <strong style="font-size: 10pt;">Spesifikasi Detail:</strong>
+            <div class="spesifikasi-html">
+                {!! str_replace(['&nbsp;', '&amp;'], [' ', '&'], html_entity_decode($spek)) !!}
+            </div>
+        </div>
+        @endif
 
         <p><strong>Syarat dan Ketentuan:</strong></p>
         <ol style="margin-top: 0; padding-left: 20px; font-size: 10pt; text-align: justify;">

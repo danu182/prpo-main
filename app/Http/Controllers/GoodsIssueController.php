@@ -338,12 +338,19 @@ class GoodsIssueController extends Controller
     }
 
     // ==========================================
-    // 5. MENCETAK DOKUMEN
+    // 5. MENCETAK DOKUMEN BUKTI PENGELUARAN (STOK BIASA)
     // ==========================================
     public function print($slug)
     {
-        $gi = GoodsIssue::with(['items.item.uom', 'issuer'])->where('gi_number', $slug)->firstOrFail();
-        return view('goods_issues.print', compact('gi'));
+        $gi = \App\Models\GoodsIssue::with(['items.item.uom', 'issuer', 'warehouse'])
+                ->where('gi_number', $slug)
+                ->firstOrFail();
+
+        // Render menjadi file PDF
+        $pdf = \Barryvdh\DomPDF\Facade\Pdf::loadView('goods_issues.print', compact('gi'))
+                    ->setPaper('A4', 'portrait');
+
+        return $pdf->stream('Pengeluaran_Stok_' . str_replace('/', '_', $gi->gi_number) . '.pdf');
     }
 
     public function printBast($slug)
@@ -352,9 +359,20 @@ class GoodsIssueController extends Controller
                 ->where('gi_number', $slug)
                 ->firstOrFail();
 
-        $assets = \App\Models\FixedAsset::where('notes', 'like', "%{$gi->gi_number}%")->get();
+        // Cari semua aset yang dikeluarkan melalui nomor GI ini
+        $assets = \App\Models\FixedAsset::with('item')
+                    ->where('notes', 'like', "%{$gi->gi_number}%")
+                    ->get();
 
-        return view('goods_issues.bast', compact('gi', 'assets'));
+        if ($assets->isEmpty()) {
+            return back()->with('error', 'Tidak ada Aset Tetap yang diserahkan pada dokumen GI ini.');
+        }
+
+        // Render menjadi file PDF (pastikan menggunakan Facade Pdf bawaan DomPDF)
+        $pdf = \Barryvdh\DomPDF\Facade\Pdf::loadView('goods_issues.bast', compact('gi', 'assets'))
+                    ->setPaper('A4', 'portrait');
+
+        return $pdf->stream('BAST_' . str_replace('/', '_', $gi->gi_number) . '.pdf');
     }
 
     // =========================================================================
@@ -579,7 +597,7 @@ class GoodsIssueController extends Controller
                     $q->where('warehouse_id', $warehouseId)->orWhereNull('warehouse_id');
                 })
                 ->where(function($q) {
-                    $q->whereNull('assigned_to')->orWhereIn('status_id', [1, 30]);
+                    $q->whereNull('assigned_to')->orWhereIn('status_id', [1, 30]); // 1 atau 30 biasanya ID untuk 'Available'
                 })
                 ->when($search, function($query) use ($search) {
                     $query->where(function($q) use ($search) {

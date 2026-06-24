@@ -108,5 +108,16 @@ class FixedAsset extends Model
     }
 
 
+    // Accessor untuk Nomor BAST Individu
+    public function getBastNumberAttribute()
+    {
+        // Gunakan tanggal aset dibuat (created_at) agar nomor tidak berubah saat dicetak beda hari
+        $tanggal = \Carbon\Carbon::parse($this->created_at)->format('Y/m/d');
+        $urutan = substr($this->asset_number, -4);
+
+        return "BAST-AST/{$tanggal}/{$urutan}";
+    }
+
+
 
 }

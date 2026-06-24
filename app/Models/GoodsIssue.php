@@ -18,7 +18,7 @@ class GoodsIssue extends Model
         'notes',
         'issued_by',
         'status_id',
-        
+
     ];
 
     // Relasi ke detail item yang dikeluarkan
@@ -51,6 +51,16 @@ class GoodsIssue extends Model
     public function returns()
     {
         return $this->hasMany(GoodsIssueReturn::class, 'goods_issue_id');
+    }
+
+    // Accessor untuk Nomor BAST Borongan
+    public function getBastNumberAttribute()
+    {
+        // Gunakan tanggal pengeluaran (issue_date)
+        $tanggal = \Carbon\Carbon::parse($this->issue_date)->format('Y/m/d');
+        $urutan = substr($this->gi_number, -4);
+
+        return "BAST-GI/{$tanggal}/{$urutan}";
     }
 
 

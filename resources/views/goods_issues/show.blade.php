@@ -76,8 +76,14 @@
                 </a>
 
                 {{-- 🔥 PERBAIKAN: Gunakan gi_number (slug) bukan id 🔥 --}}
-                <a href="{{ route('goods-issues.bast', $gi->gi_number) }}" target="_blank" class="btn btn-danger rounded-pill fw-bold">
-                    <i class="bi bi-printer me-1"></i> Cetak BAST
+                {{-- Tombol Cetak Bukti Pengeluaran (Stok Biasa) --}}
+                <a href="{{ route('goods-issues.print', $gi->gi_number) }}" target="_blank" class="px-3 shadow-sm btn btn-warning rounded-pill fw-bold text-dark">
+                    <i class="bi bi-printer-fill me-1"></i> Cetak Bukti Keluar
+                </a>
+
+                {{-- Tombol Cetak BAST (Khusus Aset) --}}
+                <a href="{{ route('goods-issues.bast', $gi->gi_number) }}" target="_blank" class="px-3 shadow-sm btn btn-danger rounded-pill fw-bold">
+                    <i class="bi bi-file-earmark-check-fill me-1"></i> Cetak BAST
                 </a>
             @else
                 {{-- Tanda stempel merah kalau sudah Void --}}

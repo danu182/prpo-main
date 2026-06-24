@@ -38,7 +38,7 @@ class FixedAssetController extends Controller
             ->latest()->paginate(10)->withQueryString();
 
         $users = User::with('company')->orderBy('name', 'asc')->get();
-        $items = \App\Models\Item::where('is_asset', true)->orderBy('name', 'asc')->get();
+        $items = \App\Models\Item::where('item_type_code', 'AST')->orderBy('name', 'asc')->get();
         $companies = \App\Models\Company::orderBy('name', 'asc')->get();
         $statuses = Status::where('type', 'AST')->orderBy('sequence', 'asc')->get();
         $warehouses = \App\Models\Warehouse::orderBy('name', 'asc')->get();
@@ -648,9 +648,10 @@ class FixedAssetController extends Controller
     }
 
     public function searchItems(Request $request)
-    {
-        $search = $request->search;
-        $items = \App\Models\Item::where('is_asset', true)
+    {$search = $request->search;
+
+        // 🔥 UBAH is_asset MENJADI item_type_code 🔥
+        $items = \App\Models\Item::where('item_type_code', 'AST')
                     ->when($search, function($query) use ($search) {
                         $query->where(function($q) use ($search) {
                             $q->where('name', 'like', "%{$search}%")

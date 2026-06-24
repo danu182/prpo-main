@@ -1,28 +1,49 @@
 @extends('layouts.app')
 
 @push('css')
-<link href="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css" rel="stylesheet" />
-<link href="https://cdn.jsdelivr.net/npm/select2-bootstrap-5-theme@1.3.0/dist/select2-bootstrap-5-theme.min.css" rel="stylesheet" />
 <style>
-    .select2-container .select2-selection--single { height: 38px !important; border: 1px solid #dee2e6 !important; border-radius: 0.375rem !important; }
-    .select2-container--default .select2-selection--single .select2-selection__rendered { line-height: 36px !important; color: #6c757d !important; }
+    /* Select2 Kustomisasi */
+    .select2-container .select2-selection--single { height: 38px !important; border: 1px solid #e2e8f0 !important; border-radius: 8px !important; }
+    .select2-container--default .select2-selection--single .select2-selection__rendered { line-height: 36px !important; color: #475569 !important; }
     .select2-container--default .select2-selection--single .select2-selection__arrow { height: 36px !important; }
 
-    .avatar-circle {
-        width: 45px; height: 45px;
-        background: linear-gradient(135deg, #0dcaf0, #0aa2c0);
-        color: white; font-weight: bold;
+    /* Avatar Modern */
+    .avatar-circle-modern {
+        width: 46px; height: 46px;
+        background: linear-gradient(135deg, #e0f2fe 0%, #bae6fd 100%);
+        color: #0284c7; font-weight: 800;
         display: flex; align-items: center; justify-content: center;
-        border-radius: 50%; font-size: 1.2rem;
-        box-shadow: 0 2px 5px rgba(13, 202, 240, 0.3);
+        border-radius: 12px; font-size: 1.1rem;
+        box-shadow: 0 2px 5px rgba(14, 165, 233, 0.15);
     }
 
-    .table-hover > tbody > tr.main-row:hover > td { background-color: #f8f9fa !important; cursor: pointer; }
-    .collapse-row td { padding: 0 !important; border-bottom: none; background-color: #fcfcfc; }
-    .inner-collapse-box {
-        border-left: 4px solid #0dcaf0; background-color: #ffffff;
-        box-shadow: inset 0 4px 6px -6px rgba(0,0,0,0.1), inset 0 -4px 6px -6px rgba(0,0,0,0.1);
+    /* Tabel SaaS Modern */
+    .card-table-wrapper { border-radius: 14px; overflow: hidden; border: 1px solid #e2e8f0; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05); background: #fff; }
+    .table-modern { margin-bottom: 0; }
+    .table-modern thead th { background-color: #f8fafc; color: #64748b; font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.05em; padding: 1.2rem 1.5rem; border-bottom: 1px solid #e2e8f0; font-weight: 700; border-top: none; }
+    .table-modern tbody td { padding: 1.25rem 1.5rem; vertical-align: middle; border-bottom: 1px solid #f1f5f9; color: #334155; }
+
+    /* Baris Utama & Hover */
+    .table-modern tbody tr.main-row { transition: all 0.2s ease; background-color: #ffffff; }
+    .table-modern tbody tr.main-row:hover { background-color: #f8fafc !important; cursor: pointer; }
+
+    /* Baris Detail (Collapse) */
+    .collapse-row td { padding: 0 !important; border: none; background-color: #f8fafc; }
+    .inner-collapse-modern {
+        margin: 0 1.5rem 1.5rem 1.5rem; padding: 1.5rem;
+        background-color: #ffffff; border-radius: 12px;
+        border: 1px solid #e2e8f0; box-shadow: 0 1px 3px rgba(0,0,0,0.02);
     }
+
+    /* Tag & Badges Halus */
+    .badge-soft { padding: 0.4em 0.75em; font-weight: 600; border-radius: 8px; font-size: 0.7rem; letter-spacing: 0.3px; }
+
+    /* Tombol Aksi */
+    .btn-action-icon { width: 34px; height: 34px; display: inline-flex; align-items: center; justify-content: center; border-radius: 8px; transition: all 0.2s; color: #64748b; border: 1px solid transparent; background: transparent; }
+    .btn-action-icon:hover { background-color: #f1f5f9; color: #0f172a; border-color: #e2e8f0; }
+    .dropdown-action-menu { border: 1px solid #e2e8f0; box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1); border-radius: 12px; padding: 0.5rem; }
+    .dropdown-action-menu .dropdown-item { border-radius: 6px; padding: 0.5rem 1rem; font-size: 0.85rem; font-weight: 500; transition: 0.2s; }
+    .dropdown-action-menu .dropdown-item:hover { background-color: #f8fafc; }
 
     .timeline-container .border-bottom:last-child { border-bottom: 0 !important; padding-bottom: 0 !important; margin-bottom: 0 !important; }
 </style>
@@ -94,36 +115,36 @@
     @endif
 
     {{-- MODERN EXPANDABLE DATA TABLE --}}
-    <div class="border-0 border-4 shadow-sm card rounded-4 border-top border-info">
-        <div class="p-0 card-body table-responsive">
-            <table class="table mb-0 align-middle table-hover">
-                <thead class="bg-light fw-bold text-muted border-bottom text-uppercase small" style="letter-spacing: 0.5px;">
+    <div class="mb-4 card-table-wrapper">
+        <div class="p-0 table-responsive">
+            <table class="table table-modern">
+                <thead>
                     <tr>
-                        <th class="py-3 ps-4" width="35%">Identitas Aset</th>
-                        <th class="py-3 text-center" width="15%">Status</th>
-                        <th class="py-3" width="25%">Lokasi / Dipegang Oleh</th>
-                        <th class="py-3 pe-4 text-end" width="25%">Aksi & Detail</th>
+                        <th width="35%">Identitas Aset</th>
+                        <th width="15%" class="text-center">Status</th>
+                        <th width="30%">Lokasi / Penanggung Jawab</th>
+                        <th width="20%" class="text-end">Aksi</th>
                     </tr>
                 </thead>
                 <tbody>
                     @forelse($assets as $ast)
                         {{-- BARIS INDUK (Data Utama Aset) --}}
-                        <tr class="main-row border-bottom">
-                            <td class="py-3 ps-4">
+                        <tr class="main-row">
+                            <td>
                                 <div class="d-flex align-items-center">
-                                    <div class="flex-shrink-0 avatar-circle me-3">
+                                    <div class="flex-shrink-0 avatar-circle-modern me-3">
                                         {{ strtoupper(substr($ast->name ?? optional($ast->item)->name, 0, 2)) }}
                                     </div>
                                     <div>
-                                        <div class="fw-bold text-dark fs-6 {{ optional($ast->status)->slug === 'disposed' ? 'text-decoration-line-through text-danger' : '' }}">
+                                        <div class="fw-bold text-dark fs-6 mb-1 {{ optional($ast->status)->slug === 'disposed' ? 'text-decoration-line-through text-danger' : '' }}">
                                             {{ $ast->name ?? optional($ast->item)->name }}
                                         </div>
-                                        <div class="gap-2 mt-1 d-flex">
-                                            <span class="border badge bg-primary-subtle text-primary border-primary-subtle rounded-pill fw-bold" style="font-size: 0.7rem;">
+                                        <div class="gap-2 d-flex flex-wrap">
+                                            <span class="badge-soft bg-primary-subtle text-primary border border-primary-subtle">
                                                 <i class="bi bi-tag-fill me-1"></i>{{ $ast->asset_number }}
                                             </span>
                                             @if($ast->serial_number)
-                                                <span class="border badge bg-light text-dark border-secondary-subtle rounded-pill" style="font-size: 0.7rem;">
+                                                <span class="badge-soft bg-light text-secondary border border-light">
                                                     <i class="bi bi-upc-scan me-1"></i>S/N: {{ $ast->serial_number }}
                                                 </span>
                                             @endif
@@ -132,56 +153,62 @@
                                 </div>
                             </td>
 
-                            <td class="py-3 text-center">
+                            <td class="text-center">
                                 @if($ast->status)
-                                    <span class="badge bg-{{ $ast->status->color }}-subtle text-{{ $ast->status->color }} border border-{{ $ast->status->color }}-subtle rounded-pill px-3 shadow-sm">
+                                    <span class="badge-soft bg-{{ $ast->status->color }}-subtle text-{{ $ast->status->color }} border border-{{ $ast->status->color }}-subtle">
+                                        <span class="d-inline-block bg-{{ $ast->status->color }} rounded-circle me-1" style="width: 6px; height: 6px;"></span>
                                         {{ $ast->status->name }}
                                     </span>
                                 @else
-                                    <span class="px-3 border shadow-sm badge bg-secondary-subtle text-secondary border-secondary-subtle rounded-pill">Unknown</span>
+                                    <span class="badge-soft bg-secondary-subtle text-secondary border border-secondary-subtle">Unknown</span>
                                 @endif
                             </td>
 
-                            <td class="py-3">
+                            <td>
                                 @if(optional($ast->status)->slug === 'disposed')
-                                    <span class="border badge bg-danger-subtle text-danger border-danger-subtle rounded-pill"><i class="bi bi-trash-fill me-1"></i>Dihancurkan / Dijual</span>
+                                    <div class="fw-bold text-danger"><i class="bi bi-trash-fill me-1"></i> Dihancurkan / Dijual</div>
+                                    <div class="small text-muted mt-1"><i class="bi bi-info-circle me-1"></i> Tidak ada lokasi</div>
                                 @elseif($ast->assigned_to)
-                                    <div class="mb-1 fw-bold text-dark">
-                                        <i class="bi bi-person-badge me-1 text-info"></i> {{ optional($ast->assignee)->name }}
+                                    <div class="fw-bold text-dark">
+                                        <i class="bi bi-person-badge me-2 text-primary"></i>{{ optional($ast->assignee)->name }}
                                     </div>
-                                    <div class="small text-muted" style="font-size: 0.7rem;">
-                                        <i class="bi bi-geo-alt me-1"></i> {{ optional($ast->assignee->company)->name ?? 'Kantor Pusat' }}
+                                    <div class="small text-muted mt-1">
+                                        <i class="bi bi-building me-2"></i>{{ optional($ast->assignee->company)->name ?? 'Kantor Pusat' }}
                                     </div>
                                 @else
                                     <div class="fw-bold text-success">
-                                        <i class="bi bi-geo-alt-fill me-1"></i> {{ optional($ast->warehouse)->name ?? 'Belum Diset' }}
+                                        <i class="bi bi-box-seam me-2"></i>{{ optional($ast->warehouse)->name ?? 'Belum Diset' }}
                                     </div>
-                                    <div class="small text-muted" style="font-size: 0.7rem;">Gudang / Penyimpanan</div>
+                                    <div class="small text-muted mt-1">
+                                        <i class="bi bi-geo-alt me-2"></i>Lokasi Gudang
+                                    </div>
                                 @endif
                             </td>
 
-                            <td class="py-3 pe-4 text-end">
-                                <div class="gap-2 d-flex justify-content-end">
-                                    <button class="shadow-sm btn btn-sm btn-outline-dark rounded-pill fw-bold" type="button" data-bs-toggle="collapse" data-bs-target="#collapse-{{ $ast->id }}" aria-expanded="false">
-                                        <i class="bi bi-chevron-down me-1"></i> Detail
+                            <td class="text-end">
+                                <div class="d-flex justify-content-end gap-1">
+                                    {{-- Tombol Detail Expand --}}
+                                    <button class="btn-action-icon" type="button" data-bs-toggle="collapse" data-bs-target="#collapse-{{ $ast->id }}" title="Lihat Detail">
+                                        <i class="bi bi-chevron-down"></i>
                                     </button>
 
-                                    <div class="dropdown d-inline-block">
-                                        <button class="px-3 text-white shadow-sm btn btn-sm btn-info rounded-pill fw-bold dropdown-toggle" type="button" data-bs-toggle="dropdown">
-                                            <i class="bi bi-gear-fill me-1"></i> Opsi
+                                    {{-- Dropdown Opsi Minimalis --}}
+                                    <div class="dropdown">
+                                        <button class="btn-action-icon" type="button" data-bs-toggle="dropdown" title="Opsi Aset">
+                                            <i class="bi bi-three-dots-vertical"></i>
                                         </button>
-                                        <ul class="border-0 shadow-sm dropdown-menu dropdown-menu-end rounded-3">
-                                            <li><a class="py-2 dropdown-item fw-medium text-primary" href="#" data-bs-toggle="modal" data-bs-target="#editModal" data-id="{{ $ast->id }}" data-item-name="{{ $ast->name ?? optional($ast->item)->name }}" data-asset-number="{{ $ast->asset_number }}" data-serial="{{ $ast->serial_number }}" data-accounting="{{ $ast->accounting_asset_number }}" data-spesifikasi="{{ $ast->spesifikasi_detail }}" data-company-id="{{ $ast->company_id }}" data-status-id="{{ $ast->status_id }}" data-assigned-to="{{ $ast->assigned_to }}" data-notes="{{ $ast->notes }}" data-price="{{ (float)$ast->purchase_price }}" data-currency-id="{{ $ast->currency_id }}"><i class="bi bi-pencil-square me-2"></i> Edit Data Aset</a></li>
-                                            <li><a class="py-2 dropdown-item fw-medium text-dark" href="#" data-bs-toggle="modal" data-bs-target="#modalHistory{{ $ast->id }}"><i class="bi bi-clock-history me-2"></i> Log Riwayat Aset</a></li>
-                                            <li><hr class="dropdown-divider"></li>
-                                            <li><a class="py-2 dropdown-item fw-medium text-dark" href="{{ route('fixed-assets.print_qr', $ast->id) }}" target="_blank"><i class="bi bi-qr-code me-2"></i> Cetak Label QR</a></li>
+                                        <ul class="dropdown-menu dropdown-menu-end dropdown-action-menu">
+                                            <li><a class="dropdown-item text-primary" href="#" data-bs-toggle="modal" data-bs-target="#editModal" data-id="{{ $ast->id }}" data-item-name="{{ $ast->name ?? optional($ast->item)->name }}" data-asset-number="{{ $ast->asset_number }}" data-serial="{{ $ast->serial_number }}" data-accounting="{{ $ast->accounting_asset_number }}" data-spesifikasi="{{ $ast->spesifikasi_detail }}" data-company-id="{{ $ast->company_id }}" data-status-id="{{ $ast->status_id }}" data-assigned-to="{{ $ast->assigned_to }}" data-notes="{{ $ast->notes }}" data-price="{{ (float)$ast->purchase_price }}" data-currency-id="{{ $ast->currency_id }}"><i class="bi bi-pencil-square me-2"></i> Edit Data Aset</a></li>
+                                            <li><a class="dropdown-item text-dark" href="#" data-bs-toggle="modal" data-bs-target="#modalHistory{{ $ast->id }}"><i class="bi bi-clock-history me-2"></i> Log Riwayat Aset</a></li>
+                                            <li><hr class="dropdown-divider my-1"></li>
+                                            <li><a class="dropdown-item text-dark" href="{{ route('fixed-assets.print_qr', $ast->id) }}" target="_blank"><i class="bi bi-qr-code me-2"></i> Cetak Label QR</a></li>
 
                                             @if(optional($ast->status)->slug === 'in_use' && $ast->assigned_to)
-                                                <li><a class="py-2 dropdown-item fw-medium text-primary" href="{{ route('fixed-assets.bast', $ast->id) }}" target="_blank"><i class="bi bi-file-earmark-check me-2"></i> Cetak BAST</a></li>
+                                                <li><a class="dropdown-item text-info" href="{{ route('fixed-assets.bast', $ast->id) }}" target="_blank"><i class="bi bi-file-earmark-check me-2"></i> Cetak BAST</a></li>
                                             @endif
 
                                             @if(optional($ast->status)->slug === 'available' && $ast->histories->whereNotNull('assigned_to')->count() > 0)
-                                                <li><a class="py-2 dropdown-item fw-medium text-warning" href="{{ route('fixed-assets.bapa', $ast->id) }}" target="_blank"><i class="bi bi-file-earmark-arrow-down me-2"></i> Cetak BAPA</a></li>
+                                                <li><a class="dropdown-item text-warning" href="{{ route('fixed-assets.bapa', $ast->id) }}" target="_blank"><i class="bi bi-file-earmark-arrow-down me-2"></i> Cetak BAPA</a></li>
                                             @endif
                                         </ul>
                                     </div>
@@ -191,63 +218,62 @@
 
                         {{-- BARIS ANAK (Rincian Aset - Collapse) --}}
                         <tr class="collapse-row">
-                            <td colspan="4" class="p-0 border-0">
+                            <td colspan="4">
                                 <div class="collapse" id="collapse-{{ $ast->id }}">
-                                    <div class="p-4 m-3 inner-collapse-box rounded-3">
+                                    <div class="inner-collapse-modern">
                                         <div class="row g-4">
-                                            <div class="col-md-5">
-                                                <h6 class="mb-3 fw-bold text-secondary text-uppercase small" style="letter-spacing: 0.5px;"><i class="bi bi-card-list me-1"></i> Rincian & Spesifikasi</h6>
-                                                <table class="table table-sm table-borderless small">
-                                                    <tr><td width="35%" class="text-muted">Kepemilikan PT</td><td class="fw-bold">: {{ optional($ast->company)->name ?? '-' }}</td></tr>
-
-                                                    {{-- 🔥 TAMBAHAN BARU: LOKASI GUDANG 🔥 --}}
-                                                    <tr><td class="text-muted">Lokasi Gudang</td><td class="fw-bold text-info">: <i class="bi bi-geo-alt-fill me-1"></i>{{ optional($ast->warehouse)->name ?? '-' }}</td></tr>
-
-                                                    <tr><td class="text-muted">Label Akuntansi</td><td class="fw-bold">: {{ $ast->accounting_asset_number ?? '-' }}</td></tr>
+                                            <div class="col-md-6 border-end pe-md-4">
+                                                <h6 class="mb-3 fw-bold text-dark fs-6"><i class="bi bi-card-text me-2 text-primary"></i>Spesifikasi & Nilai</h6>
+                                                <table class="table table-sm table-borderless small mb-0">
+                                                    <tr><td width="35%" class="text-muted pb-2">Pemilik PT</td><td class="fw-bold text-dark pb-2">: {{ optional($ast->company)->name ?? '-' }}</td></tr>
+                                                    <tr><td class="text-muted pb-2">Label Akuntansi</td><td class="fw-bold text-dark pb-2">: {{ $ast->accounting_asset_number ?? '-' }}</td></tr>
                                                     <tr>
-                                                        <td class="text-muted">Harga Perolehan</td>
-                                                        <td class="fw-bold text-success">: {{ optional($ast->currency)->symbol ?? 'Rp' }} {{ number_format($ast->purchase_price ?? 0, 0, ',', '.') }}</td>
+                                                        <td class="text-muted pb-2">Harga Perolehan</td>
+                                                        <td class="fw-bold text-success pb-2">: {{ optional($ast->currency)->symbol ?? 'Rp' }} {{ number_format($ast->purchase_price ?? 0, 0, ',', '.') }}</td>
                                                     </tr>
                                                     <tr>
                                                         <td class="align-top text-muted">Spesifikasi</td>
-                                                        <td class="align-top text-muted">: {!! nl2br(e($ast->spesifikasi_detail ?? optional($ast->item)->specification ?? '-')) !!}</td>
+                                                        <td class="align-top text-dark d-flex">
+                                                            <span class="me-2">:</span>
+                                                            <div class="content-html" style="font-size: 0.85rem; line-height: 1.5;">
+                                                                {!! $ast->spesifikasi_detail ?? optional($ast->item)->specification ?? '-' !!}
+                                                            </div>
+                                                        </td>
                                                     </tr>
                                                 </table>
                                             </div>
-                                            <div class="col-md-7 border-start ps-md-4">
-                                                <h6 class="mb-3 fw-bold text-secondary text-uppercase small" style="letter-spacing: 0.5px;"><i class="bi bi-box-arrow-in-down-right me-1"></i> Asal Usul & Dokumen</h6>
-                                                <div class="row g-3">
-                                                    <div class="col-6">
-                                                        <div class="p-3 border rounded bg-light">
-                                                            <div class="mb-1 small text-muted">Tgl Perolehan</div>
-                                                            <div class="fw-bold text-dark"><i class="bi bi-calendar-event text-primary me-2"></i>{{ $ast->acquisition_date ? \Carbon\Carbon::parse($ast->acquisition_date)->format('d M Y') : '-' }}</div>
+                                            <div class="col-md-6 ps-md-4">
+                                                <h6 class="mb-3 fw-bold text-dark fs-6"><i class="bi bi-folder2-open me-2 text-warning"></i>Asal Usul Dokumen</h6>
+                                                <div class="d-flex flex-column gap-3">
+                                                    <div class="d-flex align-items-center">
+                                                        <div class="bg-light rounded p-2 me-3 text-primary"><i class="bi bi-calendar-event fs-5"></i></div>
+                                                        <div>
+                                                            <div class="small text-muted">Tgl Perolehan</div>
+                                                            <div class="fw-bold text-dark">{{ $ast->acquisition_date ? \Carbon\Carbon::parse($ast->acquisition_date)->format('d M Y') : '-' }}</div>
                                                         </div>
                                                     </div>
-                                                    <div class="col-6">
-                                                        <div class="p-3 border rounded bg-light">
-                                                            <div class="mb-1 small text-muted">Referensi Dokumen</div>
+
+                                                    <div class="d-flex align-items-center">
+                                                        <div class="bg-light rounded p-2 me-3 text-info"><i class="bi bi-link-45deg fs-5"></i></div>
+                                                        <div>
+                                                            <div class="small text-muted">Referensi Dokumen</div>
                                                             <div class="fw-bold text-dark">
                                                                 @if($ast->goods_receipt_id)
-                                                                    <i class="bi bi-box-seam text-info me-2"></i>GR: {{ optional($ast->goodsReceipt)->gr_number }}
+                                                                    GR: {{ optional($ast->goodsReceipt)->gr_number }}
                                                                 @elseif($ast->batch_id)
-                                                                    <i class="bi bi-gift text-warning me-2"></i>{{ $ast->batch_id }}
+                                                                    {{ $ast->batch_id }}
                                                                 @else
-                                                                    <i class="bi bi-dash text-secondary me-2"></i>Input Manual
+                                                                    Input Manual / Hibah
                                                                 @endif
                                                             </div>
                                                         </div>
                                                     </div>
-                                                    <div class="col-12">
-                                                        @if($ast->supporting_document)
-                                                            <a href="{{ asset('storage/' . $ast->supporting_document) }}" target="_blank" class="border-dashed btn btn-sm btn-outline-primary w-100 fw-bold">
-                                                                <i class="bi bi-file-earmark-pdf-fill me-1"></i> Buka File Pendukung (BAST/Nota)
-                                                            </a>
-                                                        @else
-                                                            <div class="p-2 text-center border border-dashed rounded text-muted small bg-light-subtle">
-                                                                Tidak ada file pendukung terlampir.
-                                                            </div>
-                                                        @endif
-                                                    </div>
+
+                                                    @if($ast->supporting_document)
+                                                        <a href="{{ asset('storage/' . $ast->supporting_document) }}" target="_blank" class="btn btn-sm btn-light border fw-bold text-primary text-start mt-2">
+                                                            <i class="bi bi-file-earmark-pdf-fill me-2 text-danger"></i> Lihat Dokumen BAST/Nota Asli
+                                                        </a>
+                                                    @endif
                                                 </div>
                                             </div>
                                         </div>
@@ -256,7 +282,7 @@
                             </td>
                         </tr>
 
-                        {{-- MODAL RIWAYAT ASET --}}
+                        {{-- MODAL RIWAYAT ASET (Tetap sama, tidak perlu diubah layout strukturnya) --}}
                         <div class="modal fade" id="modalHistory{{ $ast->id }}" tabindex="-1">
                             <div class="modal-dialog modal-dialog-centered modal-lg modal-dialog-scrollable">
                                 <div class="overflow-hidden border-0 shadow-lg modal-content rounded-4">
@@ -320,9 +346,12 @@
                         </div>
                     @empty
                         <tr>
-                            <td colspan="4" class="py-5 text-center text-muted">
-                                <i class="mb-3 opacity-50 bi bi-pc-display text-secondary display-6 d-block"></i>
-                                <p class="mb-0 small fw-bold">Belum ada data Aset Tetap terdaftar.</p>
+                            <td colspan="4" class="py-5 text-center text-muted border-0">
+                                <div class="bg-light rounded-4 py-5 mx-auto" style="max-width: 500px;">
+                                    <i class="mb-3 bi bi-pc-display text-secondary display-4 d-block opacity-25"></i>
+                                    <h6 class="mb-1 fw-bold text-dark">Belum Ada Data Aset</h6>
+                                    <p class="mb-0 small text-muted">Data aset tetap yang diregistrasi akan muncul di sini.</p>
+                                </div>
                             </td>
                         </tr>
                     @endforelse
@@ -331,7 +360,7 @@
         </div>
 
         @if(isset($assets) && $assets->hasPages())
-            <div class="pt-3 pb-2 bg-white border-0 card-footer rounded-bottom-4">
+            <div class="pt-3 pb-3 px-4 bg-white border-top">
                 {{ $assets->links() }}
             </div>
         @endif
