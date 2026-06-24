@@ -161,17 +161,55 @@
                                                 @if($majorCount > 0)
                                                     <div class="list-group item-list-group custom-scrollbar" style="max-height: 250px; overflow-y: auto;">
                                                         @foreach($majorItems as $asset)
-                                                            <div class="list-group-item d-flex justify-content-between align-items-center">
-                                                                <div>
-                                                                    <div class="fw-bold text-dark">{{ optional($asset->item)->name }}</div>
-                                                                    <div class="text-muted" style="font-size: 0.7rem;">{{ $asset->spesifikasi_detail ?? '-' }}</div>
+                                                            <div class="border rounded-3 p-3 bg-white mb-2 shadow-sm">
+                                                                <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
+                                                                    <div>
+                                                                        {{-- Nama Utama Barang --}}
+                                                                        <strong class="text-dark text-uppercase fs-6">{{ $asset->name ?? optional($asset->item)->name }}</strong>
+                                                                        <div class="mt-1">
+                                                                            <span class="badge bg-primary-subtle text-primary border border-primary-subtle rounded-pill" style="font-size: 0.75rem;">
+                                                                                <i class="bi bi-tag-fill me-1"></i>{{ $asset->asset_number }}
+                                                                            </span>
+                                                                            @if($asset->serial_number)
+                                                                                <span class="badge bg-light text-secondary border border-secondary-subtle rounded-pill ms-1" style="font-size: 0.75rem;">
+                                                                                    <i class="bi bi-upc-scan me-1"></i>S/N: {{ $asset->serial_number }}
+                                                                                </span>
+                                                                            @endif
+                                                                        </div>
+                                                                    </div>
+
+                                                                    {{-- Tombol Aksi Cetak Label --}}
+                                                                    <div>
+                                                                        <a href="{{ route('fixed-assets.print_qr', $asset->id) }}" target="_blank" class="btn btn-sm btn-outline-secondary rounded-pill fw-bold" style="font-size: 0.75rem;">
+                                                                            <i class="bi bi-qr-code me-1"></i> Print Label
+                                                                        </a>
+                                                                    </div>
                                                                 </div>
-                                                                <div class="text-end">
-                                                                    <div class="badge bg-light text-dark border mb-1">{{ $asset->asset_number }}</div><br>
-                                                                    <a href="{{ route('fixed-assets.print_qr', $asset->id) }}" target="_blank" class="btn btn-sm btn-link text-primary p-0" style="font-size: 0.7rem; text-decoration: none;">
-                                                                        <i class="bi bi-qr-code"></i> Print Label
-                                                                    </a>
-                                                                </div>
+
+                                                                {{-- 🔥 BAGIAN ACCORDION SPESIFIKASI ASSET 🔥 --}}
+                                                                @php
+                                                                    $spekDetail = $asset->spesifikasi_detail ?? optional($asset->item)->specification;
+                                                                @endphp
+
+                                                                @if(!empty(trim(strip_tags($spekDetail))))
+                                                                    <div class="accordion mt-3" id="accAsset-{{ $asset->id }}">
+                                                                        <div class="accordion-item border-0 bg-light rounded-3 overflow-hidden">
+                                                                            <h2 class="accordion-header">
+                                                                                <button class="accordion-button collapsed py-2 px-3 bg-light text-secondary fw-bold small shadow-none" type="button" data-bs-toggle="collapse" data-bs-target="#collSpec-{{ $asset->id }}" style="font-size: 0.8rem;">
+                                                                                    <i class="bi bi-card-text me-2 text-primary"></i> Lihat Spesifikasi Lengkap
+                                                                                </button>
+                                                                            </h2>
+                                                                            <div id="collSpec-{{ $asset->id }}" class="accordion-collapse collapse" data-bs-parent="#accAsset-{{ $asset->id }}">
+                                                                                <div class="accordion-body bg-white border-top p-3 text-dark style-html-content" style="font-size: 0.85rem; line-height: 1.5; max-height: 250px; overflow-y: auto;">
+                                                                                    {{-- Menggunakan {!! !!} agar tag HTML dari Rich Editor merender cetak tebal dan bullet list dengan sempurna --}}
+                                                                                    {!! $spekDetail !!}
+                                                                                </div>
+                                                                            </div>
+                                                                        </div>
+                                                                    </div>
+                                                                @else
+                                                                    <div class="text-muted small mt-2 fst-italic"><i class="bi bi-info-circle me-1"></i> Tidak ada spesifikasi detail terdaftar.</div>
+                                                                @endif
                                                             </div>
                                                         @endforeach
                                                     </div>

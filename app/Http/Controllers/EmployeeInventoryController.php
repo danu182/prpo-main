@@ -16,7 +16,8 @@ class EmployeeInventoryController extends Controller
         // 1. Ambil Data Minor Asset (Dari Pengeluaran Gudang)
         $inventories = EmployeeInventory::with(['item', 'goodsReceipt'])
             ->whereHas('item', function($q) {
-                $q->where('is_asset', false); // <-- Filter anti dobel!
+                // 🔥 PERBAIKAN: Bukan is_asset, melainkan item_type_code bukan AST 🔥
+                $q->where('item_type_code', '!=', 'AST')->orWhereNull('item_type_code');
             })
             ->where('qty', '>', 0)
             ->get()
@@ -56,8 +57,8 @@ class EmployeeInventoryController extends Controller
         $minorHistories = \App\Models\EmployeeInventoryHistory::with('item')
             ->where('employee_name', $employee_name)
             ->whereHas('item', function($q) {
-                // Blokir Barang Aset Tetap agar tidak muncul di Kotak Minor
-                $q->where('is_asset', false);
+                // 🔥 PERBAIKAN: Blokir Barang Aset Tetap (AST) agar tidak muncul di Kotak Minor 🔥
+                $q->where('item_type_code', '!=', 'AST')->orWhereNull('item_type_code');
             })
             ->get()
             ->map(function ($item) {
@@ -89,7 +90,8 @@ class EmployeeInventoryController extends Controller
                     'qty_or_sn'        => ($item->type == 'IN' ? '+' : '-') . ' ' . (float)$item->qty . ' unit',
                     'sn_list'          => $snList,
                     'reference_number' => $item->reference_number,
-                    'notes'            => "Diserahkan ke karyawan via GI: {$giNumber}. Unit: " . $invStringForNote,
+                    // 🔥 PERBAIKAN: Menghapus variabel hantu, memanggil data notes yang asli dari database 🔥
+                    'notes'            => $item->notes ?? "Transaksi logistik via: " . $item->reference_number,
                 ];
             });
 
@@ -104,7 +106,7 @@ class EmployeeInventoryController extends Controller
                                         ->unique();
 
             if ($assetIdsPernahDipegang->isNotEmpty()) {
-                // 🔥 LOGIKA BARU: Tarik Histori dari yang paling lama (ASC) untuk membaca perjalanan aset
+                // Tarik Histori dari yang paling lama (ASC) untuk membaca perjalanan aset
                 $allAssetHistories = \App\Models\FixedAssetHistory::with(['fixedAsset.item', 'fixedAsset.company'])
                     ->whereIn('fixed_asset_id', $assetIdsPernahDipegang)
                     ->orderBy('created_at', 'asc') // Harus ASC untuk simulasi waktu
