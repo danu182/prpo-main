@@ -62,7 +62,7 @@
                 {{-- 4. WAREHOUSE DROPDOWN --}}
                 @canany(['view_inventory', 'manage_gi', 'view_assets', 'manage_items'])
                 <li class="nav-item dropdown">
-                    <a class="nav-link dropdown-toggle {{ request()->routeIs('assets.*', 'goods-issues.*', 'goods-issue-returns.*', 'stock-transfers.*', 'employee-inventories.*', 'stock-adjustments.*', 'fixed-assets.*', 'items.*', 'inventory.*', 'rtv.*') ? 'active' : '' }}" href="#" role="button" data-bs-toggle="dropdown">
+                    <a class="nav-link dropdown-toggle {{ request()->routeIs('asset-capitalizations.*', 'assets.*', 'goods-issues.*', 'goods-issue-returns.*', 'stock-transfers.*', 'employee-inventories.*', 'stock-adjustments.*', 'fixed-assets.*', 'items.*', 'inventory.*', 'rtv.*') ? 'active' : '' }}" href="#" role="button" data-bs-toggle="dropdown">
                         Warehouse
                     </a>
                     <ul class="dropdown-menu">
@@ -112,9 +112,17 @@
 
                         @can('view_assets')
                         <li><h6 class="opacity-50 dropdown-header text-uppercase small fw-bold">Manajemen Aset</h6></li>
+
+                        {{-- MENU BARU: PENGAKUAN ASET --}}
+                        <li>
+                            <a class="dropdown-item {{ request()->routeIs('asset-capitalizations.*') ? 'active' : '' }}" href="{{ route('asset-capitalizations.index') }}">
+                                <i class="bi bi-magic text-warning me-2"></i> Pengakuan Aset (Capitalization)
+                            </a>
+                        </li>
+
                         <li>
                             <a class="dropdown-item {{ request()->routeIs('fixed-assets.*') ? 'active' : '' }}" href="{{ route('fixed-assets.index') }}">
-                                <i class="bi bi-pc-display text-info me-2"></i> Fixed Assets
+                                <i class="bi bi-pc-display text-info me-2"></i> Daftar Fixed Assets
                             </a>
                         </li>
                         <li><hr class="dropdown-divider"></li>

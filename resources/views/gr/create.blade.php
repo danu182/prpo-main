@@ -17,6 +17,21 @@
     </div>
 
     <form action="{{ route('gr.store', $po->po_number) }}" method="POST" id="grForm" enctype="multipart/form-data">
+
+
+        @if ($errors->any())
+            <div class="alert alert-danger shadow-sm mb-4">
+                <h6 class="alert-heading fw-bold mb-2">
+                    <i class="fas fa-exclamation-triangle me-2"></i> Gagal Menyimpan! Mohon periksa kembali:
+                </h6>
+                <ul class="mb-0">
+                    @foreach ($errors->all() as $error)
+                        <li>{{ $error }}</li>
+                    @endforeach
+                </ul>
+            </div>
+        @endif
+
     @csrf
 
         {{-- 1. INFORMASI SURAT JALAN & PENERIMAAN --}}

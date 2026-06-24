@@ -509,6 +509,8 @@ class GoodsIssueController extends Controller
     // ==========================================
     // 7. PENCARIAN BARANG (AJAX)
     // ==========================================
+    // ==========================================
+
     public function searchItems(Request $request)
     {
         $search = $request->search;
@@ -524,11 +526,19 @@ class GoodsIssueController extends Controller
 
         $results = [];
         foreach ($items as $item) {
-            $bulkStock = \App\Models\InventoryStock::where('item_id', $item->id)->where('warehouse_id', $warehouseId)->sum('stock_qty');
-            $assetStock = \App\Models\FixedAsset::where('item_id', $item->id)->where('warehouse_id', $warehouseId)
-                ->whereHas('status', function($q) { $q->where('slug', 'available'); })->count();
+            // 1. Hitung Stok Biasa (Murni dari tabel Inventory, karena aset sudah otomatis terpotong saat kapitalisasi)
+            $availableBulk = \App\Models\InventoryStock::where('item_id', $item->id)
+                                ->where('warehouse_id', $warehouseId)
+                                ->sum('stock_qty');
 
-            $availableBulk = max(0, $bulkStock - $assetStock);
+            // 2. Hitung Stok Aset (Murni dari tabel Fixed Assets)
+            $assetStock = \App\Models\FixedAsset::where('item_id', $item->id)
+                                ->where('warehouse_id', $warehouseId)
+                                ->whereHas('status', function($q) {
+                                    $q->where('slug', 'available');
+                                })->count();
+
+            // 3. Total Keseluruhan Fisik di Gudang
             $totalStockDisplay = $availableBulk + $assetStock;
 
             if ($totalStockDisplay <= 0) continue;
@@ -547,8 +557,6 @@ class GoodsIssueController extends Controller
                 'available_bulk' => $availableBulk,
                 'available_asset' => $assetStock,
                 'uoms' => $item->uoms,
-
-                // 🔥 TAMBAHKAN 1 BARIS INI UNTUK MENGIRIM NAMA SATUAN KE JAVASCRIPT 🔥
                 'base_uom_name' => optional($item->uom)->name ?? 'PCS'
             ];
         }

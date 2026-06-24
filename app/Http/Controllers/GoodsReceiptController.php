@@ -156,6 +156,18 @@ class GoodsReceiptController extends Controller
             'items.*.qty_received' => 'required|numeric|min:0',
             'items.*.condition_id' => 'required|exists:item_conditions,id',
             'items.*.sn'           => 'nullable|array',
+        ], [
+            // 🔥 Pesan Kustom Bahasa Indonesia 🔥
+            'receipt_date.required'         => 'Tanggal Terima wajib diisi.',
+            'receipt_date.before_or_equal'  => 'Tanggal Terima tidak boleh melebihi hari ini.',
+            'delivery_note_number.required' => 'No. Surat Jalan (Delivery Note) wajib diisi.',
+            'attachments.*.mimes'           => 'Format file lampiran harus berupa PDF, JPG, JPEG, atau PNG.',
+            'attachments.*.max'             => 'Ukuran setiap file lampiran maksimal 5MB.',
+            'items.required'                => 'Daftar barang tidak boleh kosong.',
+            'items.*.qty_received.required' => 'Kuantitas terima harus diisi untuk setiap barang.',
+            'items.*.qty_received.numeric'  => 'Kuantitas terima harus berupa angka.',
+            'items.*.condition_id.required' => 'Kondisi barang wajib dipilih.',
+            'items.*.condition_id.exists'   => 'Kondisi barang yang dipilih tidak valid.',
         ]);
 
         try {

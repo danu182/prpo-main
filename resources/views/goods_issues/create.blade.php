@@ -180,6 +180,14 @@
         `);
     }
 
+    // 👇🔥 TAMBAHKAN FUNGSI INI DI SINI 🔥👇
+    function formatAssetSelection(state) {
+        if (!state.id) return state.text;
+        let cleanText = $(`<div>${state.text}</div>`).text();
+        let astNumber = cleanText.split(' (')[0] || cleanText;
+        return astNumber; // Hanya menampilkan Nomor Aset-nya saja saat sudah dipilih
+    }
+
     $(document).ready(function() {
         // Init Select2 User
         $('.select2-user').select2({ theme: 'bootstrap-5' });
