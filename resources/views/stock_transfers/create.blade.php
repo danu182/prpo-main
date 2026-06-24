@@ -131,6 +131,18 @@
 <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
 
 <script>
+    // 🔥 FORMATTER VISUAL UNTUK ASET 🔥
+    function formatAssetList(state) {
+        if (!state.id) return state.text;
+        let cleanText = $(`<div>${state.text}</div>`).text();
+        let astNumber = cleanText.split(' (')[0] || cleanText;
+        return $(`<div class="py-1"><div class="fw-bold text-dark small"><i class="bi bi-pc-display text-info me-1"></i> ${astNumber}</div></div>`);
+    }
+    function formatAssetSelection(state) {
+        if (!state.id) return state.text;
+        return state.text.split(' (')[0] || state.text;
+    }
+
     $(document).ready(function() {
         let tbody = $('#item-tbody');
         let btnAdd = $('#btn-add-item');
@@ -150,8 +162,7 @@
 
         btnAdd.on('click', function() {
             if(!fromWarehouseSelect.val()) {
-                Swal.fire('Perhatian', 'Pilih Gudang Asal terlebih dahulu sebelum menambah baris!', 'warning');
-                return;
+                Swal.fire('Perhatian', 'Pilih Gudang Asal terlebih dahulu!', 'warning'); return;
             }
             addRow();
         });
@@ -161,31 +172,36 @@
                 <tr class="border-bottom item-row">
                     <td class="py-3 ps-4">
                         <select name="items[${rowCount}][item_id]" class="form-select item-select-ajax" required></select>
+                        <div class="mt-2 stock-display text-muted small d-none"></div>
                     </td>
                     <td class="py-3">
                         <select name="items[${rowCount}][inventory_stock_id]" class="form-select form-select-sm batch-select bg-light" disabled>
-                            <option value="">⚡ Auto (FIFO)</option>
+                            <option value="">⚡ Mode FIFO (Otomatis)</option>
                         </select>
-                        <div class="mt-1 stock-display text-muted small"><i class="bi bi-dash-circle me-1"></i> Total Stok: 0</div>
                     </td>
                     <td class="py-3">
                         <div class="qty-container">
                             <div class="mb-1 shadow-sm input-group input-group-sm">
-                                <input type="number" name="items[${rowCount}][qty]" class="text-center form-control qty-input fw-bold text-primary border-primary" step="any" min="0" required>
-                                <select name="items[${rowCount}][uom_info]" class="form-select bg-light text-dark uom-select border-primary fw-bold" style="min-width: 140px; cursor: pointer;"></select>
+                                <input type="number" name="items[${rowCount}][qty]" class="text-center form-control qty-input fw-bold text-primary border-primary" step="any" min="0.1" required>
+                                <select name="items[${rowCount}][uom_info]" class="form-select bg-light text-dark uom-select border-primary fw-bold" style="min-width: 110px;"></select>
                             </div>
                         </div>
-                        <div class="asset-container d-none">
-                            <select name="items[${rowCount}][asset_ids][]" class="shadow-sm form-select asset-select border-info" multiple="multiple"></select>
-                            <small class="mt-1 text-info fw-bold d-block"><i class="bi bi-pc-display"></i> Mode Pilih Aset</small>
+
+                        <div class="p-2 mt-2 border asset-container d-none bg-info-subtle border-info rounded-3">
+                            <label class="mb-1 small text-info-emphasis fw-bold d-flex justify-content-between align-items-center">
+                                <span><i class="bi bi-pc-display me-1"></i> Pilih Unit Aset</span>
+                                <span class="asset-count badge bg-info text-dark shadow-sm">0 Dipilih</span>
+                            </label>
+                            <select name="items[${rowCount}][asset_ids][]" class="shadow-sm form-select asset-select" multiple="multiple"></select>
                         </div>
+
+                        <div class="p-2 mt-2 border minor-sn-container d-none bg-warning-subtle border-warning rounded-3"></div>
                     </td>
-                    <td class="py-3" style="vertical-align: middle;">
-                        <input type="text" name="items[${rowCount}][notes]" class="shadow-sm form-control form-control-sm general-notes" placeholder="Catatan...">
-                        <div class="minor-sn-container d-none"></div>
+                    <td class="py-3">
+                        <input type="text" name="items[${rowCount}][notes]" class="shadow-sm form-control form-control-sm general-notes" placeholder="Catatan opsional...">
                     </td>
                     <td class="py-3 text-center pe-4">
-                        <button type="button" class="btn btn-sm btn-outline-danger btn-remove rounded-circle" title="Hapus Baris"><i class="bi bi-trash"></i></button>
+                        <button type="button" class="btn btn-sm btn-outline-danger btn-remove rounded-circle"><i class="bi bi-trash"></i></button>
                     </td>
                 </tr>
             `;
@@ -193,21 +209,13 @@
             tbody.append($tr);
 
             $tr.find('.item-select-ajax').select2({
-                theme: 'bootstrap-5',
-                placeholder: '-- Cari & Ketik Barang --',
-                minimumInputLength: 2,
+                theme: 'bootstrap-5', placeholder: '-- Cari Barang --', minimumInputLength: 2,
                 ajax: {
-                    url: "{{ route('stock-transfers.search-items') }}",
-                    dataType: 'json',
-                    delay: 250,
-                    data: function (params) {
-                        return { search: params.term, warehouse_id: fromWarehouseSelect.val() };
-                    },
-                    processResults: function (data) { return { results: data }; },
-                    cache: true
+                    url: "{{ route('stock-transfers.search-items') }}", dataType: 'json', delay: 250,
+                    data: function (params) { return { search: params.term, warehouse_id: fromWarehouseSelect.val() }; },
+                    processResults: function (data) { return { results: data }; }
                 }
             });
-
             rowCount++;
         }
 
@@ -215,37 +223,39 @@
 
         tbody.on('click', '.btn-remove', function() {
             if (tbody.find('tr').length > 1) {
-                $(this).closest('tr').find('select').each(function() {
-                    if ($(this).hasClass("select2-hidden-accessible")) { $(this).select2('destroy'); }
-                });
+                $(this).closest('tr').find('select').each(function() { if ($(this).hasClass("select2-hidden-accessible")) $(this).select2('destroy'); });
                 $(this).closest('tr').remove();
-            } else {
-                Swal.fire('Ups!', 'Minimal harus ada 1 barang untuk dipindahkan.', 'info');
-            }
+            } else { Swal.fire('Ups!', 'Minimal sisakan 1 barang.', 'info'); }
         });
 
-        tbody.on('select2:select', '.item-select-ajax', function (e) {
-            let data = e.params.data;
-            let tr = $(this).closest('tr');
-            tr.data('is_trackable', data.is_trackable);
+        // 🔥 FUNGSI OTOMATIS: MENGHITUNG JUMLAH ASET YANG DIPILIH 🔥
+        tbody.on('change', '.asset-select', function() {
+            let count = $(this).val() ? $(this).val().length : 0;
+            $(this).closest('.asset-container').find('.asset-count').text(count + ' Dipilih');
+        });
 
-            tr.find('.stock-display').html(`<i class="bi bi-check2-circle me-1"></i> Stok di Gudang Asal: <strong>${data.stock}</strong>`).removeClass('text-muted').addClass('text-success');
-
+        // 🔥 FUNGSI UTAMA: MENGUBAH TAMPILAN MODE UI 🔥
+        function applyRowMode(tr, mode, data) {
             let qtyContainer = tr.find('.qty-container');
             let qtyInput = tr.find('.qty-input');
             let uomSelect = tr.find('.uom-select');
             let assetContainer = tr.find('.asset-container');
             let assetSelect = tr.find('.asset-select');
             let batchSelect = tr.find('.batch-select');
-            let generalNotes = tr.find('.general-notes');
             let snContainer = tr.find('.minor-sn-container');
 
-            if(data.is_asset) {
+            // Reset
+            qtyInput.prop('required', false).val('');
+            assetSelect.prop('required', false);
+
+            if (mode === 'ASSET') {
                 qtyContainer.addClass('d-none');
-                qtyInput.prop('required', false).val('');
-                batchSelect.prop('disabled', true).addClass('bg-light').html('<option value="">🔒 Ditentukan via Aset</option>');
+                batchSelect.prop('disabled', true).addClass('bg-light').html('<option value="">🔒 Mode Aset</option>');
+                snContainer.addClass('d-none').empty();
 
                 assetContainer.removeClass('d-none');
+                tr.find('.asset-count').text('0 Dipilih'); // Reset counter
+
                 if(assetSelect.hasClass("select2-hidden-accessible")) { assetSelect.select2('destroy'); }
                 assetSelect.prop('required', true).select2({
                     theme: 'bootstrap-5', width: '100%', placeholder: 'Klik untuk pilih SN Aset...',
@@ -254,176 +264,136 @@
                         data: function (params) { return { item_id: data.id, warehouse_id: fromWarehouseSelect.val(), search: params.term }; },
                         processResults: function (res) { return { results: res }; }
                     },
-                    templateSelection: function (assetData) {
-                        if (!assetData.id) { return assetData.text; }
-                        let shortText = assetData.text.split(' | ')[0];
-                        return $('<span>' + shortText + '</span>');
-                    }
+                    templateResult: formatAssetList, templateSelection: formatAssetSelection, escapeMarkup: function(m) { return m; }
                 });
-
-                generalNotes.removeClass('d-none').prop('required', false);
-                snContainer.addClass('d-none').empty();
-
             } else {
+                // BULK MODE
                 assetContainer.addClass('d-none');
-                if(assetSelect.hasClass("select2-hidden-accessible")) { assetSelect.select2('destroy'); }
-                assetSelect.prop('required', false).empty();
-
                 qtyContainer.removeClass('d-none');
+                qtyInput.prop('required', true).data('stock-bulk', data.available_bulk).attr('max', data.available_bulk).attr('placeholder', 'Max: ' + data.available_bulk);
 
-                // 🔥 SIHIR UOM: Bangun Select UOM 🔥
-                uomSelect.empty();
-                let baseUomName = data.base_uom || 'PCS';
-                uomSelect.append(`<option value="" data-conv="1">${baseUomName}</option>`);
-
+                uomSelect.empty().append(`<option value="" data-conv="1">${data.base_uom}</option>`);
                 if (data.uoms && data.uoms.length > 0) {
                     data.uoms.forEach(u => {
-                        let konversi = parseFloat(u.conversion_qty);
-                        uomSelect.append(`<option value="${u.id}" data-conv="${konversi}">${u.uom_name} (Isi ${konversi})</option>`);
+                        uomSelect.append(`<option value="${u.id}" data-conv="${u.conversion_qty}">${u.uom_name} (Isi ${u.conversion_qty})</option>`);
                     });
                 }
 
-                qtyInput.data('stock-bulk', data.stock);
-                qtyInput.attr('max', data.stock).val('').prop('required', true).attr('placeholder', 'Max: ' + data.stock);
-
-                batchSelect.prop('disabled', false).removeClass('bg-light').html('<option value="">⏳ Memuat Batch...</option>');
-
-                $.ajax({
-                    url: "{{ route('goods-issues.search-batches') }}", type: "GET",
-                    data: { item_id: data.id, warehouse_id: fromWarehouseSelect.val() },
-                    success: function(res) {
-                        let opts = '<option value="">⚡ Mode Otomatis (FIFO)</option>';
-                        if(Array.isArray(res)) { res.forEach(b => { opts += `<option value="${b.id}">${b.text}</option>`; }); }
-                        batchSelect.html(opts);
-                    },
-                    error: function() { batchSelect.html('<option value="">⚡ Mode Otomatis (FIFO)</option>'); }
-                });
+                batchSelect.prop('disabled', false).removeClass('bg-light').html('<option value="">⚡ Auto (FIFO)</option>');
 
                 if (data.is_trackable) {
-                    generalNotes.addClass('d-none').prop('required', false);
                     snContainer.removeClass('d-none').empty();
-                    qtyInput.trigger('input');
+                    qtyInput.trigger('input'); // Trigger form SN
                 } else {
-                    generalNotes.removeClass('d-none').prop('required', false);
                     snContainer.addClass('d-none').empty();
                 }
             }
+        }
+
+        // 🔥 LOGIKA METAMORFOSIS & POPUP PILIHAN 🔥
+        tbody.on('select2:select', '.item-select-ajax', function (e) {
+            let data = e.params.data;
+            let tr = $(this).closest('tr');
+            tr.data('is_trackable', data.is_trackable);
+
+            // Tampilkan Stok Aset vs Stok Biasa
+            tr.find('.stock-display').removeClass('d-none').html(`
+                <span class="border badge bg-success-subtle text-success-emphasis border-success me-1">Stok Biasa: ${data.available_bulk}</span>
+                ${data.available_asset > 0 ? `<span class="border badge bg-info-subtle text-info-emphasis border-info">Aset: ${data.available_asset}</span>` : ''}
+            `);
+
+            // JIKA BARANG PUNYA KEDUANYA (Stok Biasa & Aset), MUNCULKAN POPUP!
+            if (data.available_asset > 0 && data.available_bulk > 0) {
+                Swal.fire({
+                    title: 'Pilih Mode Mutasi',
+                    text: `Sistem mendeteksi [${data.text}] memiliki Stok Fisik Biasa dan terdaftar sebagai Aset. Transfer mana yang ingin Anda lakukan?`,
+                    icon: 'question',
+                    showCancelButton: true,
+                    confirmButtonColor: '#0dcaf0',
+                    cancelButtonColor: '#198754',
+                    confirmButtonText: '<i class="bi bi-pc-display me-1"></i> Transfer Aset',
+                    cancelButtonText: '<i class="bi bi-box-seam me-1"></i> Transfer Stok',
+                    allowOutsideClick: false,
+                    allowEscapeKey: false
+                }).then((result) => {
+                    if (result.isConfirmed) {
+                        applyRowMode(tr, 'ASSET', data);
+                    } else {
+                        applyRowMode(tr, 'BULK', data);
+                    }
+                });
+            }
+            // JIKA HANYA ASET
+            else if (data.available_asset > 0) {
+                applyRowMode(tr, 'ASSET', data);
+            }
+            // JIKA HANYA STOK BIASA
+            else {
+                applyRowMode(tr, 'BULK', data);
+            }
         });
 
-        // 🔥 LOGIKA AJAIB: MENGHITUNG ULANG MAX QTY SAAT SATUAN UOM DIUBAH 🔥
+        // 🔥 LOGIKA UOM MAX QTY 🔥
         tbody.on('change', '.uom-select', function() {
             let tr = $(this).closest('tr');
             let qtyInput = tr.find('.qty-input');
-
             let bulkStock = parseFloat(qtyInput.data('stock-bulk')) || 0;
             let conv = parseFloat($(this).find(':selected').data('conv')) || 1;
             let newMax = Math.floor(bulkStock / conv);
 
             qtyInput.attr('max', newMax).attr('placeholder', 'Max: ' + newMax);
-
-            let currentVal = parseFloat(qtyInput.val());
-            if (currentVal > newMax) {
+            if (parseFloat(qtyInput.val()) > newMax) {
                 qtyInput.val(newMax);
-                Swal.fire({
-                    toast: true, position: 'top-end', showConfirmButton: false, timer: 3000,
-                    icon: 'info', title: 'Kuantitas disesuaikan dengan sisa stok (' + newMax + ')'
-                });
+                Swal.fire({ toast: true, position: 'top-end', showConfirmButton: false, timer: 3000, icon: 'info', title: 'Qty disesuaikan dengan stok (' + newMax + ')' });
             }
         });
 
-        // 🔥 LOGIKA KOTAK SN MINOR ASSET 🔥
+        // 🔥 LOGIKA KOTAK SN KUNING 🔥
         tbody.on('input', '.qty-input', function() {
             let tr = $(this).closest('tr');
             if (tr.data('is_trackable')) {
                 let qty = parseInt($(this).val()) || 0;
                 let snContainer = tr.find('.minor-sn-container');
-                let nameAttr = $(this).attr('name');
-                let match = nameAttr.match(/items\[(\d+)\]/);
-                let idx = match ? match[1] : 0;
-
                 if (qty > 0) {
-                    let html = `
-                        <div class="gap-1 mt-1 d-flex flex-column">
-                            <span class="border badge bg-warning-subtle text-warning-emphasis border-warning-subtle text-start w-100" style="font-size: 0.65rem; padding: 5px 8px;">
-                                <i class="bi bi-upc-scan me-1"></i> Wajib isi SN:
-                            </span>
-                            <div class="custom-scrollbar" style="max-height: 105px; overflow-y: auto; padding-right: 3px;">
-                    `;
+                    let html = `<span class="badge bg-warning text-dark w-100 mb-2"><i class="bi bi-upc-scan"></i> Ketik/Scan SN:</span><div class="custom-scrollbar" style="max-height: 100px; overflow-y: auto;">`;
                     for(let i=0; i<qty; i++) {
-                        html += `<input type="text" class="mb-1 shadow-sm form-control form-control-sm border-warning minor-sn-input" placeholder="SN Unit ke-${i+1} *" required style="font-size: 0.75rem; height: 30px;">`;
+                        html += `<input type="text" class="form-control form-control-sm border-warning mb-1 minor-sn-input" placeholder="SN Unit ke-${i+1}" required>`;
                     }
-                    html += `</div></div>`;
+                    html += `</div>`;
                     snContainer.removeClass('d-none').html(html);
-                } else {
-                    snContainer.empty().addClass('d-none');
-                }
+                } else { snContainer.empty().addClass('d-none'); }
             }
         });
 
+        // SUBMIT FORM VALIDATION
         $('#form-stock-transfer').on('submit', function(e) {
             e.preventDefault();
             let form = this;
 
-            if(!fromWarehouseSelect.val() || !toWarehouseSelect.val()) {
-                Swal.fire('Error', 'Gudang Asal dan Tujuan harus dipilih!', 'error');
-                return;
-            }
+            if (!form.checkValidity()) { form.reportValidity(); return; }
 
             if(fromWarehouseSelect.val() === toWarehouseSelect.val()) {
-                Swal.fire('Gagal', 'Gudang Tujuan tidak boleh sama dengan Gudang Asal!', 'error');
-                return;
+                Swal.fire('Gagal', 'Gudang Tujuan tidak boleh sama dengan Gudang Asal!', 'error'); return;
             }
 
-            let validItemCount = 0;
-            let isAssetError = false;
-
+            // Gabungkan SN Lacak ke dalam Keterangan
             tbody.find('tr.item-row').each(function() {
-                let itemVal = $(this).find('.item-select-ajax').val();
-                if (!itemVal) {
-                    $(this).remove();
-                } else {
-                    validItemCount++;
-                    let assetContainer = $(this).find('.asset-container');
-                    if (!assetContainer.hasClass('d-none')) {
-                        let selectedAssets = $(this).find('.asset-select').val();
-                        if (!selectedAssets || selectedAssets.length === 0) {
-                            isAssetError = true;
-                        }
-                    }
-
-                    let isTrackable = $(this).data('is_trackable');
-                    if (isTrackable) {
-                        let snInputs = $(this).find('.minor-sn-input');
-                        let snArray = [];
-                        snInputs.each(function() { snArray.push($(this).val()); });
-                        $(this).find('.general-notes').val(snArray.join(' | '));
-                    }
+                let isTrackable = $(this).data('is_trackable');
+                if (isTrackable) {
+                    let snArray = [];
+                    $(this).find('.minor-sn-input').each(function() { snArray.push('SN: ' + $(this).val()); });
+                    $(this).find('.general-notes').val(snArray.join(' | '));
                 }
             });
 
-            if (validItemCount === 0) {
-                Swal.fire('Data Kosong!', 'Masukkan minimal 1 barang untuk ditransfer.', 'error');
-                addRow(); return;
-            }
-            if (isAssetError) {
-                Swal.fire('Data Aset Kosong!', 'Pilih Nomor Aset/SN yang akan ditransfer.', 'error');
-                return;
-            }
-
             Swal.fire({
-                title: 'Konfirmasi Mutasi',
-                text: "Barang akan dipindahkan ke Gudang Tujuan. Lanjutkan?",
-                icon: 'question',
-                showCancelButton: true,
-                confirmButtonColor: '#0d6efd',
-                cancelButtonColor: '#6c757d',
-                confirmButtonText: '<i class="bi bi-truck me-1"></i> Ya, Pindahkan!',
-                cancelButtonText: 'Batal',
-                borderRadius: '15px'
+                title: 'Proses Mutasi?',
+                text: "Barang akan dipindahkan ke gudang tujuan.",
+                icon: 'question', showCancelButton: true, confirmButtonText: 'Ya, Pindahkan!'
             }).then((result) => {
                 if (result.isConfirmed) {
                     let btn = document.getElementById('btnSubmitTransfer');
-                    btn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span> Memproses...';
+                    btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Memproses...';
                     btn.disabled = true;
                     form.submit();
                 }
@@ -431,4 +401,6 @@
         });
     });
 </script>
+
+
 @endpush
