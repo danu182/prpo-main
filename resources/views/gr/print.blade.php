@@ -2,80 +2,91 @@
 <html lang="id">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Cetak Penerimaan Barang - {{ $gr->gr_number }}</title>
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.5/font/bootstrap-icons.css">
+    <title>Goods Receipt Note - {{ $gr->gr_number }}</title>
     <style>
-        body { font-family: 'Arial', sans-serif; background-color: #f8f9fa; color: #000; font-size: 13px; } /* Font sedikit dikecilkan agar muat banyak */
-        .kertas { background: #fff; width: 210mm; min-height: 297mm; margin: 20px auto; padding: 40px; box-shadow: 0 0 10px rgba(0,0,0,0.1); }
-        .table-items th { background-color: #f1f1f1 !important; -webkit-print-color-adjust: exact; color-adjust: exact; }
+        /* Pengaturan Margin Kertas & Footer */
+        @page { margin: 40px 50px 70px 50px; }
+        body { font-family: 'Helvetica', 'Arial', sans-serif; font-size: 10pt; line-height: 1.4; color: #000; }
 
-        /* Memastikan warna badge ikut tercetak di kertas */
-        .badge { -webkit-print-color-adjust: exact; color-adjust: exact; border: 1px solid #ccc !important; }
+        .header-table { width: 100%; border-bottom: 2px solid #000; padding-bottom: 10px; margin-bottom: 20px; }
+        .header-table td { vertical-align: top; }
+        .company-name { font-size: 14pt; font-weight: bold; text-transform: uppercase; margin: 0 0 5px 0; }
+        .company-address { font-size: 8.5pt; color: #555; }
+        .doc-title { font-size: 14pt; font-weight: bold; text-align: right; text-transform: uppercase; color: #000; margin: 0 0 5px 0; letter-spacing: 1px; }
+        .doc-number { font-size: 11pt; font-weight: bold; text-align: right; }
 
-        @media print {
-            body { background: #fff; }
-            .kertas { width: 100%; min-height: auto; margin: 0; padding: 0; box-shadow: none; border: none !important; }
-            .d-print-none { display: none !important; }
+        .info-table { width: 100%; border-collapse: collapse; margin-bottom: 20px; font-size: 9pt; }
+        .info-table td { vertical-align: top; padding: 3px 0; }
+        .info-table .label { width: 18%; color: #555; }
+        .info-table .colon { width: 2%; }
+        .info-table .val { width: 30%; font-weight: bold; }
+
+        .data-table { width: 100%; border-collapse: collapse; margin-bottom: 20px; }
+        .data-table th, .data-table td { border: 1px solid #000; padding: 6px; font-size: 8.5pt; vertical-align: top; }
+        .data-table th { background-color: #f0f0f0; text-align: center; text-transform: uppercase; }
+
+        .signature-table { width: 100%; margin-top: 40px; text-align: center; page-break-inside: avoid; }
+        .signature-table td { width: 33.33%; vertical-align: bottom; }
+        .sign-space { height: 70px; }
+        .sign-name { font-weight: bold; text-decoration: underline; text-transform: uppercase; }
+        .sign-title { font-size: 8.5pt; color: #555; }
+
+        /* Footer Abadi */
+        footer {
+            position: fixed; bottom: -40px; left: 0px; right: 0px; height: 30px;
+            border-top: 1px solid #888; text-align: right; font-size: 8pt; color: #555;
+            padding-top: 5px; font-style: italic;
         }
+        .pagenum:before { content: "Halaman " counter(page); }
+
+        .sn-list { margin: 4px 0 0 15px; padding: 0; font-family: monospace; font-size: 7.5pt; }
+        .sn-list li { margin-bottom: 2px; }
     </style>
 </head>
 <body>
 
-<div class="mt-3 mb-3 text-center d-print-none">
-    <button onclick="window.print()" class="px-4 shadow-sm btn btn-primary rounded-pill fw-bold">
-        <i class="bi bi-printer-fill me-2"></i> Cetak Dokumen
-    </button>
-    <button onclick="window.close()" class="px-4 shadow-sm btn btn-outline-secondary rounded-pill fw-bold ms-2">
-        Tutup
-    </button>
-</div>
+    <footer>
+        Dokumen GR: {{ $gr->gr_number }} &nbsp; | &nbsp; Dicetak pada: {{ date('d-m-Y H:i') }} &nbsp; | &nbsp; <span class="pagenum"></span>
+    </footer>
 
-<div class="border kertas">
-    {{-- HEADER / KOP SURAT --}}
-    <div class="pb-3 mb-4 row border-bottom border-dark border-2 align-items-center">
-        <div class="col-6">
-            <h3 class="mb-0 fw-bold">{{ $gr->po?->company?->name ?? 'PERUSAHAAN' }}</h3>
-            <div class="small text-muted">
-                {{ $gr->po?->company?->address ?? 'Alamat belum diatur' }}
-            </div>
-        </div>
-        <div class="col-6 text-end">
-            <h4 class="mb-1 fw-bold text-success">GOODS RECEIPT NOTE</h4>
-            <div class="fw-bold fs-6">No: {{ $gr->gr_number }}</div>
-        </div>
-    </div>
+    <table class="header-table">
+        <tr>
+            <td width="60%">
+                <h2 class="company-name">{{ $gr->po?->company?->name ?? 'PERUSAHAAN' }}</h2>
+                <div class="company-address">{{ $gr->po?->company?->address ?? 'Alamat perusahaan belum diatur' }}</div>
+            </td>
+            <td width="40%" style="text-align: right;">
+                <h2 class="doc-title">GOODS RECEIPT NOTE</h2>
+                <div class="doc-number">No: {{ $gr->gr_number }}</div>
+            </td>
+        </tr>
+    </table>
 
-    {{-- INFORMASI PENERIMAAN --}}
-    <div class="mb-4 row small">
-        <div class="col-6">
-            <table class="table mb-0 table-sm table-borderless">
-                <tr><td width="35%" class="fw-bold text-muted">No. Surat Jalan Vendor</td><td width="5%">:</td><td class="fw-bold">{{ $gr->delivery_note_number }}</td></tr>
-                <tr><td class="fw-bold text-muted">Referensi PO</td><td>:</td><td class="fw-bold">{{ $gr->po?->po_number ?? '-' }}</td></tr>
-                <tr><td class="fw-bold text-muted">Tanggal Terima</td><td>:</td><td>{{ \Carbon\Carbon::parse($gr->received_date)->format('d F Y') }}</td></tr>
-            </table>
-        </div>
-        <div class="col-6">
-            <table class="table mb-0 table-sm table-borderless">
-                <tr><td width="30%" class="fw-bold text-muted">Vendor Pengirim</td><td width="5%">:</td><td class="fw-bold">{{ $gr->po?->vendor?->name ?? '-' }}</td></tr>
-                <tr><td class="fw-bold text-muted">Penerima (Gudang)</td><td>:</td><td>{{ optional($gr->receiver)->name ?? '-' }}</td></tr>
-                <tr><td class="fw-bold text-muted">Catatan</td><td>:</td><td>{{ $gr->notes ?? '-' }}</td></tr>
-            </table>
-        </div>
-    </div>
+    <table class="info-table">
+        <tr>
+            <td class="label">No. Surat Jalan</td><td class="colon">:</td><td class="val">{{ $gr->delivery_note_number }}</td>
+            <td class="label">Vendor Pengirim</td><td class="colon">:</td><td class="val">{{ $gr->po?->vendor?->name ?? '-' }}</td>
+        </tr>
+        <tr>
+            <td class="label">Referensi PO</td><td class="colon">:</td><td class="val">{{ $gr->po?->po_number ?? '-' }}</td>
+            <td class="label">Diterima Oleh</td><td class="colon">:</td><td class="val">{{ optional($gr->receiver)->name ?? '-' }}</td>
+        </tr>
+        <tr>
+            <td class="label">Tanggal Terima</td><td class="colon">:</td><td class="val">{{ \Carbon\Carbon::parse($gr->received_date)->translatedFormat('d F Y') }}</td>
+            <td class="label">Catatan</td><td class="colon">:</td><td class="val" style="font-weight: normal;">{{ $gr->notes ?? '-' }}</td>
+        </tr>
+    </table>
 
-    {{-- TABEL BARANG DITERIMA --}}
-    <table class="table align-middle table-bordered border-dark table-items">
-        <thead class="text-center align-middle">
+    <table class="data-table">
+        <thead>
             <tr>
-                <th width="5%" class="py-2">No</th>
-                <th width="33%" class="py-2">Nama Barang & Kode</th>
-                <th width="10%" class="py-2">Qty<br>Pesan</th>
-                <th width="10%" class="py-2">Qty<br>Datang</th>
-                <th width="10%" class="py-2">Qty<br>Retur</th>
-                <th width="12%" class="py-2">Kondisi</th>
-                <th width="20%" class="py-2">Keterangan Item</th>
+                <th width="5%">No</th>
+                <th width="30%">Nama Barang & Kode</th>
+                <th width="8%">Pesan</th>
+                <th width="10%">Datang</th>
+                <th width="8%">Retur</th>
+                <th width="12%">Kondisi</th>
+                <th width="27%">Keterangan / S/N</th>
             </tr>
         </thead>
         <tbody>
@@ -84,84 +95,58 @@
                 $isStock = optional($item->item)->is_stockable;
                 $isAsset = optional($item->item)->is_asset;
                 $qtyReturned = (float) ($item->qty_returned ?? 0);
-                
-                // 1. AMBIL SATUAN
+
+                // Ambil Satuan
                 $rawPoUom = $item->purchaseOrderItem?->uom;
                 $poUomName = is_string($rawPoUom) ? $rawPoUom : (optional($rawPoUom)->name ?? optional($item->item->uom)->name ?? 'PCS');
-                $uomDatang = $item->uom ?? $poUomName; 
+                $uomDatang = $item->uom ?? $poUomName;
 
-                // 2. PISAHKAN NAMA BARANG DAN SPESIFIKASI 🔥
-                $itemName = $item->item?->name ?? 'Nama Barang Tidak Ditemukan';
+                // Bersihkan Deskripsi
+                $itemName = $item->item?->name ?? '-';
                 $rawDesc = $item->purchaseOrderItem?->description ?? '';
                 $cleanDesc = strip_tags(str_replace(['</li>', '</p>', '<br>', '<br/>'], [', ', ' ', ' ', ' '], $rawDesc));
                 $cleanDesc = str_replace('&nbsp;', ' ', $cleanDesc);
                 $cleanDesc = rtrim(trim($cleanDesc), ',');
             @endphp
-            <tr class="{{ $qtyReturned > 0 ? 'bg-light' : '' }}">
-                <td class="text-center align-top pt-3">{{ $idx + 1 }}</td>
-                <td class="align-top pt-3">
-                    {{-- NAMA BARANG SELALU TAMPIL PERTAMA --}}
-                    <div class="fw-bold text-uppercase {{ $qtyReturned > 0 ? 'text-danger' : 'text-dark' }}">
-                        {{ $itemName }}
-                    </div>
-                    
-                    {{-- SPESIFIKASI TAMPIL DI BAWAHNYA JIKA ADA --}}
+            <tr style="{{ $qtyReturned > 0 ? 'background-color: #fafafa;' : '' }}">
+                <td style="text-align: center;">{{ $idx + 1 }}</td>
+                <td>
+                    <strong style="text-transform: uppercase;">{{ $itemName }}</strong><br>
+                    <span style="font-size: 7.5pt; color: #444;">{{ $item->item?->code ?? '-' }}</span>
+                    @if($isAsset) <span style="font-size: 7.5pt; font-weight: bold; color: #000;">[ASET]</span> @endif
                     @if($cleanDesc && $cleanDesc !== '-')
-                        <div class="text-muted mt-1" style="font-size: 0.75rem;">
-                            Spec: {{ $cleanDesc }}
-                        </div>
+                        <div style="font-size: 7.5pt; color: #555; margin-top: 3px;">Spec: {{ \Illuminate\Support\Str::limit($cleanDesc, 100) }}</div>
                     @endif
-                    
-                    {{-- SKU DAN PENANDA ASET --}}
-                    <div class="small text-dark fw-bold mt-2">
-                        {{ $item->item?->code ?? '-' }}
-                        @if($isAsset)
-                            <span class="ms-1 text-primary" style="font-size: 10px;">[ASET]</span>
-                        @elseif(!$isStock)
-                            <span class="ms-1 text-info" style="font-size: 10px;">[JASA]</span>
-                        @endif
-                    </div>
                 </td>
-                
-                <td class="text-center align-top pt-3">
-                    {{ (float)($item->purchaseOrderItem?->qty_ordered ?? 0) }}
-                    <div class="text-muted fw-bold" style="font-size: 0.7rem;">{{ $poUomName }}</div>
+                <td style="text-align: center;">
+                    <strong>{{ (float)($item->purchaseOrderItem?->qty_ordered ?? 0) }}</strong><br>
+                    <span style="font-size: 7pt; color: #555;">{{ $poUomName }}</span>
                 </td>
-                
-                <td class="text-center fw-bold fs-6 align-top pt-3">
-                    {{ (float)$item->qty_received }}
-                    <div class="text-muted fw-normal" style="font-size: 0.7rem;">{{ $uomDatang }}</div>
+                <td style="text-align: center;">
+                    <strong>{{ (float)$item->qty_received }}</strong><br>
+                    <span style="font-size: 7pt; color: #555;">{{ $uomDatang }}</span>
                 </td>
-
-                <td class="text-center align-top pt-3">
+                <td style="text-align: center;">
                     @if($qtyReturned > 0)
-                        <span class="fw-bold text-danger">{{ $qtyReturned }}</span>
-                        <div class="text-danger" style="font-size: 0.7rem;">{{ $uomDatang }}</div>
+                        <strong style="color: red;">{{ $qtyReturned }}</strong>
                     @else
-                        <span class="text-muted">-</span>
+                        -
                     @endif
                 </td>
+                <td style="text-align: center;">{{ $item->condition?->name ?? '-' }}</td>
+                <td>
+                    @if(trim(strip_tags($item->notes)))
+                        <div style="font-style: italic; margin-bottom: 4px;">{{ trim(strip_tags($item->notes)) }}</div>
+                    @endif
 
-                <td class="text-center align-top pt-3">
-                    <span class="badge bg-light text-dark border border-secondary-subtle">{{ $item->condition?->name ?? '-' }}</span>
-                </td>
-                
-                {{-- KOLOM KETERANGAN (SN BERBARIS RAPI) 🔥 --}}
-                <td class="small text-muted align-top pt-3">
-                    @php $catatan = trim(strip_tags($item->notes ?? '')); @endphp
-                    @if($catatan && $catatan !== '-')
-                        <div class="fst-italic mb-2">{{ $catatan }}</div>
-                    @endif
-                    
                     @if(!empty($item->registered_sns))
-                        <div class="text-dark" style="font-size: 0.7rem; font-family: monospace;">
-                            <strong class="text-success">SN Terdaftar:</strong>
-                            <div class="mt-1">
+                        <div style="background-color: #f9f9f9; padding: 4px; border: 1px solid #eee;">
+                            <strong>SN Terdaftar:</strong>
+                            <ul class="sn-list">
                                 @foreach($item->registered_sns as $sn)
-                                    {{-- Menggunakan white-space: nowrap agar tidak terpotong di tengah jalan --}}
-                                    <div style="white-space: nowrap; margin-bottom: 2px;">• {{ $sn }}</div>
+                                    <li>{{ $sn }}</li>
                                 @endforeach
-                            </div>
+                            </ul>
                         </div>
                     @endif
                 </td>
@@ -170,29 +155,25 @@
         </tbody>
     </table>
 
-    {{-- TANDA TANGAN (BAST) --}}
-    <div class="pt-3 mt-5 text-center row" style="page-break-inside: avoid;">
-        <div class="col-4">
-            <p class="mb-0 small">Diserahkan Oleh (Vendor/Kurir),</p>
-            <div style="height: 80px;"></div>
-            <p class="mb-0 fw-bold">.............................................</p>
-            <p class="small text-muted">Nama Terang & TTD</p>
-        </div>
-        <div class="col-4">
-            <p class="mb-0 small">Diketahui Oleh (Purchasing/QC),</p>
-            <div style="height: 80px;"></div>
-            <p class="mb-0 fw-bold">.............................................</p>
-            <p class="small text-muted">Nama Terang & TTD</p>
-        </div>
-        <div class="col-4">
-            <p class="mb-0 small">Diterima Oleh (Gudang),</p>
-            <div style="height: 80px;"></div>
-            <p class="mb-0 fw-bold text-decoration-underline text-uppercase">{{ optional($gr->receiver)->name ?? '-' }}</p>
-            <p class="small text-muted">Staf Gudang</p>
-        </div>
-    </div>
-
-</div>
+    <table class="signature-table">
+        <tr>
+            <td>
+                <div class="sign-title">Diserahkan Oleh (Vendor/Kurir),</div>
+                <div class="sign-space"></div>
+                <div class="sign-name">___________________________</div>
+            </td>
+            <td>
+                <div class="sign-title">Diketahui Oleh (Purchasing/QC),</div>
+                <div class="sign-space"></div>
+                <div class="sign-name">___________________________</div>
+            </td>
+            <td>
+                <div class="sign-title">Diterima Oleh (Gudang),</div>
+                <div class="sign-space"></div>
+                <div class="sign-name">{{ optional($gr->receiver)->name ?? '-' }}</div>
+            </td>
+        </tr>
+    </table>
 
 </body>
 </html>

@@ -496,7 +496,11 @@ class GoodsReceiptController extends Controller
                 ->toArray();
         }
 
-        return view('gr.print', compact('gr'));
+        // Render menjadi file PDF menggunakan DomPDF
+        $pdf = \Barryvdh\DomPDF\Facade\Pdf::loadView('gr.print', compact('gr'))
+                    ->setPaper('A4', 'portrait');
+
+        return $pdf->stream('Goods_Receipt_' . str_replace('/', '_', $gr->gr_number) . '.pdf');
     }
 
     public function printLabels($slug)
