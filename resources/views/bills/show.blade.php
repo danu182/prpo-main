@@ -301,8 +301,17 @@
         {{-- KOLOM KANAN: SUMMARY --}}
         <div class="col-lg-4">
 
-            {{-- PERBAIKAN: PANEL APPROVAL PAKAI SLUG --}}
-            @if($statusSlug == 'pending')
+            {{-- 🔥 PERBAIKAN: Munculkan panel ini selama user masih ada di antrean persetujuan 🔥 --}}
+            @php
+                $myApproval = \App\Models\DocumentApproval::where('document_id', $bill->id)
+                                ->where('document_type', get_class($bill))
+                                ->where('status', 'PENDING')
+                                ->whereHas('role', function($q) {
+                                    $q->whereIn('name', auth()->user()->getRoleNames());
+                                })->first();
+            @endphp
+
+            @if(in_array($statusSlug, ['pending', 'partial_approved']) && $myApproval)
             <div class="mb-4 border border-0 shadow-sm card rounded-4 border-warning">
                 <div class="p-4 card-body bg-warning-subtle rounded-4">
                     <h6 class="mb-2 fw-bold text-dark"><i class="bi bi-shield-lock-fill me-2 text-warning"></i>Tindakan Persetujuan</h6>

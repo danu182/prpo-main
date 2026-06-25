@@ -145,10 +145,18 @@ class BillRequestController extends Controller
         $currencies = \App\Models\Currency::where('is_active', true)->orderBy('name')->get();
         $vendors    = \App\Models\Vendor::orderBy('name')->get();
 
-        $opexItems  = \App\Models\Item::where('is_stockable', false)
-                                      ->where('is_asset', false)
+        // 🔥 PERBAIKAN: Gunakan item_type_code untuk mengambil Jasa/Non-Stok (OPEX)
+        $opexItems  = \App\Models\Item::where('item_type_code', 'JSA') // JSA biasanya kode untuk Jasa/Non-Stok
+                                      ->orWhereNull('item_type_code') // Jaga-jaga jika ada barang lawas yang belum di-set tipenya
                                       ->orderBy('name')
                                       ->get();
+
+
+        // 🔥 PERBAIKAN: Filter buang yang sifatnya fisik gudang (STK) dan Aset Tetap (AST)
+        // $opexItems  = \App\Models\Item::whereNotIn('item_type_code', ['AST', 'STK'])
+        //                               ->orWhereNull('item_type_code')
+        //                               ->orderBy('name')
+        //                               ->get();
 
         // Panggil Master Biaya Tambahan (Charges)
         $chargeTypes = \App\Models\ChargeType::where('is_active', true)->orderBy('name')->get();
@@ -772,6 +780,133 @@ class BillRequestController extends Controller
         return back();
     }
 
+
+    // =========================================================================
+    // PERSETUJUAN WORKFLOW DINAMIS (APPROVE & REJECT)
+    // =========================================================================
+    public function approve($id)
+    {
+        \DB::beginTransaction();
+        try {
+            $bill = \App\Models\BillRequest::with('status')->findOrFail($id);
+
+            // 1. Cek apakah status masih PENDING
+            if ($bill->status && $bill->status->slug !== 'pending') {
+                return back()->with('error', 'Tagihan ini sudah diproses sebelumnya.');
+            }
+
+            // 2. Cari antrean Approval Saat Ini (Berdasarkan urutan / step_order)
+            $currentApproval = \App\Models\DocumentApproval::with('role')
+                ->where('document_id', $bill->id)
+                ->where('document_type', get_class($bill))
+                ->where('status', 'PENDING')
+                ->orderBy('step_order', 'asc')
+                ->first();
+
+            if (!$currentApproval) {
+                return back()->with('error', 'Tidak ada antrean persetujuan untuk Anda pada dokumen ini.');
+            }
+
+            $approverRoleName = $currentApproval->role ? $currentApproval->role->name : 'Atasan';
+
+            // 3. Eksekusi Persetujuan Tahap Ini
+            $currentApproval->update([
+                'status'      => 'APPROVED',
+                'approved_by' => auth()->id(),
+                'approved_at' => now()
+            ]);
+
+            // Naikkan Level Dokumen sesuai Step yang baru saja di-ACC
+            $bill->update(['current_approval_level' => $currentApproval->step_order]);
+
+            // 4. Cek apakah MASIH ADA atasan selanjutnya di antrean?
+            $nextApproval = \App\Models\DocumentApproval::with('role')
+                ->where('document_id', $bill->id)
+                ->where('document_type', get_class($bill))
+                ->where('status', 'PENDING')
+                ->orderBy('step_order', 'asc')
+                ->first();
+
+            $actionText = 'Disetujui (' . strtoupper($approverRoleName) . ')';
+            $catatan = "Tagihan disetujui pada tahap ini.\n";
+
+            if ($nextApproval) {
+                // JIKA MASIH ADA ATASAN: Status tetap PENDING, oper ke atasan berikutnya
+                $nextRoleName = $nextApproval->role ? $nextApproval->role->name : 'Atasan Berikutnya';
+                $catatan .= "Diteruskan ke: **" . strtoupper($nextRoleName) . "**\n";
+                $successMsg = "Disetujui! Dokumen telah diteruskan ke {$nextRoleName}.";
+            } else {
+                // JIKA FINAL (Semua tahapan tuntas)
+                $bill->update(['status_id' => $this->getStatusId('approved')]); // Status jadi Siap Bayar
+                $actionText = 'Disetujui Final';
+                $catatan .= "Persetujuan Matriks telah SELESAI. Tagihan siap dibayarkan oleh Finance.\n";
+                $successMsg = "Hore! Tagihan OPEX telah disetujui secara FINAL!";
+            }
+
+            // Catat Log Audit
+            $this->logHistory($bill, $actionText, $catatan);
+
+            \DB::commit();
+            return back()->with('success', $successMsg);
+
+        } catch (\Exception $e) {
+            \DB::rollback();
+            return back()->with('error', 'Terjadi kesalahan sistem: ' . $e->getMessage());
+        }
+    }
+
+
+    public function reject(Request $request, $id)
+    {
+        $request->validate([
+            'rejection_reason' => 'required|string|min:5',
+        ]);
+
+        \DB::beginTransaction();
+        try {
+            $bill = \App\Models\BillRequest::with('status')->findOrFail($id);
+
+            if ($bill->status && $bill->status->slug !== 'pending') {
+                return back()->with('error', 'Tagihan ini sudah diproses sebelumnya.');
+            }
+
+            $currentApproval = \App\Models\DocumentApproval::with('role')
+                ->where('document_id', $bill->id)
+                ->where('document_type', get_class($bill))
+                ->where('status', 'PENDING')
+                ->orderBy('step_order', 'asc')
+                ->first();
+
+            $approverRoleName = $currentApproval && $currentApproval->role ? $currentApproval->role->name : 'Atasan';
+
+            if ($currentApproval) {
+                $currentApproval->update([
+                    'status'      => 'REJECTED',
+                    'approved_by' => auth()->id(),
+                    'approved_at' => now()
+                ]);
+            }
+
+            // UPDATE STATUS TAGIHAN JADI REJECTED & RESET LEVEL KEMBALI KE 0
+            $bill->status_id = $this->getStatusId('rejected');
+            $bill->rejection_reason = $request->rejection_reason;
+            $bill->current_approval_level = 0;
+            $bill->save();
+
+            // Catat Log
+            $this->logHistory($bill, 'Ditolak', "Menolak Tagihan ({$approverRoleName}). Alasan: {$request->rejection_reason}");
+
+            \DB::commit();
+            return back()->with('error', 'Tagihan OPEX telah ditolak dan dikembalikan.');
+
+        } catch (\Exception $e) {
+            \DB::rollback();
+            return back()->with('error', 'Terjadi kesalahan sistem: ' . $e->getMessage());
+        }
+    }
+
+
+
     public function print($id)
     {
         $bill = \App\Models\BillRequest::with(['user', 'company', 'items', 'media'])->findOrFail($id);
@@ -816,128 +951,7 @@ class BillRequestController extends Controller
     }
 
 
-    // Tambahkan method ini di bagian bawah Controller
 
-    // public function approve($id)
-    // {
-    //     \DB::beginTransaction();
-    //     try {
-    //         // 1. Cari Data
-    //         $bill = \App\Models\BillRequest::findOrFail($id);
-
-    //         // 2. Cek apakah status masih PENDING (Validasi Safety)
-    //         if ($bill->status !== 'PENDING') {
-    //             return back()->with('error', 'Tagihan ini sudah diproses sebelumnya.');
-    //         }
-
-    //         // 3. Update Status
-    //         $statusApproved = \App\Models\Status::where('name', 'APPROVED')->first();
-    //         $bill->status_id = $statusApproved->id;
-    //         $bill->current_approval_level = 2; // Naikkan level
-    //         // $bill->approved_by = auth()->id(); // (Opsional)
-    //         $bill->save();
-
-    //         // 4. Catat Log (Menggunakan helper Anda yang rapi)
-    //         $this->logHistory($bill, 'APPROVED', 'Menyetujui tagihan ini. Siap untuk dilunasi.');
-
-    //         \DB::commit();
-    //         return back()->with('success', 'Tagihan berhasil disetujui (APPROVED).');
-
-    //     } catch (\Exception $e) {
-    //         \DB::rollback();
-    //         return back()->with('error', 'Terjadi kesalahan sistem: ' . $e->getMessage());
-    //     }
-    // }
-
-    // public function reject(Request $request, $id)
-    // {
-    //     // 1. Validasi Alasan Penolakan
-    //     $request->validate([
-    //         'rejection_reason' => 'required|string|min:5',
-    //     ]);
-
-    //     \DB::beginTransaction();
-    //     try {
-    //         $bill = \App\Models\BillRequest::findOrFail($id);
-
-    //         if ($bill->status !== 'PENDING') {
-    //             return back()->with('error', 'Tagihan ini sudah diproses sebelumnya.');
-    //         }
-
-    //         // 2. Update Status & Alasan
-    //         $bill->status = 'REJECTED';
-    //         $bill->rejection_reason = $request->rejection_reason;
-    //         $bill->save();
-
-    //         // 3. Catat Log
-    //         $this->logHistory($bill, 'REJECTED', "Menolak tagihan. Alasan: {$request->rejection_reason}");
-
-    //         \DB::commit();
-    //         return back()->with('success', 'Tagihan telah ditolak dan dikembalikan.');
-
-    //     } catch (\Exception $e) {
-    //         \DB::rollback();
-    //         return back()->with('error', 'Terjadi kesalahan sistem: ' . $e->getMessage());
-    //     }
-    // }
-
-
-    public function approve($id)
-    {
-        \DB::beginTransaction();
-        try {
-            $bill = \App\Models\BillRequest::with('status')->findOrFail($id);
-
-            // Cek apakah status masih PENDING
-            if ($bill->status && $bill->status->slug !== 'pending') {
-                return back()->with('error', 'Tagihan ini sudah diproses sebelumnya.');
-            }
-
-            // PERBAIKAN: Update Status ID
-            $bill->status_id = $this->getStatusId('approved');
-            $bill->current_approval_level = 2; // Naikkan level
-            $bill->save();
-
-            $this->logHistory($bill, 'APPROVED', 'Menyetujui tagihan ini. Siap untuk dilunasi.');
-
-            \DB::commit();
-            return back()->with('success', 'Tagihan berhasil disetujui (APPROVED).');
-
-        } catch (\Exception $e) {
-            \DB::rollback();
-            return back()->with('error', 'Terjadi kesalahan sistem: ' . $e->getMessage());
-        }
-    }
-
-    public function reject(Request $request, $id)
-    {
-        $request->validate([
-            'rejection_reason' => 'required|string|min:5',
-        ]);
-
-        \DB::beginTransaction();
-        try {
-            $bill = \App\Models\BillRequest::with('status')->findOrFail($id);
-
-            if ($bill->status && $bill->status->slug !== 'pending') {
-                return back()->with('error', 'Tagihan ini sudah diproses sebelumnya.');
-            }
-
-            // PERBAIKAN: Update Status ID & Alasan
-            $bill->status_id = $this->getStatusId('rejected');
-            $bill->rejection_reason = $request->rejection_reason;
-            $bill->save();
-
-            $this->logHistory($bill, 'REJECTED', "Menolak tagihan. Alasan: {$request->rejection_reason}");
-
-            \DB::commit();
-            return back()->with('success', 'Tagihan telah ditolak dan dikembalikan.');
-
-        } catch (\Exception $e) {
-            \DB::rollback();
-            return back()->with('error', 'Terjadi kesalahan sistem: ' . $e->getMessage());
-        }
-    }
 
 
     public function destroy($id)
@@ -1175,6 +1189,29 @@ class BillRequestController extends Controller
                 'action'      => 'CREATED',
                 'note'        => "Tagihan {$billNumber} berhasil dibuat dengan nilai {$currency} " . number_format($grandTotal, 0, ',', '.')
             ]);
+
+            // 🔥 PERBAIKAN: Gunakan Tipe Dokumen yang Sama Dengan Tabel Workflow ('OPEX')
+        $workflow = \DB::table('approval_workflows')
+            ->where('document_type', 'OPEX') // Pastikan di master matriks tipenya OPEX
+            ->where('is_active', 1)->first();
+
+            if ($workflow) {
+                // Ambil langkah (steps) berdasarkan nominal tagihan (amount)
+                $steps = \DB::table('approval_workflow_steps')
+                    ->where('approval_workflow_id', $workflow->id)
+                    ->where('min_amount', '<=', $bill->amount)
+                    ->orderBy('step_order', 'asc')->get();
+
+                foreach ($steps as $step) {
+                    \App\Models\DocumentApproval::create([
+                        'document_id'   => $bill->id,
+                        'document_type' => get_class($bill),
+                        'role_id'       => $step->role_id,
+                        'step_order'    => $step->step_order,
+                        'status'        => 'PENDING'
+                    ]);
+                }
+            }
 
             \DB::commit();
             return redirect()->route('bills.index')->with('success', "Tagihan Opex berhasil disimpan! Nomor: {$billNumber}");
