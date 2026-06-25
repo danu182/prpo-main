@@ -2,7 +2,7 @@
 <html lang="id">
 <head>
     <meta charset="UTF-8">
-    <title>Bukti Retur Vendor - {{ $rtv->rtv_number }}</title>
+    <title>Bukti Retur Barang - {{ $return->return_number }}</title>
     <style>
         /* Pengaturan Margin Kertas & Footer */
         @page { margin: 40px 50px 70px 50px; }
@@ -23,7 +23,7 @@
         .item-table td.center { text-align: center; }
 
         .signature-table { width: 100%; margin-top: 40px; text-align: center; border-collapse: collapse; page-break-inside: avoid; }
-        .signature-table td { width: 33.33%; padding: 10px; vertical-align: bottom; }
+        .signature-table td { width: 50%; padding: 10px; vertical-align: bottom; }
         .signature-space { height: 70px; }
         .signature-name { font-weight: bold; text-decoration: underline; text-transform: uppercase; }
         .signature-title { font-size: 9pt; color: #555; }
@@ -38,40 +38,39 @@
 </head>
 <body>
 
-    {{-- 🔥 FOOTER OTOMATIS 🔥 --}}
     <footer>
-        Dokumen RTV: {{ $rtv->rtv_number }} &nbsp; | &nbsp; Dicetak: {{ date('d-m-Y H:i') }} &nbsp; | &nbsp; <span class="pagenum"></span>
+        Dokumen Retur: {{ $return->return_number }} &nbsp; | &nbsp; Dicetak: {{ date('d-m-Y H:i') }} &nbsp; | &nbsp; <span class="pagenum"></span>
     </footer>
 
     <div class="header">
-        <h1 class="title">BUKTI PENGEMBALIAN BARANG KE VENDOR</h1>
-        <p class="subtitle">RETURN TO VENDOR (RTV) SLIP</p>
+        <h1 class="title">BUKTI PENGEMBALIAN BARANG (RETUR)</h1>
+        <p class="subtitle">Dokumen Resmi Pengembalian Inventaris / Aset ke Gudang Perusahaan</p>
     </div>
 
     <table class="info-table">
         <tr>
-            <td class="info-label">No. Dokumen RTV</td>
+            <td class="info-label">No. Dokumen Retur</td>
             <td class="info-colon">:</td>
-            <td style="font-weight: bold; width: 30%;">{{ $rtv->rtv_number }}</td>
-            <td class="info-label">Vendor Tujuan</td>
+            <td style="font-weight: bold; width: 30%;">{{ $return->return_number }}</td>
+            <td class="info-label">Gudang Penerima</td>
             <td class="info-colon">:</td>
-            <td style="font-weight: bold; color: #d9534f;">{{ optional($rtv->vendor)->name ?? '-' }}</td>
+            <td style="font-weight: bold; color: #198754;">{{ optional($return->warehouse)->name ?? 'Gudang Utama' }}</td>
         </tr>
         <tr>
-            <td class="info-label">Ref. Penerimaan (GR)</td>
+            <td class="info-label">Ref. Dok. Keluar (GI)</td>
             <td class="info-colon">:</td>
-            <td>{{ optional($rtv->goodsReceipt)->gr_number ?? '-' }}</td>
-            <td class="info-label">Perusahaan</td>
+            <td>{{ optional($return->goodsIssue)->gi_number }}</td>
+            <td class="info-label">Dikembalikan Oleh</td>
             <td class="info-colon">:</td>
-            <td style="font-weight: bold;">{{ optional(optional($rtv->goodsReceipt)->po)->company->name ?? 'Kantor Pusat' }}</td>
+            <td style="font-weight: bold;">{{ $return->returned_by_name }}</td>
         </tr>
         <tr>
             <td class="info-label">Tanggal Retur</td>
             <td class="info-colon">:</td>
-            <td>{{ \Carbon\Carbon::parse($rtv->return_date)->translatedFormat('d F Y') }}</td>
-            <td class="info-label">Surat Jalan Retur</td>
+            <td>{{ \Carbon\Carbon::parse($return->return_date)->translatedFormat('d F Y') }}</td>
+            <td class="info-label">Catatan</td>
             <td class="info-colon">:</td>
-            <td>{{ $rtv->delivery_note_number ?? '-' }}</td>
+            <td style="font-style: italic;">{{ $return->notes ?? '- Tidak ada catatan -' }}</td>
         </tr>
     </table>
 
@@ -82,14 +81,32 @@
                 <th width="15%">Kode Barang</th>
                 <th width="35%">Nama Barang</th>
                 <th width="15%">Qty Retur</th>
-                <th width="30%">Alasan & Serial Number</th>
+                <th width="30%">Catatan / Serial Number</th>
             </tr>
         </thead>
         <tbody>
-            @foreach($rtv->items as $index => $item)
+            @foreach($return->items as $index => $item)
             @php
-                // Cek aman apakah item ini aset tetap (AST)
+                // Cek aman apakah item ini aset tetap
                 $isAsset = optional($item->item)->item_type_code === 'AST';
+
+                // 🔥 SIHIR PEMISAH SATUAN DARI CATATAN 🔥
+                $uomName = 'PCS'; // Default
+                $cleanNotes = [];
+
+                if($item->notes) {
+                    $notesArray = explode(' | ', $item->notes);
+                    foreach($notesArray as $noteLine) {
+                        // Jika baris catatan mengandung kata "Satuan:"
+                        if (\Illuminate\Support\Str::startsWith(trim($noteLine), 'Satuan:')) {
+                            // Ambil nama satuannya saja
+                            $uomName = trim(str_replace('Satuan:', '', $noteLine));
+                        } elseif (!empty(trim($noteLine))) {
+                            // Sisa catatan lainnya dimasukkan ke array bersih
+                            $cleanNotes[] = trim($noteLine);
+                        }
+                    }
+                }
             @endphp
             <tr>
                 <td class="center">{{ $index + 1 }}</td>
@@ -100,19 +117,16 @@
                         <br><span style="font-size: 8pt; font-weight: bold;">[ASET TETAP]</span>
                     @endif
                 </td>
-                <td class="py-3 text-center fw-bold text-danger fs-5">
-                                {{ (float) $item->qty_returned }} <br>
-                                <span class="text-nowrap fw-bold text-muted text-uppercase" style="font-size: 0.65rem;">
-                                    {{ $item->uom ?? 'PCS' }}
-                                </span>
-                            </td>
+                <td class="center">
+                    <strong style="font-size: 11pt;">{{ (float) $item->qty_returned }}</strong><br>
+                    {{-- Satuan kini tampil cantik di bawah angka --}}
+                    <span style="font-size: 8pt; color: #555;">{{ $uomName }}</span>
+                </td>
                 <td style="font-size: 8.5pt;">
-                    @if($item->return_reason)
-                        {{-- Memecah alasan dan SN yang dipisah dengan " | " menjadi Bullet List --}}
-                        @php $notesArray = explode(' | ', $item->return_reason); @endphp
+                    @if(count($cleanNotes) > 0)
                         <ul style="margin: 0; padding-left: 15px;">
-                            @foreach($notesArray as $noteLine)
-                                <li style="margin-bottom: 3px;">{{ trim($noteLine) }}</li>
+                            @foreach($cleanNotes as $noteLine)
+                                <li style="margin-bottom: 3px;">{{ $noteLine }}</li>
                             @endforeach
                         </ul>
                     @else
@@ -124,37 +138,24 @@
         </tbody>
     </table>
 
-    @if($rtv->notes)
-    <div style="font-size: 9.5pt; margin-bottom: 20px; font-style: italic;">
-        <strong>Catatan Tambahan:</strong><br>
-        {{ $rtv->notes }}
-    </div>
-    @endif
-
     <div style="font-size: 9.5pt; margin-top: 15px; border: 1px dashed #777; padding: 10px; background-color: #fdfdfd; text-align: justify;">
         <strong>Pernyataan:</strong><br>
-        Barang-barang di atas dikembalikan kepada pihak Vendor dikarenakan cacat, rusak, atau tidak sesuai dengan spesifikasi Pesanan Pembelian (PO). Pihak Perusahaan berhak meminta penggantian barang baru atau pengembalian dana sesuai kesepakatan.
+        Barang/Aset di atas telah diserahkan kembali oleh Karyawan bersangkutan dan diterima oleh pihak Gudang dalam jumlah yang sesuai untuk dimasukkan kembali ke dalam sistem persediaan Perusahaan.
     </div>
 
     <table class="signature-table">
         <tr>
             <td>
-                Dikeluarkan Oleh,<br>
-                <span class="signature-title">(Gudang Perusahaan)</span>
+                Yang Mengembalikan,<br>
+                <span class="signature-title">(Karyawan / User)</span>
                 <div class="signature-space"></div>
-                <div class="signature-name">{{ optional($rtv->returner)->name ?? 'Admin Gudang' }}</div>
+                <div class="signature-name">{{ $return->returned_by_name }}</div>
             </td>
             <td>
-                Dibawa / Dikirim Oleh,<br>
-                <span class="signature-title">(Kurir / Ekspedisi)</span>
+                Yang Menerima,<br>
+                <span class="signature-title">(Admin Gudang)</span>
                 <div class="signature-space"></div>
-                <div class="signature-name">( ....................................... )</div>
-            </td>
-            <td>
-                Diterima Oleh,<br>
-                <span class="signature-title">(Pihak Vendor)</span>
-                <div class="signature-space"></div>
-                <div class="signature-name">( ....................................... )</div>
+                <div class="signature-name">{{ optional($return->receiver)->name ?? 'Admin Gudang' }}</div>
             </td>
         </tr>
     </table>

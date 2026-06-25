@@ -252,6 +252,8 @@ Route::middleware('auth')->group(function () {
         Route::get('/create/{gi_id}', [GoodsIssueReturnController::class, 'create'])->name('create');
         Route::post('/{gi_id}', [GoodsIssueReturnController::class, 'store'])->name('store');
         Route::get('/{id}', [GoodsIssueReturnController::class, 'show'])->name('show');
+        Route::get('/print/{id}', [GoodsIssueReturnController::class, 'print'])->name('print');
+
     });
 
 

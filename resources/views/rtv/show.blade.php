@@ -26,9 +26,10 @@
             <a href="{{ route('rtv.index') }}" class="bg-white shadow-sm btn btn-outline-secondary rounded-pill fw-bold">
                 <i class="bi bi-arrow-left me-1"></i> Kembali
             </a>
-            <button class="shadow-sm btn btn-primary rounded-pill fw-bold" onclick="window.print()">
+            {{-- 🔥 Arahkan ke route rtv.print dan kirimkan parameter nomor RTV-nya 🔥 --}}
+            <a href="{{ route('rtv.print', $rtv->rtv_number) }}" target="_blank" class="shadow-sm btn btn-primary rounded-pill fw-bold">
                 <i class="bi bi-printer-fill me-1"></i> Cetak Surat Jalan Retur
-            </button>
+            </a>
         </div>
     </div>
 

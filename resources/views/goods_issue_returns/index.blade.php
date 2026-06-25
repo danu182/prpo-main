@@ -62,7 +62,7 @@
                         </td>
                         {{-- 🔥 TAMPILAN GUDANG RETUR 🔥 --}}
                         <td class="py-3">
-                            <span class="badge bg-secondary-subtle text-secondary border border-secondary-subtle rounded-pill px-3 py-2">
+                            <span class="px-3 py-2 border badge bg-secondary-subtle text-secondary border-secondary-subtle rounded-pill">
                                 <i class="bi bi-shop me-1"></i> {{ optional($ret->warehouse)->name ?? 'Gudang Utama' }}
                             </span>
                         </td>

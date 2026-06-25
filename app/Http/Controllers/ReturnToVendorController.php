@@ -393,9 +393,24 @@ class ReturnToVendorController extends Controller
     }
 
 
+    public function print($slug)
+    {
+        $rtv = ReturnToVendor::with([
+            'vendor',
+            'goodsReceipt.po.company',
+            'returner',
+            'items.item',
+            'items.purchaseOrderItem'
+        ])->where('rtv_number', $slug)->firstOrFail();
 
-    public function print($slug) {
-        $rtv = ReturnToVendor::with(['vendor', 'goodsReceipt.po.company', 'returner', 'items.item', 'items.purchaseOrderItem'])->where('rtv_number', $slug)->firstOrFail();
-        return view('rtv.print', compact('rtv'));
+        // Render menjadi file PDF menggunakan DomPDF
+        $pdf = \Barryvdh\DomPDF\Facade\Pdf::loadView('rtv.print', compact('rtv'))
+                ->setPaper('A4', 'portrait');
+
+        $namaFile = str_replace('/', '_', $rtv->rtv_number);
+        return $pdf->stream('Bukti_Retur_Vendor_' . $namaFile . '.pdf');
     }
+
+
+
 }

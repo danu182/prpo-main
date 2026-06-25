@@ -369,8 +369,30 @@ class GoodsIssueReturnController extends Controller
 
     public function show($id)
     {
-        $return = GoodsIssueReturn::with(['items.item', 'goodsIssue', 'receiver'])->findOrFail($id);
+        $return = GoodsIssueReturn::with([
+            'items.item.uom',
+            'goodsIssue',
+            'receiver',
+            'warehouse'
+        ])->findOrFail($id);
+
         return view('goods_issue_returns.show', compact('return'));
+    }
+
+    public function print($id)
+    {
+        $return = GoodsIssueReturn::with([
+            'items.item.uom',
+            'goodsIssue',
+            'receiver',
+            'warehouse'
+        ])->findOrFail($id);
+
+        $pdf = \Barryvdh\DomPDF\Facade\Pdf::loadView('goods_issue_returns.print', compact('return'))
+                ->setPaper('A4', 'portrait');
+
+        $namaFile = str_replace('/', '_', $return->return_number);
+        return $pdf->stream('Bukti_Retur_Barang_' . $namaFile . '.pdf');
     }
 
     public function voidTransaction($id)
