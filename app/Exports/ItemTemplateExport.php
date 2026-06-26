@@ -1,73 +1,84 @@
 <?php
 
-namespace App\Exports;
+namespace App\Imports;
 
-use Maatwebsite\Excel\Concerns\Exportable;
-use Maatwebsite\Excel\Concerns\WithMultipleSheets;
-use Maatwebsite\Excel\Concerns\FromArray;
-use Maatwebsite\Excel\Concerns\WithTitle;
-use Maatwebsite\Excel\Concerns\FromCollection;
-use Maatwebsite\Excel\Concerns\WithHeadings;
+use App\Models\Item;
 use App\Models\Category;
 use App\Models\Uom;
+use Illuminate\Support\Collection;
+use Maatwebsite\Excel\Concerns\ToCollection;
+use Maatwebsite\Excel\Concerns\WithHeadingRow;
+use Illuminate\Support\Facades\DB;
 
-class ItemTemplateExport implements WithMultipleSheets
+class ItemImport implements ToCollection, WithHeadingRow
 {
-    use Exportable;
-
-    public function sheets(): array
+    public function collection(Collection $rows)
     {
-        return [
-            // SHEET 1: FORM INPUT
-            new class implements FromArray, WithTitle {
-                public function array(): array {
-                    return [[
-                        // 🔥 'Kode Barang' DIHAPUS karena sudah Auto-Generate 🔥
-                        'Nama Barang', 'Kode Kategori', 'Kode Satuan Dasar',
-                        'Barang Stok', 'Aset Tetap', 'Lacak Inventaris',
-                        'Stok Minimum', 'Stok Maksimum', 'Spesifikasi Bawaan'
-                    ]];
-                }
-                public function title(): string { return '1. Form Master Barang'; }
-            },
+        // 1. Tarik master data menggunakan 'code' sebagai key (Karena template sekarang pakai Kode)
+        $categories = Category::pluck('id', 'code')->mapWithKeys(function ($id, $code) {
+            return [strtolower(trim($code)) => $id];
+        })->toArray();
 
-            // SHEET 2: REFERENSI KATEGORI (Dinamic dari Database)
-            new class implements FromCollection, WithHeadings, WithTitle {
-                public function collection() {
-                    // Menampilkan Code dan Name, agar user gampang copy Code-nya
-                    return Category::select('code', 'name')->orderBy('name')->get();
-                }
-                public function headings(): array { return ['KODE KATEGORI (COPAS KE FORM)', 'NAMA KATEGORI']; }
-                public function title(): string { return '2. Referensi Kategori'; }
-            },
+        $uoms = Uom::pluck('id', 'code')->mapWithKeys(function ($id, $code) {
+            return [strtolower(trim($code)) => $id];
+        })->toArray();
 
-            // SHEET 3: REFERENSI UOM (Dinamic dari Database)
-            new class implements FromCollection, WithHeadings, WithTitle {
-                public function collection() {
-                    return Uom::select('code', 'name')->orderBy('code')->get();
-                }
-                public function headings(): array { return ['KODE SATUAN (COPAS KE FORM)', 'NAMA SATUAN']; }
-                public function title(): string { return '3. Referensi UOM'; }
-            },
+        DB::transaction(function () use ($rows, $categories, $uoms) {
+            foreach ($rows as $row) {
 
-            // SHEET 4: PANDUAN PENGISIAN
-            new class implements FromArray, WithHeadings, WithTitle {
-                public function array(): array {
-                    return [
-                        ['Nama Barang', 'WAJIB', 'Cth: Kertas HVS A4 80gr'],
-                        ['Kode Kategori', 'WAJIB', 'Ambil KODE-nya dari Sheet Referensi Kategori (Cth: ATK)'],
-                        ['Kode Satuan Dasar', 'WAJIB', 'Ambil KODE-nya dari Sheet Referensi UOM (Cth: RIM)'],
-                        ['Barang Stok', 'WAJIB', 'Ketik YA jika barang fisik/disimpan. Ketik TIDAK untuk Jasa.'],
-                        ['Aset Tetap', 'WAJIB', 'Ketik YA jika ini adalah aset tetap perusahaan.'],
-                        ['Lacak Inventaris', 'WAJIB', 'Ketik YA jika barang pemegangnya perlu dilacak (S/N).'],
-                        ['Stok Minimum', 'OPSIONAL', 'Hanya angka batas bawah peringatan (Cth: 5)'],
-                        ['Stok Maksimum', 'OPSIONAL', 'Hanya angka batas atas overstock (Cth: 100)'],
-                        ['Spesifikasi Bawaan', 'OPSIONAL', 'Keterangan teknis bawaan pabrik.'],
-                    ];
+                // Abaikan jika nama barang kosong
+                if (empty($row['nama_barang'])) continue;
+
+                // 2. Pencocokan ID berdasarkan KODE dari Excel
+                $catCode = strtolower(trim($row['kode_kategori'] ?? ''));
+                $catId   = $categories[$catCode] ?? null;
+
+                $uomCode = strtolower(trim($row['kode_satuan_dasar'] ?? ''));
+                $uomId   = $uoms[$uomCode] ?? null;
+
+                // 3. Tangkap nilai format baru (Tipe Barang & Y/N)
+                $itemTypeCode = strtoupper(trim($row['kode_tipe_barang_stkastjsa'] ?? 'STK'));
+                $isTrackable  = strtoupper(trim($row['lacak_inventaris_yn'] ?? 'N')) === 'Y' ? 1 : 0;
+                $itemName     = trim($row['nama_barang']);
+
+                // 4. Generate Kode Barang Otomatis (Jika barang adalah barang baru)
+                $item = Item::where('name', $itemName)->first();
+                if (!$item) {
+                    // Logika sederhana penomoran ITM-0001 (Sesuaikan jika Anda punya format sendiri)
+                    $lastItem = Item::orderBy('id', 'desc')->first();
+                    $nextId   = $lastItem ? $lastItem->id + 1 : 1;
+                    $newCode  = 'ITM-' . str_pad($nextId, 4, '0', STR_PAD_LEFT);
+                } else {
+                    $newCode  = $item->code; // Gunakan kode lama jika barang di-update
                 }
-                public function headings(): array { return ['KOLOM', 'SIFAT', 'KETERANGAN']; }
-                public function title(): string { return '4. Panduan'; }
+
+                // 5. Simpan atau Update ke Database menggunakan Nama Barang sebagai acuan
+                Item::updateOrCreate(
+                    ['name' => $itemName], // Acuan mencegah duplikat
+                    [
+                        'code'           => $newCode,
+                        'category_id'    => $catId,
+                        'uom_id'         => $uomId,
+
+                        // 🔥 Format Baru Menggantikan is_stockable dan is_asset 🔥
+                        'item_type_code' => $itemTypeCode,
+
+                        'is_trackable'   => $isTrackable,
+                        'min_stock'      => $row['stok_minimum'] ?: 0,
+                        'max_stock'      => $row['stok_maksimum'] ?: 0,
+                        'specification'  => $row['spesifikasi_bawaan'] ?? null,
+                        'is_active'      => 1, // Default langsung aktif
+                    ]
+                );
             }
-        ];
+        });
     }
 }
+
+
+
+// Catatan Penting untuk Anda:
+// Jika di dalam model Item.php Anda terdapat fungsi
+//  Observer atau Boot yang otomatis mengisi code (Kode Barang) saat proses Create, maka
+//   blok logika Langkah No. 4 di atas bisa Anda sederhanakan atau biarkan saja (ia tidak akan mengganggu
+//   jika kode generate-nya sama).

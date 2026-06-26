@@ -378,9 +378,13 @@ class ItemController extends Controller
     {
         $request->validate([
             'import_file' => 'required|file|mimes:xlsx,xls,csv|max:10240',
-            'attachments' => 'required|array|min:1',
+            // Opsional: Lampiran dibuat nullable, jaga-jaga jika user hanya ingin import Excel saja tanpa dokumen pendukung
+            'attachments' => 'nullable|array',
             'attachments.*' => 'file|mimes:pdf,jpg,jpeg,png|max:5120',
         ]);
+
+        // Siapkan variabel batchNumber di luar try agar bisa diakses oleh catch saat mau dihapus
+        $batchNumber = '';
 
         try {
             DB::beginTransaction();
@@ -388,38 +392,47 @@ class ItemController extends Controller
             // 1. GENERATE NOMOR BATCH (RESET PER HARI)
             $today = now()->format('Ymd');
             $prefix = "IMP-{$today}-";
-            $lastBatch = ItemImportBatch::where('batch_number', 'like', "{$prefix}%")->orderBy('id', 'desc')->first();
+            $lastBatch = \App\Models\ItemImportBatch::where('batch_number', 'like', "{$prefix}%")->orderBy('id', 'desc')->first();
             $nextSeq = $lastBatch ? ((int) substr($lastBatch->batch_number, -3)) + 1 : 1;
             $batchNumber = $prefix . str_pad($nextSeq, 3, '0', STR_PAD_LEFT);
+
+            $batch = \App\Models\ItemImportBatch::create([
+                'batch_number' => $batchNumber,
+                'created_by' => auth()->id(),
+                'status' => 'draft',
+            ]);
 
             // 2. SIMPAN EXCEL ASLI (FOLDER AUDIT)
             $excelFile = $request->file('import_file');
             $excelPath = $excelFile->storeAs("master_item_import/{$batchNumber}/data_upload", $excelFile->getClientOriginalName(), 'public');
 
-            $batch = ItemImportBatch::create([
-                'batch_number' => $batchNumber,
-                'created_by' => Auth::id(),
-                'status' => 'draft',
-            ]);
-
-            // 3. SIMPAN LAMPIRAN
-            foreach ($request->file('attachments') as $file) {
-                $path = $file->storeAs("master_item_import/{$batchNumber}/file_pendukung", $file->getClientOriginalName(), 'public');
-                ItemImportAttachment::create([
-                    'item_import_batch_id' => $batch->id,
-                    'file_name' => $file->getClientOriginalName(),
-                    'file_path' => $path,
-                ]);
+            // 3. SIMPAN LAMPIRAN (JIKA ADA)
+            if ($request->hasFile('attachments')) {
+                foreach ($request->file('attachments') as $file) {
+                    $path = $file->storeAs("master_item_import/{$batchNumber}/file_pendukung", $file->getClientOriginalName(), 'public');
+                    \App\Models\ItemImportAttachment::create([
+                        'item_import_batch_id' => $batch->id,
+                        'file_name' => $file->getClientOriginalName(),
+                        'file_path' => $path,
+                    ]);
+                }
             }
 
             // 4. PARSE EXCEL (HANYA SHEET 1)
-            Excel::import(new ItemStagingImport($batch->id), storage_path("app/public/{$excelPath}"));
+            \Maatwebsite\Excel\Facades\Excel::import(new \App\Exports\ItemStagingImport($batch->id), storage_path("app/public/{$excelPath}"));
 
             DB::commit();
             return redirect()->route('items.import_staging', $batch->id)->with('success', 'Berhasil unggah ke Karantina.');
+
         } catch (\Exception $e) {
             DB::rollBack();
-            return back()->withErrors(['Gagal: ' . $e->getMessage()]);
+
+            // 🔥 PERBAIKAN PENTING: HAPUS FOLDER SAMPAH JIKA IMPORT EXCEL GAGAL 🔥
+            if ($batchNumber) {
+                \Illuminate\Support\Facades\Storage::disk('public')->deleteDirectory("master_item_import/{$batchNumber}");
+            }
+
+            return back()->withErrors(['Gagal memproses file Excel: ' . $e->getMessage()]);
         }
     }
 
