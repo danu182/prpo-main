@@ -144,28 +144,56 @@
                 @canany(['view_invoices', 'view_payments', 'view_bills'])
                 <li class="nav-item dropdown">
                     @php
-                        $debtCount = 0;
-                        if(class_exists('\App\Models\BillRequest')) {
-                            $debtCount = \App\Models\BillRequest::whereHas('status', function($q) {
+                        // 🔥 LOGIKA PINTAR PENGHITUNG NOTIFIKASI 🔥
+                        // 1. Hitung hutang berjalan untuk Vendor Invoices
+                        $apDebtCount = 0;
+                        if(class_exists('\App\Models\PurchaseOrder')) {
+                            $apDebtCount = \App\Models\PurchaseOrder::whereHas('status', function($q) {
                                 $q->whereIn('slug', ['approved', 'partial']);
                             })->count();
                         }
+
+                        // 2. Hitung jumlah Tagihan (OPEX) yang sedang menunggu Approval Anda!
+                        $opexPendingCount = 0;
+                        if(class_exists('\App\Models\DocumentApproval') && auth()->check()) {
+                            $userRoles = auth()->user()->roles->pluck('id')->toArray();
+
+                            $opexQuery = \App\Models\DocumentApproval::where('status', 'PENDING')
+                                ->whereIn('document_type', ['OPEX', 'App\Models\BillRequest', 'BillRequest']);
+
+                            // Jika Super Admin, hitung semua yang pending. Jika bukan, hitung sesuai role.
+                            if (!auth()->user()->hasRole(['Super Administrator', 'Super Admin'])) {
+                                $opexQuery->whereIn('role_id', $userRoles);
+                            }
+
+                            $opexPendingCount = $opexQuery->count();
+                        }
+
+                        // Total badge merah di menu induk
+                        $totalFinanceNotif = $apDebtCount + $opexPendingCount;
                     @endphp
+
                     <a class="nav-link dropdown-toggle {{ request()->routeIs('payments.*', 'vendor-invoices.*', 'bills.*') ? 'active' : '' }}" href="#" role="button" data-bs-toggle="dropdown">
                         Finance
-                        @if($debtCount > 0)
-                            <span class="badge bg-danger rounded-pill ms-1" style="font-size: 0.65rem;">{{ $debtCount }}</span>
+                        @if($totalFinanceNotif > 0)
+                            <span class="badge bg-danger rounded-pill ms-1" style="font-size: 0.65rem;">{{ $totalFinanceNotif }}</span>
                         @endif
                     </a>
                     <ul class="dropdown-menu">
                         <li>
-                            <a class="dropdown-item {{ request()->routeIs('vendor-invoices.*') ? 'active' : '' }}" href="{{ route('vendor-invoices.index') }}">
-                                <i class="bi bi-receipt me-2 text-primary"></i> Tagihan Vendor (A/P)
+                            <a class="dropdown-item d-flex justify-content-between align-items-center {{ request()->routeIs('vendor-invoices.*') ? 'active' : '' }}" href="{{ route('vendor-invoices.index') }}">
+                                <span><i class="bi bi-receipt me-2 text-primary"></i> Tagihan Vendor (A/P)</span>
+                                @if($apDebtCount > 0)
+                                    <span class="badge bg-danger rounded-pill" style="font-size: 0.65rem;">{{ $apDebtCount }}</span>
+                                @endif
                             </a>
                         </li>
                         <li>
-                            <a class="dropdown-item {{ request()->routeIs('bills.*') ? 'active' : '' }}" href="{{ route('bills.index') }}">
-                                <i class="bi bi-file-earmark-spreadsheet me-2 text-info"></i> Pengajuan Opex
+                            <a class="dropdown-item d-flex justify-content-between align-items-center {{ request()->routeIs('bills.*') ? 'active' : '' }}" href="{{ route('bills.index') }}">
+                                <span><i class="bi bi-file-earmark-spreadsheet me-2 text-info"></i> Pengajuan Opex</span>
+                                @if($opexPendingCount > 0)
+                                    <span class="badge bg-danger rounded-pill" style="font-size: 0.65rem;">{{ $opexPendingCount }}</span>
+                                @endif
                             </a>
                         </li>
                         <li><hr class="dropdown-divider"></li>
@@ -178,7 +206,7 @@
                 </li>
                 @endcanany
 
-                {{-- 6. REPORT (Ditambahkan @can pengaman) --}}
+                {{-- 6. REPORT --}}
                 @can('view_reports')
                 <li class="nav-item">
                     <a class="nav-link {{ request()->routeIs('reports.*') ? 'active' : '' }}" href="{{ route('reports.finance') }}">
@@ -187,7 +215,7 @@
                 </li>
                 @endcan
 
-                {{-- 7. SETTINGS (Ditambahkan Workflow & Doc Types) --}}
+                {{-- 7. SETTINGS --}}
                 @can('manage_roles')
                 <li class="nav-item dropdown">
                     <a class="nav-link dropdown-toggle {{ request()->routeIs('users.*', 'roles.*', 'workflows.*', 'document-types.*') ? 'active' : '' }}" href="#" role="button" data-bs-toggle="dropdown">
