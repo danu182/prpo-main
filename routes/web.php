@@ -467,12 +467,19 @@ Route::middleware('auth')->group(function () {
 
     Route::prefix('payments')->name('payments.')->middleware(['can:view_payments'])->group(function () {
         Route::get('/', [BillPaymentController::class, 'index'])->name('index');
-        Route::get('/{id}/process', [BillPaymentController::class, 'process'])->name('process');
-        Route::post('/{id}/store', [BillPaymentController::class, 'store'])->name('store');
-        Route::delete('/{id}', [BillPaymentController::class, 'destroy'])->name('destroy');
-        Route::get('/receipt/{payment_id}/print', [BillPaymentController::class, 'printReceipt'])->name('receipt.print');
-        Route::get('/{bill_id}/statement/print', [BillPaymentController::class, 'printStatement'])->name('statement.print');
+
+        // 🔥 Parameter Slug dipindah ke belakang dan menggunakan regex .* 🔥
+        Route::get('/process/{slug}', [BillPaymentController::class, 'process'])->name('process')->where('slug', '.*');
+        Route::post('/store/{slug}', [BillPaymentController::class, 'store'])->name('store')->where('slug', '.*');
+
+        // Perhatikan: Untuk Hapus & Cetak Kuitansi, kita pakai payment_slug (Nomor Pembayaran)
+        Route::delete('/destroy/{payment_slug}', [BillPaymentController::class, 'destroy'])->name('destroy')->where('payment_slug', '.*');
+        Route::get('/receipt/print/{payment_slug}', [BillPaymentController::class, 'printReceipt'])->name('receipt.print')->where('payment_slug', '.*');
+
+        // Cetak Rekap (Statement) pakai slug Tagihan
+        Route::get('/statement/print/{slug}', [BillPaymentController::class, 'printStatement'])->name('statement.print')->where('slug', '.*');
     });
+
 
     // ====================================================
     // 6. MODUL LAPORAN (REPORT CENTER) - SEKARANG AMAN! 🔒

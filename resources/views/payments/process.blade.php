@@ -47,28 +47,67 @@
                 </div>
 
                 <div class="mb-4 border rounded table-responsive">
-                    <table class="table mb-0 table-sm small">
+                    <div class="mb-4 border rounded shadow-sm table-responsive">
+                    <table class="table mb-0 align-middle table-sm small">
                         <thead class="bg-light text-muted">
                             <tr>
-                                <th>Item</th>
-                                <th class="text-end">Subtotal</th>
+                                <th class="py-2 ps-3">Deskripsi Item / Biaya</th>
+                                <th class="py-2 text-end pe-3">Subtotal</th>
                             </tr>
                         </thead>
                         <tbody>
+                            {{-- 1. Looping Item Utama --}}
                             @foreach($bill->items as $item)
                             <tr>
-                                <td class="py-2">{{ $item->description }} <span class="text-muted">x{{ $item->qty }}</span></td>
-                                <td class="py-2 text-end fw-bold">{{ $bill->currency }} {{ number_format($item->amount, 0, ',', '.') }}</td>
+                                <td class="py-2 ps-3">
+                                    <span class="fw-bold text-dark">{{ $item->name }}</span>
+                                    <span class="badge bg-secondary bg-opacity-10 text-secondary ms-1">x{{ (int)$item->qty }}</span>
+                                    @if($item->description)
+                                        <div class="text-muted" style="font-size: 0.7rem;">{{ $item->description }}</div>
+                                    @endif
+                                </td>
+                                <td class="py-2 text-end fw-bold text-dark pe-3">{{ $bill->currency }} {{ number_format($item->amount, 0, ',', '.') }}</td>
                             </tr>
                             @endforeach
+
+                            {{-- 2. Looping Biaya Tambahan (Bila Ada) --}}
+                            @if($bill->charges->count() > 0)
+                                @foreach($bill->charges as $charge)
+                                <tr>
+                                    <td class="py-2 ps-3 text-muted" style="font-size: 0.75rem;">
+                                        <i class="bi bi-plus-circle me-1"></i> {{ optional($charge->chargeType)->name ?? 'Biaya Tambahan' }}
+                                        @if($charge->note) ({{ $charge->note }}) @endif
+                                    </td>
+                                    <td class="py-2 text-end text-muted pe-3" style="font-size: 0.75rem;">
+                                        + {{ $bill->currency }} {{ number_format($charge->amount, 0, ',', '.') }}
+                                    </td>
+                                </tr>
+                                @endforeach
+                            @endif
+
+                            {{-- 3. Looping Potongan Ekstra (Bila Ada) --}}
+                            @if($bill->discounts->count() > 0)
+                                @foreach($bill->discounts as $discount)
+                                <tr>
+                                    <td class="py-2 ps-3 text-danger" style="font-size: 0.75rem;">
+                                        <i class="bi bi-dash-circle me-1"></i> {{ optional($discount->discountType)->name ?? 'Potongan Ekstra' }}
+                                        @if($discount->note) ({{ $discount->note }}) @endif
+                                    </td>
+                                    <td class="py-2 text-end text-danger pe-3" style="font-size: 0.75rem;">
+                                        - {{ $bill->currency }} {{ number_format($discount->amount, 0, ',', '.') }}
+                                    </td>
+                                </tr>
+                                @endforeach
+                            @endif
                         </tbody>
-                        <tfoot class="bg-light fw-bold text-dark">
+                        <tfoot class="bg-primary bg-opacity-10 fw-bold text-primary">
                             <tr>
-                                <td class="py-2">TOTAL TAGIHAN</td>
-                                <td class="py-2 text-end">{{ $bill->currency }} {{ number_format($bill->amount, 0, ',', '.') }}</td>
+                                <td class="py-3 ps-3 text-uppercase" style="font-size: 0.8rem;">TOTAL TAGIHAN BERSIH</td>
+                                <td class="py-3 text-end fs-6 pe-3">{{ $bill->currency }} {{ number_format($bill->amount, 0, ',', '.') }}</td>
                             </tr>
                         </tfoot>
                     </table>
+                </div>
                 </div>
 
                 @php
@@ -97,7 +136,7 @@
                 <div class="mb-4 border-0 shadow-sm card rounded-4">
                     <div class="card-body">
                         <h6 class="mb-3 fw-bold"><i class="bi bi-filter me-2"></i>Filter Cetak Rekap</h6>
-                        <form action="{{ route('payments.statement.print', $bill->id) }}" method="GET" target="_blank">
+                        <form action="{{ route('payments.statement.print', $bill->bill_number) }}" method="GET" target="_blank">
                             <div class="row g-2">
                                 <div class="col-md-5">
                                     <label class="small text-muted">Dari Tanggal</label>
@@ -130,7 +169,7 @@
                 @php
                     // Ambil history khusus untuk bill ini
                     $logs = \App\Models\History::where('record_type', \App\Models\BillRequest::class)
-                                ->where('record_id', $bill->id)
+                                ->where('record_id', $bill->bill_number)
                                 ->latest()
                                 ->get();
                 @endphp
@@ -198,7 +237,7 @@
                         </div>
                     @endif
 
-                    <form action="{{ route('payments.store', $bill->id) }}" method="POST" enctype="multipart/form-data" id="formPembayaran">
+                    <form action="{{ route('payments.store', $bill->bill_number) }}" method="POST" enctype="multipart/form-data" id="formPembayaran">
                         @csrf
 
 
@@ -263,10 +302,23 @@
                                 <input type="text" name="transaction_reference" id="transactionRefInput" class="form-control" placeholder="No. bukti transfer/cek">
                             </div>
 
+                            {{-- 🔥 PERBAIKAN: Form Upload Dinamis dengan Keterangan 🔥 --}}
                             <div class="col-md-12">
-                                <label class="form-label fw-bold small text-uppercase">Upload Bukti <span class="text-danger">*</span></label>
-                                <input type="file" name="payment_proofs[]" class="form-control @error('payment_proofs') is-invalid @enderror" multiple>
-                                <div class="form-text small">Anda dapat memilih lebih dari satu file (Gambar/PDF).</div>
+                                <label class="form-label fw-bold small text-uppercase">Upload Bukti & Dokumen <span class="text-danger">*</span></label>
+
+                                <div id="dynamicFileContainer">
+                                    <div class="mb-2 input-group file-row">
+                                        <input type="file" name="payment_proofs[]" class="form-control border-primary bg-light" required>
+                                        <input type="text" name="payment_proof_descriptions[]" class="form-control" placeholder="Msl: Bukti Transfer / Faktur..." required>
+                                        <button class="btn btn-outline-danger remove-file" type="button" disabled>
+                                            <i class="bi bi-trash"></i>
+                                        </button>
+                                    </div>
+                                </div>
+
+                                <button type="button" class="mt-1 btn btn-outline-primary btn-sm rounded-pill fw-bold" id="addFileRow">
+                                    <i class="bi bi-plus-lg me-1"></i> Tambah Lampiran Lain
+                                </button>
                             </div>
 
                             <div class="col-md-12">
@@ -309,15 +361,34 @@
                             <div class="col-md-4">
                                 <div class="fw-bold text-success fs-5">{{ $bill->currency }} {{ number_format($history->amount_paid, 0, ',', '.') }}</div>
                                 <div class="small text-muted text-truncate">Ref: {{ $history->transaction_reference ?? '-' }}</div>
+                                {{-- Menampilkan Lampiran & Keterangan (KONSEP CUSTOM) --}}
+                                @php
+                                    // Tarik data dari tabel baru
+                                    $attachments = \DB::table('payment_attachments')->where('bill_payment_id', $history->id)->get();
+                                @endphp
+
+                                @if($attachments->count() > 0)
+                                    <div class="pt-2 mt-2 border-top">
+                                        <span class="mb-2 d-block small fw-bold text-muted">Lampiran:</span>
+                                        @foreach($attachments as $media)
+                                            <a href="{{ asset('storage/' . $media->file_path) }}" target="_blank" class="p-2 mb-1 border badge bg-light text-dark text-decoration-none me-1" style="white-space: normal; text-align: left;">
+                                                <i class="bi bi-paperclip text-primary"></i> {{ $media->file_name }}
+                                                <br><span class="text-muted fw-normal"><i class="bi bi-arrow-return-right"></i> {{ $media->description ?? 'Dokumen Pendukung' }}</span>
+                                            </a>
+                                        @endforeach
+                                    </div>
+                                @endif
                             </div>
                             <div class="col-md-3 text-end">
                                 {{-- Tombol Cetak Kuitansi Satuan --}}
-                                <a href="{{ route('payments.receipt.print', $history->id) }}" target="_blank" class="btn btn-outline-secondary btn-sm rounded-circle" title="Cetak Kuitansi">
+                                <a href="{{ route('payments.receipt.print', $history->payment_number) }}" target="_blank" class="btn btn-outline-secondary btn-sm rounded-circle" title="Cetak Kuitansi">
                                     <i class="bi bi-printer"></i>
                                 </a>
+
+                                {{-- Tombol Batalkan Pembayaran (Void) --}}
                                 <button type="button"
                                         class="p-2 shadow-sm btn btn-outline-danger btn-sm rounded-circle btn-void-payment"
-                                        data-id="{{ $history->id }}"
+                                        data-id="{{ $history->payment_number }}"
                                         data-number="{{ $history->payment_number }}"
                                         title="Batalkan Pembayaran">
                                     <i class="bi bi-trash-fill"></i>
@@ -476,7 +547,8 @@
 
                         // PERBAIKAN PENTING: URL ini harus cocok dengan Route::delete('/{id}') di dalam prefix 'payments'
                         // Hasilnya akan menjadi: domain.com/payments/10
-                        form.action = `/payments/${paymentId}`;
+                        // Arahkan URL ke rute destroy yang baru (menggunakan kata /destroy/ di depannya)
+                        form.action = `/payments/destroy/${paymentId}`;
 
                         // 1. CSRF Token (Wajib di Laravel)
                         const csrfToken = document.querySelector('meta[name="csrf-token"]')
@@ -510,6 +582,40 @@
                 });
             }
         });
+
+
+        // ============================================================
+        // 4. LOGIKA FORM UPLOAD FILE DINAMIS
+        // ============================================================
+        const fileContainer = document.getElementById('dynamicFileContainer');
+        const btnAddFile = document.getElementById('addFileRow');
+
+        if (btnAddFile) {
+            btnAddFile.addEventListener('click', function() {
+                const newRow = document.createElement('div');
+                newRow.className = 'mb-2 input-group file-row';
+                newRow.innerHTML = `
+                    <input type="file" name="payment_proofs[]" class="form-control border-primary bg-light" required>
+                    <input type="text" name="payment_proof_descriptions[]" class="form-control" placeholder="Msl: Bukti Transfer / Faktur..." required>
+                    <button class="btn btn-danger remove-file" type="button">
+                        <i class="bi bi-trash"></i>
+                    </button>
+                `;
+                fileContainer.appendChild(newRow);
+            });
+
+            // Delegasi event untuk tombol hapus baris
+            fileContainer.addEventListener('click', function(e) {
+                if (e.target.closest('.remove-file')) {
+                    const row = e.target.closest('.file-row');
+                    // Jangan izinkan hapus jika hanya tersisa 1 baris
+                    if (fileContainer.querySelectorAll('.file-row').length > 1) {
+                        row.remove();
+                    }
+                }
+            });
+        }
+
 
     });
 </script>

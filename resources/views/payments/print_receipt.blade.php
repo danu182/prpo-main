@@ -4,133 +4,112 @@
     <meta charset="UTF-8">
     <title>Kuitansi Pembayaran - {{ $payment->payment_number }}</title>
     <style>
-        body {
-            font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
-            font-size: 14px;
-            color: #333;
-            line-height: 1.5;
-        }
-        .header {
-            text-align: center;
-            border-bottom: 2px solid #000;
-            padding-bottom: 10px;
-            margin-bottom: 30px;
-        }
-        .title {
-            font-size: 22px;
-            font-weight: bold;
-            letter-spacing: 1px;
-        }
-        .subtitle {
-            color: #666;
-            font-size: 14px;
-        }
-        table {
-            width: 100%;
-            border-collapse: collapse;
-            margin-bottom: 20px;
-        }
-        th, td {
-            padding: 10px;
-            text-align: left;
-            vertical-align: top;
-        }
-        .label {
-            font-weight: bold;
-            width: 30%;
-        }
-        .separator {
-            width: 5%;
-            text-align: center;
-            font-weight: bold;
-        }
-        .amount-box {
-            background-color: #f8f9fa;
-            border: 2px dashed #ccc;
-            padding: 20px;
-            text-align: center;
-            font-size: 28px;
-            font-weight: bold;
-            color: #198754;
-            border-radius: 10px;
-            margin-top: 30px;
-        }
-        .footer {
-            margin-top: 60px;
-            width: 100%;
-        }
-        .signature-box {
-            float: right;
-            width: 30%;
-            text-align: center;
-        }
-        .signature-line {
-            margin-top: 80px;
-            border-bottom: 1px solid #000;
-        }
-        .clear {
-            clear: both;
-        }
+        body { font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; font-size: 10pt; color: #333; margin: 0; padding: 20px; }
+
+        /* 🔥 Watermark Lunas 🔥 */
+        .watermark { position: fixed; top: 35%; left: 10%; width: 80%; text-align: center; font-size: 80pt; font-weight: bold; text-transform: uppercase; color: rgba(34, 197, 94, 0.08); transform: rotate(-30deg); z-index: -1000; }
+
+        /* Header Modern */
+        .header-table { width: 100%; border-bottom: 3px double #0d6efd; padding-bottom: 15px; margin-bottom: 30px; }
+        .company-name { font-size: 18pt; font-weight: 900; color: #0d6efd; text-transform: uppercase; margin: 0; }
+        .doc-title { font-size: 22pt; font-weight: 900; text-align: right; color: #1e293b; text-transform: uppercase; margin: 0; letter-spacing: 2px; }
+        .receipt-no { text-align: right; font-size: 10pt; color: #64748b; font-weight: bold; margin-top: 5px; }
+
+        /* Tabel Konten Rapi */
+        .content-table { width: 100%; border-collapse: collapse; margin-bottom: 30px; }
+        .content-table td { padding: 14px 10px; border-bottom: 1px solid #e2e8f0; vertical-align: middle; }
+        .label { font-weight: bold; color: #475569; width: 25%; text-transform: uppercase; font-size: 9pt; letter-spacing: 0.5px; }
+        .separator { width: 3%; text-align: center; font-weight: bold; color: #94a3b8; }
+        .value { font-size: 11pt; color: #0f172a; font-weight: 500; }
+
+        /* Kotak Nominal Mewah */
+        .amount-container { margin-top: 20px; margin-bottom: 50px; text-align: right; }
+        .amount-box { display: inline-block; background-color: #f0fdf4; border: 2px solid #22c55e; padding: 15px 40px; font-size: 24pt; font-weight: 900; color: #16a34a; border-radius: 8px; box-shadow: 4px 4px 0px rgba(34, 197, 94, 0.2); }
+        .amount-label { display: block; font-size: 10pt; color: #15803d; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 8px; text-align: right; margin-right: 5px; font-weight: bold;}
+
+        /* Area Tanda Tangan Ganda */
+        .signature-table { width: 100%; margin-top: 50px; text-align: center; table-layout: fixed; }
+        .signature-table td { width: 50%; vertical-align: bottom; }
+        .sign-line { border-top: 1px solid #333; width: 60%; margin: 0 auto; margin-top: 80px; padding-top: 5px; font-weight: bold; font-size: 10pt; }
+        .sign-role { font-size: 9pt; color: #64748b; margin-top: 2px; }
     </style>
 </head>
 <body>
 
-    <div class="header">
-        <div class="title">BUKTI PEMBAYARAN (KUITANSI)</div>
-        <div class="subtitle">No. Referensi: {{ $payment->payment_number }}</div>
-    </div>
+    <div class="watermark">PAID / LUNAS</div>
 
-    <table>
+    <table class="header-table">
         <tr>
-            <td class="label">Tanggal Pembayaran</td>
-            <td class="separator">:</td>
-            <td>{{ \Carbon\Carbon::parse($payment->payment_date)->format('d F Y') }}</td>
+            <td width="50%">
+                <h1 class="company-name">{{ $payment->paidByCompany->name ?? 'Perusahaan Internal' }}</h1>
+                <p style="margin: 5px 0 0 0; color: #64748b; font-size: 9pt;">Bukti Pembayaran / Official Receipt</p>
+            </td>
+            <td width="50%">
+                <h2 class="doc-title">KUITANSI</h2>
+                <div class="receipt-no">NO. REF: {{ $payment->payment_number }}</div>
+            </td>
         </tr>
+    </table>
+
+    <table class="content-table">
         <tr>
-            <td class="label">Telah Terima Dari</td>
+            <td class="label">Tanggal Bayar</td>
             <td class="separator">:</td>
-            <td>{{ $payment->paidByCompany->name ?? '-' }}</td>
+            <td class="value">{{ \Carbon\Carbon::parse($payment->payment_date)->format('d F Y') }}</td>
         </tr>
         <tr>
             <td class="label">Dibayarkan Kepada</td>
             <td class="separator">:</td>
-            <td>{{ $payment->billRequest->vendor_name ?? '-' }}</td>
+            <td class="value"><strong style="font-size: 13pt;">{{ $payment->billRequest->vendor_name ?? '-' }}</strong></td>
         </tr>
         <tr>
-            <td class="label">Metode Pembayaran</td>
+            <td class="label">Guna Pembayaran</td>
             <td class="separator">:</td>
-            <td>{{ $payment->paymentMethod->name ?? '-' }}
-                @if($payment->transaction_reference)
-                    <br><small>(Ref: {{ $payment->transaction_reference }})</small>
-                @endif
+            <td class="value">
+                Pembayaran Tagihan OPEX No. <strong>{{ $payment->billRequest->bill_number ?? '-' }}</strong>
+                <br><span style="font-size: 9pt; color: #64748b; font-weight: normal;">(Deskripsi: {{ $payment->billRequest->title ?? '-' }})</span>
             </td>
         </tr>
         <tr>
-            <td class="label">Untuk Pembayaran</td>
+            <td class="label">Metode Bayar</td>
             <td class="separator">:</td>
-            <td>Tagihan Opex No. {{ $payment->billRequest->bill_number ?? '-' }}</td>
+            <td class="value">
+                {{ $payment->paymentMethod->name ?? '-' }}
+                @if($payment->transaction_reference)
+                    <span style="background-color: #e2e8f0; padding: 3px 10px; border-radius: 4px; font-size: 8pt; margin-left: 10px; font-weight: bold; color: #475569;">Ref: {{ $payment->transaction_reference }}</span>
+                @endif
+            </td>
         </tr>
         @if($payment->note)
         <tr>
-            <td class="label">Catatan / Keterangan</td>
+            <td class="label">Keterangan / Note</td>
             <td class="separator">:</td>
-            <td>{{ $payment->note }}</td>
+            <td class="value" style="font-style: italic; color: #475569;">"{{ $payment->note }}"</td>
         </tr>
         @endif
     </table>
 
-    <div class="amount-box">
-        {{ $payment->billRequest->currency ?? 'IDR' }} {{ number_format($payment->amount_paid, 0, ',', '.') }}
+    <div class="amount-container">
+        <span class="amount-label">Sejumlah Uang</span>
+        <div class="amount-box">
+            {{ $payment->billRequest->currency ?? 'IDR' }} {{ number_format($payment->amount_paid, 0, ',', '.') }}
+        </div>
     </div>
 
-    <div class="footer">
-        <div class="signature-box">
-            <p>Finance / Kasir,</p>
-            <div class="signature-line"></div>
-            <p style="margin-top: 5px;">( Nama Terang & Tanda Tangan )</p>
-        </div>
-        <div class="clear"></div>
-    </div>
+    <table class="signature-table">
+        <tr>
+            <td>
+                <p style="margin-bottom: 10px; font-weight: bold; color: #475569;">Penerima (Vendor),</p>
+                <div class="sign-line">{{ $payment->billRequest->vendor_name ?? '-' }}</div>
+                <p class="sign-role">Tanda Tangan & Cap Perusahaan</p>
+            </td>
+            <td>
+                <p style="margin-bottom: 10px; font-weight: bold; color: #475569;">Pembayar (Finance),</p>
+                <div class="sign-line">{{ $payment->paidByCompany->name ?? 'Finance Dept' }}</div>
+                <p class="sign-role">Authorized Signature</p>
+            </td>
+        </tr>
+    </table>
 
 </body>
 </html>

@@ -49,6 +49,11 @@ class SystemSettingSeeder extends Seeder
                 'setting_value' => 'attachments/opex',
                 'description' => 'Folder penyimpanan file lampiran bills opex'
             ],
+            [
+                'setting_key' => 'path_payment_opex',
+                'setting_value' => 'attachments/payment_opex',
+                'description' => 'Folder penyimpanan file lampiran payment_opex'
+            ],
 
         ];
 

@@ -182,8 +182,8 @@
 
                         // Tentukan Status untuk Pencarian
                         $statusText = 'BARU';
-                        if($bill->status == 'PAID') $statusText = 'LUNAS';
-                        elseif($bill->status == 'PARTIAL') $statusText = 'CICILAN';
+                        if(strtoupper(optional($bill->status)->slug ?? '') == 'PAID') $statusText = 'LUNAS';
+                        elseif(strtoupper(optional($bill->status)->slug ?? '') == 'PARTIAL') $statusText = 'CICILAN';
 
                         // Generator Warna Avatar Random berdasarkan Huruf Pertama
                         $colors = ['#3b82f6', '#ef4444', '#10b981', '#f59e0b', '#8b5cf6', '#ec4899'];
@@ -194,7 +194,8 @@
                     <tr class="{{ $isOverdue ? 'overdue-row' : 'normal-row' }}">
                         {{-- Kolom 1: Info Tagihan --}}
                         <td class="py-3 ps-4">
-                            <a href="{{ route('payments.process', $bill->id) }}" class="mb-1 fw-bold text-decoration-none text-primary d-block">
+                            {{-- 🔥 PERBAIKAN: Gunakan $bill->bill_number 🔥 --}}
+                            <a href="{{ route('payments.process', $bill->bill_number) }}" class="mb-1 fw-bold text-decoration-none text-primary d-block">
                                 {{ $bill->bill_number }}
                             </a>
                             <div class="small text-muted d-flex align-items-center">
@@ -238,7 +239,7 @@
                                 </span>
                             </div>
                             <div class="progress" style="height: 6px; border-radius: 10px; background-color: #e2e8f0;">
-                                <div class="progress-bar {{ $percent == 100 ? 'bg-success' : 'bg-primary' }}"
+                                <div class="progress-bar {{ $percent >= 100 ? 'bg-success' : 'bg-primary' }}"
                                      role="progressbar"
                                      style="width: {{ $percent }}%; border-radius: 10px;"
                                      aria-valuenow="{{ $percent }}" aria-valuemin="0" aria-valuemax="100">
@@ -260,11 +261,13 @@
                         {{-- Kolom 6: Aksi Dinamis --}}
                         <td class="py-3 text-center pe-4">
                             @if($remaining > 0)
-                                <a href="{{ route('payments.process', $bill->id) }}" class="px-3 shadow-sm btn btn-sm btn-primary rounded-pill fw-bold">
+                                {{-- 🔥 PERBAIKAN: Gunakan $bill->bill_number 🔥 --}}
+                                <a href="{{ route('payments.process', $bill->bill_number) }}" class="px-3 shadow-sm btn btn-sm btn-primary rounded-pill fw-bold">
                                     Bayar <i class="bi bi-arrow-right ms-1"></i>
                                 </a>
                             @else
-                                <a href="{{ route('payments.process', $bill->id) }}" class="px-3 border btn btn-sm btn-light rounded-pill fw-bold text-secondary">
+                                {{-- 🔥 PERBAIKAN: Gunakan $bill->bill_number 🔥 --}}
+                                <a href="{{ route('payments.process', $bill->bill_number) }}" class="px-3 border btn btn-sm btn-light rounded-pill fw-bold text-secondary">
                                     <i class="bi bi-eye me-1"></i> Detail
                                 </a>
                             @endif
