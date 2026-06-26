@@ -441,21 +441,29 @@ Route::middleware('auth')->group(function () {
 
 
 
+    // ====================================================
+    // 5. MODUL FINANCE (A/P, BILLS, PAYMENTS)
+    // ====================================================
     Route::prefix('bills')->name('bills.')->middleware(['can:view_bills'])->group(function () {
         Route::get('/', [BillRequestController::class, 'index'])->name('index');
         Route::get('/create', [BillRequestController::class, 'create'])->name('create');
         Route::post('/', [BillRequestController::class, 'store'])->name('store');
-        Route::get('/{bill}', [BillRequestController::class, 'show'])->name('show');
-        Route::get('/{bill}/edit', [BillRequestController::class, 'edit'])->name('edit');
-        Route::put('/{bill}', [BillRequestController::class, 'update'])->name('update');
-        Route::delete('/{bill}', [BillRequestController::class, 'destroy'])->name('destroy');
 
-        Route::post('/{id}/approve', [BillRequestController::class, 'approve'])->name('approve');
-        Route::post('/{id}/reject', [BillRequestController::class, 'reject'])->name('reject');
-        Route::post('/{id}/pay', [BillRequestController::class, 'markAsPaid'])->name('markAsPaid');
-        Route::delete('/{id}/attachment/{mediaId}', [BillRequestController::class, 'destroyAttachment'])->name('destroyAttachment');
-        Route::get('/{id}/print', [BillRequestController::class, 'printPdf'])->name('print');
+        // 🔥 PREFIKS AKSI DI DEPAN: Mengamankan URL dari Kerakusan Regex (Mencegah 404) 🔥
+        Route::get('/detail/{slug}', [BillRequestController::class, 'show'])->name('show')->where('slug', '.*');
+        Route::get('/edit/{slug}', [BillRequestController::class, 'edit'])->name('edit')->where('slug', '.*');
+        Route::put('/update/{slug}', [BillRequestController::class, 'update'])->name('update')->where('slug', '.*');
+        Route::delete('/destroy/{slug}', [BillRequestController::class, 'destroy'])->name('destroy')->where('slug', '.*');
+
+        Route::post('/approve/{slug}', [BillRequestController::class, 'approve'])->name('approve')->where('slug', '.*');
+        Route::post('/reject/{slug}', [BillRequestController::class, 'reject'])->name('reject')->where('slug', '.*');
+        Route::post('/pay/{slug}', [BillRequestController::class, 'markAsPaid'])->name('markAsPaid')->where('slug', '.*');
+
+        Route::delete('/attachment/{slug}/{mediaId}', [BillRequestController::class, 'destroyAttachment'])->name('destroyAttachment')->where('slug', '.*');
+        Route::get('/print/{slug}', [BillRequestController::class, 'printPdf'])->name('print')->where('slug', '.*');
     });
+
+
 
     Route::prefix('payments')->name('payments.')->middleware(['can:view_payments'])->group(function () {
         Route::get('/', [BillPaymentController::class, 'index'])->name('index');

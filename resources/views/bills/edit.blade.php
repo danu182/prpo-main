@@ -15,7 +15,7 @@
     {{-- HEADER --}}
     <div class="mb-4 d-flex align-items-center justify-content-between">
         <div class="d-flex align-items-center">
-            <a href="{{ route('bills.show', $bill->id) }}" class="bg-white border shadow-sm btn btn-white rounded-circle me-3 text-warning hover-light" style="width: 45px; height: 45px; display: flex; align-items: center; justify-content: center;">
+            <a href="{{ route('bills.show', $bill->bill_number) }}" class="bg-white border shadow-sm btn btn-white rounded-circle me-3 text-warning hover-light" style="width: 45px; height: 45px; display: flex; align-items: center; justify-content: center;">
                 <i class="bi bi-arrow-left fs-5"></i>
             </a>
             <div>
@@ -35,7 +35,7 @@
         </div>
     @endif
 
-    <form action="{{ route('bills.update', $bill->id) }}" method="POST" enctype="multipart/form-data" id="billForm">
+    <form action="{{ route('bills.update', $bill->bill_number) }}" method="POST" enctype="multipart/form-data" id="billForm">
         @csrf
         @method('PUT')
 
@@ -277,19 +277,31 @@
                     <div class="p-4 pt-0 card-body">
 
                         {{-- List File Lama --}}
-                        @if($bill->getMedia('bill_attachments')->count() > 0)
-                            <div class="mb-3 border alert alert-light">
-                                <label class="mb-2 small text-muted fw-bold d-block"><i class="bi bi-info-circle me-1"></i>File Saat Ini (Centang untuk menghapus):</label>
-                                <div class="row g-2">
-                                    @foreach($bill->getMedia('bill_attachments') as $media)
+                        @if($attachments->count() > 0)
+                            <div class="p-3 mb-4 border alert alert-light rounded-4">
+                                <label class="mb-3 small text-muted fw-bold d-block"><i class="bi bi-info-circle me-1"></i>File Saat Ini (Centang kotak merah untuk menghapus dan akan terhapus pada saat klik Update Tagihan):</label>
+                                <div class="row g-3">
+                                    @foreach($attachments as $file)
                                         <div class="col-md-6">
-                                            <div class="p-2 bg-white border rounded shadow-sm form-check">
-                                                <input class="form-check-input ms-1 me-2" type="checkbox" name="delete_media[]" value="{{ $media->id }}" id="media_{{ $media->id }}">
-                                                <label class="align-middle form-check-label w-75" for="media_{{ $media->id }}">
-                                                    <a href="{{ $media->getUrl() }}" target="_blank" class="text-decoration-none fw-bold text-dark text-truncate d-block">
-                                                        <i class="bi bi-file-earmark-text me-1 text-primary"></i> {{ $media->file_name }}
+                                            <div class="p-2 bg-white border border-opacity-25 shadow-sm border-secondary rounded-4 d-flex align-items-center">
+
+                                                {{-- CHECKBOX HAPUS --}}
+                                                <div class="form-check ms-2 me-3">
+                                                    <input class="form-check-input border-danger" type="checkbox" name="delete_media[]" value="{{ $file->id }}" id="media_{{ $file->id }}" style="transform: scale(1.3); cursor: pointer;">
+                                                </div>
+
+                                                <label class="align-middle form-check-label w-100" for="media_{{ $file->id }}" style="cursor: pointer;">
+                                                    <a href="{{ asset('storage/' . $file->file_path) }}" target="_blank" class="text-decoration-none fw-bold text-dark text-truncate d-block" style="max-width: 200px;">
+                                                        @if(Str::endsWith(strtolower($file->file_name), ['.jpg', '.jpeg', '.png']))
+                                                            <i class="bi bi-file-image fs-5 me-1 text-primary"></i>
+                                                        @elseif(Str::endsWith(strtolower($file->file_name), ['.pdf']))
+                                                            <i class="bi bi-file-pdf fs-5 me-1 text-danger"></i>
+                                                        @else
+                                                            <i class="bi bi-file-earmark-text fs-5 me-1 text-secondary"></i>
+                                                        @endif
+                                                        {{ $file->file_name }}
                                                     </a>
-                                                    <small class="mt-1 d-block text-danger">Hapus file ini?</small>
+                                                    <small class="mt-1 d-block text-danger fw-semibold"><i class="bi bi-trash"></i> Hapus file ini</small>
                                                 </label>
                                             </div>
                                         </div>
@@ -300,7 +312,7 @@
 
                         {{-- Input File Baru --}}
                         <div id="attachmentContainer"></div>
-                        <button type="button" class="mt-1 btn btn-outline-secondary btn-sm rounded-pill" id="addFile">
+                        <button type="button" class="mt-2 btn btn-outline-primary btn-sm rounded-pill fw-bold" id="addFile">
                             <i class="bi bi-plus-lg me-1"></i> Upload File Baru
                         </button>
                     </div>
@@ -340,7 +352,7 @@
                         <button type="button" id="btnSubmitForm" class="py-3 shadow-sm btn btn-warning w-100 rounded-pill fw-bold text-dark">
                             <i class="bi bi-save2 fs-5 me-2"></i> Update Tagihan
                         </button>
-                        <a href="{{ route('bills.show', $bill->id) }}" class="mt-2 btn btn-light w-100 rounded-pill fw-bold text-muted">Batal Edit</a>
+                        <a href="{{ route('bills.show', $bill->bill_number) }}" class="mt-2 btn btn-light w-100...
                     </div>
                 </div>
             </div>
@@ -511,9 +523,14 @@ $(document).ready(function() {
 
     $(document).on('input', '.qty, .tax-select', calculate);
 
-    $('#btnSubmitForm').click(function() {
+    // 10. Submit Konfirmasi (Anti-Silent Crash)
+    $('#btnSubmitForm').click(function(e) {
+        e.preventDefault();
+        let btn = $(this);
         const form = document.getElementById('billForm');
-        if (!form.checkValidity()) { form.reportValidity(); return; }
+
+        // KITA BYPASS NATIVE HTML5 VALIDATION KARENA BENTROK DENGAN SELECT2
+        // Jika ada data yang kosong, Controller Laravel akan otomatis menolaknya dan memunculkan error merah di atas layar.
 
         Swal.fire({
             title: 'Update Tagihan?',
@@ -526,7 +543,7 @@ $(document).ready(function() {
             reverseButtons: true
         }).then((result) => {
             if (result.isConfirmed) {
-                $(this).prop('disabled', true).html('<span class="spinner-border spinner-border-sm me-2"></span> Menyimpan...');
+                btn.prop('disabled', true).html('<span class="spinner-border spinner-border-sm me-2"></span> Menyimpan...');
                 Swal.fire({ title: 'Memproses Perubahan...', allowOutsideClick: false, didOpen: () => { Swal.showLoading(); } });
                 form.submit();
             }

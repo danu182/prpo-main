@@ -116,7 +116,7 @@
                     @endphp
                     <tr class="{{ $isOverdue ? 'overdue-row bg-danger bg-opacity-10' : 'normal-row' }}">
                         <td class="px-4 py-3">
-                            <a href="{{ route('bills.show', $bill->id) }}" class="mb-1 fw-bold text-decoration-none text-primary d-block">
+                            <a href="{{ route('bills.show', $bill->bill_number) }}" class="mb-1 fw-bold text-decoration-none text-primary d-block">
                                 {{ $bill->bill_number }}
                             </a>
                             <div class="small text-muted">
@@ -162,12 +162,12 @@
                                 </button>
                                 <ul class="py-2 border-0 shadow dropdown-menu dropdown-menu-end rounded-3">
                                     <li>
-                                        <a class="py-2 dropdown-item" href="{{ route('bills.show', $bill->id) }}">
+                                        <a class="py-2 dropdown-item" href="{{ route('bills.show', $bill->bill_number) }}">
                                             <i class="bi bi-eye me-2 text-primary"></i> Lihat Detail
                                         </a>
                                     </li>
                                     <li>
-                                        <a class="py-2 dropdown-item" href="{{ route('bills.print', $bill->id) }}" target="_blank">
+                                        <a class="py-2 dropdown-item" href="{{ route('bills.print', $bill->bill_number) }}" target="_blank">
                                             <i class="bi bi-printer me-2 text-dark"></i> Cetak Dokumen
                                         </a>
                                     </li>
@@ -176,12 +176,12 @@
                                     @if(in_array($statusSlug, ['pending', 'draft', 'rejected']))
                                         <li><hr class="dropdown-divider"></li>
                                         <li>
-                                            <a class="py-2 dropdown-item" href="{{ route('bills.edit', $bill->id) }}">
+                                            <a class="py-2 dropdown-item" href="{{ route('bills.edit', $bill->bill_number) }}">
                                                 <i class="bi bi-pencil me-2 text-warning"></i> Edit Tagihan
                                             </a>
                                         </li>
                                         <li>
-                                            <form action="{{ route('bills.destroy', $bill->id) }}" method="POST" class="form-delete">
+                                            <form action="{{ route('bills.destroy', $bill->bill_number) }}" method="POST" class="form-delete">
                                                 @csrf
                                                 @method('DELETE')
                                                 <button type="button" class="py-2 dropdown-item text-danger btn-delete">
@@ -194,7 +194,7 @@
                                     @if(in_array($statusSlug, ['approved', 'partial']))
                                         <li><hr class="dropdown-divider"></li>
                                         <li>
-                                            <a class="py-2 dropdown-item fw-bold text-success" href="{{ route('payments.process', $bill->id) }}">
+                                            <a class="py-2 dropdown-item fw-bold text-success" href="{{ route('payments.process', $bill->bill_number) }}">
                                                 <i class="bi bi-cash-coin me-2"></i> Input Pembayaran
                                             </a>
                                         </li>

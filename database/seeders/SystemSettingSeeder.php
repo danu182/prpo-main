@@ -44,7 +44,12 @@ class SystemSettingSeeder extends Seeder
                 'setting_value' => 'attachments/rtv',
                 'description' => 'Folder penyimpanan file lampiran RTV'
             ],
-            
+            [
+                'setting_key' => 'path_bills_opex',
+                'setting_value' => 'attachments/opex',
+                'description' => 'Folder penyimpanan file lampiran bills opex'
+            ],
+
         ];
 
 

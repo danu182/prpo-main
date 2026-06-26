@@ -33,12 +33,12 @@
 
             {{-- PERBAIKAN: Gunakan statusSlug --}}
             @if(in_array($statusSlug, ['pending', 'draft']))
-                <a href="{{ route('bills.edit', $bill->id) }}" class="btn btn-warning rounded-pill text-dark fw-bold">
+                <a href="{{ route('bills.edit', $bill->bill_number) }}" class="btn btn-warning rounded-pill text-dark fw-bold">
                     <i class="bi bi-pencil me-1"></i> Edit Tagihan
                 </a>
             @endif
 
-            <a href="{{ route('bills.print', $bill->id) }}" target="_blank" class="shadow-sm btn btn-dark rounded-pill fw-bold">
+            <a href="{{ route('bills.print', $bill->bill_number) }}" target="_blank" class="shadow-sm btn btn-dark rounded-pill fw-bold">
                 <i class="bi bi-printer me-1"></i> Cetak PDF Resmi
             </a>
         </div>
@@ -209,27 +209,29 @@
             </div>
 
             {{-- LAMPIRAN FILE --}}
-            @if($bill->getMedia('bill_attachments')->count() > 0)
+            @if($attachments->count() > 0)
             <div class="mb-4 border-0 shadow-sm card rounded-4">
                 <div class="p-4 card-body">
                     <h6 class="mb-3 fw-bold"><i class="bi bi-paperclip me-2 text-primary"></i>Lampiran Dokumen Bukti</h6>
                     <div class="row g-3">
-                        @foreach($bill->getMedia('bill_attachments') as $media)
+                        @foreach($attachments as $file)
                         <div class="col-md-6">
-                            <a href="{{ $media->getUrl() }}" target="_blank" class="text-decoration-none">
+                            {{-- Gunakan asset('storage/...') untuk memanggil path lokal --}}
+                            <a href="{{ asset('storage/' . $file->file_path) }}" target="_blank" class="text-decoration-none">
                                 <div class="p-3 border rounded-4 bg-light d-flex align-items-center hover-shadow">
                                     <div class="p-2 bg-white shadow-sm rounded-circle me-3">
-                                        @if(in_array($media->mime_type, ['image/jpeg', 'image/png', 'image/jpg']))
+                                        {{-- Deteksi ekstensi file sederhana --}}
+                                        @if(Str::endsWith(strtolower($file->file_name), ['.jpg', '.jpeg', '.png']))
                                             <i class="bi bi-file-image fs-4 text-primary"></i>
-                                        @elseif($media->mime_type == 'application/pdf')
+                                        @elseif(Str::endsWith(strtolower($file->file_name), ['.pdf']))
                                             <i class="bi bi-file-pdf fs-4 text-danger"></i>
                                         @else
                                             <i class="bi bi-file-earmark-text fs-4 text-secondary"></i>
                                         @endif
                                     </div>
                                     <div class="overflow-hidden">
-                                        <div class="fw-bold text-dark text-truncate" title="{{ $media->file_name }}">{{ $media->file_name }}</div>
-                                        <small class="text-muted">{{ $media->human_readable_size }}</small>
+                                        <div class="fw-bold text-dark text-truncate" title="{{ $file->file_name }}">{{ $file->file_name }}</div>
+                                        <small class="text-muted">Klik untuk melihat</small>
                                     </div>
                                 </div>
                             </a>
@@ -301,38 +303,52 @@
         {{-- KOLOM KANAN: SUMMARY --}}
         <div class="col-lg-4">
 
-            {{-- 🔥 PERBAIKAN FINAL: Logika Approval "Dewa" untuk Super Admin 🔥 --}}
+            {{-- 🔥 PERBAIKAN MUTLAK: TOMBOL APPROVAL PASTI MUNCUL 🔥 --}}
             @php
-                // 1. Cari antrean persetujuan SEKARANG (PENDING urutan pertama)
+                // 1. Cari Antrean PENDING untuk dokumen ini (Cari pakai 2 tipe data untuk amannya)
                 $currentApproval = \App\Models\DocumentApproval::with('role')
                     ->where('document_id', $bill->id)
-                    ->whereIn('document_type', [get_class($bill), 'OPEX', 'App\Models\BillRequest'])
+                    ->whereIn('document_type', ['App\Models\BillRequest', 'OPEX', 'BillRequest', get_class($bill)])
                     ->where('status', 'PENDING')
                     ->orderBy('step_order', 'asc')
                     ->first();
 
-                $canApprove = false;
-                if ($currentApproval) {
-                    $userRoleNames = auth()->user()->getRoleNames()->toArray();
-                    $userRoleIds = auth()->user()->roles->pluck('id')->toArray();
+                // 2. Cek Siapa yang sedang Login
+                $userRoleNames = auth()->user()->getRoleNames()->toArray();
+                $userRoleIds = auth()->user()->roles->pluck('id')->toArray();
 
-                    // 2. Tampilkan tombol JIKA: User punya Role yang diminta ATAU User adalah Super Admin
-                    if (in_array($currentApproval->role_id, $userRoleIds) ||
-                        in_array('Super Administrator', $userRoleNames) ||
-                        in_array('Super Admin', $userRoleNames)) {
+                // 3. Apakah dia Super Admin? (Malaikat Penolong)
+                $isSuperAdmin = in_array('Super Administrator', $userRoleNames) || in_array('Super Admin', $userRoleNames) || auth()->id() === 1;
+
+                // 4. Logika Penentu Muncul/Tidaknya Tombol
+                $canApprove = false;
+
+                if ($currentApproval) {
+                    // JIKA ADA ANTREAN: Cek apakah ID Jabatannya cocok, ATAU dia adalah Super Admin
+                    if (in_array($currentApproval->role_id, $userRoleIds) || $isSuperAdmin) {
+                        $canApprove = true;
+                    }
+                } else {
+                    // JIKA ANTREAN KOSONG/RUSAK: Super Admin akan selalu bisa melihat tombol ini (Bypass Mode)
+                    if ($isSuperAdmin) {
                         $canApprove = true;
                     }
                 }
             @endphp
 
-            @if(in_array($statusSlug, ['pending', 'partial_approved']) && $canApprove)
+            @if(in_array($statusSlug, ['pending', 'partial_approved', 'draft']) && $canApprove)
             <div class="mb-4 border border-0 shadow-sm card rounded-4 border-warning">
                 <div class="p-4 card-body bg-warning-subtle rounded-4">
-                    <h6 class="mb-2 fw-bold text-dark"><i class="bi bi-shield-lock-fill me-2 text-warning"></i>Tindakan Persetujuan</h6>
+                    <h6 class="mb-2 fw-bold text-dark">
+                        <i class="bi bi-shield-lock-fill me-2 text-warning"></i>Tindakan Persetujuan
+                        @if(!$currentApproval && $isSuperAdmin)
+                            <span class="badge bg-danger ms-2" style="font-size: 0.6rem;">BYPASS MODE</span>
+                        @endif
+                    </h6>
                     <p class="mb-4 small text-muted">Silakan tinjau tagihan ini. Status tagihan akan berubah dan tidak dapat dibatalkan setelah diproses.</p>
 
                     <div class="gap-2 d-grid">
-                        <form action="{{ route('bills.approve', $bill->id) }}" method="POST" id="form-approve">
+                        <form action="{{ route('bills.approve', $bill->bill_number) }}" method="POST" id="form-approve">
                             @csrf
                             <button type="button" class="py-2 shadow-sm btn btn-success w-100 fw-bold rounded-pill" id="btn-approve">
                                 <i class="bi bi-check-circle-fill me-2"></i> SETUJUI (APPROVE)
@@ -463,7 +479,7 @@
 <div class="modal fade" id="rejectModal" tabindex="-1" aria-hidden="true">
     <div class="modal-dialog modal-dialog-centered">
         <div class="border-0 shadow-lg modal-content rounded-4">
-            <form action="{{ route('bills.reject', $bill->id) }}" method="POST">
+            <form action="{{ route('bills.reject', $bill->bill_number) }}" method="POST">
                 @csrf
                 <div class="pb-0 border-0 modal-header">
                     <h5 class="modal-title fw-bold text-danger"><i class="bi bi-exclamation-circle-fill me-2"></i>Tolak Tagihan</h5>

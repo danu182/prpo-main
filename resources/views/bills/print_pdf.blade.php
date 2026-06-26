@@ -5,6 +5,25 @@
     <title>Tagihan OPEX - {{ $bill->bill_number }}</title>
     <style>
         body { font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; font-size: 10pt; color: #333; margin: 0; padding: 20px; }
+
+        /* 🔥 WATERMARK CSS (KHUSUS DOMPDF) 🔥 */
+        .watermark {
+            position: fixed;
+            top: 30%;
+            left: 5%;
+            width: 90%;
+            text-align: center;
+            font-size: 80pt;
+            font-weight: bold;
+            text-transform: uppercase;
+            color: rgba(255, 0, 0, 0.15); /* Merah Transparan */
+            transform: rotate(-45deg);
+            z-index: -1000;
+        }
+        .watermark-paid {
+            color: rgba(0, 128, 0, 0.15); /* Hijau Transparan */
+        }
+
         .header-table { width: 100%; border-bottom: 2px solid #0056b3; padding-bottom: 10px; margin-bottom: 20px; }
         .header-table td { vertical-align: middle; }
         .company-name { font-size: 16pt; font-weight: bold; color: #0056b3; text-transform: uppercase; margin: 0; }
@@ -26,16 +45,30 @@
         .summary-table .bold td { font-weight: bold; color: #000; }
         .summary-table .total td { font-weight: bold; font-size: 12pt; border-top: 2px solid #0056b3; border-bottom: 2px solid #0056b3; color: #0056b3; background-color: #f4f8ff; }
 
-        .signature-table { width: 100%; margin-top: 80px; text-align: center; }
-        .signature-table td { width: 33%; vertical-align: bottom; }
-        .sign-line { border-top: 1px solid #000; width: 70%; margin: 0 auto; margin-top: 60px; padding-top: 5px; font-weight: bold; }
+        .signature-table { width: 100%; margin-top: 80px; text-align: center; table-layout: fixed; }
+        .signature-table td { vertical-align: bottom; padding: 0 10px; }
+        .sign-line { border-top: 1px solid #000; width: 90%; margin: 0 auto; margin-top: 60px; padding-top: 5px; font-weight: bold; font-size: 9pt; }
 
         .clearfix { clear: both; }
-        .status-stamp { color: red; border: 3px solid red; display: inline-block; padding: 5px 15px; font-weight: bold; font-size: 14pt; transform: rotate(-10deg); margin-bottom: 10px; }
-        .status-paid { color: green; border-color: green; }
+        .status-stamp { display: inline-block; padding: 5px 15px; font-weight: bold; font-size: 14pt; transform: rotate(-10deg); margin-bottom: 10px; border: 3px solid; }
+        .stamp-rejected { color: red; border-color: red; }
+        .stamp-paid { color: green; border-color: green; }
+        .stamp-approved { color: #0056b3; border-color: #0056b3; }
     </style>
 </head>
 <body>
+
+    @php
+        // Deteksi Status Slug (Anti Gagal)
+        $statusSlug = strtolower(optional($bill->status)->slug ?? $bill->status);
+    @endphp
+
+    {{-- 🔥 WATERMARK BACKGROUND 🔥 --}}
+    @if(in_array($statusSlug, ['rejected', 'canceled']))
+        <div class="watermark">REJECTED</div>
+    @elseif(in_array($statusSlug, ['paid']))
+        <div class="watermark watermark-paid">LUNAS / PAID</div>
+    @endif
 
     <table class="header-table">
         <tr>
@@ -69,12 +102,12 @@
     </table>
 
     <div style="text-align: center; margin-bottom: 15px;">
-        @if($bill->status == 'PAID')
-            <div class="status-stamp status-paid">LUNAS / PAID</div>
-        @elseif($bill->status == 'REJECTED')
-            <div class="status-stamp">DITOLAK / REJECTED</div>
-        @elseif($bill->status == 'APPROVED')
-            <div class="status-stamp" style="color: #0056b3; border-color: #0056b3;">DISETUJUI / APPROVED</div>
+        @if(in_array($statusSlug, ['paid']))
+            <div class="status-stamp stamp-paid">LUNAS / PAID</div>
+        @elseif(in_array($statusSlug, ['rejected', 'canceled']))
+            <div class="status-stamp stamp-rejected">DITOLAK / REJECTED</div>
+        @elseif(in_array($statusSlug, ['approved']))
+            <div class="status-stamp stamp-approved">DISETUJUI / APPROVED</div>
         @endif
     </div>
 
@@ -110,11 +143,8 @@
             </tr>
             @endforeach
 
-            {{-- Munculkan Biaya Tambahan di tabel utama agar menyatu --}}
             @if($bill->charges->count() > 0)
-                <tr>
-                    <td colspan="5" style="background-color: #f9f9f9; font-weight: bold; font-size: 8pt;">BIAYA TAMBAHAN (CHARGES)</td>
-                </tr>
+                <tr><td colspan="5" style="background-color: #f9f9f9; font-weight: bold; font-size: 8pt;">BIAYA TAMBAHAN (CHARGES)</td></tr>
                 @foreach($bill->charges as $charge)
                 <tr>
                     <td></td>
@@ -124,11 +154,8 @@
                 @endforeach
             @endif
 
-            {{-- Munculkan Potongan di tabel utama --}}
             @if($bill->discounts->count() > 0)
-                <tr>
-                    <td colspan="5" style="background-color: #f9f9f9; font-weight: bold; font-size: 8pt; color: red;">POTONGAN / DISKON EKSTRA</td>
-                </tr>
+                <tr><td colspan="5" style="background-color: #f9f9f9; font-weight: bold; font-size: 8pt; color: red;">POTONGAN / DISKON EKSTRA</td></tr>
                 @foreach($bill->discounts as $discount)
                 <tr>
                     <td></td>
@@ -178,24 +205,65 @@
 
     <div class="clearfix"></div>
 
-    {{-- KOLOM TANDA TANGAN --}}
+    {{-- 🔥 LOGIKA TANDA TANGAN DINAMIS (Berdasarkan Matriks Workflow) 🔥 --}}
+    @php
+        // 1. Tarik Data Antrean Approval dari Database
+        $approvals = \App\Models\DocumentApproval::with('role')
+            ->where('document_id', $bill->id)
+            ->whereIn('document_type', [get_class($bill), 'OPEX', 'App\Models\BillRequest'])
+            ->orderBy('step_order', 'asc')
+            ->get();
+
+        // 2. Hitung total kolom (1 Pembuat + Jumlah Approver di Matriks)
+        $totalColumns = 1 + $approvals->count();
+
+        // 3. Set Lebar Persentase (Mencegah tabel rusak)
+        $colWidth = (100 / $totalColumns) . '%';
+    @endphp
+
     <table class="signature-table">
         <tr>
-            <td>
+            {{-- Kolom 1 Pasti Pembuat (Requestor) --}}
+            <td style="width: {{ $colWidth }};">
                 <p style="margin-bottom: 50px;">Dibuat Oleh,</p>
-                <div class="sign-line">{{ $bill->user->name ?? 'Admin Finance' }}</div>
+                <div class="sign-line">{{ $bill->user->name ?? 'Admin System' }}</div>
                 <p style="font-size: 8pt; color: #666; margin-top: 2px;">Pemohon / Requestor</p>
+                <p style="font-size: 7pt; color: #999;">(Tersubmit di Sistem)</p>
             </td>
-            <td>
-                <p style="margin-bottom: 50px;">Diperiksa Oleh,</p>
-                <div class="sign-line">Manajer Keuangan</div>
-                <p style="font-size: 8pt; color: #666; margin-top: 2px;">Finance / Accounting</p>
+
+            {{-- Kolom Berikutnya Dilooping dari Workflow --}}
+            @foreach($approvals as $approval)
+            <td style="width: {{ $colWidth }};">
+                <p style="margin-bottom: 50px;">
+                    @if($loop->last) Disetujui Oleh, @else Diperiksa Oleh, @endif
+                </p>
+
+                <div class="sign-line">
+                    @if($approval->status == 'APPROVED')
+                        {{-- Ambil Nama Orang yang Meng-ACC --}}
+                        {{ \App\Models\User::find($approval->approved_by)->name ?? optional($approval->role)->name }}
+                    @else
+                        {{-- Jika belum di-ACC, tampilkan Jabatannya --}}
+                        {{ optional($approval->role)->name ?? 'Atasan' }}
+                    @endif
+                </div>
+
+                <p style="font-size: 8pt; color: #666; margin-top: 2px;">
+                    @if($approval->status == 'APPROVED')
+                        <span style="color: green;">Telah Disetujui</span>
+                    @elseif($approval->status == 'REJECTED')
+                        <span style="color: red;">Ditolak</span>
+                    @else
+                        Menunggu Persetujuan
+                    @endif
+                </p>
+
+                {{-- Timestamp jika sudah diproses --}}
+                @if($approval->approved_at)
+                    <p style="font-size: 7pt; color: #999; margin: 0;">{{ date('d/m/Y H:i', strtotime($approval->approved_at)) }}</p>
+                @endif
             </td>
-            <td>
-                <p style="margin-bottom: 50px;">Disetujui Oleh,</p>
-                <div class="sign-line">Direktur Operasional</div>
-                <p style="font-size: 8pt; color: #666; margin-top: 2px;">Management</p>
-            </td>
+            @endforeach
         </tr>
     </table>
 
