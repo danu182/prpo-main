@@ -1190,17 +1190,28 @@ class BillRequestController extends Controller
                 'note'        => "Tagihan {$billNumber} berhasil dibuat dengan nilai {$currency} " . number_format($grandTotal, 0, ',', '.')
             ]);
 
-            // 🔥 PERBAIKAN: Gunakan Tipe Dokumen yang Sama Dengan Tabel Workflow ('OPEX')
-        $workflow = \DB::table('approval_workflows')
-            ->where('document_type', 'OPEX') // Pastikan di master matriks tipenya OPEX
-            ->where('is_active', 1)->first();
+            // =========================================================================
+            // 11. 🔥 GENERATE MATRIKS APPROVAL (WORKFLOW DINAMIS - BULLETPROOF) 🔥
+            // =========================================================================
+            // Cari workflow dengan berbagai kemungkinan nama
+            $workflow = \DB::table('approval_workflows')
+                ->whereIn('document_type', [get_class($bill), 'App\Models\BillRequest', 'OPEX', 'BillRequest'])
+                ->where('is_active', 1)
+                ->first();
 
             if ($workflow) {
-                // Ambil langkah (steps) berdasarkan nominal tagihan (amount)
+                // Ambil langkah berdasarkan nominal tagihan
                 $steps = \DB::table('approval_workflow_steps')
                     ->where('approval_workflow_id', $workflow->id)
                     ->where('min_amount', '<=', $bill->amount)
                     ->orderBy('step_order', 'asc')->get();
+
+                // 🔥 ANTI BUGS MULTI-CURRENCY: Jika kosong karena nilai SGD 11 terlalu kecil dibanding IDR, paksa ambil step terendah! 🔥
+                if ($steps->isEmpty()) {
+                    $steps = \DB::table('approval_workflow_steps')
+                        ->where('approval_workflow_id', $workflow->id)
+                        ->orderBy('step_order', 'asc')->get();
+                }
 
                 foreach ($steps as $step) {
                     \App\Models\DocumentApproval::create([
@@ -1208,6 +1219,19 @@ class BillRequestController extends Controller
                         'document_type' => get_class($bill),
                         'role_id'       => $step->role_id,
                         'step_order'    => $step->step_order,
+                        'status'        => 'PENDING'
+                    ]);
+                }
+            } else {
+                // 🔥 JALUR DARURAT (FALLBACK): Jika Anda belum buat Master Workflow untuk BillRequest di Menu Admin 🔥
+                // Sistem akan otomatis melempar dokumen ini ke Super Admin / Director agar tidak tersangkut.
+                $fallbackRole = \DB::table('roles')->whereIn('name', ['Super Administrator', 'Super Admin', 'Director', 'Manager'])->first();
+                if ($fallbackRole) {
+                    \App\Models\DocumentApproval::create([
+                        'document_id'   => $bill->id,
+                        'document_type' => get_class($bill),
+                        'role_id'       => $fallbackRole->id,
+                        'step_order'    => 1,
                         'status'        => 'PENDING'
                     ]);
                 }

@@ -29,7 +29,7 @@ class ApprovalWorkflowSeeder extends Seeder
         $workflowPR = ApprovalWorkflow::updateOrCreate(
             ['document_type' => 'App\Models\PurchaseRequest'], // Model yang diikat
             [
-                'name'      => 'Matriks Persetujuan PR (3 Lapis)',
+                'name'      => 'Matriks Persetujuan PR (1 Lapis)',
                 'is_active' => true
             ]
         );
@@ -44,7 +44,7 @@ class ApprovalWorkflowSeeder extends Seeder
             'role_id'              => $roleSupervisor->id,
         ]);
 
-      
+
 
         // ===================================================================
         // 3. MATRIKS UNTUK PURCHASE ORDER (PO) -> 1 LAPIS SAJA (Misalnya)
@@ -52,7 +52,35 @@ class ApprovalWorkflowSeeder extends Seeder
         $workflowPO = ApprovalWorkflow::updateOrCreate(
             ['document_type' => 'App\Models\PurchaseOrder'], // Model yang diikat
             [
-                'name'      => 'Matriks Persetujuan PO (Hanya Direktur)',
+                'name'      => 'Matriks Persetujuan PO (2 Lapis)',
+                'is_active' => true
+            ]
+        );
+
+        $workflowPO->steps()->delete();
+
+        // Lapis 1 menager
+        ApprovalWorkflowStep::create([
+            'approval_workflow_id' => $workflowPO->id,
+            'step_order'           => 1,
+            'role_id'              => $roleManager->id,
+        ]);
+
+        // Lapis 3: Direktur final
+        ApprovalWorkflowStep::create([
+            'approval_workflow_id' => $workflowPO->id,
+            'step_order'           => 2,
+            'role_id'              => $roleDirektur->id,
+        ]);
+
+
+        // ===================================================================
+        // 4. MATRIKS UNTUK Bills Opex -> 2 LAPIS SAJA (Misalnya)
+        // ===================================================================
+        $workflowPO = ApprovalWorkflow::updateOrCreate(
+            ['document_type' => 'App\Models\BillRequest'], // Model yang diikat
+            [
+                'name'      => 'Matriks Persetujuan Bills Opex (2 Lapis)',
                 'is_active' => true
             ]
         );

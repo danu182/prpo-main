@@ -19,7 +19,12 @@ class DocumentTypeSeeder extends Seeder
                 'name'        => 'Purchase Order (PO)',
                 'model_class' => 'App\Models\PurchaseOrder',
                 'is_active'   => true,
-            ]
+            ],
+            [
+                'name'        => 'Bills Opex',
+                'model_class' => 'App\Models\BillRequest',
+                'is_active'   => true,
+            ],
         ];
 
         foreach ($documents as $doc) {

@@ -301,17 +301,31 @@
         {{-- KOLOM KANAN: SUMMARY --}}
         <div class="col-lg-4">
 
-            {{-- 🔥 PERBAIKAN: Munculkan panel ini selama user masih ada di antrean persetujuan 🔥 --}}
+            {{-- 🔥 PERBAIKAN FINAL: Logika Approval "Dewa" untuk Super Admin 🔥 --}}
             @php
-                $myApproval = \App\Models\DocumentApproval::where('document_id', $bill->id)
-                                ->where('document_type', get_class($bill))
-                                ->where('status', 'PENDING')
-                                ->whereHas('role', function($q) {
-                                    $q->whereIn('name', auth()->user()->getRoleNames());
-                                })->first();
+                // 1. Cari antrean persetujuan SEKARANG (PENDING urutan pertama)
+                $currentApproval = \App\Models\DocumentApproval::with('role')
+                    ->where('document_id', $bill->id)
+                    ->whereIn('document_type', [get_class($bill), 'OPEX', 'App\Models\BillRequest'])
+                    ->where('status', 'PENDING')
+                    ->orderBy('step_order', 'asc')
+                    ->first();
+
+                $canApprove = false;
+                if ($currentApproval) {
+                    $userRoleNames = auth()->user()->getRoleNames()->toArray();
+                    $userRoleIds = auth()->user()->roles->pluck('id')->toArray();
+
+                    // 2. Tampilkan tombol JIKA: User punya Role yang diminta ATAU User adalah Super Admin
+                    if (in_array($currentApproval->role_id, $userRoleIds) ||
+                        in_array('Super Administrator', $userRoleNames) ||
+                        in_array('Super Admin', $userRoleNames)) {
+                        $canApprove = true;
+                    }
+                }
             @endphp
 
-            @if(in_array($statusSlug, ['pending', 'partial_approved']) && $myApproval)
+            @if(in_array($statusSlug, ['pending', 'partial_approved']) && $canApprove)
             <div class="mb-4 border border-0 shadow-sm card rounded-4 border-warning">
                 <div class="p-4 card-body bg-warning-subtle rounded-4">
                     <h6 class="mb-2 fw-bold text-dark"><i class="bi bi-shield-lock-fill me-2 text-warning"></i>Tindakan Persetujuan</h6>
