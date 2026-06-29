@@ -386,6 +386,11 @@ Route::middleware('auth')->group(function () {
         // 🔥 PERBAIKAN: Gembok ->except() DIBUANG agar halaman Create & Edit bisa diakses! 🔥
         Route::resource('/', \App\Http\Controllers\ItemController::class)->parameters(['' => 'item']);
 
+        // tambahan untuk approval
+        // tambahan untuk approval (Hapus awalan items. karena sudah ada di group)
+        Route::post('/import/submit-approval/{batch_id}', [\App\Http\Controllers\ItemController::class, 'submitApproval'])->name('import.submit_approval');
+        Route::post('/import/decide/{batch_id}', [\App\Http\Controllers\ItemController::class, 'decide'])->name('import.decide');
+
 
 
     });

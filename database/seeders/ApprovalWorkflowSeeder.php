@@ -24,7 +24,7 @@ class ApprovalWorkflowSeeder extends Seeder
 
 
         // ===================================================================
-        // 2. MATRIKS UNTUK PURCHASE REQUEST (PR) -> 3 LAPIS
+        // 2. MATRIKS UNTUK PURCHASE REQUEST (PR) -> 1 LAPIS
         // ===================================================================
         $workflowPR = ApprovalWorkflow::updateOrCreate(
             ['document_type' => 'App\Models\PurchaseRequest'], // Model yang diikat
@@ -47,7 +47,7 @@ class ApprovalWorkflowSeeder extends Seeder
 
 
         // ===================================================================
-        // 3. MATRIKS UNTUK PURCHASE ORDER (PO) -> 1 LAPIS SAJA (Misalnya)
+        // 3. MATRIKS UNTUK PURCHASE ORDER (PO) -> 2 LAPIS
         // ===================================================================
         $workflowPO = ApprovalWorkflow::updateOrCreate(
             ['document_type' => 'App\Models\PurchaseOrder'], // Model yang diikat
@@ -59,14 +59,14 @@ class ApprovalWorkflowSeeder extends Seeder
 
         $workflowPO->steps()->delete();
 
-        // Lapis 1 menager
+        // Lapis 1: Manager
         ApprovalWorkflowStep::create([
             'approval_workflow_id' => $workflowPO->id,
             'step_order'           => 1,
             'role_id'              => $roleManager->id,
         ]);
 
-        // Lapis 3: Direktur final
+        // Lapis 2: Direktur final
         ApprovalWorkflowStep::create([
             'approval_workflow_id' => $workflowPO->id,
             'step_order'           => 2,
@@ -75,9 +75,9 @@ class ApprovalWorkflowSeeder extends Seeder
 
 
         // ===================================================================
-        // 4. MATRIKS UNTUK Bills Opex -> 2 LAPIS SAJA (Misalnya)
+        // 4. MATRIKS UNTUK Bills Opex -> 2 LAPIS
         // ===================================================================
-        $workflowPO = ApprovalWorkflow::updateOrCreate(
+        $workflowOpex = ApprovalWorkflow::updateOrCreate(
             ['document_type' => 'App\Models\BillRequest'], // Model yang diikat
             [
                 'name'      => 'Matriks Persetujuan Bills Opex (2 Lapis)',
@@ -85,20 +85,42 @@ class ApprovalWorkflowSeeder extends Seeder
             ]
         );
 
-        $workflowPO->steps()->delete();
+        $workflowOpex->steps()->delete();
 
-        // Lapis 1 menager
+        // Lapis 1: Manager
         ApprovalWorkflowStep::create([
-            'approval_workflow_id' => $workflowPO->id,
+            'approval_workflow_id' => $workflowOpex->id,
             'step_order'           => 1,
             'role_id'              => $roleManager->id,
         ]);
 
-        // Lapis 3: Direktur final
+        // Lapis 2: Direktur final
         ApprovalWorkflowStep::create([
-            'approval_workflow_id' => $workflowPO->id,
+            'approval_workflow_id' => $workflowOpex->id,
             'step_order'           => 2,
             'role_id'              => $roleDirektur->id,
+        ]);
+
+
+        // ===================================================================
+        // 5. 🔥 MATRIKS BARU: IMPORT MASTER ITEM (1 LAPIS) 🔥
+        // ===================================================================
+        $workflowItemImport = ApprovalWorkflow::updateOrCreate(
+            ['document_type' => 'App\Models\ItemImportBatch'], // Model yang diikat
+            [
+                'name'      => 'Matriks Persetujuan Master Item (1 Lapis)',
+                'is_active' => true
+            ]
+        );
+
+        $workflowItemImport->steps()->delete();
+
+        // Lapis 1: Manager (Bisa Anda sesuaikan menjadi Supervisor atau Direktur)
+        ApprovalWorkflowStep::create([
+            'approval_workflow_id' => $workflowItemImport->id,
+            'step_order'           => 1,
+            'role_id'              => $roleManager->id,
+            'min_amount'           => 0.00 // Master item tidak pakai batasan nominal
         ]);
 
 

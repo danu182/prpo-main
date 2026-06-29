@@ -25,6 +25,11 @@ class DocumentTypeSeeder extends Seeder
                 'model_class' => 'App\Models\BillRequest',
                 'is_active'   => true,
             ],
+            [
+                'name'        => 'Bills Opex',
+                'model_class' => 'App\Models\ItemImportBatch',
+                'is_active'   => true,
+            ],
         ];
 
         foreach ($documents as $doc) {
