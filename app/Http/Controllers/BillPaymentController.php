@@ -170,8 +170,11 @@ class BillPaymentController extends Controller
 
             // 4. Update Status Tagihan
             $totalPaidNow = $totalPaidBefore + $request->amount_paid;
+            $isLunas = false; // Penanda apakah ini pelunasan
+
             if ($totalPaidNow >= $bill->amount) {
                 $bill->status_id = $this->getStatusId('paid');
+                $isLunas = true; // Set penanda menjadi True
 
                 // Logika Recurring
                 if ($bill->is_recurring) {
@@ -184,17 +187,21 @@ class BillPaymentController extends Controller
             }
             $bill->save();
 
-            // 5. Simpan History
+            // 5. Simpan History secara Dinamis
             $curr = $bill->currency;
-            $payerName = \App\Models\Company::find($request->paid_by_company_id)->name;
+
+            // 🔥 PERBAIKAN: Teks log mengikuti status lunas / belum
+            $actionTitle = $isLunas ? 'Pembayaran Lunas' : 'Pembayaran Termin (Cicilan)';
 
             \App\Models\History::create([
                 'user_id'     => auth()->id(),
                 'record_type' => \App\Models\BillRequest::class,
                 'record_id'   => $bill->id,
-                'action'      => 'Melakukan Pembayaran Termin',
+                'action'      => $actionTitle,
                 'note'        => "Via: {$method->name} | Ref: {$autoNumber} | {$curr} " . number_format($request->amount_paid)
             ]);
+
+            \DB::commit();
 
             \DB::commit();
             return redirect()->route('payments.index')->with('success', "Pembayaran berhasil. No Ref: $autoNumber");
@@ -291,4 +298,73 @@ class BillPaymentController extends Controller
 
         return $pdf->stream($fileName);
     }
+
+
+    public function voidPayment(Request $request, $payment_id)
+    {
+        // 1. Gembok fitur ini hanya untuk Manager & Super Admin
+        if (!auth()->user()->hasAnyRole(['super-admin', 'manager', 'Super Administrator'])) {
+            abort(403, 'Anda tidak memiliki wewenang membatalkan pembayaran.');
+        }
+
+        $request->validate([
+            'void_reason' => 'required|string|min:10'
+        ]);
+
+        DB::beginTransaction();
+        try {
+            $payment = \App\Models\BillPayment::findOrFail($payment_id);
+            $bill = \App\Models\BillRequest::findOrFail($payment->bill_request_id);
+
+            // 2. Kembalikan status Bill menjadi Unpaid / Approved
+            $statusUnpaid = \App\Models\Status::where('type', 'BILLS')->where('slug', 'approved')->first();
+            $bill->update(['status_id' => $statusUnpaid->id]);
+
+            // 3. Catat di Riwayat (Audit Trail) SIAPA yang membatalkan dan ALASANNYA
+            \App\Models\BillHistory::create([
+                'bill_request_id' => $bill->id,
+                'user_id'         => auth()->id(),
+                'action'          => 'Pembayaran Dibatalkan',
+                'note'            => 'Nominal Rp ' . number_format($payment->amount, 0, ',', '.') . ' dibatalkan. Alasan: ' . $request->void_reason
+            ]);
+
+            // 4. Hapus data pembayaran (Atau ubah statusnya jadi 'void' jika pakai SoftDeletes)
+            $payment->delete();
+
+            DB::commit();
+            return back()->with('success', 'Pembayaran berhasil dibatalkan. Tagihan kembali berstatus Belum Dibayar.');
+        } catch (\Exception $e) {
+            DB::rollBack();
+            return back()->with('error', 'Gagal membatalkan pembayaran: ' . $e->getMessage());
+        }
+    }
+
+    public function addLateAttachment(Request $request, $payment_id)
+    {
+        $request->validate([
+            'attachment' => 'required|file|mimes:pdf,jpg,jpeg,png|max:5120',
+            'note'       => 'nullable|string'
+        ]);
+
+        try {
+            $payment = \App\Models\BillPayment::findOrFail($payment_id);
+
+            // Simpan file baru
+            $file = $request->file('attachment');
+            $path = $file->storeAs("bills_payment/{$payment->id}", $file->getClientOriginalName(), 'public');
+
+            // Masukkan ke database lampiran pembayaran
+            \App\Models\BillPaymentAttachment::create([
+                'bill_payment_id' => $payment->id,
+                'file_name'       => $file->getClientOriginalName(),
+                'file_path'       => $path,
+                'note'            => $request->note
+            ]);
+
+            return back()->with('success', 'Lampiran susulan berhasil ditambahkan!');
+        } catch (\Exception $e) {
+            return back()->with('error', 'Gagal mengunggah lampiran: ' . $e->getMessage());
+        }
+    }
+
 }

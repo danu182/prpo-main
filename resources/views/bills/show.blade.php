@@ -375,6 +375,37 @@
             </div>
             @endif
 
+
+            {{-- 🔥 FITUR SKENARIO 1 & 2: MUNCUL JIKA STATUS LUNAS (PAID) 🔥 --}}
+            @if(in_array(strtolower($statusSlug), ['paid', 'lunas']) || strtoupper($bill->status) === 'PAID')
+            <div class="mb-4 border border-0 shadow-sm card rounded-4 border-success">
+                <div class="p-4 card-body bg-success-subtle rounded-4">
+                    <h6 class="mb-2 fw-bold text-success">
+                        <i class="bi bi-check-circle-fill me-2"></i>Tagihan Lunas (Paid)
+                    </h6>
+                    <p class="mb-4 small text-muted">Tambahkan bukti transfer susulan jika tertinggal. Pembatalan hanya bisa dilakukan oleh Atasan.</p>
+
+                    <div class="gap-2 d-grid">
+                        <button type="button" class="py-2 shadow-sm btn btn-success w-100 fw-bold rounded-pill" data-bs-toggle="modal" data-bs-target="#uploadSusulanModal">
+                            <i class="bi bi-cloud-upload me-2"></i> Upload Bukti Susulan
+                        </button>
+
+                        @php
+                            $userRoles = auth()->user()->getRoleNames()->toArray();
+                            $canVoid = in_array('Super Administrator', $userRoles) || in_array('Super Admin', $userRoles) || in_array('manager', array_map('strtolower', $userRoles)) || auth()->id() === 1;
+                        @endphp
+
+                        @if($canVoid)
+                            <button type="button" class="py-2 bg-white shadow-sm btn btn-outline-danger w-100 fw-bold rounded-pill" data-bs-toggle="modal" data-bs-target="#voidPaymentModal">
+                                <i class="bi bi-x-octagon-fill me-2"></i> Batalkan Pembayaran (Void)
+                            </button>
+                        @endif
+                    </div>
+                </div>
+            </div>
+            @endif
+
+
             {{-- KARTU TOTAL HARGA --}}
             <div class="mb-4 overflow-hidden text-white border-0 shadow card rounded-4 bg-primary position-relative">
                 <div class="top-0 p-3 opacity-25 position-absolute end-0">

@@ -7,6 +7,10 @@ use App\Models\ApprovalWorkflow;
 use App\Models\ApprovalWorkflowStep;
 use Spatie\Permission\Models\Role;
 
+
+
+
+
 class ApprovalWorkflowSeeder extends Seeder
 {
     /**
@@ -121,6 +125,27 @@ class ApprovalWorkflowSeeder extends Seeder
             'step_order'           => 1,
             'role_id'              => $roleManager->id,
             'min_amount'           => 0.00 // Master item tidak pakai batasan nominal
+        ]);
+
+
+        // ===================================================================
+        // 6. MATRIKS UNTUK IMPORT FIXED ASSET (1 LAPIS)
+        // ===================================================================
+        $workflowAssetImport = ApprovalWorkflow::updateOrCreate(
+            ['document_type' => 'App\Models\FixedAssetImportBatch'],
+            [
+                'name'      => 'Matriks Persetujuan Import Aset (1 Lapis)',
+                'is_active' => true
+            ]
+        );
+
+        $workflowAssetImport->steps()->delete();
+
+        ApprovalWorkflowStep::create([
+            'approval_workflow_id' => $workflowAssetImport->id,
+            'step_order'           => 1,
+            'role_id'              => $roleManager->id, // Bisa diganti roleDirektur
+            'min_amount'           => 0.00
         ]);
 
 

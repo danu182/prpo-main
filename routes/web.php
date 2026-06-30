@@ -143,6 +143,8 @@ Route::middleware('auth')->group(function () {
     // ====================================================
     // 4. MODUL WAREHOUSE & INVENTORY
     // ====================================================
+
+
     // Aset Tetap
     Route::prefix('fixed-assets')->name('fixed-assets.')->middleware(['can:view_assets'])->group(function () {
 
@@ -156,10 +158,11 @@ Route::middleware('auth')->group(function () {
         Route::get('/{id}/bapa', [FixedAssetController::class, 'printBapa'])->name('bapa');
         Route::get('/{id}/bapp', [FixedAssetController::class, 'printBapp'])->name('bapp');
 
-        // // 🔥 TAMBAHKAN 2 BARIS INI UNTUK IMPORT EXCEL 🔥
-        // Route::post('/import/preview', [FixedAssetController::class, 'previewImport'])->name('preview_import');
-        // Route::post('/import', [FixedAssetController::class, 'import'])->name('import');
-        // Route::get('/template/download', [FixedAssetController::class, 'downloadTemplate'])->name('download_template');
+        // Rute Karantina Aset Tetap (Cukup ketik nama akhirnya saja)
+        Route::get('/import-staging/{batch_id}', [\App\Http\Controllers\FixedAssetController::class, 'importStaging'])->name('import_staging');
+        Route::post('/import/submit-approval/{batch_id}', [\App\Http\Controllers\FixedAssetController::class, 'submitApproval'])->name('submit_approval');
+        Route::post('/import/decide/{batch_id}', [\App\Http\Controllers\FixedAssetController::class, 'decide'])->name('decide');
+        Route::delete('/import-staging/{batch_id}/cancel', [\App\Http\Controllers\FixedAssetController::class, 'cancelImport'])->name('cancel_import');
 
 
         // 🔥 RUTE IMPORT DENGAN PREVIEW (PASTIKAN ADA 3 BARIS INI) 🔥
@@ -466,6 +469,13 @@ Route::middleware('auth')->group(function () {
 
         Route::delete('/attachment/{slug}/{mediaId}', [BillRequestController::class, 'destroyAttachment'])->name('destroyAttachment')->where('slug', '.*');
         Route::get('/print/{slug}', [BillRequestController::class, 'printPdf'])->name('print')->where('slug', '.*');
+
+
+        // Tambahan untuk Fitur Skenario 1 (Lampiran Susulan) & Skenario 2 (Void Pembayaran)
+        Route::post('/{slug}/add-attachment', [\App\Http\Controllers\BillRequestController::class, 'addLateAttachment'])->name('bills.add_attachment');
+        Route::post('/{slug}/void-payment', [\App\Http\Controllers\BillRequestController::class, 'voidPayment'])->name('bills.void_payment');
+
+
     });
 
 

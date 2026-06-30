@@ -161,18 +161,18 @@
 
                 {{-- audit trail star --}}
                 <div class="mt-4 border-0 shadow-sm card rounded-4">
-        <div class="py-3 bg-white card-header">
-            <h6 class="mb-0 fw-bold text-secondary"><i class="bi bi-journal-text me-2"></i>Audit Trail (Log Aktivitas)</h6>
-        </div>
-        <div class="card-body">
-            <div class="timeline-small">
-                @php
-                    // Ambil history khusus untuk bill ini
-                    $logs = \App\Models\History::where('record_type', \App\Models\BillRequest::class)
-                                ->where('record_id', $bill->bill_number)
-                                ->latest()
-                                ->get();
-                @endphp
+                <div class="py-3 bg-white card-header">
+                    <h6 class="mb-0 fw-bold text-secondary"><i class="bi bi-journal-text me-2"></i>Audit Trail (Log Aktivitas)</h6>
+                </div>
+                <div class="card-body">
+                <div class="timeline-small">
+                    @php
+                        // 🔥 PERBAIKAN: Gunakan $bill->id, BUKAN $bill->bill_number
+                        $logs = \App\Models\History::where('record_type', \App\Models\BillRequest::class)
+                                    ->where('record_id', $bill->id)
+                                    ->latest()
+                                    ->get();
+                    @endphp
 
                 @forelse($logs as $log)
                     <div class="mb-3 d-flex">

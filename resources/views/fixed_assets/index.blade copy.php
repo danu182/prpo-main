@@ -517,7 +517,8 @@
 <div class="modal fade" id="modalImportAset" tabindex="-1">
     <div class="modal-dialog modal-dialog-centered">
         <div class="overflow-hidden border-0 shadow-lg modal-content rounded-4">
-            <form action="{{ route('fixed-assets.preview_import') }}" method="POST" enctype="multipart/form-data">
+            {{-- PASTIKAN BARIS INI TERTULIS process_import --}}
+            <form action="{{ route('fixed-assets.process_import') }}" method="POST" enctype="multipart/form-data">
                 @csrf
                 <div class="px-4 pt-3 pb-3 text-white border-0 modal-header bg-success">
                     <h5 class="modal-title fw-bold"><i class="bi bi-file-earmark-excel me-2"></i> Import Master Aset</h5>

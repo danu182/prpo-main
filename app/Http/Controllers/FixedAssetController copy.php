@@ -274,158 +274,158 @@ class FixedAssetController extends Controller
     // =========================================================================
     // 1. FUNGSI PREVIEW: Membaca Excel (Mata Uang & Gudang ditarik dari Excel)
     // =========================================================================
-    public function previewImport(Request $request)
-    {
-        // 🔥 VALIDASI DILONGGARKAN AGAR TIDAK DITENDANG LARAVEL 🔥
-        $request->validate([
-            'import_file' => 'required|file|max:10240',
-            'support_doc' => 'nullable|file|mimes:pdf,jpg,jpeg,png|max:5120',
-        ], [
-            'import_file.required' => 'File Excel wajib diupload!',
-            'import_file.max' => 'Ukuran file Excel maksimal 10 MB!'
-        ]);
+    // public function previewImport(Request $request)
+    // {
+    //     // 🔥 VALIDASI DILONGGARKAN AGAR TIDAK DITENDANG LARAVEL 🔥
+    //     $request->validate([
+    //         'import_file' => 'required|file|max:10240',
+    //         'support_doc' => 'nullable|file|mimes:pdf,jpg,jpeg,png|max:5120',
+    //     ], [
+    //         'import_file.required' => 'File Excel wajib diupload!',
+    //         'import_file.max' => 'Ukuran file Excel maksimal 10 MB!'
+    //     ]);
 
-        try {
-            $file = $request->file('import_file');
-            $originalName = str_replace(['(', ')', ' '], '_', $file->getClientOriginalName());
-            $fileName = time() . '_' . $originalName;
+    //     try {
+    //         $file = $request->file('import_file');
+    //         $originalName = str_replace(['(', ')', ' '], '_', $file->getClientOriginalName());
+    //         $fileName = time() . '_' . $originalName;
 
-            if (!\Illuminate\Support\Facades\Storage::disk('local')->exists('temp_imports')) {
-                \Illuminate\Support\Facades\Storage::disk('local')->makeDirectory('temp_imports');
-            }
+    //         if (!\Illuminate\Support\Facades\Storage::disk('local')->exists('temp_imports')) {
+    //             \Illuminate\Support\Facades\Storage::disk('local')->makeDirectory('temp_imports');
+    //         }
 
-            $filePath = $file->storeAs('temp_imports', $fileName, 'local');
-            $fullPath = \Illuminate\Support\Facades\Storage::disk('local')->path($filePath);
+    //         $filePath = $file->storeAs('temp_imports', $fileName, 'local');
+    //         $fullPath = \Illuminate\Support\Facades\Storage::disk('local')->path($filePath);
 
-            $docPath = null;
-            if ($request->hasFile('support_doc')) {
-                $doc = $request->file('support_doc');
-                $docName = time() . '_DOC_' . str_replace(['(', ')', ' '], '_', $doc->getClientOriginalName());
-                $docPath = $doc->storeAs('temp_imports', $docName, 'local');
-            }
+    //         $docPath = null;
+    //         if ($request->hasFile('support_doc')) {
+    //             $doc = $request->file('support_doc');
+    //             $docName = time() . '_DOC_' . str_replace(['(', ')', ' '], '_', $doc->getClientOriginalName());
+    //             $docPath = $doc->storeAs('temp_imports', $docName, 'local');
+    //         }
 
-            $importClass = new class implements \Maatwebsite\Excel\Concerns\ToArray, \Maatwebsite\Excel\Concerns\WithHeadingRow {
-                public function array(array $array) {}
-            };
+    //         $importClass = new class implements \Maatwebsite\Excel\Concerns\ToArray, \Maatwebsite\Excel\Concerns\WithHeadingRow {
+    //             public function array(array $array) {}
+    //         };
 
-            $rows = \Maatwebsite\Excel\Facades\Excel::toArray($importClass, $fullPath)[0];
-            $previewData = [];
-            $hasError = false;
+    //         $rows = \Maatwebsite\Excel\Facades\Excel::toArray($importClass, $fullPath)[0];
+    //         $previewData = [];
+    //         $hasError = false;
 
-            $items = \App\Models\Item::where('is_asset', true)->pluck('name', 'code')->toArray();
-            $users = \App\Models\User::pluck('id', 'name')->mapWithKeys(function ($id, $name) {
-                return [strtolower(trim($name)) => $id];
-            })->toArray();
-            $statuses = \App\Models\Status::where('type', 'AST')->get();
-            $warehouses = \App\Models\Warehouse::pluck('id', 'name')->mapWithKeys(function ($id, $name) {
-                return [strtolower(trim($name)) => $id];
-            })->toArray();
+    //         $items = \App\Models\Item::where('is_asset', true)->pluck('name', 'code')->toArray();
+    //         $users = \App\Models\User::pluck('id', 'name')->mapWithKeys(function ($id, $name) {
+    //             return [strtolower(trim($name)) => $id];
+    //         })->toArray();
+    //         $statuses = \App\Models\Status::where('type', 'AST')->get();
+    //         $warehouses = \App\Models\Warehouse::pluck('id', 'name')->mapWithKeys(function ($id, $name) {
+    //             return [strtolower(trim($name)) => $id];
+    //         })->toArray();
 
-            $currencies = \App\Models\Currency::where('is_active', 1)->get()->keyBy('code');
+    //         $currencies = \App\Models\Currency::where('is_active', 1)->get()->keyBy('code');
 
-            foreach ($rows as $index => $row) {
-                if (empty($row['kode_barang'])) continue;
+    //         foreach ($rows as $index => $row) {
+    //             if (empty($row['kode_barang'])) continue;
 
-                $itemCode = trim($row['kode_barang']);
-                $itemValid = array_key_exists($itemCode, $items);
-                if (!$itemValid) $hasError = true;
+    //             $itemCode = trim($row['kode_barang']);
+    //             $itemValid = array_key_exists($itemCode, $items);
+    //             if (!$itemValid) $hasError = true;
 
-                $rawStatus = $row['status'] ?? 'Available (Tersedia)';
-                $cleanStatusName = trim(explode('(', $rawStatus)[0]);
-                $statusObj = $statuses->filter(function($s) use ($cleanStatusName) { return stripos($s->name, $cleanStatusName) !== false; })->first();
-                $statusSlug = $statusObj ? $statusObj->slug : 'available';
+    //             $rawStatus = $row['status'] ?? 'Available (Tersedia)';
+    //             $cleanStatusName = trim(explode('(', $rawStatus)[0]);
+    //             $statusObj = $statuses->filter(function($s) use ($cleanStatusName) { return stripos($s->name, $cleanStatusName) !== false; })->first();
+    //             $statusSlug = $statusObj ? $statusObj->slug : 'available';
 
-                $borrowerName = trim($row['nama_peminjam'] ?? '');
-                $userValid = true;
-                $logicValid = true;
-                $logicMsg = '';
+    //             $borrowerName = trim($row['nama_peminjam'] ?? '');
+    //             $userValid = true;
+    //             $logicValid = true;
+    //             $logicMsg = '';
 
-                if ($statusSlug === 'in_use') {
-                    if (empty($borrowerName)) {
-                        $logicValid = false;
-                        $logicMsg = 'Status "In Use" tapi Peminjam kosong!';
-                        $hasError = true;
-                    } else {
-                        $userValid = array_key_exists(strtolower($borrowerName), $users);
-                        if (!$userValid) { $hasError = true; $logicValid = false; $logicMsg = 'User tidak ada!'; }
-                    }
-                } elseif (!empty($borrowerName)) {
-                    $logicValid = false;
-                    $logicMsg = 'Aset status "'.$cleanStatusName.'" tidak boleh ada Peminjam!';
-                    $hasError = true;
-                }
+    //             if ($statusSlug === 'in_use') {
+    //                 if (empty($borrowerName)) {
+    //                     $logicValid = false;
+    //                     $logicMsg = 'Status "In Use" tapi Peminjam kosong!';
+    //                     $hasError = true;
+    //                 } else {
+    //                     $userValid = array_key_exists(strtolower($borrowerName), $users);
+    //                     if (!$userValid) { $hasError = true; $logicValid = false; $logicMsg = 'User tidak ada!'; }
+    //                 }
+    //             } elseif (!empty($borrowerName)) {
+    //                 $logicValid = false;
+    //                 $logicMsg = 'Aset status "'.$cleanStatusName.'" tidak boleh ada Peminjam!';
+    //                 $hasError = true;
+    //             }
 
-                $warehouseName = trim($row['nama_gudang'] ?? '');
-                $warehouseValid = false;
-                if (!empty($warehouseName)) {
-                    $warehouseValid = array_key_exists(strtolower($warehouseName), $warehouses);
-                    if (!$warehouseValid) {
-                        $hasError = true;
-                        $logicValid = false;
-                        $logicMsg = ($logicMsg ? $logicMsg . ' | ' : '') . 'Gudang "'.$warehouseName.'" tidak ada!';
-                    }
-                } else {
-                    $hasError = true;
-                    $logicValid = false;
-                    $logicMsg = ($logicMsg ? $logicMsg . ' | ' : '') . 'Nama Gudang Kosong!';
-                }
+    //             $warehouseName = trim($row['nama_gudang'] ?? '');
+    //             $warehouseValid = false;
+    //             if (!empty($warehouseName)) {
+    //                 $warehouseValid = array_key_exists(strtolower($warehouseName), $warehouses);
+    //                 if (!$warehouseValid) {
+    //                     $hasError = true;
+    //                     $logicValid = false;
+    //                     $logicMsg = ($logicMsg ? $logicMsg . ' | ' : '') . 'Gudang "'.$warehouseName.'" tidak ada!';
+    //                 }
+    //             } else {
+    //                 $hasError = true;
+    //                 $logicValid = false;
+    //                 $logicMsg = ($logicMsg ? $logicMsg . ' | ' : '') . 'Nama Gudang Kosong!';
+    //             }
 
-                $rawDate = $row['tanggal_perolehan'] ?? null;
-                $acqDate = null;
-                if (!empty($rawDate)) {
-                    if (is_numeric($rawDate)) { $acqDate = \PhpOffice\PhpSpreadsheet\Shared\Date::excelToDateTimeObject($rawDate)->format('Y-m-d'); }
-                    else { try { $acqDate = \Carbon\Carbon::parse(str_replace('/', '-', $rawDate))->format('Y-m-d'); } catch (\Exception $e) { $acqDate = null; } }
-                }
+    //             $rawDate = $row['tanggal_perolehan'] ?? null;
+    //             $acqDate = null;
+    //             if (!empty($rawDate)) {
+    //                 if (is_numeric($rawDate)) { $acqDate = \PhpOffice\PhpSpreadsheet\Shared\Date::excelToDateTimeObject($rawDate)->format('Y-m-d'); }
+    //                 else { try { $acqDate = \Carbon\Carbon::parse(str_replace('/', '-', $rawDate))->format('Y-m-d'); } catch (\Exception $e) { $acqDate = null; } }
+    //             }
 
-                $purchasePrice = $row['harga_beli_angka_murni'] ?? 0;
-                $cleanPrice = preg_replace('/[^0-9]/', '', $purchasePrice);
-                $customName = trim($row['nama_spesifik_aset'] ?? '');
+    //             $purchasePrice = $row['harga_beli_angka_murni'] ?? 0;
+    //             $cleanPrice = preg_replace('/[^0-9]/', '', $purchasePrice);
+    //             $customName = trim($row['nama_spesifik_aset'] ?? '');
 
-                // 🔥 HANDLE MATA UANG DARI EXCEL 🔥
-                $currencyCode = strtoupper(trim($row['mata_uang'] ?? 'IDR'));
-                if (empty($currencyCode)) $currencyCode = 'IDR';
+    //             // 🔥 HANDLE MATA UANG DARI EXCEL 🔥
+    //             $currencyCode = strtoupper(trim($row['mata_uang'] ?? 'IDR'));
+    //             if (empty($currencyCode)) $currencyCode = 'IDR';
 
-                $currencyObj = $currencies->get($currencyCode);
-                $currencyValid = $currencyObj ? true : false;
-                $currencySymbol = $currencyObj ? $currencyObj->symbol : '???';
+    //             $currencyObj = $currencies->get($currencyCode);
+    //             $currencyValid = $currencyObj ? true : false;
+    //             $currencySymbol = $currencyObj ? $currencyObj->symbol : '???';
 
-                if (!$currencyValid) {
-                    $hasError = true;
-                    $logicValid = false;
-                    $logicMsg = ($logicMsg ? $logicMsg . ' | ' : '') . 'Kode Mata Uang ('.$currencyCode.') tidak valid!';
-                }
+    //             if (!$currencyValid) {
+    //                 $hasError = true;
+    //                 $logicValid = false;
+    //                 $logicMsg = ($logicMsg ? $logicMsg . ' | ' : '') . 'Kode Mata Uang ('.$currencyCode.') tidak valid!';
+    //             }
 
-                $previewData[] = [
-                    'kode_barang'     => $itemCode,
-                    'nama_barang'     => $itemValid ? $items[$itemCode] : 'KODE TIDAK DIKENAL',
-                    'nama_custom'     => $customName ?: '-',
-                    'item_valid'      => $itemValid,
-                    'nama_pt'         => $row['nama_pt'] ?? 'Pusat/Umum',
-                    'nama_gudang'     => $warehouseName ?: '-',
-                    'status'          => $rawStatus,
-                    'peminjam'        => $borrowerName ?: '-',
-                    'user_valid'      => $userValid,
-                    'logic_valid'     => $logicValid,
-                    'logic_msg'       => $logicMsg,
-                    'serial'          => $row['serial_number'] ?? '-',
-                    'akuntansi'       => $row['label_akuntansi'] ?? '-',
-                    'spesifikasi'     => $row['spesifikasi'] ?? '-',
-                    'catatan'         => $row['catatan'] ?? '-',
-                    'tanggal'         => $acqDate,
-                    'harga'           => $cleanPrice ?: 0,
-                    'currency_symbol' => $currencySymbol,
-                    'currency_valid'  => $currencyValid,
-                ];
-            }
+    //             $previewData[] = [
+    //                 'kode_barang'     => $itemCode,
+    //                 'nama_barang'     => $itemValid ? $items[$itemCode] : 'KODE TIDAK DIKENAL',
+    //                 'nama_custom'     => $customName ?: '-',
+    //                 'item_valid'      => $itemValid,
+    //                 'nama_pt'         => $row['nama_pt'] ?? 'Pusat/Umum',
+    //                 'nama_gudang'     => $warehouseName ?: '-',
+    //                 'status'          => $rawStatus,
+    //                 'peminjam'        => $borrowerName ?: '-',
+    //                 'user_valid'      => $userValid,
+    //                 'logic_valid'     => $logicValid,
+    //                 'logic_msg'       => $logicMsg,
+    //                 'serial'          => $row['serial_number'] ?? '-',
+    //                 'akuntansi'       => $row['label_akuntansi'] ?? '-',
+    //                 'spesifikasi'     => $row['spesifikasi'] ?? '-',
+    //                 'catatan'         => $row['catatan'] ?? '-',
+    //                 'tanggal'         => $acqDate,
+    //                 'harga'           => $cleanPrice ?: 0,
+    //                 'currency_symbol' => $currencySymbol,
+    //                 'currency_valid'  => $currencyValid,
+    //             ];
+    //         }
 
-            return view('fixed_assets.preview', compact('previewData', 'filePath', 'hasError', 'docPath'));
+    //         return view('fixed_assets.preview', compact('previewData', 'filePath', 'hasError', 'docPath'));
 
-        } catch (\Exception $e) {
-            if (isset($filePath)) \Illuminate\Support\Facades\Storage::disk('local')->delete($filePath);
-            if (isset($docPath)) \Illuminate\Support\Facades\Storage::disk('local')->delete($docPath);
-            return back()->with('error', 'Gagal membaca Excel: ' . $e->getMessage());
-        }
-    }
+    //     } catch (\Exception $e) {
+    //         if (isset($filePath)) \Illuminate\Support\Facades\Storage::disk('local')->delete($filePath);
+    //         if (isset($docPath)) \Illuminate\Support\Facades\Storage::disk('local')->delete($docPath);
+    //         return back()->with('error', 'Gagal membaca Excel: ' . $e->getMessage());
+    //     }
+    // }
 
     // =========================================================================
     // 2. FUNGSI PROSES IMPORT

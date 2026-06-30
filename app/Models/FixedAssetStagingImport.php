@@ -7,7 +7,7 @@ use Illuminate\Support\Collection;
 use Maatwebsite\Excel\Concerns\ToCollection;
 use Maatwebsite\Excel\Concerns\WithHeadingRow;
 
-class FixedAssetImport implements ToCollection, WithHeadingRow
+class FixedAssetStagingImport implements ToCollection, WithHeadingRow
 {
     protected $batchId;
 
@@ -19,40 +19,25 @@ class FixedAssetImport implements ToCollection, WithHeadingRow
     public function collection(Collection $rows)
     {
         foreach ($rows as $row) {
-            // 1. Abaikan baris jika Kode Barang DAN Nama Spesifik kosong semua
-            if (empty(trim($row['kode_barang'] ?? '')) && empty(trim($row['nama_spesifik_aset'] ?? ''))) {
+            // Abaikan jika nama dan kode kosong semua
+            if (empty(trim($row['nama_spesifik_aset'] ?? '')) && empty(trim($row['kode_barang'] ?? ''))) {
                 continue;
             }
 
-            // 2. Format Tanggal Perolehan dari Excel
-            $rawDate = $row['tanggal_perolehan'] ?? null;
-            $acqDate = null;
-            if (!empty($rawDate)) {
-                if (is_numeric($rawDate)) {
-                    $acqDate = \PhpOffice\PhpSpreadsheet\Shared\Date::excelToDateTimeObject($rawDate)->format('Y-m-d');
-                } else {
-                    try {
-                        $acqDate = \Carbon\Carbon::parse(str_replace('/', '-', $rawDate))->format('Y-m-d');
-                    } catch (\Exception $e) {
-                        $acqDate = $rawDate; // Fallback jika format aneh
-                    }
-                }
-            }
-
-            // 3. Validasi Dasar (Sistem tidak akan error, hanya menandai baris ini tidak valid di Karantina)
+            // Validasi Sederhana di Awal (Bisa disempurnakan di Karantina nanti)
             $isValid = true;
             $errorMsg = [];
 
             if (empty(trim($row['nama_pt'] ?? ''))) {
                 $isValid = false;
-                $errorMsg[] = 'Nama PT kosong.';
+                $errorMsg[] = 'PT Kosong.';
             }
             if (empty(trim($row['nama_gudang'] ?? ''))) {
                 $isValid = false;
-                $errorMsg[] = 'Nama Gudang kosong.';
+                $errorMsg[] = 'Gudang Kosong.';
             }
 
-            // 4. Masukkan ke Tabel Karantina (Staging Detail)
+            // Masukkan ke tabel Detail Karantina
             FixedAssetImportDetail::create([
                 'batch_id'           => $this->batchId,
                 'kode_barang'        => trim($row['kode_barang'] ?? ''),
@@ -61,15 +46,15 @@ class FixedAssetImport implements ToCollection, WithHeadingRow
                 'label_akuntansi'    => trim($row['label_akuntansi'] ?? ''),
                 'nama_pt'            => trim($row['nama_pt'] ?? ''),
                 'nama_gudang'        => trim($row['nama_gudang'] ?? ''),
-                'status_aset'        => trim($row['status'] ?? 'Available (Tersedia)'),
+                'status_aset'        => trim($row['status'] ?? 'Available'),
                 'nama_peminjam'      => trim($row['nama_peminjam'] ?? ''),
-                'tanggal_perolehan'  => $acqDate,
-                'mata_uang'          => strtoupper(trim($row['mata_uang'] ?? 'IDR')),
+                'tanggal_perolehan'  => trim($row['tanggal_perolehan'] ?? ''),
+                'mata_uang'          => trim($row['mata_uang'] ?? 'IDR'),
                 'harga_beli'         => preg_replace('/[^0-9]/', '', $row['harga_beli_angka_murni'] ?? 0),
                 'spesifikasi'        => trim($row['spesifikasi'] ?? ''),
                 'catatan'            => trim($row['catatan'] ?? ''),
                 'is_valid'           => $isValid,
-                'validation_error'   => implode(' | ', $errorMsg),
+                'validation_error'   => implode(' ', $errorMsg),
             ]);
         }
     }

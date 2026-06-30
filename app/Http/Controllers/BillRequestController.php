@@ -773,6 +773,93 @@ class BillRequestController extends Controller
     }
 
 
+    // =========================================================================
+    // 11. SKENARIO 1: UPLOAD LAMPIRAN SUSULAN (LATE ATTACHMENT)
+    // =========================================================================
+    public function addLateAttachment(Request $request, $slug)
+    {
+        $request->validate([
+            'attachments'   => 'required|array',
+            'attachments.*' => 'file|mimes:pdf,jpg,jpeg,png|max:5120',
+        ]);
+
+        DB::beginTransaction();
+        try {
+            $bill = \App\Models\BillRequest::where('bill_number', $slug)->firstOrFail();
+
+            // Ambil path penyimpanan yang sama seperti fungsi Store/Update
+            $basePath = \DB::table('system_settings')->where('setting_key', 'path_bills_opex')->value('setting_value') ?: 'attachments/opex';
+            $safeBillNumber = str_replace(['/', '\\'], '-', $bill->bill_number);
+            $storagePath = $basePath . '/' . $safeBillNumber;
+
+            foreach ($request->file('attachments') as $file) {
+                $originalName = $file->getClientOriginalName();
+                $path = $file->storeAs($storagePath, time() . '_' . uniqid() . '_' . str_replace(' ', '_', $originalName), 'public');
+
+                \DB::table('bill_attachments')->insert([
+                    'bill_request_id' => $bill->id,
+                    'file_name'       => $originalName,
+                    'file_path'       => str_replace('\\', '/', $path),
+                    'created_at'      => now(),
+                    'updated_at'      => now()
+                ]);
+            }
+
+            // Catat di Audit Trail
+            $this->logHistory($bill, 'UPLOAD SUSULAN', 'Staf menambahkan dokumen/bukti lampiran susulan setelah tagihan berstatus Lunas.');
+
+            DB::commit();
+            return back()->with('success', 'Lampiran bukti susulan berhasil ditambahkan!');
+        } catch (\Exception $e) {
+            DB::rollback();
+            return back()->with('error', 'Gagal mengunggah lampiran: ' . $e->getMessage());
+        }
+    }
+
+    // =========================================================================
+    // 12. SKENARIO 2: BATALKAN PEMBAYARAN (VOID PAYMENT)
+    // =========================================================================
+    public function voidPayment(Request $request, $slug)
+    {
+        // Gembok khusus Super Admin & Manager
+        $userRoles = auth()->user()->getRoleNames()->toArray();
+        $canVoid = in_array('Super Administrator', $userRoles) || in_array('Super Admin', $userRoles) || in_array('manager', array_map('strtolower', $userRoles)) || auth()->id() === 1;
+
+        if (!$canVoid) {
+            abort(403, 'Anda tidak memiliki wewenang untuk membatalkan pembayaran ini.');
+        }
+
+        $request->validate([
+            'void_reason' => 'required|string|min:10'
+        ]);
+
+        DB::beginTransaction();
+        try {
+            $bill = \App\Models\BillRequest::where('bill_number', $slug)->firstOrFail();
+
+            if (strtoupper($bill->status) !== 'PAID' && optional($bill->status)->slug !== 'paid') {
+                return back()->with('error', 'Hanya tagihan berstatus LUNAS (PAID) yang bisa dibatalkan.');
+            }
+
+            // Kembalikan statusnya ke APPROVED
+            $bill->update([
+                'status'    => 'APPROVED',
+                'status_id' => $this->getStatusId('approved')
+            ]);
+
+            // Catat di Audit Trail secara detail
+            $this->logHistory($bill, 'PEMBAYARAN DIBATALKAN (VOID)', 'Pembayaran telah ditarik kembali/dibatalkan. Alasan: ' . $request->void_reason);
+
+            DB::commit();
+            return redirect()->route('bills.show', $bill->bill_number)->with('success', 'Pembayaran berhasil dibatalkan. Tagihan kembali berstatus APPROVED.');
+        } catch (\Exception $e) {
+            DB::rollback();
+            return back()->with('error', 'Gagal membatalkan pembayaran: ' . $e->getMessage());
+        }
+    }
+
+
+
 
 
 

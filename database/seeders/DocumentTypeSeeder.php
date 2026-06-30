@@ -26,8 +26,16 @@ class DocumentTypeSeeder extends Seeder
                 'is_active'   => true,
             ],
             [
-                'name'        => 'Bills Opex',
+                'name'        => 'Import Master Item', // 🔥 PERBAIKAN: Nama diubah agar sesuai modelnya
                 'model_class' => 'App\Models\ItemImportBatch',
+                'is_active'   => true,
+            ],
+            // =======================================================
+            // 🔥 TAMBAHAN BARU: UNTUK KARANTINA ASET TETAP 🔥
+            // =======================================================
+            [
+                'name'        => 'Import Fixed Asset (Aset Tetap)',
+                'model_class' => 'App\Models\FixedAssetImportBatch',
                 'is_active'   => true,
             ],
         ];

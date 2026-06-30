@@ -139,12 +139,12 @@
                                         <div class="fw-bold text-dark fs-6 mb-1 {{ optional($ast->status)->slug === 'disposed' ? 'text-decoration-line-through text-danger' : '' }}">
                                             {{ $ast->name ?? optional($ast->item)->name }}
                                         </div>
-                                        <div class="gap-2 d-flex flex-wrap">
-                                            <span class="badge-soft bg-primary-subtle text-primary border border-primary-subtle">
+                                        <div class="flex-wrap gap-2 d-flex">
+                                            <span class="border badge-soft bg-primary-subtle text-primary border-primary-subtle">
                                                 <i class="bi bi-tag-fill me-1"></i>{{ $ast->asset_number }}
                                             </span>
                                             @if($ast->serial_number)
-                                                <span class="badge-soft bg-light text-secondary border border-light">
+                                                <span class="border badge-soft bg-light text-secondary border-light">
                                                     <i class="bi bi-upc-scan me-1"></i>S/N: {{ $ast->serial_number }}
                                                 </span>
                                             @endif
@@ -160,33 +160,33 @@
                                         {{ $ast->status->name }}
                                     </span>
                                 @else
-                                    <span class="badge-soft bg-secondary-subtle text-secondary border border-secondary-subtle">Unknown</span>
+                                    <span class="border badge-soft bg-secondary-subtle text-secondary border-secondary-subtle">Unknown</span>
                                 @endif
                             </td>
 
                             <td>
                                 @if(optional($ast->status)->slug === 'disposed')
                                     <div class="fw-bold text-danger"><i class="bi bi-trash-fill me-1"></i> Dihancurkan / Dijual</div>
-                                    <div class="small text-muted mt-1"><i class="bi bi-info-circle me-1"></i> Tidak ada lokasi</div>
+                                    <div class="mt-1 small text-muted"><i class="bi bi-info-circle me-1"></i> Tidak ada lokasi</div>
                                 @elseif($ast->assigned_to)
                                     <div class="fw-bold text-dark">
                                         <i class="bi bi-person-badge me-2 text-primary"></i>{{ optional($ast->assignee)->name }}
                                     </div>
-                                    <div class="small text-muted mt-1">
+                                    <div class="mt-1 small text-muted">
                                         <i class="bi bi-building me-2"></i>{{ optional($ast->assignee->company)->name ?? 'Kantor Pusat' }}
                                     </div>
                                 @else
                                     <div class="fw-bold text-success">
                                         <i class="bi bi-box-seam me-2"></i>{{ optional($ast->warehouse)->name ?? 'Belum Diset' }}
                                     </div>
-                                    <div class="small text-muted mt-1">
+                                    <div class="mt-1 small text-muted">
                                         <i class="bi bi-geo-alt me-2"></i>Lokasi Gudang
                                     </div>
                                 @endif
                             </td>
 
                             <td class="text-end">
-                                <div class="d-flex justify-content-end gap-1">
+                                <div class="gap-1 d-flex justify-content-end">
                                     {{-- Tombol Detail Expand --}}
                                     <button class="btn-action-icon" type="button" data-bs-toggle="collapse" data-bs-target="#collapse-{{ $ast->id }}" title="Lihat Detail">
                                         <i class="bi bi-chevron-down"></i>
@@ -200,7 +200,7 @@
                                         <ul class="dropdown-menu dropdown-menu-end dropdown-action-menu">
                                             <li><a class="dropdown-item text-primary" href="#" data-bs-toggle="modal" data-bs-target="#editModal" data-id="{{ $ast->id }}" data-item-name="{{ $ast->name ?? optional($ast->item)->name }}" data-asset-number="{{ $ast->asset_number }}" data-serial="{{ $ast->serial_number }}" data-accounting="{{ $ast->accounting_asset_number }}" data-spesifikasi="{{ $ast->spesifikasi_detail }}" data-company-id="{{ $ast->company_id }}" data-status-id="{{ $ast->status_id }}" data-assigned-to="{{ $ast->assigned_to }}" data-notes="{{ $ast->notes }}" data-price="{{ (float)$ast->purchase_price }}" data-currency-id="{{ $ast->currency_id }}"><i class="bi bi-pencil-square me-2"></i> Edit Data Aset</a></li>
                                             <li><a class="dropdown-item text-dark" href="#" data-bs-toggle="modal" data-bs-target="#modalHistory{{ $ast->id }}"><i class="bi bi-clock-history me-2"></i> Log Riwayat Aset</a></li>
-                                            <li><hr class="dropdown-divider my-1"></li>
+                                            <li><hr class="my-1 dropdown-divider"></li>
                                             <li><a class="dropdown-item text-dark" href="{{ route('fixed-assets.print_qr', $ast->id) }}" target="_blank"><i class="bi bi-qr-code me-2"></i> Cetak Label QR</a></li>
 
                                             @if(optional($ast->status)->slug === 'in_use' && $ast->assigned_to)
@@ -224,12 +224,12 @@
                                         <div class="row g-4">
                                             <div class="col-md-6 border-end pe-md-4">
                                                 <h6 class="mb-3 fw-bold text-dark fs-6"><i class="bi bi-card-text me-2 text-primary"></i>Spesifikasi & Nilai</h6>
-                                                <table class="table table-sm table-borderless small mb-0">
-                                                    <tr><td width="35%" class="text-muted pb-2">Pemilik PT</td><td class="fw-bold text-dark pb-2">: {{ optional($ast->company)->name ?? '-' }}</td></tr>
-                                                    <tr><td class="text-muted pb-2">Label Akuntansi</td><td class="fw-bold text-dark pb-2">: {{ $ast->accounting_asset_number ?? '-' }}</td></tr>
+                                                <table class="table mb-0 table-sm table-borderless small">
+                                                    <tr><td width="35%" class="pb-2 text-muted">Pemilik PT</td><td class="pb-2 fw-bold text-dark">: {{ optional($ast->company)->name ?? '-' }}</td></tr>
+                                                    <tr><td class="pb-2 text-muted">Label Akuntansi</td><td class="pb-2 fw-bold text-dark">: {{ $ast->accounting_asset_number ?? '-' }}</td></tr>
                                                     <tr>
-                                                        <td class="text-muted pb-2">Harga Perolehan</td>
-                                                        <td class="fw-bold text-success pb-2">: {{ optional($ast->currency)->symbol ?? 'Rp' }} {{ number_format($ast->purchase_price ?? 0, 0, ',', '.') }}</td>
+                                                        <td class="pb-2 text-muted">Harga Perolehan</td>
+                                                        <td class="pb-2 fw-bold text-success">: {{ optional($ast->currency)->symbol ?? 'Rp' }} {{ number_format($ast->purchase_price ?? 0, 0, ',', '.') }}</td>
                                                     </tr>
                                                     <tr>
                                                         <td class="align-top text-muted">Spesifikasi</td>
@@ -244,9 +244,9 @@
                                             </div>
                                             <div class="col-md-6 ps-md-4">
                                                 <h6 class="mb-3 fw-bold text-dark fs-6"><i class="bi bi-folder2-open me-2 text-warning"></i>Asal Usul Dokumen</h6>
-                                                <div class="d-flex flex-column gap-3">
+                                                <div class="gap-3 d-flex flex-column">
                                                     <div class="d-flex align-items-center">
-                                                        <div class="bg-light rounded p-2 me-3 text-primary"><i class="bi bi-calendar-event fs-5"></i></div>
+                                                        <div class="p-2 rounded bg-light me-3 text-primary"><i class="bi bi-calendar-event fs-5"></i></div>
                                                         <div>
                                                             <div class="small text-muted">Tgl Perolehan</div>
                                                             <div class="fw-bold text-dark">{{ $ast->acquisition_date ? \Carbon\Carbon::parse($ast->acquisition_date)->format('d M Y') : '-' }}</div>
@@ -254,7 +254,7 @@
                                                     </div>
 
                                                     <div class="d-flex align-items-center">
-                                                        <div class="bg-light rounded p-2 me-3 text-info"><i class="bi bi-link-45deg fs-5"></i></div>
+                                                        <div class="p-2 rounded bg-light me-3 text-info"><i class="bi bi-link-45deg fs-5"></i></div>
                                                         <div>
                                                             <div class="small text-muted">Referensi Dokumen</div>
                                                             <div class="fw-bold text-dark">
@@ -270,7 +270,7 @@
                                                     </div>
 
                                                     @if($ast->supporting_document)
-                                                        <a href="{{ asset('storage/' . $ast->supporting_document) }}" target="_blank" class="btn btn-sm btn-light border fw-bold text-primary text-start mt-2">
+                                                        <a href="{{ asset('storage/' . $ast->supporting_document) }}" target="_blank" class="mt-2 border btn btn-sm btn-light fw-bold text-primary text-start">
                                                             <i class="bi bi-file-earmark-pdf-fill me-2 text-danger"></i> Lihat Dokumen BAST/Nota Asli
                                                         </a>
                                                     @endif
@@ -346,9 +346,9 @@
                         </div>
                     @empty
                         <tr>
-                            <td colspan="4" class="py-5 text-center text-muted border-0">
-                                <div class="bg-light rounded-4 py-5 mx-auto" style="max-width: 500px;">
-                                    <i class="mb-3 bi bi-pc-display text-secondary display-4 d-block opacity-25"></i>
+                            <td colspan="4" class="py-5 text-center border-0 text-muted">
+                                <div class="py-5 mx-auto bg-light rounded-4" style="max-width: 500px;">
+                                    <i class="mb-3 opacity-25 bi bi-pc-display text-secondary display-4 d-block"></i>
                                     <h6 class="mb-1 fw-bold text-dark">Belum Ada Data Aset</h6>
                                     <p class="mb-0 small text-muted">Data aset tetap yang diregistrasi akan muncul di sini.</p>
                                 </div>
@@ -360,7 +360,7 @@
         </div>
 
         @if(isset($assets) && $assets->hasPages())
-            <div class="pt-3 pb-3 px-4 bg-white border-top">
+            <div class="px-4 pt-3 pb-3 bg-white border-top">
                 {{ $assets->links() }}
             </div>
         @endif
@@ -589,7 +589,7 @@
 <div class="modal fade" id="modalImportAset" tabindex="-1">
     <div class="modal-dialog modal-dialog-centered">
         <div class="overflow-hidden border-0 shadow-lg modal-content rounded-4">
-            <form action="{{ route('fixed-assets.preview_import') }}" method="POST" enctype="multipart/form-data">
+            <form action="{{ route('fixed-assets.process_import') }}" method="POST" enctype="multipart/form-data">
                 @csrf
                 <div class="px-4 pt-3 pb-3 text-white border-0 modal-header bg-success">
                     <h5 class="modal-title fw-bold"><i class="bi bi-file-earmark-excel me-2"></i> Import Master Aset</h5>

@@ -9,7 +9,6 @@ use App\Models\Status;
 use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
-use App\Imports\FixedAssetImport;
 use Maatwebsite\Excel\Facades\Excel;
 
 class FixedAssetController extends Controller
@@ -20,7 +19,7 @@ class FixedAssetController extends Controller
         $warehouseId = $request->input('warehouse_id');
 
         $assets = FixedAsset::with([
-                'item', 'company', 'status', 'assignee.company', 'warehouse', 'goodsReceipt', 'currency',
+                'item', 'company', 'status', 'assignee.company', 'warehouse', 'goodsReceipt',
                 'histories' => function($q) { $q->orderBy('created_at', 'desc'); },
                 'histories.assignee', 'histories.creator'
             ])
@@ -56,9 +55,8 @@ class FixedAssetController extends Controller
             'status_id'               => 'required|exists:statuses,id',
             'company_id'              => 'required|exists:companies,id',
             'asset_name'              => 'nullable|string|max:255',
-            // 🔥 VALIDASI S/N & AKUNTANSI: UNIQUE TAPI BOLEH KOSONG 🔥
-            'serial_number'           => 'nullable|string|max:255|unique:fixed_assets,serial_number',
-            'accounting_asset_number' => 'nullable|string|max:255|unique:fixed_assets,accounting_asset_number',
+            'serial_number'           => 'nullable|string|max:255',
+            'accounting_asset_number' => 'nullable|string|max:255',
             'spesifikasi_detail'      => 'required|string',
             'notes'                   => 'nullable|string',
             'acquisition_date'        => 'required|date',
@@ -159,16 +157,13 @@ class FixedAssetController extends Controller
     public function update(Request $request, $id)
     {
         $request->validate([
-            // 🔥 VALIDASI S/N & AKUNTANSI: UNIQUE KECUALI DIRINYA SENDIRI 🔥
-            'serial_number'           => 'nullable|string|max:255|unique:fixed_assets,serial_number,' . $id,
-            'accounting_asset_number' => 'nullable|string|max:255|unique:fixed_assets,accounting_asset_number,' . $id,
+            'serial_number'           => 'nullable|string|max:255',
             'status_id'               => 'required|exists:statuses,id',
-            'company_id'              => 'required|exists:companies,id', // 🔥 Pastikan PT bisa diedit
+            'accounting_asset_number' => 'nullable|string|max:255',
             'spesifikasi_detail'      => 'nullable|string',
             'assigned_to'             => 'nullable|exists:users,id',
             'notes'                   => 'nullable|string',
             'purchase_price'          => 'nullable|numeric|min:0',
-            'currency_id'             => 'required|exists:currencies,id', // 🔥 Validasi Mata Uang
         ]);
 
         try {
@@ -183,17 +178,14 @@ class FixedAssetController extends Controller
 
                 $isChanged = ($oldStatusSlug !== $newStatus->slug) || ($oldAssignee != $assignedTo);
 
-                // 🔥 UPDATE KE DATABASE 🔥
                 $asset->update([
                     'serial_number'           => $request->serial_number,
                     'accounting_asset_number' => $request->accounting_asset_number,
                     'spesifikasi_detail'      => $request->spesifikasi_detail,
                     'status_id'               => $request->status_id,
-                    'company_id'              => $request->company_id, // Simpan PT
                     'assigned_to'             => $assignedTo,
                     'notes'                   => $request->notes,
                     'purchase_price'          => $request->purchase_price,
-                    'currency_id'             => $request->currency_id, // Simpan Mata Uang Baru
                 ]);
 
                 if ($isChanged) {
@@ -212,12 +204,12 @@ class FixedAssetController extends Controller
                     } elseif ($newStatus->slug === 'maintenance') {
                         $systemNote = "Aset masuk status perbaikan/maintenance.";
                     } elseif ($newStatus->slug === 'disposed') {
-                        $systemNote = "🔴 ASET DIHAPUSBUKUKAN (DISPOSED): Aset ditarik dan dihapus dari kekayaan aktif.";
+                        $systemNote = "🔴 ASET DIHAPUSBUKUKAN (DISPOSED): Aset telah ditarik dari peredaran dan dihapus dari kekayaan aktif perusahaan.";
                     }
 
                     $finalNote = $systemNote;
                     if ($request->notes && $request->notes !== $asset->notes) {
-                        $finalNote = $systemNote ? $systemNote . " | Catatan: " . $request->notes : "Catatan: " . $request->notes;
+                        $finalNote = $systemNote ? $systemNote . " | Catatan Baru: " . $request->notes : "Catatan: " . $request->notes;
                     }
 
                     \App\Models\FixedAssetHistory::create([
@@ -230,7 +222,7 @@ class FixedAssetController extends Controller
                 }
             });
 
-            return back()->with('success', 'Informasi Aset (Termasuk Mata Uang) berhasil diperbarui!');
+            return back()->with('success', 'Informasi Aset berhasil diperbarui & Riwayat telah dicatat!');
         } catch (\Exception $e) {
             return back()->with('error', 'Gagal memperbarui aset: ' . $e->getMessage());
         }
@@ -239,11 +231,9 @@ class FixedAssetController extends Controller
     public function printBast($id)
     {
         $asset = FixedAsset::with(['item', 'assignee.company', 'status'])->findOrFail($id);
-
         if (optional($asset->status)->slug !== 'in_use' || !$asset->assigned_to) {
             return back()->with('error', 'Aset ini sedang tidak diserahkan ke siapapun. BAST tidak dapat dicetak.');
         }
-
         $pdf = Pdf::loadView('fixed_assets.bast', compact('asset'))->setPaper('A4', 'portrait');
         return $pdf->stream('BAST_Aset_' . str_replace('/', '_', $asset->asset_number) . '.pdf');
     }
@@ -255,7 +245,6 @@ class FixedAssetController extends Controller
         }])->findOrFail($id);
 
         $lastUsageHistory = $asset->histories->whereNotNull('assigned_to')->first();
-
         if (!$lastUsageHistory || !$lastUsageHistory->assigned_to) {
             return back()->with('error', 'Belum ada riwayat peminjaman untuk aset ini. BAPA tidak dapat dicetak.');
         }
@@ -268,27 +257,21 @@ class FixedAssetController extends Controller
     public function printBapp($id)
     {
         $asset = FixedAsset::with(['item', 'status'])->findOrFail($id);
-
         if (optional($asset->status)->slug !== 'disposed') {
             return back()->with('error', 'Aset ini belum berstatus Dihancurkan/Disposed. BAPP tidak dapat dicetak!');
         }
-
         $pdf = Pdf::loadView('fixed_assets.bapp', compact('asset'))->setPaper('A4', 'portrait');
         return $pdf->stream('BAPP_Aset_' . str_replace('/', '_', $asset->asset_number) . '.pdf');
     }
 
-
     // =========================================================================
-    // 1. FUNGSI PREVIEW IMPORT (DENGAN VALIDASI KETAT & ANTI DUPLIKAT S/N)
+    // 1. PROSES BACA EXCEL & LEMPAR KE KARANTINA (STAGING)
     // =========================================================================
-    public function previewImport(Request $request)
+    public function processImport(Request $request)
     {
         $request->validate([
-            'import_file' => 'required|file|max:10240',
+            'import_file' => 'required|file|max:10240|mimes:xlsx,xls,csv',
             'support_doc' => 'nullable|file|mimes:pdf,jpg,jpeg,png|max:5120',
-        ], [
-            'import_file.required' => 'File Excel wajib diupload!',
-            'import_file.max' => 'Ukuran file Excel maksimal 10 MB!'
         ]);
 
         try {
@@ -296,301 +279,239 @@ class FixedAssetController extends Controller
             $originalName = str_replace(['(', ')', ' '], '_', $file->getClientOriginalName());
             $fileName = time() . '_' . $originalName;
 
-            if (!\Illuminate\Support\Facades\Storage::disk('local')->exists('temp_imports')) {
-                \Illuminate\Support\Facades\Storage::disk('local')->makeDirectory('temp_imports');
+            if (!Storage::disk('local')->exists('temp_imports')) {
+                Storage::disk('local')->makeDirectory('temp_imports');
             }
 
             $filePath = $file->storeAs('temp_imports', $fileName, 'local');
-            $fullPath = \Illuminate\Support\Facades\Storage::disk('local')->path($filePath);
+            $fullPath = Storage::disk('local')->path($filePath);
 
-            $docPath = null;
+            $batchNumber = 'AST-IMP-' . date('Ymd-His');
+
+            // Tangani Dokumen Pendukung BAST
+            $finalDocPath = null;
             if ($request->hasFile('support_doc')) {
                 $doc = $request->file('support_doc');
                 $docName = time() . '_DOC_' . str_replace(['(', ')', ' '], '_', $doc->getClientOriginalName());
-                $docPath = $doc->storeAs('temp_imports', $docName, 'local');
+                $finalDocPath = $doc->storeAs('Upload_asset/' . $batchNumber, $docName, 'public');
             }
 
-            $importClass = new class implements \Maatwebsite\Excel\Concerns\ToArray, \Maatwebsite\Excel\Concerns\WithHeadingRow {
-                public function array(array $array) {}
-            };
+            // 1. Buat Header Batch Karantina
+            $batch = \App\Models\FixedAssetImportBatch::create([
+                'batch_number' => $batchNumber,
+                'user_id'      => auth()->id(),
+                'status'       => 'draft',
+                'file_path'    => $filePath,
+                'support_doc'  => $finalDocPath,
+            ]);
 
-            $rows = \Maatwebsite\Excel\Facades\Excel::toArray($importClass, $fullPath)[0];
-            $previewData = [];
-            $hasError = false;
+            // 2. Gunakan Kurir Import untuk baca Excel ke Tabel Karantina
+            \Maatwebsite\Excel\Facades\Excel::import(new \App\Imports\FixedAssetImport($batch->id), $fullPath);
 
-            // 🔥 Penampung Cek Duplikat di dalam Excel 🔥
-            $seenAccountingLabels = [];
-            $seenSerialNumbers = []; // <-- TAMBAHAN BARU
+            Storage::disk('local')->delete($filePath);
 
-            // Tarik Semua Master Data
-            $items = \App\Models\Item::where('is_asset', true)->pluck('name', 'code')->toArray();
-            $users = \App\Models\User::pluck('id', 'name')->mapWithKeys(function ($id, $name) { return [strtolower(trim($name)) => $id]; })->toArray();
-            $statuses = \App\Models\Status::where('type', 'AST')->get();
-            $warehouses = \App\Models\Warehouse::pluck('id', 'name')->mapWithKeys(function ($id, $name) { return [strtolower(trim($name)) => $id]; })->toArray();
-            $companies = \App\Models\Company::pluck('id', 'name')->mapWithKeys(function ($id, $name) { return [strtolower(trim($name)) => $id]; })->toArray();
-            $currencies = \App\Models\Currency::where('is_active', 1)->get()->keyBy('code');
-
-            foreach ($rows as $index => $row) {
-                // Abaikan jika seluruh baris benar-benar kosong
-                if (empty($row['kode_barang']) && empty($row['nama_pt']) && empty($row['nama_gudang'])) {
-                    continue;
-                }
-
-                $isRowValid = true;
-                $errorMessages = [];
-
-                // 1. VALIDASI KODE BARANG
-                $itemCode = trim($row['kode_barang'] ?? '');
-                $itemValid = false;
-                if (empty($itemCode)) {
-                    $isRowValid = false;
-                    $errorMessages[] = 'Kode Barang Kosong.';
-                } else {
-                    $itemValid = array_key_exists($itemCode, $items);
-                    if (!$itemValid) {
-                        $isRowValid = false;
-                        $errorMessages[] = "Kode Barang '{$itemCode}' tidak dikenali.";
-                    }
-                }
-
-                // 2. VALIDASI NAMA PT / COMPANY
-                $companyName = trim($row['nama_pt'] ?? '');
-                $companyValid = false;
-                if (empty($companyName)) {
-                    $isRowValid = false;
-                    $errorMessages[] = 'Nama PT Kosong.';
-                } else {
-                    $companyValid = array_key_exists(strtolower($companyName), $companies);
-                    if (!$companyValid) {
-                        $isRowValid = false;
-                        $errorMessages[] = "PT '{$companyName}' tidak terdaftar.";
-                    }
-                }
-
-                // 3. VALIDASI GUDANG
-                $warehouseName = trim($row['nama_gudang'] ?? '');
-                $warehouseValid = false;
-                if (empty($warehouseName)) {
-                    $isRowValid = false;
-                    $errorMessages[] = 'Nama Gudang Kosong.';
-                } else {
-                    $warehouseValid = array_key_exists(strtolower($warehouseName), $warehouses);
-                    if (!$warehouseValid) {
-                        $isRowValid = false;
-                        $errorMessages[] = "Gudang '{$warehouseName}' tidak valid.";
-                    }
-                }
-
-                // 4. VALIDASI STATUS
-                $rawStatus = trim($row['status'] ?? '');
-                $statusValid = false;
-                $statusSlug = 'available';
-                if (empty($rawStatus)) {
-                    $isRowValid = false;
-                    $errorMessages[] = 'Status Aset Kosong.';
-                } else {
-                    $cleanStatusName = trim(explode('(', $rawStatus)[0]);
-                    $statusObj = $statuses->filter(function($s) use ($cleanStatusName) { return stripos($s->name, $cleanStatusName) !== false; })->first();
-                    if (!$statusObj) {
-                        $isRowValid = false;
-                        $errorMessages[] = "Status '{$rawStatus}' tidak dikenali.";
-                    } else {
-                        $statusValid = true;
-                        $statusSlug = $statusObj->slug;
-                    }
-                }
-
-                // 5. VALIDASI PEMINJAM
-                $borrowerName = trim($row['nama_peminjam'] ?? '');
-                $userValid = true;
-                if ($statusSlug === 'in_use') {
-                    if (empty($borrowerName)) {
-                        $isRowValid = false;
-                        $userValid = false;
-                        $errorMessages[] = 'Status In Use, Nama Peminjam wajib diisi.';
-                    } else {
-                        $userValid = array_key_exists(strtolower($borrowerName), $users);
-                        if (!$userValid) {
-                            $isRowValid = false;
-                            $errorMessages[] = "Peminjam '{$borrowerName}' tidak terdaftar.";
-                        }
-                    }
-                } elseif (!empty($borrowerName)) {
-                    $isRowValid = false;
-                    $userValid = false;
-                    $errorMessages[] = "Status bukan In Use, Peminjam harus dikosongkan.";
-                }
-
-                // 6. VALIDASI MATA UANG
-                $currencyCode = strtoupper(trim($row['mata_uang'] ?? 'IDR'));
-                if (empty($currencyCode)) $currencyCode = 'IDR';
-
-                $currencyObj = $currencies->get($currencyCode);
-                $currencyValid = $currencyObj ? true : false;
-                $currencySymbol = $currencyObj ? $currencyObj->symbol : '???';
-
-                if (!$currencyValid) {
-                    $isRowValid = false;
-                    $errorMessages[] = "Mata Uang '{$currencyCode}' tidak valid.";
-                }
-
-                // 🔥 7. VALIDASI LABEL AKUNTANSI (ANTI-DUPLIKAT) 🔥
-                $accountingLabel = trim($row['label_akuntansi'] ?? '');
-                $accountingValid = true;
-
-                if (!empty($accountingLabel)) {
-                    $existsInDb = \App\Models\FixedAsset::where('accounting_asset_number', $accountingLabel)->exists();
-                    if ($existsInDb) {
-                        $isRowValid = false;
-                        $accountingValid = false;
-                        $errorMessages[] = "Label Akuntansi '{$accountingLabel}' sudah terpakai di Database.";
-                    }
-                    elseif (in_array($accountingLabel, $seenAccountingLabels)) {
-                        $isRowValid = false;
-                        $accountingValid = false;
-                        $errorMessages[] = "Label Akuntansi '{$accountingLabel}' diketik ganda di file Excel ini.";
-                    }
-                    else {
-                        $seenAccountingLabels[] = $accountingLabel;
-                    }
-                }
-
-                // 🔥 8. VALIDASI SERIAL NUMBER (ANTI-DUPLIKAT) 🔥
-                $serialNumber = trim($row['serial_number'] ?? '');
-                $serialValid = true;
-
-                if (!empty($serialNumber)) {
-                    $existsInDb = \App\Models\FixedAsset::where('serial_number', $serialNumber)->exists();
-                    if ($existsInDb) {
-                        $isRowValid = false;
-                        $serialValid = false;
-                        $errorMessages[] = "S/N '{$serialNumber}' sudah terdaftar di Database.";
-                    }
-                    elseif (in_array($serialNumber, $seenSerialNumbers)) {
-                        $isRowValid = false;
-                        $serialValid = false;
-                        $errorMessages[] = "S/N '{$serialNumber}' diketik ganda di file Excel ini.";
-                    }
-                    else {
-                        $seenSerialNumbers[] = $serialNumber;
-                    }
-                }
-
-                // DATA LAINNYA (TANGGAL & HARGA)
-                $rawDate = $row['tanggal_perolehan'] ?? null;
-                $acqDate = null;
-                if (!empty($rawDate)) {
-                    if (is_numeric($rawDate)) { $acqDate = \PhpOffice\PhpSpreadsheet\Shared\Date::excelToDateTimeObject($rawDate)->format('Y-m-d'); }
-                    else { try { $acqDate = \Carbon\Carbon::parse(str_replace('/', '-', $rawDate))->format('Y-m-d'); } catch (\Exception $e) { $acqDate = null; } }
-                }
-
-                $purchasePrice = $row['harga_beli_angka_murni'] ?? 0;
-                $cleanPrice = preg_replace('/[^0-9]/', '', $purchasePrice);
-                $customName = trim($row['nama_spesifik_aset'] ?? '');
-
-                // JIKA ADA ERROR, KUNCI TOMBOL IMPORT
-                if (!$isRowValid) {
-                    $hasError = true;
-                }
-
-                $previewData[] = [
-                    'kode_barang'     => $itemCode ?: '-',
-                    'nama_barang'     => $itemValid ? $items[$itemCode] : 'TIDAK DIKENAL',
-                    'nama_custom'     => $customName ?: '-',
-                    'nama_pt'         => $companyName ?: '-',
-                    'nama_gudang'     => $warehouseName ?: '-',
-                    'status'          => $rawStatus ?: '-',
-                    'peminjam'        => $borrowerName ?: '-',
-
-                    // STATUS VALIDASI UNTUK VIEW BLADE
-                    'item_valid'      => $itemValid,
-                    'company_valid'   => $companyValid,
-                    'warehouse_valid' => $warehouseValid,
-                    'status_valid'    => $statusValid,
-                    'user_valid'      => $userValid,
-                    'currency_valid'  => $currencyValid,
-                    'accounting_valid'=> $accountingValid,
-                    'serial_valid'    => $serialValid, // 🔥 Parameter Validasi S/N
-                    'is_row_valid'    => $isRowValid,
-                    'error_messages'  => $errorMessages,
-
-                    // DATA PELENGKAP
-                    'serial'          => $serialNumber ?: '-',
-                    'akuntansi'       => $accountingLabel ?: '-',
-                    'spesifikasi'     => $row['spesifikasi'] ?? '-',
-                    'catatan'         => $row['catatan'] ?? '-',
-                    'tanggal'         => $acqDate,
-                    'harga'           => $cleanPrice ?: 0,
-                    'currency_symbol' => $currencySymbol,
-                ];
-            }
-
-            return view('fixed_assets.preview', compact('previewData', 'filePath', 'hasError', 'docPath'));
-
+            return redirect()->route('fixed-assets.import_staging', $batch->id)->with('success', 'Data berhasil masuk ke Ruang Karantina!');
         } catch (\Exception $e) {
-            if (isset($filePath)) \Illuminate\Support\Facades\Storage::disk('local')->delete($filePath);
-            if (isset($docPath)) \Illuminate\Support\Facades\Storage::disk('local')->delete($docPath);
-            return back()->with('error', 'Gagal membaca Excel: ' . $e->getMessage());
+            if (isset($filePath)) Storage::disk('local')->delete($filePath);
+            return redirect()->route('fixed-assets.index')->with('error', 'Gagal memproses excel: ' . $e->getMessage());
         }
     }
 
     // =========================================================================
-    // 2. FUNGSI PROSES IMPORT
+    // 2. TAMPILKAN HALAMAN KARANTINA
     // =========================================================================
-    public function processImport(Request $request)
+    public function importStaging($batch_id)
     {
-        $request->validate([
-            'file_path'    => 'required|string',
-            'doc_path'     => 'nullable|string',
-        ]);
+        $batch = \App\Models\FixedAssetImportBatch::with('details')->findOrFail($batch_id);
+        return view('fixed_assets.import_staging', compact('batch'));
+    }
 
-        $filePath = $request->file_path;
-        $docPath = $request->doc_path;
-
-        if (!\Illuminate\Support\Facades\Storage::disk('local')->exists($filePath)) {
-            return redirect()->route('fixed-assets.index')->with('error', 'File import sudah kadaluarsa.');
-        }
-
+    // =========================================================================
+    // 3. AJUKAN KE ATASAN (WORKFLOW)
+    // =========================================================================
+    public function submitApproval($batch_id)
+    {
+        DB::beginTransaction();
         try {
-            $fullPath = \Illuminate\Support\Facades\Storage::disk('local')->path($filePath);
-            $batchId = 'BATCH-' . date('His');
-            $fullBatchCode = date('Ymd') . '-' . $batchId;
+            $batch = \App\Models\FixedAssetImportBatch::findOrFail($batch_id);
 
-            // Tangani Dokumen Pendukung
-            $finalDocPath = null;
-            if ($docPath && \Illuminate\Support\Facades\Storage::disk('local')->exists($docPath)) {
-                $finalDocName = basename($docPath);
-                $folderPath = 'Upload_asset/' . date('Y-m-d') . '-' . $batchId;
-                $finalDocPath = $folderPath . '/' . $finalDocName;
-                \Illuminate\Support\Facades\Storage::disk('public')->put($finalDocPath, \Illuminate\Support\Facades\Storage::disk('local')->get($docPath));
-                \Illuminate\Support\Facades\Storage::disk('local')->delete($docPath);
+            // Validasi: Pastikan tidak ada baris error
+            if ($batch->details->where('is_valid', 0)->count() > 0) {
+                throw new \Exception("Ada baris data yang error. Harap perbaiki form Excel Anda dan upload ulang.");
             }
 
-            // Create Batch Log
-            \App\Models\ImportBatch::create([
-                'batch_id'    => $fullBatchCode,
-                'file_name'   => basename($filePath),
-                'support_doc' => $finalDocPath,
-                'total_items' => 0,
-                'created_by'  => auth()->id(),
-            ]);
+            $batch->update(['status' => 'waiting_approval']);
+            \App\Models\DocumentApproval::where('document_id', $batch->id)->where('document_type', get_class($batch))->delete();
 
-            \Maatwebsite\Excel\Facades\Excel::import(
-                new \App\Imports\FixedAssetImport($fullBatchCode, $finalDocPath),
-                $fullPath
-            );
+            $workflow = \DB::table('approval_workflows')->where('document_type', get_class($batch))->where('is_active', 1)->first();
+            if (!$workflow) throw new \Exception("Workflow Persetujuan Aset belum diaktifkan di Pengaturan Sistem!");
 
-            // Hitung hasil masuk
-            $totalMasuk = \App\Models\FixedAsset::where('batch_id', $fullBatchCode)->count();
-            \App\Models\ImportBatch::where('batch_id', $fullBatchCode)->update(['total_items' => $totalMasuk]);
+            $steps = \DB::table('approval_workflow_steps')->where('approval_workflow_id', $workflow->id)->orderBy('step_order', 'asc')->get();
+            foreach ($steps as $step) {
+                \App\Models\DocumentApproval::create([
+                    'document_id' => $batch->id, 'document_type' => get_class($batch),
+                    'role_id' => $step->role_id, 'step_order' => $step->step_order, 'status' => 'PENDING'
+                ]);
+            }
 
-            \Illuminate\Support\Facades\Storage::disk('local')->delete($filePath);
-
-            return redirect()->route('fixed-assets.index')->with('success', "Data aset berhasil di-import! (Batch: {$fullBatchCode})");
+            DB::commit();
+            return back()->with('success', 'Draft berhasil diajukan ke Atasan!');
         } catch (\Exception $e) {
-            \App\Models\ImportBatch::where('batch_id', $fullBatchCode ?? '')->delete();
-            return redirect()->route('fixed-assets.index')->with('error', 'Gagal memproses import: ' . $e->getMessage());
+            DB::rollBack();
+            return back()->with('error', $e->getMessage());
         }
+    }
+
+    // =========================================================================
+    // 4. KEPUTUSAN ATASAN & 🔥 SMART AUTO-CREATE ITEM 🔥
+    // =========================================================================
+    public function decide(Request $request, $batch_id)
+    {
+        DB::beginTransaction();
+        try {
+            $batch = \App\Models\FixedAssetImportBatch::findOrFail($batch_id);
+            $action = strtoupper($request->input('action', ''));
+            $currentApproval = \App\Models\DocumentApproval::with('role')->where('document_id', $batch->id)
+                ->where('document_type', get_class($batch))->where('status', 'PENDING')->orderBy('step_order', 'asc')->first();
+
+            if (!$currentApproval && $action !== 'REJECT') {
+                DB::rollBack(); return back()->with('error', 'Tidak menunggu persetujuan Anda.');
+            }
+
+            if ($action === 'REJECT') {
+                $currentApproval->update(['status' => 'REJECTED', 'approved_by' => auth()->id(), 'approved_at' => now()]);
+                $batch->update(['status' => 'draft']);
+                DB::commit(); return back()->with('error', 'Pengajuan dikembalikan ke Draft.');
+            }
+
+            // JIKA APPROVE
+            $currentApproval->update(['status' => 'APPROVED', 'approved_by' => auth()->id(), 'approved_at' => now()]);
+            $nextApproval = \App\Models\DocumentApproval::where('document_id', $batch->id)->where('document_type', get_class($batch))
+                ->where('status', 'PENDING')->orderBy('step_order', 'asc')->first();
+
+            if ($nextApproval) {
+                DB::commit(); return back()->with('success', 'Disetujui. Diteruskan ke atasan berikutnya.');
+            } else {
+                // ===========================================================
+                // FINAL APPROVAL: PINDAH DATA KE BUKU ASET & BUAT ITEM OTOMATIS
+                // ===========================================================
+                $yearMonth = date('Y/m');
+                $details = \App\Models\FixedAssetImportDetail::where('batch_id', $batch->id)->get();
+
+                foreach ($details as $row) {
+                    $item = null;
+
+                    // A. Cari by Kode
+                    if (!empty($row->kode_barang)) {
+                        $item = \App\Models\Item::lockForUpdate()->where('code', $row->kode_barang)->first();
+                    }
+
+                    // B. Jika Tidak Ketemu / Kosong, Eksekusi Smart Auto-Create
+                    if (!$item) {
+                        $namaAsetBaru = $row->nama_spesifik_aset;
+                        $item = \App\Models\Item::lockForUpdate()->where('name', $namaAsetBaru)->first();
+
+                        if (!$item) {
+                            $lastItem = \App\Models\Item::orderBy('id', 'desc')->lockForUpdate()->first();
+                            $nextId   = $lastItem ? $lastItem->id + 1 : 1;
+                            $newCode  = 'ITM-' . str_pad($nextId, 4, '0', STR_PAD_LEFT);
+                            $slug     = \Illuminate\Support\Str::slug($namaAsetBaru) . '-' . \Illuminate\Support\Str::random(4);
+
+                            $cat = \App\Models\Category::firstOrCreate(['code' => 'AST'], ['name' => 'Aset Tetap']);
+                            $uom = \App\Models\Uom::firstOrCreate(['code' => 'PCS'], ['name' => 'Pieces']);
+
+                            $item = \App\Models\Item::create([
+                                'code'           => $newCode,
+                                'slug'           => $slug,
+                                'name'           => $namaAsetBaru,
+                                'category_id'    => $cat->id,
+                                'uom_id'         => $uom->id,
+                                'item_type_code' => 'STK',
+                                'is_trackable'   => 1,
+                                'is_active'      => 1,
+                                'current_stock'  => 0,
+                                'specification'  => 'Aset dibuat otomatis via Smart Auto-Create'
+                            ]);
+                        }
+                    }
+
+                    // C. Tarik Data Relasi
+                    $company = \App\Models\Company::where('name', 'like', "%{$row->nama_pt}%")->first();
+                    $warehouse = \App\Models\Warehouse::where('name', 'like', "%{$row->nama_gudang}%")->first();
+                    $status = \App\Models\Status::where('type', 'AST')->where('name', 'like', "%".explode('(', $row->status_aset)[0]."%")->first();
+
+                    $assignedTo = null;
+                    if ($status && $status->slug === 'in_use' && !empty($row->nama_peminjam)) {
+                        $user = \App\Models\User::where('name', 'like', "%{$row->nama_peminjam}%")->first();
+                        $assignedTo = $user ? $user->id : null;
+                    }
+
+                    $currency = \App\Models\Currency::where('code', strtoupper($row->mata_uang))->first();
+
+                    // D. Bikin Nomor Aset
+                    $lastAsset = \App\Models\FixedAsset::where('asset_number', 'like', "AST/{$yearMonth}/%")->orderBy('id', 'desc')->lockForUpdate()->first();
+                    $nextSeq = $lastAsset ? ((int) substr($lastAsset->asset_number, -4)) + 1 : 1;
+                    $assetNumber = "AST/{$yearMonth}/" . str_pad($nextSeq, 4, '0', STR_PAD_LEFT);
+
+                    // E. Simpan Buku Aset
+                    $asset = \App\Models\FixedAsset::create([
+                        'asset_number'            => $assetNumber,
+                        'item_id'                 => $item->id,
+                        'name'                    => $row->nama_spesifik_aset ?: $item->name,
+                        'warehouse_id'            => $warehouse ? $warehouse->id : 1,
+                        'company_id'              => $company ? $company->id : 1,
+                        'serial_number'           => $row->serial_number,
+                        'accounting_asset_number' => $row->label_akuntansi,
+                        'status_id'               => $status ? $status->id : 1,
+                        'assigned_to'             => $assignedTo,
+                        'spesifikasi_detail'      => $row->spesifikasi,
+                        'notes'                   => $row->catatan,
+                        'acquisition_date'        => $row->tanggal_perolehan,
+                        'purchase_price'          => $row->harga_beli ?: 0,
+                        'currency_id'             => $currency ? $currency->id : 1,
+                        'supporting_document'     => $batch->support_doc,
+                        'batch_id'                => $batch->batch_number,
+                    ]);
+
+                    \App\Models\FixedAssetHistory::create([
+                        'fixed_asset_id' => $asset->id, 'status' => $status ? $status->name : 'Unknown',
+                        'assigned_to' => $assignedTo, 'notes' => 'Di-import via Karantina (Batch: '.$batch->batch_number.')', 'created_by' => auth()->id()
+                    ]);
+
+                    // F. Mutasi Stok
+                    $currStock = (float) $item->current_stock;
+                    $item->update(['current_stock' => $currStock + 1]);
+
+                    \App\Models\InventoryStock::create([
+                        'company_id' => $company ? $company->id : 1, 'warehouse_id' => $warehouse ? $warehouse->id : 1,
+                        'item_id' => $item->id, 'stock_qty' => 1, 'reference_number' => $assetNumber, 'notes' => "Excel Import"
+                    ]);
+
+                    \App\Models\StockMutation::create([
+                        'item_id' => $item->id, 'warehouse_id' => $warehouse ? $warehouse->id : 1,
+                        'type' => 'IN', 'qty' => 1, 'balance_before' => $currStock, 'balance_after' => $currStock + 1,
+                        'reference_number' => $assetNumber, 'notes' => "Penerimaan Aset Import", 'created_by' => auth()->id()
+                    ]);
+                }
+
+                $batch->update(['status' => 'approved']);
+                DB::commit();
+                return redirect()->route('fixed-assets.index')->with('success', 'Buku Aset Resmi disahkan! Item baru telah digenerate otomatis.');
+            }
+        } catch (\Exception $e) {
+            DB::rollBack(); return back()->with('error', 'Terjadi kesalahan sistem: ' . $e->getMessage());
+        }
+    }
+
+    public function cancelImport($batch_id)
+    {
+        $batch = \App\Models\FixedAssetImportBatch::findOrFail($batch_id);
+        if (\Illuminate\Support\Facades\Storage::disk('public')->exists($batch->support_doc)) {
+            \Illuminate\Support\Facades\Storage::disk('public')->delete($batch->support_doc);
+        }
+        $batch->details()->delete();
+        $batch->delete();
+        return redirect()->route('fixed-assets.index')->with('success', 'Draft Import Aset dibatalkan.');
     }
 
     public function downloadTemplate()
@@ -600,13 +521,13 @@ class FixedAssetController extends Controller
 
     public function importHistory()
     {
-        $batches = \App\Models\ImportBatch::with('uploader')->orderBy('created_at', 'desc')->paginate(10);
+        $batches = \App\Models\FixedAssetImportBatch::with('user')->orderBy('created_at', 'desc')->paginate(10);
         return view('fixed_assets.import_history', compact('batches'));
     }
 
     public function printBastByBatch($batchId)
     {
-        $batch = \App\Models\ImportBatch::where('batch_id', $batchId)->firstOrFail();
+        $batch = \App\Models\FixedAssetImportBatch::where('batch_number', $batchId)->firstOrFail();
         $assets = \App\Models\FixedAsset::where('batch_id', $batchId)
                     ->whereNotNull('assigned_to')
                     ->with(['item', 'user', 'company'])
@@ -622,7 +543,7 @@ class FixedAssetController extends Controller
 
     public function showImportBatch($batchId)
     {
-        $batch = \App\Models\ImportBatch::where('batch_id', $batchId)->with('uploader')->firstOrFail();
+        $batch = \App\Models\FixedAssetImportBatch::where('batch_number', $batchId)->with('user')->firstOrFail();
         $assets = \App\Models\FixedAsset::where('batch_id', $batchId)
                     ->with(['item', 'user', 'company', 'status'])
                     ->paginate(20);
@@ -648,9 +569,8 @@ class FixedAssetController extends Controller
     }
 
     public function searchItems(Request $request)
-    {$search = $request->search;
-
-        // 🔥 UBAH is_asset MENJADI item_type_code 🔥
+    {
+        $search = $request->search;
         $items = \App\Models\Item::where('item_type_code', 'AST')
                     ->when($search, function($query) use ($search) {
                         $query->where(function($q) use ($search) {

@@ -1,82 +1,120 @@
 @extends('layouts.app')
 
 @section('content')
-<div class="container pb-5">
-    <div class="d-flex justify-content-between align-items-center mb-4">
-        <h4 class="mb-0 fw-bold text-dark d-flex align-items-center">
+<div class="pb-5 container-fluid text-dark" style="max-width: 1500px;">
+
+    {{-- HEADER --}}
+    <div class="mb-4 d-flex justify-content-between align-items-center">
+        <h3 class="mb-0 fw-bold">
             <i class="bi bi-clock-history text-primary me-2"></i> Riwayat Import Aset
-        </h4>
-        <a href="{{ route('fixed-assets.index') }}" class="btn btn-light border fw-bold shadow-sm rounded-pill px-4">
+        </h3>
+        <a href="{{ route('fixed-assets.index') }}" class="shadow-sm btn btn-light border-secondary rounded-pill fw-bold">
             <i class="bi bi-arrow-left me-1"></i> Kembali ke Aset
         </a>
     </div>
 
-    @if(session('error'))
-        <div class="alert alert-danger shadow-sm border-start border-danger border-4">{{ session('error') }}</div>
-    @endif
-
-    <div class="card border-0 shadow-sm rounded-4 border-top border-primary border-4">
-        <div class="card-body p-0 table-responsive">
-            <table class="table table-hover align-middle mb-0">
-                <thead class="bg-light fw-bold text-muted small border-bottom">
+    {{-- TABEL RIWAYAT --}}
+    <div class="border-0 border-4 shadow-sm card rounded-4 border-top border-primary">
+        <div class="p-0 card-body table-responsive">
+            <table class="table mb-0 align-middle table-hover table-striped">
+                <thead class="bg-light small text-muted text-uppercase">
                     <tr>
                         <th class="py-3 ps-4">Tanggal Upload</th>
-                        <th class="py-3">Batch ID</th>
+                        <th class="py-3">Nomor Batch & Status</th>
                         <th class="py-3">Diupload Oleh</th>
-                        <th class="py-3 text-center">Total Aset Masuk</th>
                         <th class="py-3 text-center">Dokumen Bukti</th>
-                        <th class="py-3 pe-4 text-end">Aksi Cetak</th>
+                        <th class="py-3 pe-4 text-end">Aksi Detail & Cetak</th>
                     </tr>
                 </thead>
                 <tbody>
                     @forelse($batches as $batch)
-                        <tr>
-                            <td class="py-3 ps-4 small text-muted">
-                                <div class="fw-bold text-dark">{{ $batch->created_at->format('d M Y') }}</div>
-                                {{ $batch->created_at->format('H:i:s') }} WIB
-                            </td>
-                            {{-- Batch ID jadi Link Bisa Diklik --}}
-                            <td class="py-3 small">
-                                <a href="{{ route('fixed-assets.show_import_batch', $batch->batch_id) }}" class="fw-bold text-decoration-none text-primary">
-                                    {{ $batch->batch_id }}
+                    <tr>
+                        {{-- 1. TANGGAL UPLOAD --}}
+                        <td class="py-3 ps-4">
+                            <div class="fw-bold text-dark">{{ $batch->created_at->format('d M Y') }}</div>
+                            <div class="small text-muted">{{ $batch->created_at->format('H:i:s') }} WIB</div>
+                        </td>
+
+                        {{-- 2. BATCH ID & STATUS --}}
+                        <td class="py-3">
+                            <a href="{{ route('fixed-assets.import_staging', $batch->id) }}" class="fw-bold text-primary text-decoration-none fs-6">
+                                <i class="bi bi-file-earmark-spreadsheet me-1"></i> {{ $batch->batch_number }}
+                            </a>
+                            <div class="mt-1">
+                                @php
+                                    $statusColor = 'secondary';
+                                    $statusName = strtoupper($batch->status);
+                                    if($batch->status == 'waiting_approval') { $statusColor = 'warning text-dark'; $statusName = 'MENUNGGU APPROVAL'; }
+                                    if($batch->status == 'approved') { $statusColor = 'success'; $statusName = 'DISETUJUI'; }
+                                    if($batch->status == 'rejected') { $statusColor = 'danger'; $statusName = 'DITOLAK'; }
+                                @endphp
+                                <span class="badge bg-{{ $statusColor }} shadow-sm" style="font-size: 0.7rem;">
+                                    {{ $statusName }}
+                                </span>
+                            </div>
+                        </td>
+
+                        {{-- 3. DIUPLOAD OLEH --}}
+                        <td class="py-3">
+                            <div class="fw-bold text-dark">
+                                <i class="bi bi-person-circle text-muted me-1"></i>
+                                {{ optional($batch->user)->name ?? 'System' }}
+                            </div>
+                        </td>
+
+                        {{-- 4. DOKUMEN BUKTI --}}
+                        <td class="py-3 text-center">
+                            @if($batch->support_doc)
+                                <a href="{{ asset('storage/' . $batch->support_doc) }}" target="_blank" class="p-2 shadow-sm badge bg-info text-dark text-decoration-none">
+                                    <i class="bi bi-paperclip"></i> Lihat File
                                 </a>
-                            </td>
-                            <td class="py-3 small fw-bold">
-                                <i class="bi bi-person-circle text-muted me-1"></i> {{ $batch->uploader->name ?? 'System' }}
-                            </td>
-                            <td class="py-3 text-center fw-bold fs-6 text-success">{{ $batch->total_items }}</td>
-                            <td class="py-3 text-center">
-                                @if($batch->support_doc)
-                                    <a href="{{ asset('storage/' . $batch->support_doc) }}" target="_blank" class="btn btn-sm btn-outline-info rounded-pill px-3 fw-bold">
-                                        <i class="bi bi-file-earmark-pdf-fill"></i> Lihat
-                                    </a>
-                                @else
-                                    <span class="text-muted fst-italic small">-</span>
-                                @endif
-                            </td>
-                            <td class="py-3 pe-4 text-end">
-                                <a href="{{ route('fixed-assets.show_import_batch', $batch->batch_id) }}" class="btn btn-sm btn-outline-primary rounded-pill px-3 fw-bold shadow-sm me-1">
-                                    <i class="bi bi-eye-fill"></i> Detail
-                                </a>
-                                <a href="{{ route('fixed-assets.print_bast_batch', $batch->batch_id) }}" class="btn btn-sm btn-danger rounded-pill px-3 fw-bold shadow-sm">
-                                    <i class="bi bi-printer-fill me-1"></i> BAST
-                                </a>
-                            </td>
-                        </tr>
+                            @else
+                                <span class="small text-muted fst-italic">-</span>
+                            @endif
+                        </td>
+
+                        {{-- 5. AKSI CETAK --}}
+                        <td class="py-3 pe-4 text-end text-nowrap">
+                            {{-- Tombol Detail diarahkan ke Ruang Karantina (karena sudah bisa menangani status Draft s/d Approved) --}}
+                            <a href="{{ route('fixed-assets.import_staging', $batch->id) }}" class="px-3 text-white shadow-sm btn btn-sm btn-primary rounded-pill fw-bold me-1">
+                                <i class="bi bi-shield-check me-1"></i> Ruang Karantina
+                            </a>
+
+                            {{-- Tombol Cetak BAST hanya muncul jika sudah di-Approve --}}
+                            @if($batch->status == 'approved')
+                            <div class="dropdown d-inline-block">
+                                <button class="px-3 shadow-sm btn btn-sm btn-success rounded-pill fw-bold dropdown-toggle" type="button" data-bs-toggle="dropdown">
+                                    <i class="bi bi-printer-fill me-1"></i> Cetak
+                                </button>
+                                <ul class="border-0 shadow-sm dropdown-menu dropdown-menu-end rounded-3">
+                                    <li>
+                                        <a class="py-2 dropdown-item fw-medium text-success" href="{{ route('fixed-assets.print_bast_batch', $batch->batch_number) }}" target="_blank">
+                                            <i class="bi bi-file-earmark-check me-2"></i> Cetak BAST Massal
+                                        </a>
+                                    </li>
+                                </ul>
+                            </div>
+                            @endif
+                        </td>
+                    </tr>
                     @empty
-                        <tr>
-                            <td colspan="6" class="py-5 text-center text-muted">
-                                <i class="bi bi-inbox display-4 d-block mb-3 opacity-50"></i>
-                                Belum ada riwayat import aset.
-                            </td>
-                        </tr>
+                    <tr>
+                        <td colspan="5" class="py-5 text-center text-muted">
+                            <i class="mb-2 opacity-50 bi bi-inbox fs-1 d-block"></i>
+                            <span class="fw-bold">Belum ada riwayat import aset.</span>
+                        </td>
+                    </tr>
                     @endforelse
                 </tbody>
             </table>
         </div>
-        <div class="card-footer bg-white p-3 border-top rounded-bottom-4">
+
+        {{-- PAGINASI --}}
+        @if($batches->hasPages())
+        <div class="pt-3 pb-2 bg-white border-0 card-footer rounded-bottom-4">
             {{ $batches->links() }}
         </div>
+        @endif
     </div>
 </div>
 @endsection

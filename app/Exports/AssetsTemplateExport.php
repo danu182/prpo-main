@@ -30,7 +30,7 @@ class AssetsTemplateExport implements WithMultipleSheets
                     return [[
                         'Kode Barang', 'Nama Spesifik Aset', 'Serial Number', 'Label Akuntansi',
                         'Nama PT', 'Nama Gudang', 'Status', 'Nama Peminjam',
-                        'Tanggal Perolehan', 'Mata Uang', 'Harga Beli Angka Murni', 'Spesifikasi', 'Catatan' // 🔥 Mata Uang ditambahkan disini
+                        'Tanggal Perolehan', 'Mata Uang', 'Harga Beli Angka Murni', 'Spesifikasi', 'Catatan'
                     ]];
                 }
                 public function title(): string { return '1. Form Import Aset'; }
@@ -52,7 +52,8 @@ class AssetsTemplateExport implements WithMultipleSheets
             // =======================================================
             new class implements FromCollection, WithHeadings, WithTitle {
                 public function collection() {
-                    return Item::where('is_asset', true)->select('code', 'name')->orderBy('name')->get();
+                    // Hanya tampilkan yang tipenya Aset/Fisik jika diperlukan, atau semua item
+                    return Item::select('code', 'name')->orderBy('name')->get();
                 }
                 public function headings(): array { return ['KODE BARANG (COPAS KE FORM)', 'NAMA ASET TETAP']; }
                 public function title(): string { return '3. Referensi Barang'; }
@@ -92,7 +93,7 @@ class AssetsTemplateExport implements WithMultipleSheets
             },
 
             // =======================================================
-            // 🔥 SHEET 7: REFERENSI MATA UANG 🔥
+            // SHEET 7: REFERENSI MATA UANG
             // =======================================================
             new class implements FromCollection, WithHeadings, WithTitle {
                 public function collection() {
@@ -103,13 +104,14 @@ class AssetsTemplateExport implements WithMultipleSheets
             },
 
             // =======================================================
-            // SHEET 8: PANDUAN PENGISIAN
+            // 🔥 SHEET 8: PANDUAN PENGISIAN (DISESUAIKAN UNTUK SMART AUTO-CREATE) 🔥
             // =======================================================
             new class implements FromArray, WithHeadings, WithTitle {
                 public function array(): array {
                     return [
-                        ['Kode Barang', 'WAJIB', 'Ambil dari Sheet 3 (Referensi Barang).'],
-                        ['Nama Spesifik Aset', 'OPSIONAL', 'Cth: Laptop Core i7. Kosong = pakai nama Master.'],
+                        // 🔥 PERBAIKAN: Kode Barang jadi OPSIONAL, Nama Spesifik jadi WAJIB jika kode kosong
+                        ['Kode Barang', 'OPSIONAL', 'Ambil dari Sheet 3. KOSONGKAN jika barang belum ada di Katalog, sistem akan membuatkannya otomatis.'],
+                        ['Nama Spesifik Aset', 'WAJIB (Jika Kode Kosong)', 'Cth: Laptop Core i7. WAJIB DIISI jika Kode Barang di atas dikosongkan.'],
                         ['Serial Number', 'OPSIONAL', 'Nomor Seri / S/N fisik.'],
                         ['Label Akuntansi', 'OPSIONAL', 'Nomor aset dari Keuangan (Cth: FA-001).'],
                         ['Nama PT', 'WAJIB', 'Ambil dari Sheet 4 (Referensi PT).'],
@@ -117,7 +119,7 @@ class AssetsTemplateExport implements WithMultipleSheets
                         ['Status', 'WAJIB', 'Ambil dari Sheet 6. WAJIB COPAS!'],
                         ['Nama Peminjam', 'OPSIONAL', 'Wajib diisi jika status "In Use". Ambil dari Sheet 2.'],
                         ['Tanggal Perolehan', 'OPSIONAL', 'Format: YYYY-MM-DD atau format Date Excel.'],
-                        ['Mata Uang', 'OPSIONAL', 'Ketik IDR, USD, dll. Kosong = IDR. Ambil dari Sheet 7.'], // 🔥 PANDUAN BARU
+                        ['Mata Uang', 'OPSIONAL', 'Ketik IDR, USD, dll. Kosong = IDR. Ambil dari Sheet 7.'],
                         ['Harga Beli Angka Murni', 'OPSIONAL', 'Hanya angka! (Cth: 15000000)'],
                         ['Spesifikasi', 'OPSIONAL', 'Detail spek khusus unit ini.'],
                         ['Catatan', 'OPSIONAL', 'Keterangan tambahan jika ada.'],
