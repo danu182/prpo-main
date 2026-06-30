@@ -45,7 +45,6 @@
                     $currentApproval = \App\Models\DocumentApproval::with('role')->where('document_id', $batch->id)
                         ->where('document_type', get_class($batch))->where('status', 'PENDING')->first();
 
-                    // 🔥 PERBAIKAN 1: Hak Akses Super Admin dibuat lebih kebal (Bulletproof)
                     $isApprover = false;
                     if ($currentApproval && auth()->check()) {
                         $user = auth()->user();
@@ -56,30 +55,38 @@
                 @endphp
 
                 @if(in_array(strtolower($batch->status), ['draft', 'rejected']))
-                    <form action="{{ route('fixed-assets.submit_approval', $batch->id) }}" method="POST" class="w-100">
+                    <form id="formSubmitApproval" action="{{ route('fixed-assets.submit_approval', $batch->id) }}" method="POST" class="w-100">
                         @csrf
-                        <button type="submit" class="mb-2 shadow-sm btn btn-warning w-100 fw-bold rounded-pill" {{ $errCount > 0 ? 'disabled' : '' }}>
+                        {{-- ID khusus untuk SweetAlert --}}
+                        <button type="button" id="btnSubmitApproval" class="mb-2 shadow-sm btn btn-warning w-100 fw-bold rounded-pill" {{ $errCount > 0 ? 'disabled' : '' }}>
                             Ajukan Approval <i class="bi bi-send-check ms-1"></i>
                         </button>
                     </form>
-                    <form action="{{ route('fixed-assets.cancel_import', $batch->id) }}" method="POST" class="w-100">
+                    <form id="formCancelDraft" action="{{ route('fixed-assets.cancel_import', $batch->id) }}" method="POST" class="w-100">
                         @csrf @method('DELETE')
-                        <button type="submit" class="border-2 btn btn-outline-danger w-100 fw-bold rounded-pill small" onclick="return confirm('Hapus draft ini?')">Batalkan Draft</button>
+                        {{-- ID khusus untuk SweetAlert --}}
+                        <button type="button" id="btnCancelDraft" class="border-2 btn btn-outline-danger w-100 fw-bold rounded-pill small">Batalkan Draft</button>
                     </form>
 
-                {{-- 🔥 PERBAIKAN 2: Ubah 'pending' menjadi 'waiting_approval' --}}
                 @elseif(strtolower($batch->status) === 'waiting_approval' && $isApprover)
                     <div class="mb-2 small text-warning fw-bold"><i class="bi bi-exclamation-circle-fill me-1"></i> Menunggu Keputusan Anda</div>
+
                     <form action="{{ route('fixed-assets.decide', $batch->id) }}" method="POST" class="mb-2 w-100">
                         @csrf <input type="hidden" name="action" value="APPROVE">
-                        <button type="submit" class="shadow-sm btn btn-success w-100 fw-bold rounded-pill" onclick="return confirm('Mengesahkan dan Auto-Create Item?')"><i class="bi bi-check-circle-fill me-1"></i> Setujui (Approve)</button>
-                    </form>
-                    <form action="{{ route('fixed-assets.decide', $batch->id) }}" method="POST" class="w-100">
-                        @csrf <input type="hidden" name="action" value="REJECT">
-                        <button type="submit" class="border-2 btn btn-outline-danger w-100 fw-bold rounded-pill small"><i class="bi bi-x-circle me-1"></i> Tolak (Reject)</button>
+                        {{-- PERBAIKAN: type="button" & tambah class "btn-approve-final" --}}
+                        <button type="button" class="shadow-sm btn btn-success w-100 fw-bold rounded-pill btn-approve-final">
+                            <i class="bi bi-check-circle-fill me-1"></i> Setujui (Approve)
+                        </button>
                     </form>
 
-                {{-- 🔥 PERBAIKAN 3: Jika Menunggu Approval tapi bukan giliran User ini (agar kotak tidak kosong) --}}
+                    <form action="{{ route('fixed-assets.decide', $batch->id) }}" method="POST" class="w-100">
+                        @csrf <input type="hidden" name="action" value="REJECT">
+                        {{-- PERBAIKAN: type="button" & tambah class "btn-reject-final" --}}
+                        <button type="button" class="border-2 btn btn-outline-danger w-100 fw-bold rounded-pill small btn-reject-final">
+                            <i class="bi bi-x-circle me-1"></i> Tolak (Reject)
+                        </button>
+                    </form>
+
                 @elseif(strtolower($batch->status) === 'waiting_approval' && !$isApprover)
                     <div class="mb-2 display-4 text-warning"><i class="bi bi-hourglass-split"></i></div>
                     <div class="small fw-bold">Menunggu Persetujuan</div>
@@ -152,3 +159,74 @@
     </div>
 </div>
 @endsection
+
+
+@push('scripts')
+{{-- Panggil Library SweetAlert2 --}}
+<script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+
+<script>
+    document.addEventListener("DOMContentLoaded", function() {
+
+        // 1. SWEETALERT UNTUK TOMBOL APPROVE
+        document.querySelectorAll('.btn-approve-final').forEach(btn => {
+            btn.addEventListener('click', function() {
+                const form = this.closest('form'); // Ambil form tempat tombol ini berada
+
+                Swal.fire({
+                    title: 'Mengesahkan Import Aset?',
+                    text: "Aset akan resmi masuk ke Buku Utama. Sistem otomatis membuat Master Barang baru jika kode dikosongkan.",
+                    icon: 'success',
+                    showCancelButton: true,
+                    confirmButtonColor: '#198754', // Hijau Sukses
+                    cancelButtonColor: '#6c757d',  // Abu-abu Batal
+                    confirmButtonText: '<i class="bi bi-check-circle-fill me-1"></i> Ya, Sahkan Aset!',
+                    cancelButtonText: 'Batal'
+                }).then((result) => {
+                    if (result.isConfirmed) {
+                        // Munculkan loading agar user tidak klik 2 kali
+                        Swal.fire({
+                            title: 'Mengesahkan...',
+                            text: 'Sistem sedang memindahkan aset dan merekam pergerakan stok.',
+                            icon: 'info',
+                            showConfirmButton: false,
+                            allowOutsideClick: false
+                        });
+                        form.submit(); // Eksekusi form ke Controller
+                    }
+                });
+            });
+        });
+
+        // 2. SWEETALERT UNTUK TOMBOL REJECT
+        document.querySelectorAll('.btn-reject-final').forEach(btn => {
+            btn.addEventListener('click', function() {
+                const form = this.closest('form');
+
+                Swal.fire({
+                    title: 'Tolak Pengajuan?',
+                    text: "Berkas Karantina ini akan dikembalikan ke status Draft untuk diperbaiki.",
+                    icon: 'error',
+                    showCancelButton: true,
+                    confirmButtonColor: '#dc3545', // Merah Danger
+                    cancelButtonColor: '#6c757d',
+                    confirmButtonText: '<i class="bi bi-x-circle me-1"></i> Ya, Tolak!',
+                    cancelButtonText: 'Batal'
+                }).then((result) => {
+                    if (result.isConfirmed) {
+                        Swal.fire({
+                            title: 'Menolak...',
+                            text: 'Mengembalikan berkas ke staf.',
+                            icon: 'info',
+                            showConfirmButton: false,
+                            allowOutsideClick: false
+                        });
+                        form.submit();
+                    }
+                });
+            });
+        });
+
+    });
+</script>
+@endpush
