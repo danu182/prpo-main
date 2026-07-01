@@ -6,6 +6,9 @@
         .dropdown-item.text-danger:hover { background-color: #dc3545; color: white !important; }
         .overdue-row { border-left: 4px solid #dc3545; }
         .normal-row { border-left: 4px solid transparent; }
+        .nav-pills .nav-link.active { background-color: #0d6efd; box-shadow: 0 0.125rem 0.25rem rgba(13, 110, 253, 0.4); }
+        .nav-pills .nav-link { color: #6c757d; font-weight: 600; border-radius: 50rem; padding: 0.5rem 1.5rem; transition: all 0.3s; }
+        .nav-pills .nav-link:hover:not(.active) { background-color: #e9ecef; color: #000; }
     </style>
 @endpush
 
@@ -23,10 +26,29 @@
         </a>
     </div>
 
+    {{-- 🔥 NAV TABS (SEMUA TAGIHAN vs LANGGANAN AKTIF) 🔥 --}}
+    <ul class="p-2 mb-4 bg-white border shadow-sm nav nav-pills rounded-pill d-inline-flex">
+        <li class="nav-item">
+            <a class="nav-link {{ request('tab') != 'recurring' ? 'active' : '' }}" href="{{ route('bills.index') }}">
+                <i class="bi bi-receipt-cutoff me-1"></i> Semua Tagihan
+            </a>
+        </li>
+        <li class="nav-item">
+            <a class="nav-link {{ request('tab') == 'recurring' ? 'active' : '' }}" href="{{ route('bills.index', ['tab' => 'recurring']) }}">
+                <i class="bi bi-arrow-repeat me-1"></i> Langganan Aktif (Recurring)
+            </a>
+        </li>
+    </ul>
+
     {{-- CARD FILTER --}}
     <div class="mb-4 border-0 shadow-sm card rounded-4 bg-light">
         <div class="p-3 card-body">
             <form action="{{ route('bills.index') }}" method="GET">
+                {{-- Pertahankan parameter tab saat filter dijalankan --}}
+                @if(request()->has('tab'))
+                    <input type="hidden" name="tab" value="{{ request('tab') }}">
+                @endif
+
                 <div class="row g-2 align-items-end">
                     {{-- Filter Perusahaan --}}
                     <div class="col-md-3">
@@ -48,7 +70,7 @@
                                placeholder="Ketik nama vendor..." value="{{ request('vendor') }}">
                     </div>
 
-                    {{-- Filter Status (Value menggunakan SLUG) --}}
+                    {{-- Filter Status --}}
                     <div class="col-md-2">
                         <label class="mb-1 small fw-bold text-muted" style="font-size: 0.75rem;">STATUS</label>
                         <select name="status" class="border-0 shadow-sm form-select form-select-sm">
@@ -80,7 +102,7 @@
 
                 @if(request()->anyFilled(['company_id', 'vendor', 'status', 'search']))
                     <div class="mt-2 text-end">
-                        <a href="{{ route('bills.index') }}" class="text-decoration-none small text-danger fw-bold">
+                        <a href="{{ route('bills.index', ['tab' => request('tab')]) }}" class="text-decoration-none small text-danger fw-bold">
                             <i class="bi bi-x-circle me-1"></i> Reset Filter
                         </a>
                     </div>
@@ -106,13 +128,11 @@
                 <tbody class="border-top-0">
                     @forelse($bills as $bill)
                     @php
-                        // TARIK DATA DARI RELASI STATUS (Gunakan optional agar tidak error jika NULL)
                         $statusSlug = optional($bill->status)->slug ?? 'unknown';
                         $statusName = optional($bill->status)->name ?? 'UNKNOWN';
                         $statusColor = optional($bill->status)->color ?? 'secondary';
 
-                        // Cek apakah tagihan Overdue
-                        $isOverdue = \Carbon\Carbon::parse($bill->due_date)->isPast() && !in_array($statusSlug, ['paid', 'rejected', 'canceled']);
+                        $isOverdue = \Carbon\Carbon::parse($bill->due_date)->isPast() && !in_array($statusSlug, ['paid', 'rejected', 'cancelled']);
                     @endphp
                     <tr class="{{ $isOverdue ? 'overdue-row bg-danger bg-opacity-10' : 'normal-row' }}">
                         <td class="px-4 py-3">
@@ -150,7 +170,6 @@
                             @endif
                         </td>
                         <td class="py-3 text-center">
-                            {{-- BADGE STATUS SEKARANG LANGSUNG BACA DARI DATABASE! --}}
                             <span class="badge bg-{{ $statusColor }}-subtle text-{{ $statusColor }} border border-{{ $statusColor }} rounded-pill px-3 py-2 text-uppercase">
                                 {{ $statusName }}
                             </span>
@@ -172,7 +191,6 @@
                                         </a>
                                     </li>
 
-                                    {{-- AKSI BERDASARKAN SLUG STATUS --}}
                                     @if(in_array($statusSlug, ['pending', 'draft', 'rejected']))
                                         <li><hr class="dropdown-divider"></li>
                                         <li>

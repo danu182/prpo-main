@@ -31,7 +31,6 @@
                 <i class="bi bi-arrow-left me-1"></i> Kembali
             </a>
 
-            {{-- PERBAIKAN: Gunakan statusSlug --}}
             @if(in_array($statusSlug, ['pending', 'draft']))
                 <a href="{{ route('bills.edit', $bill->bill_number) }}" class="btn btn-warning rounded-pill text-dark fw-bold">
                     <i class="bi bi-pencil me-1"></i> Edit Tagihan
@@ -53,7 +52,6 @@
                 <div class="p-4 card-body">
                     <div class="mb-4 d-flex justify-content-between align-items-start">
 
-                        {{-- PERBAIKAN: Badge Status Langsung dari Database --}}
                         <span class="badge bg-{{ $statusColor }}-subtle text-{{ $statusColor }} px-3 py-2 rounded-pill fw-bold border border-{{ $statusColor }} text-uppercase">
                             <i class="bi bi-info-circle me-1"></i> STATUS: {{ $statusName }}
                         </span>
@@ -216,11 +214,9 @@
                     <div class="row g-3">
                         @foreach($attachments as $file)
                         <div class="col-md-6">
-                            {{-- Gunakan asset('storage/...') untuk memanggil path lokal --}}
                             <a href="{{ asset('storage/' . $file->file_path) }}" target="_blank" class="text-decoration-none">
                                 <div class="p-3 border rounded-4 bg-light d-flex align-items-center hover-shadow">
                                     <div class="p-2 bg-white shadow-sm rounded-circle me-3">
-                                        {{-- Deteksi ekstensi file sederhana --}}
                                         @if(Str::endsWith(strtolower($file->file_name), ['.jpg', '.jpeg', '.png']))
                                             <i class="bi bi-file-image fs-4 text-primary"></i>
                                         @elseif(Str::endsWith(strtolower($file->file_name), ['.pdf']))
@@ -252,7 +248,6 @@
                             <div class="d-flex gap-3 {{ !$loop->last ? 'mb-4' : '' }}">
                                 <div class="flex-shrink-0 text-center" style="width: 40px; position: relative;">
                                     @php
-                                        // History Action tetap statis (CREATED, APPROVED), jadi match ini aman
                                         $color = match($history->action) {
                                             'CREATED'  => 'primary',
                                             'UPDATED'  => 'warning',
@@ -300,12 +295,11 @@
 
         </div>
 
-        {{-- KOLOM KANAN: SUMMARY --}}
+        {{-- KOLOM KANAN: SUMMARY & ACTIONS --}}
         <div class="col-lg-4">
 
-            {{-- 🔥 PERBAIKAN MUTLAK: TOMBOL APPROVAL PASTI MUNCUL 🔥 --}}
             @php
-                // 1. Cari Antrean PENDING untuk dokumen ini (Cari pakai 2 tipe data untuk amannya)
+                // 1. Cari Antrean PENDING untuk dokumen ini
                 $currentApproval = \App\Models\DocumentApproval::with('role')
                     ->where('document_id', $bill->id)
                     ->whereIn('document_type', ['App\Models\BillRequest', 'OPEX', 'BillRequest', get_class($bill)])
@@ -317,25 +311,23 @@
                 $userRoleNames = auth()->user()->getRoleNames()->toArray();
                 $userRoleIds = auth()->user()->roles->pluck('id')->toArray();
 
-                // 3. Apakah dia Super Admin? (Malaikat Penolong)
+                // 3. Apakah dia Super Admin?
                 $isSuperAdmin = in_array('Super Administrator', $userRoleNames) || in_array('Super Admin', $userRoleNames) || auth()->id() === 1;
 
-                // 4. Logika Penentu Muncul/Tidaknya Tombol
+                // 4. Logika Penentu Muncul/Tidaknya Tombol Approval
                 $canApprove = false;
-
                 if ($currentApproval) {
-                    // JIKA ADA ANTREAN: Cek apakah ID Jabatannya cocok, ATAU dia adalah Super Admin
                     if (in_array($currentApproval->role_id, $userRoleIds) || $isSuperAdmin) {
                         $canApprove = true;
                     }
                 } else {
-                    // JIKA ANTREAN KOSONG/RUSAK: Super Admin akan selalu bisa melihat tombol ini (Bypass Mode)
                     if ($isSuperAdmin) {
                         $canApprove = true;
                     }
                 }
             @endphp
 
+            {{-- PANEL APPROVAL --}}
             @if(in_array($statusSlug, ['pending', 'partial_approved', 'draft']) && $canApprove)
             <div class="mb-4 border border-0 shadow-sm card rounded-4 border-warning">
                 <div class="p-4 card-body bg-warning-subtle rounded-4">
@@ -362,7 +354,38 @@
             </div>
             @endif
 
-            {{-- PERBAIKAN: PANEL REJECTED PAKAI SLUG --}}
+            {{-- PANEL PEMBATALAN TAGIHAN (VOID BILL) JIKA BELUM LUNAS --}}
+            @php
+                $isBillActive = !in_array($statusSlug, ['paid', 'lunas', 'void', 'cancelled', 'rejected']);
+                $hasPartialPayment = in_array($statusSlug, ['partial', 'partial_paid', 'dicicil', 'partial_approved']);
+            @endphp
+
+            @if($isBillActive && $isSuperAdmin)
+            <div class="mb-4 border border-0 shadow-sm card rounded-4 border-danger">
+                <div class="p-4 card-body bg-danger-subtle rounded-4">
+                    <h6 class="mb-2 fw-bold text-danger">
+                        <i class="bi bi-trash3-fill me-2"></i>Pembatalan Tagihan
+                    </h6>
+
+                    @if($hasPartialPayment)
+                        <div class="p-3 mb-0 border-0 alert alert-danger small rounded-3">
+                            <i class="bi bi-exclamation-triangle-fill me-1"></i> <strong>Aksi Terkunci:</strong> Tagihan ini sudah memiliki riwayat pembayaran. Batalkan riwayat pembayarannya terlebih dahulu jika ingin me-Void tagihan ini.
+                        </div>
+                    @else
+                        <p class="mb-3 small text-muted">Tagihan ini belum dibayar/lunas. Anda dapat membatalkan (Void) keseluruhan tagihan ini.</p>
+
+                        <form id="formVoidBill" action="{{ route('bills.void', $bill->bill_number) }}" method="POST" class="w-100">
+                            @csrf
+                            <button type="button" class="py-2 bg-white shadow-sm btn btn-outline-danger w-100 fw-bold rounded-pill" onclick="window.prosesVoidBill()">
+                                <i class="bi bi-x-octagon-fill me-2"></i> Void / Batal Tagihan
+                            </button>
+                        </form>
+                    @endif
+                </div>
+            </div>
+            @endif
+
+            {{-- PANEL REJECTED INFO --}}
             @if($statusSlug == 'rejected')
             <div class="mb-4 text-white border-0 shadow-sm card rounded-4 bg-danger">
                 <div class="p-4 card-body">
@@ -375,27 +398,21 @@
             </div>
             @endif
 
-
-            {{-- 🔥 FITUR SKENARIO 1 & 2: MUNCUL JIKA STATUS LUNAS (PAID) 🔥 --}}
+            {{-- PANEL JIKA SUDAH LUNAS (PAID) --}}
             @if(in_array(strtolower($statusSlug), ['paid', 'lunas']) || strtoupper($bill->status) === 'PAID')
             <div class="mb-4 border border-0 shadow-sm card rounded-4 border-success">
                 <div class="p-4 card-body bg-success-subtle rounded-4">
                     <h6 class="mb-2 fw-bold text-success">
                         <i class="bi bi-check-circle-fill me-2"></i>Tagihan Lunas (Paid)
                     </h6>
-                    <p class="mb-4 small text-muted">Tambahkan bukti transfer susulan jika tertinggal. Pembatalan hanya bisa dilakukan oleh Atasan.</p>
+                    <p class="mb-4 small text-muted">Tambahkan bukti transfer susulan jika tertinggal. Pembatalan pembayaran hanya bisa dilakukan oleh Atasan.</p>
 
                     <div class="gap-2 d-grid">
                         <button type="button" class="py-2 shadow-sm btn btn-success w-100 fw-bold rounded-pill" data-bs-toggle="modal" data-bs-target="#uploadSusulanModal">
                             <i class="bi bi-cloud-upload me-2"></i> Upload Bukti Susulan
                         </button>
 
-                        @php
-                            $userRoles = auth()->user()->getRoleNames()->toArray();
-                            $canVoid = in_array('Super Administrator', $userRoles) || in_array('Super Admin', $userRoles) || in_array('manager', array_map('strtolower', $userRoles)) || auth()->id() === 1;
-                        @endphp
-
-                        @if($canVoid)
+                        @if($isSuperAdmin || in_array('manager', array_map('strtolower', $userRoleNames)))
                             <button type="button" class="py-2 bg-white shadow-sm btn btn-outline-danger w-100 fw-bold rounded-pill" data-bs-toggle="modal" data-bs-target="#voidPaymentModal">
                                 <i class="bi bi-x-octagon-fill me-2"></i> Batalkan Pembayaran (Void)
                             </button>
@@ -473,19 +490,27 @@
                         <div class="p-2 bg-white shadow-sm rounded-circle text-info me-3">
                             <i class="bi bi-arrow-repeat fs-5"></i>
                         </div>
-                        <h6 class="mb-0 fw-bold text-info-emphasis">Siklus Berulang</h6>
+                        <h6 class="mb-0 fw-bold text-info-emphasis">Siklus Berulang Aktif</h6>
                     </div>
                     <p class="p-2 mb-3 bg-white border rounded small text-muted">
                         Sistem akan membuat tagihan ini secara otomatis setiap <strong>{{ $bill->recurring_interval }} {{ $bill->recurring_period }}</strong>.
                     </p>
                     @if($bill->next_generation_date)
-                        <div class="small">
+                        <div class="mb-3 small">
                             <span class="text-muted fw-bold">Jadwal Generate Berikutnya:</span><br>
                             <div class="mt-1 fs-6 fw-bold text-dark">
                                 <i class="bi bi-calendar-check text-success me-1"></i> {{ date('d F Y', strtotime($bill->next_generation_date)) }}
                             </div>
                         </div>
                     @endif
+
+                    {{-- TOMBOL STOP LANGGANAN --}}
+                    <form action="{{ route('bills.stop_recurring', $bill->bill_number) }}" method="POST" class="pt-3 mt-2 border-top border-info">
+                        @csrf
+                        <button type="button" class="bg-white btn btn-outline-danger btn-sm w-100 rounded-pill fw-bold" onclick="if(confirm('Yakin ingin menghentikan langganan ini? Sistem tidak akan membuat tagihan otomatis lagi untuk dokumen ini.')) this.form.submit();">
+                            <i class="bi bi-slash-circle me-1"></i> Hentikan Langganan
+                        </button>
+                    </form>
                 </div>
             </div>
             @endif
@@ -536,11 +561,88 @@
     </div>
 </div>
 
+{{-- MODAL PEMBATALAN KESELURUHAN TAGIHAN (VOID BILL) --}}
+<div class="modal fade" id="voidBillModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="border-0 shadow-lg modal-content rounded-4">
+            <form action="{{ route('bills.void', $bill->bill_number) }}" method="POST">
+                @csrf
+                <div class="pb-0 border-0 modal-header">
+                    <h5 class="modal-title fw-bold text-danger"><i class="bi bi-exclamation-triangle-fill me-2"></i>Void / Batal Tagihan</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="p-4 modal-body">
+                    <div class="mb-4 border-0 alert alert-danger small rounded-3">
+                        Tindakan ini akan membatalkan tagihan secara <strong>PERMANEN</strong> menjadi status VOID. Tagihan ini tidak akan dapat diproses lagi.
+                    </div>
+                    <div class="mb-2">
+                        <label class="form-label small fw-bold text-muted">ALASAN PEMBATALAN <span class="text-danger">* (minimal 5 karakter)</span></label>
+                        <textarea name="void_reason" class="form-control rounded-3" rows="3" placeholder="Contoh: Salah input vendor, dobel tagihan..." required></textarea>
+                    </div>
+                </div>
+                <div class="px-4 pt-0 pb-4 border-0 modal-footer">
+                    <button type="button" class="px-4 btn btn-light rounded-pill fw-bold" data-bs-dismiss="modal">Tutup</button>
+                    <button type="submit" class="px-4 shadow-sm btn btn-danger rounded-pill fw-bold">
+                        <i class="bi bi-trash me-1"></i> Konfirmasi Void
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
 @endsection
 
 @push('scripts')
     <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
     <script>
+
+
+// FUNGSI VOID BILL DENGAN SWEETALERT INPUT
+        window.prosesVoidBill = function() {
+            Swal.fire({
+                title: 'Void / Batal Tagihan?',
+                text: "Tindakan ini akan membatalkan tagihan secara PERMANEN menjadi status VOID.",
+                icon: 'warning',
+                input: 'textarea',
+                inputPlaceholder: 'Ketik alasan pembatalan di sini (Wajib)...',
+                showCancelButton: true,
+                confirmButtonColor: '#dc3545',
+                cancelButtonColor: '#6c757d',
+                confirmButtonText: '<i class="bi bi-trash"></i> Konfirmasi Void',
+                cancelButtonText: 'Batal',
+                inputValidator: (value) => {
+                    if (!value) {
+                        return 'Alasan pembatalan tidak boleh kosong!';
+                    }
+                    if (value.length < 5) {
+                        return 'Alasan minimal harus 5 karakter!';
+                    }
+                }
+            }).then((result) => {
+                if (result.isConfirmed) {
+                    Swal.fire({
+                        title: 'Memproses...',
+                        text: 'Membatalkan tagihan secara permanen...',
+                        icon: 'info',
+                        showConfirmButton: false,
+                        allowOutsideClick: false
+                    });
+
+                    // Sisipkan teks alasan ke dalam Form lalu Submit ke Laravel
+                    const form = document.getElementById('formVoidBill');
+                    const reasonInput = document.createElement('input');
+                    reasonInput.type = 'hidden';
+                    reasonInput.name = 'void_reason';
+                    reasonInput.value = result.value;
+                    form.appendChild(reasonInput);
+
+                    form.submit();
+                }
+            });
+        };
+
+
         document.getElementById('btn-approve')?.addEventListener('click', function() {
             Swal.fire({
                 title: 'Setujui Tagihan?',

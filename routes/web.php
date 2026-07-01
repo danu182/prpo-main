@@ -453,28 +453,32 @@ Route::middleware('auth')->group(function () {
     // 5. MODUL FINANCE (A/P, BILLS, PAYMENTS)
     // ====================================================
     Route::prefix('bills')->name('bills.')->middleware(['can:view_bills'])->group(function () {
-        Route::get('/', [BillRequestController::class, 'index'])->name('index');
-        Route::get('/create', [BillRequestController::class, 'create'])->name('create');
-        Route::post('/', [BillRequestController::class, 'store'])->name('store');
+        Route::get('/', [\App\Http\Controllers\BillRequestController::class, 'index'])->name('index');
+        Route::get('/create', [\App\Http\Controllers\BillRequestController::class, 'create'])->name('create');
+        Route::post('/', [\App\Http\Controllers\BillRequestController::class, 'store'])->name('store');
 
         // 🔥 PREFIKS AKSI DI DEPAN: Mengamankan URL dari Kerakusan Regex (Mencegah 404) 🔥
-        Route::get('/detail/{slug}', [BillRequestController::class, 'show'])->name('show')->where('slug', '.*');
-        Route::get('/edit/{slug}', [BillRequestController::class, 'edit'])->name('edit')->where('slug', '.*');
-        Route::put('/update/{slug}', [BillRequestController::class, 'update'])->name('update')->where('slug', '.*');
-        Route::delete('/destroy/{slug}', [BillRequestController::class, 'destroy'])->name('destroy')->where('slug', '.*');
+        Route::get('/detail/{slug}', [\App\Http\Controllers\BillRequestController::class, 'show'])->name('show')->where('slug', '.*');
+        Route::get('/edit/{slug}', [\App\Http\Controllers\BillRequestController::class, 'edit'])->name('edit')->where('slug', '.*');
+        Route::put('/update/{slug}', [\App\Http\Controllers\BillRequestController::class, 'update'])->name('update')->where('slug', '.*');
+        Route::delete('/destroy/{slug}', [\App\Http\Controllers\BillRequestController::class, 'destroy'])->name('destroy')->where('slug', '.*');
 
-        Route::post('/approve/{slug}', [BillRequestController::class, 'approve'])->name('approve')->where('slug', '.*');
-        Route::post('/reject/{slug}', [BillRequestController::class, 'reject'])->name('reject')->where('slug', '.*');
-        Route::post('/pay/{slug}', [BillRequestController::class, 'markAsPaid'])->name('markAsPaid')->where('slug', '.*');
+        Route::post('/approve/{slug}', [\App\Http\Controllers\BillRequestController::class, 'approve'])->name('approve')->where('slug', '.*');
+        Route::post('/reject/{slug}', [\App\Http\Controllers\BillRequestController::class, 'reject'])->name('reject')->where('slug', '.*');
+        Route::post('/pay/{slug}', [\App\Http\Controllers\BillRequestController::class, 'markAsPaid'])->name('markAsPaid')->where('slug', '.*');
 
-        Route::delete('/attachment/{slug}/{mediaId}', [BillRequestController::class, 'destroyAttachment'])->name('destroyAttachment')->where('slug', '.*');
-        Route::get('/print/{slug}', [BillRequestController::class, 'printPdf'])->name('print')->where('slug', '.*');
+        // 🔥 RUTE BARU: Untuk Membatalkan (Void) Keseluruhan Tagihan 🔥
+        Route::post('/void/{slug}', [\App\Http\Controllers\BillRequestController::class, 'voidBill'])->name('void')->where('slug', '.*');
 
+        Route::delete('/attachment/{slug}/{mediaId}', [\App\Http\Controllers\BillRequestController::class, 'destroyAttachment'])->name('destroyAttachment')->where('slug', '.*');
+        Route::get('/print/{slug}', [\App\Http\Controllers\BillRequestController::class, 'printPdf'])->name('print')->where('slug', '.*');
 
-        // Tambahan untuk Fitur Skenario 1 (Lampiran Susulan) & Skenario 2 (Void Pembayaran)
-        Route::post('/{slug}/add-attachment', [\App\Http\Controllers\BillRequestController::class, 'addLateAttachment'])->name('bills.add_attachment');
-        Route::post('/{slug}/void-payment', [\App\Http\Controllers\BillRequestController::class, 'voidPayment'])->name('bills.void_payment');
+        // 🔥 PERBAIKAN: Membuang awalan 'bills.' agar tidak terjadi Double Naming 🔥
+        Route::post('/{slug}/add-attachment', [\App\Http\Controllers\BillRequestController::class, 'addLateAttachment'])->name('add_attachment')->where('slug', '.*');
+        Route::post('/{slug}/void-payment', [\App\Http\Controllers\BillRequestController::class, 'voidPayment'])->name('void_payment')->where('slug', '.*');
 
+        // 🔥 RUTE BARU: Untuk Menghentikan Tagihan Berulang 🔥
+        Route::post('/{slug}/stop-recurring', [\App\Http\Controllers\BillRequestController::class, 'stopRecurring'])->name('stop_recurring')->where('slug', '.*');
 
     });
 

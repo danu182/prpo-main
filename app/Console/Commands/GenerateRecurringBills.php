@@ -4,128 +4,140 @@ namespace App\Console\Commands;
 
 use Illuminate\Console\Command;
 use App\Models\BillRequest;
-use App\Models\History;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\DB;
 
 class GenerateRecurringBills extends Command
+
 {
-    // Nama perintah untuk dijalankan di terminal
+    /**
+     * Nama perintah untuk dipanggil di terminal (contoh: php artisan bills:generate-recurring)
+     */
     protected $signature = 'bills:generate-recurring';
 
-    // Deskripsi perintah
-    protected $description = 'Otomatis membuat tagihan baru untuk Opex yang berulang (Recurring)';
+    /**
+     * Deskripsi tugas robot ini
+     */
+    protected $description = 'Mengecek dan meng-generate tagihan berulang (OPEX) yang sudah jatuh tempo jadwal berikutnya.';
 
+    /**
+     * Logika utama robot
+     */
     public function handle()
     {
-        $this->info('Memulai pengecekan tagihan berulang...');
+        $today = Carbon::today()->toDateString();
+        $this->info("Memulai pengecekan tagihan berulang untuk tanggal: {$today}...");
 
-        $today = Carbon::today();
-
-        // Cari tagihan yang is_recurring = true dan jadwal generate-nya adalah hari ini (atau terlewat)
-        $recurringBills = BillRequest::where('is_recurring', true)
-            ->whereNotNull('next_generation_date')
-            ->whereDate('next_generation_date', '<=', $today)
-            ->get();
+        // Cari semua tagihan Induk yang 'is_recurring' = true dan tanggal generate-nya adalah hari ini atau sudah lewat (tapi belum di-generate)
+        $recurringBills = BillRequest::with(['items', 'charges', 'discounts'])
+                            ->where('is_recurring', true)
+                            ->whereNotNull('next_generation_date')
+                            ->whereDate('next_generation_date', '<=', $today)
+                            ->get();
 
         if ($recurringBills->isEmpty()) {
-            $this->info('Tidak ada tagihan berulang untuk hari ini.');
+            $this->info("Tidak ada jadwal tagihan berulang untuk hari ini.");
             return;
         }
 
-        $count = 0;
+        $countSuccess = 0;
 
-        foreach ($recurringBills as $oldBill) {
+        foreach ($recurringBills as $masterBill) {
             DB::beginTransaction();
             try {
-                // 1. Generate Nomor Tagihan Baru
-                $companyCode = $oldBill->company->code ?? 'GEN';
-                $monthYear = $today->format('Y/m');
+                // 1. GENERATE NOMOR TAGIHAN BARU (Logic sama seperti di Controller)
+                $companyCode = $masterBill->company ? ($masterBill->company->code ?? 'GEN') : 'GEN';
+                $monthYear = Carbon::parse($masterBill->next_generation_date)->format('Y/m');
                 $prefix = "BILL/OPX/{$companyCode}/{$monthYear}/";
 
                 $lastBill = BillRequest::where('bill_number', 'like', $prefix . '%')
-                            ->orderBy('id', 'desc')->lockForUpdate()->first();
+                                ->lockForUpdate()
+                                ->orderBy('id', 'desc')->first();
+
                 $newNumber = $lastBill ? ((int) substr($lastBill->bill_number, -4) + 1) : 1;
-                $billNumber = $prefix . sprintf('%04d', $newNumber);
+                $newBillNumber = $prefix . sprintf('%04d', $newNumber);
 
-                // Hitung Jarak (Gap) hari dari bill_date ke due_date lama
-                $oldBillDate = Carbon::parse($oldBill->invoice_date);
-                $oldDueDate = Carbon::parse($oldBill->due_date);
-                $gapDays = $oldBillDate->diffInDays($oldDueDate);
+                // 2. DUPLIKASI DATA INDUK (Tapi jadikan tagihan biasa/bukan induk)
+                $newBill = $masterBill->replicate();
+                $newBill->bill_number = $newBillNumber;
+                $newBill->invoice_date = $masterBill->next_generation_date;
+                // Hitung jatuh tempo baru (jarak invoice_date ke due_date pada master)
+                $daysToDue = Carbon::parse($masterBill->invoice_date)->diffInDays(Carbon::parse($masterBill->due_date));
+                $newBill->due_date = Carbon::parse($masterBill->next_generation_date)->addDays($daysToDue);
 
-                // 2. Buat Tagihan Baru (Duplikat Data Lama)
-                $newBill = BillRequest::create([
-                    'bill_number'        => $billNumber,
-                    'title'              => $oldBill->title,
-                    'user_id'            => $oldBill->user_id, // Tetap gunakan user pembuat awal
-                    'company_id'         => $oldBill->company_id,
-                    'type'               => 'OPEX',
-                    'vendor_name'        => $oldBill->vendor_name,
-                    'description'        => 'Tagihan Otomatis (Recurring) - ' . $oldBill->description,
-                    'invoice_date'       => $today->format('Y-m-d'),
-                    'due_date'           => $today->copy()->addDays($gapDays)->format('Y-m-d'), // Tanggal jatuh tempo menyesuaikan
-                    'currency'           => $oldBill->currency,
-                    'status'             => 'PENDING', // Harus PENDING agar diapprove ulang
-                    'subtotal'           => $oldBill->subtotal,
-                    'total_discount'     => $oldBill->total_discount,
-                    'total_tax'          => $oldBill->total_tax,
-                    'total_charge'       => $oldBill->total_charge,
-                    'amount'             => $oldBill->amount,
+                // Tagihan anak TIDAK is_recurring, karena yang jadi patokan tetap Master Bill
+                $newBill->is_recurring = false;
+                $newBill->recurring_interval = null;
+                $newBill->recurring_period = null;
+                $newBill->next_generation_date = null;
 
-                    // Pewarisan Sifat Recurring
-                    'is_recurring'       => true,
-                    'recurring_interval' => $oldBill->recurring_interval,
-                    'recurring_period'   => $oldBill->recurring_period,
+                // Cari status_id untuk 'pending'
+                $statusPending = \App\Models\Status::where('type', 'OPEX')->where('slug', 'pending')->first();
+                $newBill->status_id = $statusPending ? $statusPending->id : $masterBill->status_id;
 
-                    // Hitung next date untuk tagihan BARU ini
-                    'next_generation_date'=> $today->copy()->add((int)$oldBill->recurring_interval, $oldBill->recurring_period),
-                ]);
+                // HAPUS baris $newBill->status = 'PENDING'; karena kolomnya tidak ada di database
 
-                // 3. Duplikat Rincian Item
-                foreach ($oldBill->items as $item) {
+                $newBill->current_approval_level = 0;
+                $newBill->rejection_reason = null; // 🔥 TAMBAHAN: Bersihkan alasan tolak/void agar tagihan baru ini bersih
+                $newBill->save();
+
+                // 3. DUPLIKASI ITEMS, CHARGES, DISCOUNTS
+                foreach ($masterBill->items as $item) {
                     $newItem = $item->replicate();
                     $newItem->bill_request_id = $newBill->id;
                     $newItem->save();
                 }
-
-                // 4. Duplikat Biaya Tambahan
-                foreach ($oldBill->charges as $charge) {
+                foreach ($masterBill->charges as $charge) {
                     $newCharge = $charge->replicate();
                     $newCharge->bill_request_id = $newBill->id;
                     $newCharge->save();
                 }
-
-                // 5. Duplikat Potongan Tambahan
-                foreach ($oldBill->discounts as $discount) {
+                foreach ($masterBill->discounts as $discount) {
                     $newDiscount = $discount->replicate();
                     $newDiscount->bill_request_id = $newBill->id;
                     $newDiscount->save();
                 }
 
-                // 6. Matikan sifat recurring di tagihan LAMA agar tidak beranak-pinak dobel
-                $oldBill->update([
-                    'is_recurring' => false,
-                    'next_generation_date' => null
-                ]);
+                // 4. GENERATE WORKFLOW PERSETUJUAN (Sama seperti saat membuat tagihan manual)
+                $workflow = \DB::table('approval_workflows')->whereIn('document_type', ['OPEX', 'App\Models\BillRequest'])->where('is_active', 1)->first();
+                if ($workflow) {
+                    $steps = \DB::table('approval_workflow_steps')->where('approval_workflow_id', $workflow->id)->orderBy('step_order', 'asc')->get();
+                    foreach ($steps as $step) {
+                        \App\Models\DocumentApproval::create([
+                            'document_id' => $newBill->id, 'document_type' => 'App\Models\BillRequest',
+                            'role_id' => $step->role_id, 'step_order' => $step->step_order, 'status' => 'PENDING'
+                        ]);
+                    }
+                }
 
-                // 7. Catat History
-                History::create([
-                    'user_id'     => $oldBill->user_id, // Null berarti Sistem/Robot
-                    'record_type' => BillRequest::class,
-                    'record_id'   => $newBill->id,
-                    'action'      => 'SYSTEM GENERATED',
-                    'note'        => "Dibuat otomatis oleh sistem dari tagihan induk: {$oldBill->bill_number}"
+                // 5. UPDATE TANGGAL GENERATE BERIKUTNYA DI TAGIHAN INDUK
+                $interval = $masterBill->recurring_interval ?? 1;
+                $period = $masterBill->recurring_period ?? 'months'; // months, days, years
+                $masterBill->next_generation_date = Carbon::parse($masterBill->next_generation_date)->add($interval, $period);
+                $masterBill->save();
+
+                // 6. CATAT DI AUDIT TRAIL INDUK DAN ANAK
+                \App\Models\History::create([
+                    'user_id' => 1, // ID 1 biasanya System/Super Admin
+                    'record_type' => \App\Models\BillRequest::class, 'record_id' => $masterBill->id,
+                    'action' => 'AUTO-GENERATE', 'note' => "Sistem berhasil membuat tagihan periode ini secara otomatis. (Ref Baru: {$newBillNumber})"
+                ]);
+                \App\Models\History::create([
+                    'user_id' => 1,
+                    'record_type' => \App\Models\BillRequest::class, 'record_id' => $newBill->id,
+                    'action' => 'CREATED', 'note' => "Tagihan ini dibuat secara otomatis oleh Sistem (Recurring dari Ref: {$masterBill->bill_number})"
                 ]);
 
                 DB::commit();
-                $count++;
+                $countSuccess++;
+                $this->info("Berhasil meng-generate tagihan: {$newBillNumber}");
 
             } catch (\Exception $e) {
-                DB::rollback();
-                $this->error("Gagal membuat duplikat untuk Tagihan {$oldBill->id}: " . $e->getMessage());
+                DB::rollBack();
+                $this->error("Gagal memproses master bill {$masterBill->bill_number}: " . $e->getMessage());
             }
         }
 
-        $this->info("Berhasil men-generate {$count} tagihan berulang.");
+        $this->info("Selesai! Total tagihan yang berhasil di-generate: {$countSuccess}");
     }
 }

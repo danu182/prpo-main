@@ -107,9 +107,13 @@
                         </button>
                     </form>
 
-                    <form id="formCancelDraft" action="{{ route('fixed-assets.cancel_import', $batch->id) }}" method="POST" class="w-100">
-                        @csrf @method('DELETE')
-                        <button type="button" id="btnCancelDraft" class="border-2 btn btn-outline-danger w-100 fw-bold rounded-pill small">Batalkan Draft</button>
+                    <form action="{{ route('fixed-assets.cancel_import', $batch->id) }}" method="POST" class="w-100">
+                        @csrf
+                        @method('DELETE')
+                        {{-- Kita ubah type menjadi "submit" dan pakai bawaan browser --}}
+                        <button type="submit" class="border-2 btn btn-outline-danger w-100 fw-bold rounded-pill small" onclick="return confirm('YAKIN INGIN MENGHAPUS DRAFT INI SECARA PERMANEN?')">
+                            Batalkan Draft
+                        </button>
                     </form>
 
                 {{-- KONDISI 2: WAITING APPROVAL & USER ADALAH ATASAN --}}
@@ -231,6 +235,32 @@
 @push('scripts')
 <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
 <script>
+
+    window.prosesBatalDraft = function() {
+        Swal.fire({
+            title: 'Batalkan Pengajuan?',
+            text: 'Semua baris data & lampiran karantina ini akan dihapus permanen.',
+            icon: 'warning',
+            showCancelButton: true,
+            confirmButtonColor: '#dc3545',
+            cancelButtonColor: '#6c757d',
+            cancelButtonText: 'Tutup',
+            confirmButtonText: 'Ya, Hapus Draft!'
+        }).then((result) => {
+            if(result.isConfirmed) {
+                Swal.fire({
+                    title: 'Menghapus...',
+                    text: 'Membersihkan data karantina.',
+                    icon: 'info',
+                    showConfirmButton: false,
+                    allowOutsideClick: false
+                });
+                document.getElementById('formCancelDraft').submit();
+            }
+        });
+    };
+
+
     document.addEventListener("DOMContentLoaded", function() {
 
         // SWEETALERT AJUKAN APPROVAL
@@ -250,27 +280,6 @@
                     if (result.isConfirmed) {
                         Swal.fire({ title: 'Memproses...', text: 'Mengirim notifikasi ke Atasan.', icon: 'info', showConfirmButton: false });
                         document.getElementById('formSubmitApproval').submit();
-                    }
-                });
-            });
-        }
-
-        // SWEETALERT BATAL DRAFT
-        const btnCancel = document.getElementById('btnCancelDraft');
-        if (btnCancel) {
-            btnCancel.addEventListener('click', function() {
-                Swal.fire({
-                    title: 'Batalkan Pengajuan?',
-                    text: "Semua baris data & lampiran akan dihapus permanen.",
-                    icon: 'warning',
-                    showCancelButton: true,
-                    confirmButtonColor: '#dc3545',
-                    cancelButtonText: 'Batal',
-                    confirmButtonText: 'Ya, Hapus'
-                }).then((r) => {
-                    if(r.isConfirmed) {
-                        Swal.fire({ title: 'Menghapus...', text: 'Membersihkan data karantina.', icon: 'info', showConfirmButton: false });
-                        document.getElementById('formCancelDraft').submit();
                     }
                 });
             });
@@ -331,7 +340,39 @@
             });
         });
 
+        // SWEETALERT BATAL DRAFT
+        const btnCancel = document.getElementById('btnCancelDraft');
+        if (btnCancel) {
+            btnCancel.addEventListener('click', function(e) {
+                e.preventDefault(); // Mencegah form langsung tersubmit
+                Swal.fire({
+                    title: 'Batalkan Pengajuan?',
+                    text: 'Semua baris data & lampiran karantina ini akan dihapus permanen.',
+                    icon: 'warning',
+                    showCancelButton: true,
+                    confirmButtonColor: '#dc3545',
+                    cancelButtonColor: '#6c757d',
+                    cancelButtonText: 'Tutup',
+                    confirmButtonText: 'Ya, Hapus Draft!'
+                }).then((result) => {
+                    if(result.isConfirmed) {
+                        Swal.fire({
+                            title: 'Menghapus...',
+                            text: 'Membersihkan data karantina.',
+                            icon: 'info',
+                            showConfirmButton: false,
+                            allowOutsideClick: false
+                        });
+                        document.getElementById('formCancelDraft').submit();
+                    }
+                });
+            });
+        }
+
     });
 </script>
 @endpush
+
+
+
 @endsection

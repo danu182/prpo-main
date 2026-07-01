@@ -84,14 +84,17 @@ class BillRequestController extends Controller
 
 
 
-    // --- 1. MENAMPILKAN LIST ---
+    // --- 1. MENAMPILKAN LIST & TAB LANGGANAN ---
     public function index(Request $request)
     {
         $companies = \App\Models\Company::orderBy('name')->get();
 
-        // TAMBAHKAN RELASI 'status' DI SINI (Ganti 'statusData' jika nama relasi Anda berbeda di Model)
-        $query = \App\Models\BillRequest::with(['company', 'user', 'status'])
-                    ->latest();
+        $query = \App\Models\BillRequest::with(['company', 'user', 'status'])->latest();
+
+        // 🔥 LOGIKA TAB: Jika membuka tab 'recurring', filter hanya tagihan berulang yang aktif
+        if ($request->get('tab') == 'recurring') {
+            $query->where('is_recurring', true);
+        }
 
         if ($request->filled('company_id')) {
             $query->where('company_id', $request->company_id);
@@ -101,9 +104,8 @@ class BillRequestController extends Controller
             $query->where('vendor_name', 'like', '%' . $request->vendor . '%');
         }
 
-        // PERBAIKAN FILTER STATUS (Karena dropdown di form Anda mengirimkan Teks besar seperti 'PENDING')
         if ($request->filled('status')) {
-            $slug = strtolower($request->status); // Ubah PENDING jadi pending
+            $slug = strtolower($request->status);
             $statusId = $this->getStatusId($slug);
             if($statusId) {
                 $query->where('status_id', $statusId);
@@ -860,7 +862,84 @@ class BillRequestController extends Controller
 
 
 
+    // =========================================================================
+    // 13. MEMBATALKAN TAGIHAN SECARA KESELURUHAN (VOID BILL)
+    // =========================================================================
+    public function voidBill(Request $request, $slug)
+    {
+        // Gembok khusus Super Admin / Eksekutif
+        $userRoles = auth()->user()->getRoleNames()->toArray();
+        $isSuperAdmin = in_array('Super Administrator', $userRoles) || in_array('Super Admin', $userRoles) || auth()->id() === 1;
 
+        if (!$isSuperAdmin) {
+            abort(403, 'Hanya Super Admin yang berhak membatalkan keseluruhan tagihan.');
+        }
+
+        $request->validate([
+            'void_reason' => 'required|string|min:5'
+        ]);
+
+        DB::beginTransaction();
+        try {
+            $bill = \App\Models\BillRequest::where('bill_number', $slug)->firstOrFail();
+
+            // Cegah void jika sudah lunas, dicicil, atau sudah void/reject
+            $statusSlug = strtolower(optional($bill->status)->slug);
+            if (in_array($statusSlug, ['paid', 'lunas', 'void', 'cancelled', 'rejected', 'partial', 'partial_paid', 'dicicil']) || strtoupper($bill->status) === 'PAID') {
+                return back()->with('error', 'Aksi Ditolak: Tagihan yang sudah memiliki riwayat pembayaran (Lunas/Dicicil) tidak dapat di-Void secara sepihak.');
+            }
+
+            // Batalkan seluruh antrean persetujuan (jika ada)
+            \App\Models\DocumentApproval::where('document_id', $bill->id)
+                ->whereIn('document_type', ['OPEX', 'App\Models\BillRequest'])
+                ->delete();
+
+            // Update status menjadi VOID / CANCELLED
+            $bill->update([
+                'status'    => 'VOID',
+                'status_id' => $this->getStatusId('void') ?? $this->getStatusId('cancelled'), // Pastikan di seeder ada status void/cancelled
+                'rejection_reason' => 'VOIDED: ' . $request->void_reason // Kita simpan alasannya di field rejection_reason
+            ]);
+
+            // Catat di Audit Trail secara detail
+            $this->logHistory($bill, 'TAGIHAN DIBATALKAN (VOID)', "Tagihan dibatalkan secara permanen oleh Sistem/Atasan. Alasan: " . $request->void_reason);
+
+            DB::commit();
+            return redirect()->route('bills.show', $bill->bill_number)->with('success', 'Tagihan berhasil dibatalkan secara permanen (VOID).');
+        } catch (\Exception $e) {
+            DB::rollback();
+            return back()->with('error', 'Gagal melakukan Void: ' . $e->getMessage());
+        }
+    }
+
+
+
+    // =========================================================================
+    // 14. MENGHENTIKAN SIKLUS TAGIHAN BERULANG (STOP RECURRING)
+    // =========================================================================
+    public function stopRecurring(Request $request, $slug)
+    {
+        try {
+            $bill = \App\Models\BillRequest::where('bill_number', $slug)->firstOrFail();
+
+            if (!$bill->is_recurring) {
+                return back()->with('error', 'Tagihan ini bukan tagihan berulang.');
+            }
+
+            // Matikan sakelar recurring dan kosongkan jadwal berikutnya
+            $bill->update([
+                'is_recurring' => false,
+                'next_generation_date' => null
+            ]);
+
+            // Catat di Audit Trail agar riwayatnya jelas
+            $this->logHistory($bill, 'STOP LANGGANAN', 'Siklus tagihan berulang telah dihentikan oleh pengguna. Sistem tidak akan meng-generate tagihan ini lagi di masa depan.');
+
+            return back()->with('success', 'Siklus langganan berhasil dihentikan!');
+        } catch (\Exception $e) {
+            return back()->with('error', 'Gagal menghentikan langganan: ' . $e->getMessage());
+        }
+    }
 
 
 

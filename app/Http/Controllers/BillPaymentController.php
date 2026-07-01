@@ -300,6 +300,9 @@ class BillPaymentController extends Controller
     }
 
 
+    // =========================================================================
+    // 12. SKENARIO 2: BATALKAN PEMBAYARAN (VOID PAYMENT) DARI KASIR
+    // =========================================================================
     public function voidPayment(Request $request, $payment_id)
     {
         // 1. Gembok fitur ini hanya untuk Manager & Super Admin
@@ -316,29 +319,33 @@ class BillPaymentController extends Controller
             $payment = \App\Models\BillPayment::findOrFail($payment_id);
             $bill = \App\Models\BillRequest::findOrFail($payment->bill_request_id);
 
-            // 2. Kembalikan status Bill menjadi Unpaid / Approved
-            $statusUnpaid = \App\Models\Status::where('type', 'BILLS')->where('slug', 'approved')->first();
-            $bill->update(['status_id' => $statusUnpaid->id]);
+            // 2. Kembalikan status Bill menjadi Unpaid / Approved (Gunakan Helper Sakti)
+            $bill->update(['status_id' => $this->getStatusId('approved')]);
 
             // 3. Catat di Riwayat (Audit Trail) SIAPA yang membatalkan dan ALASANNYA
-            \App\Models\BillHistory::create([
-                'bill_request_id' => $bill->id,
-                'user_id'         => auth()->id(),
-                'action'          => 'Pembayaran Dibatalkan',
-                'note'            => 'Nominal Rp ' . number_format($payment->amount, 0, ',', '.') . ' dibatalkan. Alasan: ' . $request->void_reason
+            // 🔥 Perbaikan: Gunakan Model History yang benar
+            \App\Models\History::create([
+                'user_id'     => auth()->id(),
+                'record_type' => \App\Models\BillRequest::class,
+                'record_id'   => $bill->id,
+                'action'      => 'Pembayaran Dibatalkan',
+                'note'        => 'Nominal Rp ' . number_format($payment->amount_paid, 0, ',', '.') . ' dibatalkan. Alasan: ' . $request->void_reason
             ]);
 
-            // 4. Hapus data pembayaran (Atau ubah statusnya jadi 'void' jika pakai SoftDeletes)
+            // 4. Hapus data pembayaran
             $payment->delete();
 
             DB::commit();
-            return back()->with('success', 'Pembayaran berhasil dibatalkan. Tagihan kembali berstatus Belum Dibayar.');
+            return back()->with('success', 'Pembayaran berhasil dibatalkan. Tagihan kembali berstatus Belum Dibayar (Approved).');
         } catch (\Exception $e) {
             DB::rollBack();
             return back()->with('error', 'Gagal membatalkan pembayaran: ' . $e->getMessage());
         }
     }
 
+    // =========================================================================
+    // 13. SKENARIO 1: UPLOAD BUKTI BAYAR SUSULAN DARI KASIR
+    // =========================================================================
     public function addLateAttachment(Request $request, $payment_id)
     {
         $request->validate([
@@ -349,19 +356,27 @@ class BillPaymentController extends Controller
         try {
             $payment = \App\Models\BillPayment::findOrFail($payment_id);
 
-            // Simpan file baru
-            $file = $request->file('attachment');
-            $path = $file->storeAs("bills_payment/{$payment->id}", $file->getClientOriginalName(), 'public');
+            // 🔥 1. Ambil path dinamis dari system_settings (Sama seperti PO/PR)
+            $basePath = \DB::table('system_settings')->where('setting_key', 'path_payment_opex')->value('setting_value') ?: 'attachments/payment_opex';
+            $safePaymentNumber = str_replace(['/', '\\'], '-', $payment->payment_number);
+            $storagePath = $basePath . '/' . $safePaymentNumber;
 
-            // Masukkan ke database lampiran pembayaran
-            \App\Models\BillPaymentAttachment::create([
+            // 2. Simpan file fisik
+            $file = $request->file('attachment');
+            $originalName = $file->getClientOriginalName();
+            $path = $file->storeAs($storagePath, time() . '_' . uniqid() . '_' . str_replace(' ', '_', $originalName), 'public');
+
+            // 🔥 3. Masukkan ke database menggunakan DB Builder agar seragam dengan fungsi store()
+            \DB::table('payment_attachments')->insert([
                 'bill_payment_id' => $payment->id,
-                'file_name'       => $file->getClientOriginalName(),
-                'file_path'       => $path,
-                'note'            => $request->note
+                'file_name'       => $originalName,
+                'file_path'       => str_replace('\\', '/', $path),
+                'description'     => $request->note ?? 'Lampiran Susulan',
+                'created_at'      => now(),
+                'updated_at'      => now()
             ]);
 
-            return back()->with('success', 'Lampiran susulan berhasil ditambahkan!');
+            return back()->with('success', 'Lampiran bukti susulan berhasil ditambahkan!');
         } catch (\Exception $e) {
             return back()->with('error', 'Gagal mengunggah lampiran: ' . $e->getMessage());
         }

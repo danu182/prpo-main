@@ -42,6 +42,17 @@ class DashboardController extends Controller
                 $q->whereIn('slug', ['approved', 'partial']);
             })->orderBy('due_date', 'asc')->limit(5)->get();
 
+        // 🔥 FITUR BARU: [Tabel Kiri] Tagihan Baru & Recurring (Menunggu Approval)
+        // Ambil ID status secara langsung agar 1000% akurat dan query lebih ringan
+        $pendingStatusIds = \App\Models\Status::where('type', 'OPEX')
+            ->whereIn('slug', ['pending', 'draft'])
+            ->pluck('id');
+
+        $pendingBills = BillRequest::with(['status', 'company'])
+            ->whereIn('status_id', $pendingStatusIds)
+            ->orderBy('created_at', 'desc')
+            ->limit(5)->get();
+
 
         // =========================================================
         // 2. DATA PO (DIBERI PENGAMAN TRY-CATCH)
@@ -70,17 +81,35 @@ class DashboardController extends Controller
         // =========================================================
         $apUnpaid = 0;
         $monthlyAP = [];
+        $pendingApBills = collect(); // Penampung kosong bawaan
+        $urgentApBills = collect();  // Penampung kosong bawaan
+
         try {
             if (class_exists('\App\Models\VendorInvoice')) {
+                // Total Hutang AP
                 $apUnpaid = \App\Models\VendorInvoice::whereIn('status_id', [19, 20])->sum('grand_total');
 
                 $monthlyAP = \App\Models\VendorInvoice::select(DB::raw('MONTH(invoice_date) as month'), DB::raw('SUM(grand_total) as total'))
                     ->whereYear('invoice_date', $currentYear)
-                    ->whereNotIn('status_id', [1, 5])
+                    ->whereNotIn('status_id', [1, 5, 21, 22]) // Kecuali draft, canceled, paid
                     ->groupBy('month')->pluck('total', 'month')->toArray();
+
+                // 🔥 [Tabel Kanan] Tagihan Vendor (A/P) Mendesak & Siap Bayar (Status ID 19 & 20)
+                $urgentApBills = \App\Models\VendorInvoice::with(['status', 'vendor'])
+                    ->whereIn('status_id', [19, 20])
+                    ->orderBy('due_date', 'asc')
+                    ->limit(5)->get();
+
+                // 🔥 [Tabel Kiri] Tagihan Vendor (A/P) Menunggu Approval
+                $pendingApBills = \App\Models\VendorInvoice::with(['status', 'vendor'])
+                    ->whereHas('status', function($q) {
+                        $q->whereIn('slug', ['pending', 'submitted', 'waiting_approval']);
+                    })
+                    ->orderBy('created_at', 'desc')
+                    ->limit(5)->get();
             }
         } catch (\Exception $e) {
-            // Jika tabel AP belum siap, abaikan agar Dashboard tidak mati
+            // Jika modul AP belum siap, abaikan agar Dashboard tidak mati
         }
 
 
@@ -96,15 +125,33 @@ class DashboardController extends Controller
             $chartDataAP[]   = $monthlyAP[$i] ?? 0;
         }
 
+        // PASTIKAN VARIABLE A/P IKUT DIKIRIM KE VIEW
         return view('dashboard', compact(
             'opexBulanIni', 'poBulanIni', 'apUnpaid', 'opexUnpaid',
             'chartBulan', 'chartDataOpex', 'chartDataPO', 'chartDataAP',
-            'urgentBills', 'currentYear'
+            'urgentBills', 'pendingBills', 'urgentApBills', 'pendingApBills', 'currentYear'
+        ));
+
+
+        // =========================================================
+        // 4. SUSUN DATA GRAFIK
+        // =========================================================
+        $chartBulan = ['Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Ags', 'Sep', 'Okt', 'Nov', 'Des'];
+        $chartDataOpex = []; $chartDataPO = []; $chartDataAP = [];
+
+        for ($i = 1; $i <= 12; $i++) {
+            $chartDataOpex[] = $monthlyOpex[$i] ?? 0;
+            $chartDataPO[]   = $monthlyPO[$i] ?? 0;
+            $chartDataAP[]   = $monthlyAP[$i] ?? 0;
+        }
+
+        // Pastikan variabel $pendingBills ikut dikirim ke view
+        return view('dashboard', compact(
+            'opexBulanIni', 'poBulanIni', 'apUnpaid', 'opexUnpaid',
+            'chartBulan', 'chartDataOpex', 'chartDataPO', 'chartDataAP',
+            'urgentBills', 'pendingBills', 'currentYear'
         ));
     }
-
-
-    // ... fungsi index() yang sudah ada ...
 
     // FUNGSI BARU: Membaca Notifikasi
     public function markNotificationAsRead($id)

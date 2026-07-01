@@ -106,23 +106,96 @@
             </div>
         </div>
 
-        {{-- 3. TABEL TAGIHAN MENDESAK --}}
-        <div class="row">
-            <div class="col-12">
-                <div class="border-0 shadow-sm card rounded-4">
-                    <div class="pt-4 pb-3 bg-white border-0 card-header d-flex justify-content-between align-items-center">
-                        <h6 class="mb-0 fw-bold text-danger"><i class="bi bi-exclamation-circle-fill me-2"></i>Tagihan Opex Mendesak (Belum Lunas)</h6>
-                        <a href="{{ route('bills.index') }}" class="btn btn-sm btn-outline-primary rounded-pill">Lihat Semua</a>
+        {{-- 3. AREA TABEL SPLIT (KIRI & KANAN) --}}
+        <div class="row g-4">
+
+            {{-- KIRI: TAGIHAN BARU / RECURRING (MENUNGGU APPROVAL) --}}
+            <div class="col-lg-6">
+                <div class="border-0 shadow-sm card rounded-4 h-100 border-top border-warning border-3">
+                    <div class="pt-4 pb-3 bg-white border-0 card-header d-flex justify-content-between align-items-start border-bottom">
+                        <div>
+                            <span class="mb-2 border badge bg-primary bg-opacity-10 text-primary border-primary-subtle"><i class="bi bi-tools me-1"></i> Modul OPEX</span>
+                            <h6 class="mb-0 fw-bold text-warning-emphasis"><i class="bi bi-hourglass-split me-2"></i>Menunggu Approval</h6>
+                            <div class="mt-1 small text-muted" style="font-size: 0.75rem;">Antrean tagihan operasional (baru/rutin) yang butuh persetujuan.</div>
+                        </div>
+                        <a href="{{ route('bills.index', ['status' => 'pending']) }}" class="shadow-sm btn btn-sm btn-warning text-dark rounded-pill fw-bold">Lihat Semua</a>
+                    </div>
+                    <div class="p-0 card-body table-responsive">
+                        <table class="table mb-0 align-middle table-hover">
+                            <thead class="bg-light text-muted small fw-bold">
+                                <tr>
+                                    <th class="py-3 ps-4">Informasi Dokumen</th>
+                                    <th>Vendor</th>
+                                    <th class="text-end pe-4">Nominal</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @forelse($pendingBills ?? [] as $bill)
+                                    @php
+                                        $isAuto = str_contains($bill->description ?? '', 'Tagihan Otomatis (Recurring)');
+
+                                        $currentApproval = \App\Models\DocumentApproval::with('role')
+                                            ->where('document_id', $bill->id)
+                                            ->where('document_type', get_class($bill))
+                                            ->where('status', 'PENDING')
+                                            ->orderBy('step_order', 'asc')
+                                            ->first();
+
+                                        $waitingFor = $currentApproval ? ($currentApproval->role->name ?? 'Atasan') : 'Review Internal';
+                                    @endphp
+                                    <tr>
+                                        <td class="py-3 ps-4">
+                                            <a href="{{ route('bills.show', $bill->bill_number) }}" class="fw-bold text-decoration-none d-block">{{ $bill->bill_number }}</a>
+
+                                            <div class="flex-wrap gap-1 mt-1 d-flex">
+                                                @if($isAuto)
+                                                    <span class="border badge bg-info-subtle text-info-emphasis border-info-subtle" style="font-size: 0.65rem;"><i class="bi bi-robot"></i> Auto-Recurring</span>
+                                                @else
+                                                    <span class="border badge bg-secondary-subtle text-secondary border-secondary-subtle" style="font-size: 0.65rem;">Manual</span>
+                                                @endif
+                                            </div>
+
+                                            <div class="mt-1 small fw-bold text-warning-emphasis" style="font-size: 0.7rem;">
+                                                <i class="bi bi-person-fill-exclamation me-1"></i>Menunggu: {{ strtoupper($waitingFor) }}
+                                            </div>
+                                        </td>
+                                        <td class="fw-semibold text-truncate" style="max-width: 150px;" title="{{ $bill->vendor_name }}">{{ $bill->vendor_name }}</td>
+                                        <td class="text-end fw-bold text-dark pe-4">
+                                            Rp {{ number_format($bill->amount, 0, ',', '.') }}
+                                        </td>
+                                    </tr>
+                                @empty
+                                    <tr>
+                                        <td colspan="3" class="py-4 text-center text-muted">
+                                            <i class="mb-2 opacity-50 bi bi-cup-hot fs-3 d-block text-secondary"></i>
+                                            Tidak ada dokumen OPEX baru untuk disetujui.
+                                        </td>
+                                    </tr>
+                                @endforelse
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            {{-- KANAN: TAGIHAN MENDESAK (BELUM LUNAS) --}}
+            <div class="col-lg-6">
+                <div class="border-0 shadow-sm card rounded-4 h-100 border-top border-danger border-3">
+                    <div class="pt-4 pb-3 bg-white border-0 card-header d-flex justify-content-between align-items-start border-bottom">
+                        <div>
+                            <span class="mb-2 border badge bg-primary bg-opacity-10 text-primary border-primary-subtle"><i class="bi bi-tools me-1"></i> Modul OPEX</span>
+                            <h6 class="mb-0 fw-bold text-danger"><i class="bi bi-exclamation-triangle-fill me-2"></i>Mendesak (Belum Lunas)</h6>
+                            <div class="mt-1 small text-muted" style="font-size: 0.75rem;">Tagihan operasional yang sudah disetujui & mendekati jatuh tempo.</div>
+                        </div>
+                        <a href="{{ route('bills.index') }}" class="shadow-sm btn btn-sm btn-danger rounded-pill fw-bold">Lihat Semua</a>
                     </div>
                     <div class="p-0 card-body table-responsive">
                         <table class="table mb-0 align-middle table-hover">
                             <thead class="bg-light text-muted small fw-bold">
                                 <tr>
                                     <th class="py-3 ps-4">No. Tagihan</th>
-                                    <th>Vendor</th>
                                     <th>Jatuh Tempo</th>
-                                    <th class="text-end">Sisa Hutang</th>
-                                    <th class="text-center pe-4">Status</th>
+                                    <th class="text-end pe-4">Sisa Hutang</th>
                                 </tr>
                             </thead>
                             <tbody>
@@ -132,30 +205,25 @@
                                         $isOverdue = $bill->due_date ? \Carbon\Carbon::parse($bill->due_date)->isPast() : false;
                                     @endphp
                                     <tr>
-                                        <td class="py-3 ps-4 fw-bold text-primary">
-                                            <a href="{{ route('bills.show', $bill->id) }}" class="text-decoration-none">{{ $bill->bill_number }}</a>
+                                        <td class="py-3 ps-4">
+                                            <a href="{{ route('bills.show', $bill->bill_number) }}" class="fw-bold text-decoration-none d-block">{{ $bill->bill_number }}</a>
+                                            <div class="mt-1 text-truncate small text-muted" style="max-width: 150px;" title="{{ $bill->vendor_name }}"><i class="bi bi-shop me-1"></i>{{ $bill->vendor_name }}</div>
                                         </td>
-                                        <td class="fw-semibold">{{ $bill->vendor_name }}</td>
                                         <td>
-                                            <span class="{{ $isOverdue ? 'text-danger fw-bold' : 'text-dark' }}">
+                                            <span class="{{ $isOverdue ? 'badge bg-danger text-white px-2 py-1' : 'fw-semibold text-dark' }}">
                                                 {{ $bill->due_date ? \Carbon\Carbon::parse($bill->due_date)->format('d M Y') : '-' }}
-                                                @if($isOverdue) <i class="bi bi-exclamation-circle-fill ms-1" title="Overdue!"></i> @endif
+                                                @if($isOverdue) <i class="bi bi-alarm ms-1" title="Overdue!"></i> @endif
                                             </span>
                                         </td>
-                                        <td class="text-end fw-bold text-dark">
+                                        <td class="text-end fw-bold text-danger pe-4">
                                             Rp {{ number_format($sisa, 0, ',', '.') }}
-                                        </td>
-                                        <td class="text-center pe-4">
-                                            <span class="badge bg-{{ optional($bill->status)->color ?? 'secondary' }}-subtle text-{{ optional($bill->status)->color ?? 'secondary' }} border border-{{ optional($bill->status)->color ?? 'secondary' }} rounded-pill px-3 py-1 text-uppercase">
-                                                {{ optional($bill->status)->name ?? 'UNKNOWN' }}
-                                            </span>
                                         </td>
                                     </tr>
                                 @empty
                                     <tr>
-                                        <td colspan="5" class="py-4 text-center text-muted">
-                                            <i class="mb-2 bi bi-check-circle fs-3 d-block text-success"></i>
-                                            Tidak ada tagihan mendesak. Semua aman!
+                                        <td colspan="3" class="py-4 text-center text-muted">
+                                            <i class="mb-2 opacity-50 bi bi-check-circle fs-3 d-block text-success"></i>
+                                            Tidak ada hutang OPEX mendesak. Semua aman!
                                         </td>
                                     </tr>
                                 @endforelse
@@ -164,7 +232,118 @@
                     </div>
                 </div>
             </div>
+
         </div>
+
+        {{-- ======================================================= --}}
+        {{-- 4. AREA TABEL SPLIT KHUSUS VENDOR (A/P)                 --}}
+        {{-- ======================================================= --}}
+        <div class="mt-2 row g-4">
+
+            {{-- KIRI: A/P MENUNGGU APPROVAL --}}
+            <div class="col-lg-6">
+                <div class="border-0 shadow-sm card rounded-4 h-100 border-top border-info border-3">
+                    <div class="pt-4 pb-3 bg-white border-0 card-header d-flex justify-content-between align-items-start border-bottom">
+                        <div>
+                            <span class="mb-2 border badge bg-info bg-opacity-10 text-info-emphasis border-info-subtle"><i class="bi bi-shop me-1"></i> Modul Vendor (A/P)</span>
+                            <h6 class="mb-0 fw-bold text-info-emphasis"><i class="bi bi-file-earmark-check-fill me-2"></i>Menunggu Approval</h6>
+                            <div class="mt-1 small text-muted" style="font-size: 0.75rem;">Antrean Invoice dari Vendor yang butuh persetujuan.</div>
+                        </div>
+                        <a href="#" class="text-white shadow-sm btn btn-sm btn-info rounded-pill fw-bold">Lihat Semua</a>
+                    </div>
+                    <div class="p-0 card-body table-responsive">
+                        <table class="table mb-0 align-middle table-hover">
+                            <thead class="bg-light text-muted small fw-bold">
+                                <tr>
+                                    <th class="py-3 ps-4">No. Invoice</th>
+                                    <th>Nama Vendor</th>
+                                    <th class="text-end pe-4">Nominal</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @forelse($pendingApBills ?? [] as $ap)
+                                    <tr>
+                                        <td class="py-3 ps-4">
+                                            <a href="#" class="fw-bold text-decoration-none d-block">{{ $ap->invoice_number ?? $ap->id }}</a>
+                                            <div class="mt-1 small fw-bold text-info-emphasis" style="font-size: 0.7rem;">
+                                                <i class="bi bi-hourglass-split me-1"></i>Menunggu Review
+                                            </div>
+                                        </td>
+                                        <td class="fw-semibold text-truncate" style="max-width: 150px;" title="{{ $ap->vendor->name ?? 'Vendor Umum' }}">{{ $ap->vendor->name ?? 'Vendor Umum' }}</td>
+                                        <td class="text-end fw-bold text-dark pe-4">
+                                            Rp {{ number_format($ap->grand_total ?? 0, 0, ',', '.') }}
+                                        </td>
+                                    </tr>
+                                @empty
+                                    <tr>
+                                        <td colspan="3" class="py-4 text-center text-muted">
+                                            <i class="mb-2 opacity-50 bi bi-inbox fs-3 d-block text-secondary"></i>
+                                            Tidak ada Invoice Vendor yang butuh approval.
+                                        </td>
+                                    </tr>
+                                @endforelse
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            {{-- KANAN: A/P MENDESAK (SIAP BAYAR / BELUM LUNAS) --}}
+            <div class="col-lg-6">
+                <div class="border-0 shadow-sm card rounded-4 h-100 border-top border-primary border-3">
+                    <div class="pt-4 pb-3 bg-white border-0 card-header d-flex justify-content-between align-items-start border-bottom">
+                        <div>
+                            <span class="mb-2 border badge bg-info bg-opacity-10 text-info-emphasis border-info-subtle"><i class="bi bi-shop me-1"></i> Modul Vendor (A/P)</span>
+                            <h6 class="mb-0 fw-bold text-primary"><i class="bi bi-cash-stack me-2"></i>Siap Bayar & Mendesak</h6>
+                            <div class="mt-1 small text-muted" style="font-size: 0.75rem;">Invoice vendor yang sudah disetujui (Posted) dan harus dibayar.</div>
+                        </div>
+                        <a href="{{ route('vendor-invoices.index', ['status' => 'pending']) }}" class="text-white shadow-sm btn btn-sm btn-info rounded-pill fw-bold">Lihat Semua</a>
+                    </div>
+                    <div class="p-0 card-body table-responsive">
+                        <table class="table mb-0 align-middle table-hover">
+                            <thead class="bg-light text-muted small fw-bold">
+                                <tr>
+                                    <th class="py-3 ps-4">No. Invoice</th>
+                                    <th>Jatuh Tempo</th>
+                                    <th class="text-end pe-4">Nominal Tagihan</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @forelse($urgentApBills ?? [] as $ap)
+                                    @php
+                                        $isOverdue = $ap->due_date ? \Carbon\Carbon::parse($ap->due_date)->isPast() : false;
+                                    @endphp
+                                    <tr>
+                                        <td class="py-3 ps-4">
+                                            <a href="#" class="fw-bold text-decoration-none d-block">{{ $ap->invoice_number ?? $ap->id }}</a>
+                                            <div class="mt-1 text-truncate small text-muted" style="max-width: 150px;" title="{{ $ap->vendor->name ?? '-' }}"><i class="bi bi-building me-1"></i>{{ $ap->vendor->name ?? '-' }}</div>
+                                        </td>
+                                        <td>
+                                            <span class="{{ $isOverdue ? 'badge bg-danger text-white px-2 py-1' : 'fw-semibold text-dark' }}">
+                                                {{ $ap->due_date ? \Carbon\Carbon::parse($ap->due_date)->format('d M Y') : '-' }}
+                                                @if($isOverdue) <i class="bi bi-alarm ms-1" title="Overdue!"></i> @endif
+                                            </span>
+                                        </td>
+                                        <td class="text-end fw-bold text-primary pe-4">
+                                            Rp {{ number_format($ap->grand_total ?? 0, 0, ',', '.') }}
+                                        </td>
+                                    </tr>
+                                @empty
+                                    <tr>
+                                        <td colspan="3" class="py-4 text-center text-muted">
+                                            <i class="mb-2 opacity-50 bi bi-check2-circle fs-3 d-block text-success"></i>
+                                            Tidak ada Invoice Vendor mendesak. Aman!
+                                        </td>
+                                    </tr>
+                                @endforelse
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+        </div>
+
 
     {{-- ============================================================== --}}
     {{-- ZONA STAFF: TAMPILAN KHUSUS KARYAWAN BIASA / PURCHASING / GUDANG --}}
