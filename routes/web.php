@@ -429,22 +429,24 @@ Route::middleware('auth')->group(function () {
     Route::prefix('vendor-invoices')->name('vendor-invoices.')->middleware(['can:view_invoices'])->group(function () {
         Route::get('/', [VendorInvoiceController::class, 'index'])->name('index');
 
-        // PENTING: Tambahkan ->where('slug', '.*') di semua rute yang punya parameter {slug}
-        Route::post('/from-gr/{slug}', [VendorInvoiceController::class, 'createFromGr'])->name('createFromGr')->where('slug', '.*');
-        Route::get('/{slug}', [VendorInvoiceController::class, 'show'])->name('show')->where('slug', '.*');
-        Route::put('/{slug}', [VendorInvoiceController::class, 'update'])->name('update')->where('slug', '.*');
+        // 🔥 1. RUTE STATIS & SPESIFIK (HARUS DI ATAS AGAR TIDAK TERTELAN)
         Route::post('/bulk-from-gr', [VendorInvoiceController::class, 'createBulkFromGr'])->name('createBulkFromGr');
-        Route::post('/{slug}/pay', [VendorInvoiceController::class, 'storePayment'])->name('storePayment')->where('slug', '.*');
-
-
-        Route::post('/{slug}/upload-attachment', [VendorInvoiceController::class, 'uploadAttachment'])->name('uploadAttachment')->where('slug', '.*');
         Route::delete('/attachment/{id}', [VendorInvoiceController::class, 'deleteAttachment'])->name('deleteAttachment');
-
-
-        // Rute Void
-        Route::delete('/{slug}/cancel-invoice', [VendorInvoiceController::class, 'cancelInvoice'])->name('cancelInvoice')->where('slug', '.*');
         Route::delete('/payment/{id}/cancel', [VendorInvoiceController::class, 'cancelPayment'])->name('cancelPayment');
 
+        // 🔥 2. RUTE PRINT (Nama diperbaiki jadi 'print' saja karena sudah di dalam grup)
+        // Parameter diubah jadi {slug} agar selaras dengan controller Anda
+        Route::get('/{slug}/print', [VendorInvoiceController::class, 'print'])->name('print')->where('slug', '.*');
+
+        // 🔥 3. RUTE DINAMIS DENGAN AKSI TERTENTU
+        Route::post('/from-gr/{slug}', [VendorInvoiceController::class, 'createFromGr'])->name('createFromGr')->where('slug', '.*');
+        Route::put('/{slug}', [VendorInvoiceController::class, 'update'])->name('update')->where('slug', '.*');
+        Route::post('/{slug}/pay', [VendorInvoiceController::class, 'storePayment'])->name('storePayment')->where('slug', '.*');
+        Route::post('/{slug}/upload-attachment', [VendorInvoiceController::class, 'uploadAttachment'])->name('uploadAttachment')->where('slug', '.*');
+        Route::delete('/{slug}/cancel-invoice', [VendorInvoiceController::class, 'cancelInvoice'])->name('cancelInvoice')->where('slug', '.*');
+
+        // 🔥 4. RUTE SHOW (WAJIB PALING BAWAH KARENA DIA LUBANG HITAM / CATCH-ALL)
+        Route::get('/{slug}', [VendorInvoiceController::class, 'show'])->name('show')->where('slug', '.*');
     });
 
 

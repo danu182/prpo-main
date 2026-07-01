@@ -241,7 +241,7 @@
         <div class="mt-2 row g-4">
 
             {{-- KIRI: A/P MENUNGGU APPROVAL --}}
-            <div class="col-lg-6">
+            {{-- <div class="col-lg-6">
                 <div class="border-0 shadow-sm card rounded-4 h-100 border-top border-info border-3">
                     <div class="pt-4 pb-3 bg-white border-0 card-header d-flex justify-content-between align-items-start border-bottom">
                         <div>
@@ -286,7 +286,7 @@
                         </table>
                     </div>
                 </div>
-            </div>
+            </div> --}}
 
             {{-- KANAN: A/P MENDESAK (SIAP BAYAR / BELUM LUNAS) --}}
             <div class="col-lg-6">

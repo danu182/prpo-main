@@ -7,6 +7,7 @@ use App\Models\GoodsReceipt;
 use App\Models\VendorInvoice;
 use App\Models\VendorInvoiceItem;
 use Illuminate\Support\Facades\DB;
+use PDF;
 
 class VendorInvoiceController extends Controller
 {
@@ -17,8 +18,8 @@ class VendorInvoiceController extends Controller
     {
         $company = \App\Models\Company::find($companyId);
         $code = ($company && !empty($company->code)) ? strtoupper($company->code) : 'UMUM';
-        $dateStr = date('Y-m-d'); 
-        
+        $dateStr = date('Y-m-d');
+
         $prefix = "INV-{$code}-{$dateStr}-";
 
         $lastInv = VendorInvoice::where('invoice_number', 'like', $prefix . '%')
@@ -54,7 +55,7 @@ class VendorInvoiceController extends Controller
             ->withQueryString();
 
         $readyGrs = GoodsReceipt::with(['po.vendor', 'po.company', 'receiver'])
-            ->whereDoesntHave('vendorInvoice') 
+            ->whereDoesntHave('vendorInvoice')
             ->latest()
             ->get();
 
@@ -80,7 +81,7 @@ class VendorInvoiceController extends Controller
         try {
             $po = $gr->po;
             $subtotalGross = 0; $itemDiscountTotal = 0; $taxTotal = 0;
-            $hasValidItems = false; 
+            $hasValidItems = false;
 
             $statusDraft = \App\Models\Status::where('type', 'INV')->where('slug', 'draft')->first();
 
@@ -125,7 +126,7 @@ class VendorInvoiceController extends Controller
                     'vendor_invoice_id'     => $invoice->id,
                     'goods_receipt_item_id' => $grItem->id,
                     'item_id'               => $grItem->item_id,
-                    'qty_invoiced'          => $qty, 
+                    'qty_invoiced'          => $qty,
                     'price'                 => $price,
                     'discount_amount'       => $itemDiscount,
                     'tax_percent'           => round($taxPercent, 2),
@@ -140,7 +141,7 @@ class VendorInvoiceController extends Controller
             }
 
             $headerProportion = $po->subtotal > 0 ? ($subtotalGross / (float) $po->subtotal) : 1;
-            
+
             $poGlobalDiscount = \DB::table('purchase_order_discounts')->where('purchase_order_id', $po->id)->sum('amount');
             $poGlobalCharge   = \DB::table('purchase_order_charges')->where('purchase_order_id', $po->id)->sum('amount');
             $poExtraDiscount  = $po->extra_discount_total ?? 0; // Mengambil Potongan Tambahan
@@ -194,14 +195,14 @@ class VendorInvoiceController extends Controller
         DB::beginTransaction();
         try {
             $subtotalGross = 0; $itemDiscountTotal = 0; $taxTotal = 0;
-            $hasValidItems = false; 
+            $hasValidItems = false;
 
             $statusDraft = \App\Models\Status::where('type', 'INV')->where('slug', 'draft')->first();
 
             $invoice = VendorInvoice::create([
                 'invoice_number'    => $this->generateInvoiceNumber($po->bill_to_company_id),
                 'purchase_order_id' => $po->id,
-                'goods_receipt_id'  => null, 
+                'goods_receipt_id'  => null,
                 'vendor_id'         => $po->vendor_id,
                 'company_id'        => $po->bill_to_company_id,
                 'invoice_date'      => now(),
@@ -220,7 +221,7 @@ class VendorInvoiceController extends Controller
                     $qty = (float) $grItem->qty_received - (float) $totalReturned;
                     if ($qty <= 0) continue;
 
-                    $hasValidItems = true; 
+                    $hasValidItems = true;
 
                     $price = (float) $poItem->unit_price;
                     $rowGross = $qty * $price;
@@ -239,7 +240,7 @@ class VendorInvoiceController extends Controller
                         'vendor_invoice_id'     => $invoice->id,
                         'goods_receipt_item_id' => $grItem->id,
                         'item_id'               => $grItem->item_id,
-                        'qty_invoiced'          => $qty, 
+                        'qty_invoiced'          => $qty,
                         'price'                 => $price,
                         'discount_amount'       => $itemDiscount,
                         'tax_percent'           => round($taxPercent, 2),
@@ -255,7 +256,7 @@ class VendorInvoiceController extends Controller
             }
 
             $headerProportion = $po->subtotal > 0 ? ($subtotalGross / (float) $po->subtotal) : 1;
-            
+
             $poGlobalDiscount = \DB::table('purchase_order_discounts')->where('purchase_order_id', $po->id)->sum('amount');
             $poGlobalCharge   = \DB::table('purchase_order_charges')->where('purchase_order_id', $po->id)->sum('amount');
             $poExtraDiscount  = $po->extra_discount_total ?? 0; // Mengambil Potongan Tambahan
@@ -330,7 +331,7 @@ class VendorInvoiceController extends Controller
         if ($request->has('post_invoice')) {
             $statusPosted = \App\Models\Status::where('type', 'INV')->where('slug', 'posted')->first();
             if ($statusPosted) {
-                $invoice->status_id = $statusPosted->id; 
+                $invoice->status_id = $statusPosted->id;
             }
         }
 
@@ -349,14 +350,14 @@ class VendorInvoiceController extends Controller
             'payment_date'   => 'required|date',
             'payment_method' => 'required|string',
             'amount'         => 'required|numeric|min:1',
-            'attachments'    => 'nullable|array', 
-            'attachments.*'  => 'nullable|file|mimes:jpg,jpeg,png,pdf|max:5120', 
+            'attachments'    => 'nullable|array',
+            'attachments.*'  => 'nullable|file|mimes:jpg,jpeg,png,pdf|max:5120',
         ]);
 
         DB::beginTransaction();
         try {
             $invoice = VendorInvoice::where('invoice_number', $slug)->firstOrFail();
-            
+
             $paymentNumber = 'PAY-' . date('Y-m-d') . '-' . str_pad(rand(1, 9999), 4, '0', STR_PAD_LEFT);
             $payment = \App\Models\VendorPayment::create([
                 'payment_number'    => $paymentNumber,
@@ -372,7 +373,7 @@ class VendorInvoiceController extends Controller
 
             // Ambil dari tabel setting (Payment Attachment)
             if ($request->hasFile('attachments')) {
-                $setting = \DB::table('system_settings')->where('setting_key', 'path_payment_attachment')->first(); 
+                $setting = \DB::table('system_settings')->where('setting_key', 'path_payment_attachment')->first();
                 $rootFolder = $setting ? $setting->setting_value : 'attachments/payments';
                 $targetFolder = trim($rootFolder, '/') . '/' . str_replace('/', '-', $payment->payment_number);
 
@@ -434,7 +435,7 @@ class VendorInvoiceController extends Controller
             $invoice = VendorInvoice::where('invoice_number', $slug)->firstOrFail();
 
             // Membaca lokasi folder dari tabel
-            $setting = \DB::table('system_settings')->where('setting_key', 'path_invoice_attachment')->first(); 
+            $setting = \DB::table('system_settings')->where('setting_key', 'path_invoice_attachment')->first();
             $rootFolder = $setting ? $setting->setting_value : 'attachments/invoices';
             $targetFolder = trim($rootFolder, '/') . '/' . str_replace('/', '-', $invoice->invoice_number);
 
@@ -443,10 +444,10 @@ class VendorInvoiceController extends Controller
                 if ($file->isValid()) {
                     // Ambil jenis dokumen sesuai urutan baris
                     $docType = $request->document_types[$index] ?? 'Dokumen Lainnya';
-                    
+
                     $originalName = $file->getClientOriginalName();
                     $filename = time() . '_' . uniqid() . '_' . str_replace(' ', '_', $originalName);
-                    
+
                     // Simpan fisik file
                     $path = $file->storeAs($targetFolder, $filename, 'public');
 
@@ -495,7 +496,7 @@ class VendorInvoiceController extends Controller
         try {
             $payment = \App\Models\VendorPayment::with(['invoice.purchaseOrder', 'attachments'])->findOrFail($id);
             $invoice = $payment->invoice;
-            
+
             // Tangkap alasan dari Pop-up SweetAlert
             $reason = $request->input('cancel_reason', 'Tanpa Keterangan');
 
@@ -506,7 +507,7 @@ class VendorInvoiceController extends Controller
                 }
             }
             \App\Models\VendorPaymentAttachment::where('vendor_payment_id', $payment->id)->delete();
-            
+
             // 🔥 JEJAK AUDIT: Catat alasan batal di kolom notes invoice
             $auditTrail = "\n\n[VOID] Pembayaran " . $payment->payment_number . " senilai " . number_format($payment->amount, 0, ',', '.') . " dibatalkan pada " . date('d/m/Y H:i') . ".\nAlasan: " . $reason;
             $invoice->notes = $invoice->notes . $auditTrail;
@@ -574,5 +575,24 @@ class VendorInvoiceController extends Controller
         }
     }
 
+
+    // Jangan lupa pastikan Facade PDF sudah di-import di bagian paling atas file Controller Anda:
+    // use Barryvdh\DomPDF\Facade\Pdf;
+
+    public function print($invoice_number)
+    {
+        $invoice = \App\Models\VendorInvoice::with(['vendor', 'purchaseOrder', 'goodsReceipt', 'items.item', 'payments', 'company', 'creator'])
+            ->where('invoice_number', $invoice_number)
+            ->firstOrFail();
+
+        // ====================================================
+        // MENGGUNAKAN RENDER PDF (Sama seperti modul lain)
+        // ====================================================
+        $pdf = Pdf::loadView('vendor_invoices.print', compact('invoice'))
+                  ->setPaper('a4', 'portrait');
+
+        // Gunakan stream() untuk melihat di tab baru, atau download() untuk langsung unduh file
+        return $pdf->stream('Tagihan_Vendor_' . str_replace('/', '_', $invoice->invoice_number) . '.pdf');
+    }
 
 }

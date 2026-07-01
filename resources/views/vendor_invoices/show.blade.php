@@ -35,7 +35,7 @@
             <a href="{{ route('vendor-invoices.index') }}" class="shadow-sm btn btn-outline-secondary rounded-pill fw-bold">
                 <i class="bi bi-arrow-left me-1"></i> Kembali
             </a>
-            
+
             {{-- Tombol Batal Tagihan (SweetAlert UI) --}}
             @if($totalPaid == 0)
                 <form id="form-void-invoice" action="{{ route('vendor-invoices.cancelInvoice', $invoice->invoice_number) }}" method="POST" class="d-inline">
@@ -48,12 +48,13 @@
                 </form>
             @endif
 
-            <button class="shadow-sm btn btn-dark rounded-pill fw-bold" onclick="window.print()">
-                <i class="bi bi-printer me-1"></i> Cetak
-            </button>
-            
+            {{-- KODE BARU: MENGARAHKAN KE HALAMAN KERTAS CETAK (TAB BARU) --}}
+            <a href="{{ route('vendor-invoices.print', $invoice->invoice_number) }}" target="_blank" class="shadow-sm btn btn-dark rounded-pill fw-bold">
+                <i class="bi bi-printer me-1"></i> Cetak Resmi
+            </a>
+
             @if($isPayable)
-                <button type="button" class="shadow-sm btn btn-success rounded-pill fw-bold px-4" data-bs-toggle="modal" data-bs-target="#paymentModal">
+                <button type="button" class="px-4 shadow-sm btn btn-success rounded-pill fw-bold" data-bs-toggle="modal" data-bs-target="#paymentModal">
                     <i class="bi bi-cash-coin me-1"></i> Bayar Tagihan
                 </button>
             @endif
@@ -108,7 +109,7 @@
                     <form action="{{ route('vendor-invoices.update', $invoice->invoice_number) }}" method="POST">
                         @csrf
                         @method('PUT')
-                        
+
                         <div class="row g-3">
                             <div class="col-md-6">
                                 <label class="mb-1 fw-bold small text-muted">No. Faktur Vendor <span class="text-danger">*</span></label>
@@ -122,11 +123,11 @@
 
                         @if($isDraft)
                             <div class="p-3 mt-4 border rounded bg-light border-info-subtle">
-                                <div class="form-check form-switch mb-2">
+                                <div class="mb-2 form-check form-switch">
                                     <input class="form-check-input" type="checkbox" role="switch" id="postInvoiceCheck" name="post_invoice" value="1">
                                     <label class="fw-bold form-check-label text-dark" for="postInvoiceCheck">Posting Tagihan Ini (Kunci & Siap Dibayar)</label>
                                 </div>
-                                <div class="small text-muted mb-3"><i class="bi bi-info-circle me-1"></i>Jika di-posting, tagihan tidak dapat diubah lagi angkanya dan akan masuk ke daftar hutang yang siap dibayar.</div>
+                                <div class="mb-3 small text-muted"><i class="bi bi-info-circle me-1"></i>Jika di-posting, tagihan tidak dapat diubah lagi angkanya dan akan masuk ke daftar hutang yang siap dibayar.</div>
                                 <button type="submit" class="shadow-sm btn btn-primary fw-bold"><i class="bi bi-save me-1"></i> Simpan Perubahan</button>
                             </div>
                         @endif
@@ -139,23 +140,23 @@
                 <div class="mb-4 border-0 shadow-sm card rounded-4">
                     <div class="py-3 bg-white border-bottom card-header d-flex justify-content-between align-items-center">
                         <h6 class="mb-0 fw-bold text-dark"><i class="bi bi-folder2-open me-2 text-warning"></i>Laci Dokumen Invoice</h6>
-                        <span class="badge bg-light text-dark border"><i class="bi bi-info-circle me-1"></i>Bisa diupload kapan saja</span>
+                        <span class="border badge bg-light text-dark"><i class="bi bi-info-circle me-1"></i>Bisa diupload kapan saja</span>
                     </div>
                     <div class="p-4 card-body">
-                        
+
                         {{-- Form Upload Multi File --}}
                         <form action="{{ route('vendor-invoices.uploadAttachment', $invoice->invoice_number) }}" method="POST" enctype="multipart/form-data" class="mb-4">
                             @csrf
-                            
+
                             {{-- Wadah Baris --}}
                             <div id="invoice-attachment-container">
-                                <div class="row g-2 align-items-end mb-2 invoice-attachment-row">
+                                <div class="mb-2 row g-2 align-items-end invoice-attachment-row">
                                     <div class="col-md-5">
-                                        <label class="small fw-bold text-muted mb-1">Jenis Dokumen</label>
+                                        <label class="mb-1 small fw-bold text-muted">Jenis Dokumen</label>
                                         <input list="documentTypeOptions" name="document_types[]" class="form-control form-control-sm" placeholder="Ketik atau pilih jenis..." required autocomplete="off">
                                     </div>
                                     <div class="col-md-6">
-                                        <label class="small fw-bold text-muted mb-1">Pilih File (PDF/JPG/PNG)</label>
+                                        <label class="mb-1 small fw-bold text-muted">Pilih File (PDF/JPG/PNG)</label>
                                         <input type="file" name="attachment_files[]" class="form-control form-control-sm" accept=".pdf,.jpg,.jpeg,.png" required>
                                     </div>
                                     <div class="col-md-1 text-end">
@@ -164,13 +165,13 @@
                                     </div>
                                 </div>
                             </div>
-                            
+
                             {{-- Tombol Aksi Bawah --}}
-                            <div class="d-flex justify-content-between mt-3">
-                                <button type="button" class="btn btn-sm btn-outline-primary rounded-pill fw-bold px-3" onclick="addInvoiceDocRow()">
+                            <div class="mt-3 d-flex justify-content-between">
+                                <button type="button" class="px-3 btn btn-sm btn-outline-primary rounded-pill fw-bold" onclick="addInvoiceDocRow()">
                                     <i class="bi bi-plus-circle me-1"></i> Tambah File
                                 </button>
-                                <button type="submit" class="btn btn-sm btn-dark rounded-pill fw-bold px-4">
+                                <button type="submit" class="px-4 btn btn-sm btn-dark rounded-pill fw-bold">
                                     <i class="bi bi-upload me-1"></i> Upload Semua File
                                 </button>
                             </div>
@@ -188,7 +189,7 @@
                         {{-- Daftar File Laci --}}
                         @if(isset($invoice->attachments) && $invoice->attachments->count() > 0)
                             <div class="table-responsive">
-                                <table class="table table-sm table-hover align-middle border mb-0">
+                                <table class="table mb-0 align-middle border table-sm table-hover">
                                     <thead class="bg-light text-muted small">
                                         <tr>
                                             <th>Jenis</th>
@@ -207,7 +208,7 @@
                                                 <form action="{{ route('vendor-invoices.deleteAttachment', $doc->id) }}" method="POST" onsubmit="return confirm('Hapus dokumen ini?')">
                                                     @csrf
                                                     @method('DELETE')
-                                                    <button type="submit" class="btn btn-sm btn-link text-danger p-0" title="Hapus"><i class="bi bi-trash"></i></button>
+                                                    <button type="submit" class="p-0 btn btn-sm btn-link text-danger" title="Hapus"><i class="bi bi-trash"></i></button>
                                                 </form>
                                             </td>
                                         </tr>
@@ -216,7 +217,7 @@
                                 </table>
                             </div>
                         @else
-                            <div class="text-center text-muted small p-3 bg-light rounded border border-dashed">
+                            <div class="p-3 text-center border border-dashed rounded text-muted small bg-light">
                                 Belum ada dokumen yang dilampirkan.
                             </div>
                         @endif
@@ -224,17 +225,17 @@
                 </div>
             @else
                 {{-- JIKA MASIH DRAFT: GEMBOK LACI! --}}
-                <div class="mb-4 border-0 shadow-sm card rounded-4 opacity-75 bg-light">
+                <div class="mb-4 border-0 shadow-sm opacity-75 card rounded-4 bg-light">
                     <div class="py-3 bg-transparent border-bottom card-header d-flex justify-content-between align-items-center">
                         <h6 class="mb-0 fw-bold text-muted"><i class="bi bi-folder-x me-2"></i>Laci Dokumen Terkunci</h6>
                     </div>
-                    <div class="p-4 card-body text-center">
+                    <div class="p-4 text-center card-body">
                         <i class="bi bi-lock-fill text-muted" style="font-size: 2rem;"></i>
-                        <p class="mb-0 mt-2 text-muted small fw-bold">Selesaikan dan Posting tagihan (di kotak atas) terlebih dahulu untuk membuka Laci Dokumen.</p>
+                        <p class="mt-2 mb-0 text-muted small fw-bold">Selesaikan dan Posting tagihan (di kotak atas) terlebih dahulu untuk membuka Laci Dokumen.</p>
                     </div>
                 </div>
             @endif
-            
+
             {{-- TABEL RINCIAN BARANG --}}
             <div class="mb-4 border-0 shadow-sm card rounded-4">
                 <div class="py-3 bg-white border-bottom card-header">
@@ -286,43 +287,43 @@
                     <h6 class="mb-0 fw-bold text-dark"><i class="bi bi-calculator me-2 text-primary"></i>Ringkasan Tagihan</h6>
                 </div>
                 <div class="p-4 card-body">
-                    <div class="d-flex justify-content-between mb-2 small text-muted">
+                    <div class="mb-2 d-flex justify-content-between small text-muted">
                         <span>Total Dasar (Gross)</span>
                         <span class="fw-bold text-dark">IDR {{ number_format($invoice->subtotal, 2, ',', '.') }}</span>
                     </div>
-                    <div class="d-flex justify-content-between mb-2 small text-danger">
+                    <div class="mb-2 d-flex justify-content-between small text-danger">
                         <span>Total Diskon Barang</span>
                         <span class="fw-bold">- IDR {{ number_format($invoice->item_discount_total, 2, ',', '.') }}</span>
                     </div>
-                    <div class="d-flex justify-content-between mb-2 small text-danger">
+                    <div class="mb-2 d-flex justify-content-between small text-danger">
                         <span>Diskon Global (PO)</span>
                         <span class="fw-bold">- IDR {{ number_format($invoice->global_discount_total, 2, ',', '.') }}</span>
                     </div>
 
                     @if($invoice->extra_discount_total > 0)
-                    <div class="d-flex justify-content-between mb-2 small text-danger">
+                    <div class="mb-2 d-flex justify-content-between small text-danger">
                         <span>Potongan Tambahan</span>
                         <span class="fw-bold">- IDR {{ number_format($invoice->extra_discount_total, 2, ',', '.') }}</span>
                     </div>
                     @endif
 
-                    <div class="d-flex justify-content-between mb-2 small text-muted">
+                    <div class="mb-2 d-flex justify-content-between small text-muted">
                         <span>Total Pajak (PPN)</span>
                         <span class="fw-bold text-dark">+ IDR {{ number_format($invoice->tax_amount, 2, ',', '.') }}</span>
                     </div>
-                    <div class="d-flex justify-content-between mb-3 small text-muted">
+                    <div class="mb-3 d-flex justify-content-between small text-muted">
                         <span>Biaya Tambahan (PO)</span>
                         <span class="fw-bold text-dark">+ IDR {{ number_format($invoice->charge_total, 2, ',', '.') }}</span>
                     </div>
-                    <hr class="border-secondary opacity-25">
-                    <div class="d-flex justify-content-between align-items-center mb-1">
+                    <hr class="opacity-25 border-secondary">
+                    <div class="mb-1 d-flex justify-content-between align-items-center">
                         <span class="fw-bold text-uppercase" style="font-size: 0.9rem;">Grand Total</span>
                         <span class="fs-4 fw-bolder text-primary">IDR {{ number_format($invoice->grand_total, 2, ',', '.') }}</span>
                     </div>
-                    
+
                     @if($totalPaid > 0)
                     <div class="p-3 mt-4 border border-success-subtle bg-success-subtle bg-opacity-10 rounded-3">
-                        <div class="d-flex justify-content-between mb-1 small">
+                        <div class="mb-1 d-flex justify-content-between small">
                             <span class="text-success fw-bold">Telah Dibayar:</span>
                             <span class="text-success fw-bold">IDR {{ number_format($totalPaid, 2, ',', '.') }}</span>
                         </div>
@@ -345,21 +346,21 @@
                     @if($invoice->payments->count() > 0)
                         <ul class="list-group list-group-flush rounded-bottom-4">
                             @foreach($invoice->payments as $pay)
-                            <li class="list-group-item p-3">
-                                <div class="d-flex justify-content-between align-items-start mb-1">
+                            <li class="p-3 list-group-item">
+                                <div class="mb-1 d-flex justify-content-between align-items-start">
                                     <div class="fw-bold text-dark">{{ $pay->payment_number }}</div>
                                     <div class="badge bg-success">IDR {{ number_format($pay->amount, 0, ',', '.') }}</div>
                                 </div>
-                                <div class="text-muted small mb-1"><i class="bi bi-calendar-check me-1"></i>{{ \Carbon\Carbon::parse($pay->payment_date)->format('d M Y') }} | {{ strtoupper($pay->payment_method) }}</div>
+                                <div class="mb-1 text-muted small"><i class="bi bi-calendar-check me-1"></i>{{ \Carbon\Carbon::parse($pay->payment_date)->format('d M Y') }} | {{ strtoupper($pay->payment_method) }}</div>
                                 @if($pay->bank_name)
-                                    <div class="text-muted mb-2" style="font-size: 0.7rem;">Bank: {{ $pay->bank_name }} (Ref: {{ $pay->reference_number }})</div>
+                                    <div class="mb-2 text-muted" style="font-size: 0.7rem;">Bank: {{ $pay->bank_name }} (Ref: {{ $pay->reference_number }})</div>
                                 @endif
-                                
+
                                 {{-- Menampilkan File Bukti Transfer Jika Ada --}}
                                 @if($pay->attachments && $pay->attachments->count() > 0)
-                                    <div class="mt-2 d-flex flex-wrap gap-2">
+                                    <div class="flex-wrap gap-2 mt-2 d-flex">
                                         @foreach($pay->attachments as $file)
-                                            <a href="{{ asset('storage/' . $file->file_path) }}" target="_blank" class="badge bg-light text-primary border text-decoration-none py-1 px-2">
+                                            <a href="{{ asset('storage/' . $file->file_path) }}" target="_blank" class="px-2 py-1 border badge bg-light text-primary text-decoration-none">
                                                 <i class="bi bi-paperclip"></i> {{ Str::limit($file->file_name, 15) }}
                                             </a>
                                         @endforeach
@@ -367,14 +368,14 @@
                                 @endif
 
                                 {{-- 🔥 Tombol Batalkan Pembayaran (SweetAlert UI) 🔥 --}}
-                                <div class="mt-3 text-end border-top pt-2">
+                                <div class="pt-2 mt-3 text-end border-top">
                                     <form action="{{ route('vendor-invoices.cancelPayment', $pay->id) }}" method="POST" class="form-cancel-payment">
                                         @csrf
                                         @method('DELETE')
                                         {{-- Input tersembunyi untuk menyimpan alasan dari pop-up --}}
                                         <input type="hidden" name="cancel_reason" class="cancel-reason-input">
-                                        
-                                        <button type="button" class="btn btn-sm btn-outline-danger rounded-3 py-1 btn-trigger-cancel" style="font-size: 0.7rem;">
+
+                                        <button type="button" class="py-1 btn btn-sm btn-outline-danger rounded-3 btn-trigger-cancel" style="font-size: 0.7rem;">
                                             <i class="bi bi-x-circle-fill me-1"></i>Batalkan Pembayaran
                                         </button>
                                     </form>
@@ -384,7 +385,7 @@
                         </ul>
                     @else
                         <div class="p-4 text-center text-muted small">
-                            <i class="bi bi-wallet2 fs-2 d-block mb-2 opacity-50"></i>
+                            <i class="mb-2 opacity-50 bi bi-wallet2 fs-2 d-block"></i>
                             Belum ada pembayaran dicatat.
                         </div>
                     @endif
@@ -399,26 +400,26 @@
 @if($isPayable)
 <div class="modal fade" id="paymentModal" tabindex="-1" aria-hidden="true">
     <div class="modal-dialog modal-dialog-centered">
-        <div class="modal-content border-0 shadow-lg rounded-4">
-            <div class="modal-header bg-success text-white border-bottom-0" style="border-radius: 16px 16px 0 0;">
+        <div class="border-0 shadow-lg modal-content rounded-4">
+            <div class="text-white modal-header bg-success border-bottom-0" style="border-radius: 16px 16px 0 0;">
                 <h5 class="modal-title fw-bold"><i class="bi bi-cash-stack me-2"></i>Catat Pembayaran Keluar</h5>
                 <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
             </div>
             <form action="{{ route('vendor-invoices.storePayment', $invoice->invoice_number) }}" method="POST" enctype="multipart/form-data">
                 @csrf
-                <div class="modal-body p-4 bg-light">
-                    <div class="p-3 mb-4 text-center border border-success-subtle bg-white rounded-3">
-                        <div class="small text-muted text-uppercase fw-bold mb-1">Sisa yang harus dibayar</div>
-                        <h3 class="fw-bolder text-danger mb-0">IDR {{ number_format($sisaTagihan, 2, ',', '.') }}</h3>
+                <div class="p-4 modal-body bg-light">
+                    <div class="p-3 mb-4 text-center bg-white border border-success-subtle rounded-3">
+                        <div class="mb-1 small text-muted text-uppercase fw-bold">Sisa yang harus dibayar</div>
+                        <h3 class="mb-0 fw-bolder text-danger">IDR {{ number_format($sisaTagihan, 2, ',', '.') }}</h3>
                     </div>
 
                     <div class="mb-3">
-                        <label class="fw-bold small text-muted mb-1">Tanggal Bayar *</label>
+                        <label class="mb-1 fw-bold small text-muted">Tanggal Bayar *</label>
                         <input type="date" name="payment_date" class="form-control" value="{{ date('Y-m-d') }}" required>
                     </div>
-                    <div class="row g-3 mb-3">
+                    <div class="mb-3 row g-3">
                         <div class="col-md-6">
-                            <label class="fw-bold small text-muted mb-1">Metode *</label>
+                            <label class="mb-1 fw-bold small text-muted">Metode *</label>
                             <select name="payment_method" class="form-select" required>
                                 <option value="transfer">Transfer Bank</option>
                                 <option value="cash">Tunai (Cash)</option>
@@ -426,26 +427,26 @@
                             </select>
                         </div>
                         <div class="col-md-6">
-                            <label class="fw-bold small text-muted mb-1">Nominal Bayar (IDR) *</label>
+                            <label class="mb-1 fw-bold small text-muted">Nominal Bayar (IDR) *</label>
                             <input type="number" name="amount" class="form-control fw-bold text-primary" value="{{ $sisaTagihan }}" max="{{ $sisaTagihan }}" step="0.01" required>
                         </div>
                     </div>
-                    <div class="row g-3 mb-3">
+                    <div class="mb-3 row g-3">
                         <div class="col-md-6">
-                            <label class="fw-bold small text-muted mb-1">Bank Asal (Opsional)</label>
+                            <label class="mb-1 fw-bold small text-muted">Bank Asal (Opsional)</label>
                             <input type="text" name="bank_name" class="form-control" placeholder="Cth: BCA Pusat">
                         </div>
                         <div class="col-md-6">
-                            <label class="fw-bold small text-muted mb-1">No. Referensi (Opsional)</label>
+                            <label class="mb-1 fw-bold small text-muted">No. Referensi (Opsional)</label>
                             <input type="text" name="reference_number" class="form-control" placeholder="No. Transaksi / Giro">
                         </div>
                     </div>
                     <div class="mb-3">
-                        <label class="fw-bold small text-muted mb-2">Upload Bukti Bayar / Dokumen (Opsional)</label>
-                        
+                        <label class="mb-2 fw-bold small text-muted">Upload Bukti Bayar / Dokumen (Opsional)</label>
+
                         {{-- Wadah untuk baris-baris upload --}}
                         <div id="attachment-container">
-                            <div class="input-group mb-2 attachment-row">
+                            <div class="mb-2 input-group attachment-row">
                                 <span class="input-group-text bg-light"><i class="bi bi-paperclip"></i></span>
                                 <input type="file" name="attachments[]" class="form-control" accept=".jpg,.jpeg,.png,.pdf">
                                 <button class="btn btn-outline-danger btn-remove-file" type="button" onclick="this.parentElement.remove()" title="Hapus baris ini">
@@ -455,19 +456,19 @@
                         </div>
 
                         {{-- Tombol sakti penambah baris --}}
-                        <button type="button" class="btn btn-sm btn-outline-primary rounded-pill fw-bold mt-1" onclick="addAttachmentRow()">
+                        <button type="button" class="mt-1 btn btn-sm btn-outline-primary rounded-pill fw-bold" onclick="addAttachmentRow()">
                             <i class="bi bi-plus-circle me-1"></i> Tambah File dari Folder Lain
                         </button>
                     </div>
                     <div>
-                        <label class="fw-bold small text-muted mb-1">Catatan Tambahan</label>
+                        <label class="mb-1 fw-bold small text-muted">Catatan Tambahan</label>
                         <textarea name="notes" class="form-control" rows="2" placeholder="Catatan pembayaran..."></textarea>
                     </div>
                 </div>
-                
-                <div class="modal-footer border-top-0 pt-0 bg-light" style="border-radius: 0 0 16px 16px;">
-                    <button type="button" class="btn btn-secondary rounded-pill px-4" data-bs-dismiss="modal">Batal</button>
-                    <button type="submit" class="btn btn-success rounded-pill fw-bold px-4"><i class="bi bi-save me-1"></i> Simpan Pembayaran</button>
+
+                <div class="pt-0 modal-footer border-top-0 bg-light" style="border-radius: 0 0 16px 16px;">
+                    <button type="button" class="px-4 btn btn-secondary rounded-pill" data-bs-dismiss="modal">Batal</button>
+                    <button type="submit" class="px-4 btn btn-success rounded-pill fw-bold"><i class="bi bi-save me-1"></i> Simpan Pembayaran</button>
                 </div>
             </form>
         </div>
@@ -503,7 +504,7 @@
     function addInvoiceDocRow() {
         const container = document.getElementById('invoice-attachment-container');
         const template = `
-            <div class="row g-2 align-items-end mb-2 invoice-attachment-row">
+            <div class="mb-2 row g-2 align-items-end invoice-attachment-row">
                 <div class="col-md-5">
                     <input list="documentTypeOptions" name="document_types[]" class="form-control form-control-sm" placeholder="Ketik atau pilih jenis..." required autocomplete="off">
                 </div>
@@ -562,12 +563,12 @@
                     if (result.isConfirmed) {
                         // Masukkan alasan ke input tersembunyi
                         reasonInput.value = result.value;
-                        
+
                         // Tampilkan loading lalu submit form
-                        Swal.fire({ 
-                            title: 'Membatalkan Transaksi...', 
-                            allowOutsideClick: false, 
-                            didOpen: () => Swal.showLoading() 
+                        Swal.fire({
+                            title: 'Membatalkan Transaksi...',
+                            allowOutsideClick: false,
+                            didOpen: () => Swal.showLoading()
                         });
                         form.submit();
                     }
@@ -600,10 +601,10 @@
         }).then((result) => {
             if (result.isConfirmed) {
                 document.getElementById('invoice-cancel-reason').value = result.value;
-                Swal.fire({ 
-                    title: 'Menghapus Tagihan...', 
-                    allowOutsideClick: false, 
-                    didOpen: () => Swal.showLoading() 
+                Swal.fire({
+                    title: 'Menghapus Tagihan...',
+                    allowOutsideClick: false,
+                    didOpen: () => Swal.showLoading()
                 });
                 document.getElementById('form-void-invoice').submit();
             }
