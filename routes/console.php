@@ -4,14 +4,9 @@ use Illuminate\Foundation\Inspiring;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Schedule;
 
-// use Illuminate\Support\Facades\Schedule;
-
-
 Artisan::command('inspire', function () {
     $this->comment(Inspiring::quote());
 })->purpose('Display an inspiring quote');
 
-
-// Jalankan command setiap hari jam 01:00 pagi
-Schedule::command('bills:generate')->dailyAt('01:00');
-
+// 🔥 PERBAIKAN: Samakan string di dalam command() dengan $signature di file Robot 🔥
+Schedule::command('bills:generate-recurring')->dailyAt('01:00');
