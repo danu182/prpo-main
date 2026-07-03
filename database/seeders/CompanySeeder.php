@@ -2,29 +2,44 @@
 
 namespace Database\Seeders;
 
-use Illuminate\Database\Console\Seeds\WithoutModelEvents;
 use Illuminate\Database\Seeder;
-use Faker\Factory as Faker; // Import Faker
 use Illuminate\Support\Facades\DB;
+use App\Models\Company;
 
 class CompanySeeder extends Seeder
 {
-    /**
-     * Run the database seeds.
-     */
     public function run(): void
     {
-        $faker = Faker::create('id_ID'); // 'id_ID' agar namanya berbau Indonesia
+        // 1. Buat Kantor Pusat (Head Office) agar AdminUserSeeder tidak error
+        Company::firstOrCreate(
+            ['code' => 'HO-001'],
+            [
+                'name' => 'PT Induk Nusantara (Head Office)',
+                'address' => 'Gedung Pusat, Jakarta',
+                'is_head_office' => true,
+            ]
+        );
 
-        for($i = 1; $i <= 10; $i++){
-            DB::table('companies')->insert([
-                'code' => 'PT-' . $faker->unique()->numerify('###'),
-                'name' => $faker->company,
-                'address' => $faker->address,
-                'is_head_office' => false,
-                'created_at' => now(),
-                'updated_at' => now(),
-            ]);
+        // 2. Daftar Entitas Perusahaan dari Excel Anda (Wajib Ada untuk Import)
+        $excelCompanies = [
+            ['name' => 'Hitawasana',    'code' => 'HTW'],
+            ['name' => 'DestinAsian',   'code' => 'DES'],
+            ['name' => 'Scop3Group',    'code' => 'SCP'],
+            ['name' => 'Asset di Jual', 'code' => 'ADJ'],
+        ];
+
+        foreach ($excelCompanies as $comp) {
+            Company::firstOrCreate(
+                ['name' => $comp['name']],
+                [
+                    'code' => $comp['code'],
+                    'address' => 'Sesuai Data Entitas',
+                    'is_head_office' => false,
+                ]
+            );
         }
+
+        // Jika Anda masih ingin tambah data random dari Faker, bisa diletakkan di bawah ini
+        // Namun untuk ERP fase awal, 5 perusahaan di atas sudah sangat cukup dan bersih.
     }
 }

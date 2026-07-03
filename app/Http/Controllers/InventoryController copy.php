@@ -55,22 +55,76 @@ class InventoryController extends Controller
         }
     }
 
-    // 1. Tampilkan Semua Saldo Stok Gudang
+    // ==========================================
+    // 1. Tampilkan Semua Saldo Stok (Diringkas per Barang & Gudang)
+    // ==========================================
     public function index(Request $request)
     {
         $search = $request->input('search');
+        $warehouseId = $request->input('warehouse_id');
 
-        // HANYA panggil barang yang is_stockable = true
-        $items = Item::where('is_stockable', true)
-            ->when($search, function ($query) use ($search) {
-                $query->where('name', 'like', "%{$search}%")
-                      ->orWhere('code', 'like', "%{$search}%");
+        $warehouses = \App\Models\Warehouse::orderBy('name')->get();
+
+        // 🔥 FILTER SUPER AMAN: Kecualikan JSA/NST, tapi TETAP BAWA kode yang KOSONG (NULL)
+        $allItems = \App\Models\Item::where(function($q) {
+            $q->whereNotIn('item_type_code', ['JSA', 'NST'])
+              ->orWhereNull('item_type_code');
+        })->orderBy('name')->get();
+
+        // 🔥 RADAR BARANG KRITIS
+        $criticalStocks = \App\Models\Item::with('uom')
+            ->where(function($q) {
+                $q->whereNotIn('item_type_code', ['JSA', 'NST'])
+                  ->orWhereNull('item_type_code');
             })
-            ->orderBy('name', 'asc')
-            ->paginate(10)
+            ->whereNotNull('min_stock')
+            ->where('min_stock', '>', 0)
+            ->whereColumn('current_stock', '<=', 'min_stock')
+            ->get();
+
+        // 🔥 QUERY DAFTAR INVENTORY (SMART TOTAL STOCK CALCULATION)
+        $stocks = \App\Models\Item::query()
+            ->select('items.*')
+            ->with('uom')
+            ->where(function($q) {
+                $q->whereNotIn('item_type_code', ['JSA', 'NST'])
+                  ->orWhereNull('item_type_code');
+            })
+            ->addSelect([
+                // 1. Hitung Stok Curah (Bulk) dari inventory_stocks
+                'bulk_stock' => \App\Models\InventoryStock::selectRaw('COALESCE(SUM(stock_qty), 0)')
+                    ->whereColumn('item_id', 'items.id')
+                    ->when($warehouseId, function($q) use ($warehouseId) {
+                        $q->where('warehouse_id', $warehouseId);
+                    }),
+
+                // 2. Hitung Stok Aset yang "Available" (Nganggur di Gudang) dari tabel fixed_assets
+                'asset_stock' => \App\Models\FixedAsset::selectRaw('COUNT(id)')
+                    ->whereColumn('item_id', 'items.id')
+                    ->whereHas('status', function($q) {
+                        $q->where('slug', 'available'); // Hanya hitung aset yang siap dipakai/dikeluarkan
+                    })
+                    ->when($warehouseId, function($q) use ($warehouseId) {
+                        $q->where('warehouse_id', $warehouseId);
+                    })
+            ])
+            ->when($search, function ($q) use ($search) {
+                $q->where(function ($sub) use ($search) {
+                    $sub->where('name', 'like', "%{$search}%")
+                        ->orWhere('code', 'like', "%{$search}%");
+                });
+            })
+            ->orderBy('name')
+            ->paginate(15)
             ->withQueryString();
 
-        return view('inventory.index', compact('items', 'search'));
+        // Menyuntikkan perhitungan "Total Stock" gabungan ke masing-masing item
+        $stocks->getCollection()->transform(function ($item) {
+            $item->total_stock = $item->bulk_stock + $item->asset_stock;
+            return $item;
+        });
+
+        return view('inventory.index', compact('stocks', 'warehouses', 'search', 'warehouseId', 'allItems', 'criticalStocks'));
     }
 
     // 2. Tampilkan Kartu Stok (Riwayat Keluar Masuk) per Barang

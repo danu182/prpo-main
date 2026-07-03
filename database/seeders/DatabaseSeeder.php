@@ -3,53 +3,38 @@
 namespace Database\Seeders;
 
 use Illuminate\Database\Seeder;
-use Illuminate\Support\Facades\Hash;
-use Spatie\Permission\Models\Role;
-use Spatie\Permission\Models\Permission;
 use Spatie\Permission\PermissionRegistrar;
-use App\Models\User;
-use App\Models\Company;
-use App\Models\Vendor;
 
 class DatabaseSeeder extends Seeder
 {
     public function run()
     {
-        // 1. Reset Cached Roles/Permissions
+        // 1. Reset Cached Roles/Permissions (Wajib jalan duluan)
         app()[PermissionRegistrar::class]->forgetCachedPermissions();
 
         // ====================================================
-        // 2. SETUP PERUSAHAAN (COMPANY)
+        // 2. PANGGIL SEEDER DENGAN URUTAN YANG BENAR (LOGIS)
         // ====================================================
-        // Kita buat dulu agar ID-nya tersedia untuk User
-        $ho = Company::firstOrCreate(
-            ['code' => 'HO'],
-            ['name' => 'Head Office', 'is_head_office' => true, 'address'=>'Jl. pasar minggu jakarta']
-
-        );
-
-        $sub1 = Company::firstOrCreate(
-            ['code' => 'SUB1'],
-            ['name' => 'PT Anak Usaha Satu'],
-            ['address' => 'Jl. pasar Baru jakarta'],
-        );
-
-        // ====================================================
-        // 3. PANGGIL SEEDER LAIN (DATA MASTER)
-        // ====================================================
-        // DirectorSeeder & UserSeeder dihapus dari list karena isinya sudah digabung di sini
         $this->call([
+            // A. Pondasi Sistem & Otoritas
+            RolePermissionSeeder::class,     // Bikin Role (Admin, Staff, dll) duluan
+            SystemSettingSeeder::class,      // Pengaturan Sistem
 
-        // 🔥 TAMBAHKAN UOM SEEDER DI SINI 🔥
+            // B. Pondasi Perusahaan & Karyawan
+            CompanySeeder::class,            // Bikin PT DestinAsian, HO, dll duluan
+            DepartmentAndUserSeeder::class,  // Bikin Departemen & User Excel (Butuh PT)
+            AdminUserSeeder::class,          // Bikin User Admin & Manager (Butuh PT)
+
+            // C. Pondasi Master Data (Aset, Gudang, Barang)
             UomSeeder::class,
-            // AdminUserSeeder::class,
+            CategorySeeder::class,
             WarehouseSeeder::class,
             ItemConditionSeeder::class,
             ItemTypeSeeder::class,
             VendorSeeder::class,
-            CompanySeeder::class,
-            CategorySeeder::class,
             ItemsSeeder::class,
+
+            // D. Pondasi Keuangan (Finance & Purchasing)
             CurrencySeeder::class,
             FinanceSeeder::class,
             PaymentMethodSeeder::class,
@@ -57,27 +42,17 @@ class DatabaseSeeder extends Seeder
             ChargeTypeSeeder::class,
             PaymentTermSeeder::class,
             StatusSeeder::class,
-            RolePermissionSeeder::class,
-            AdminUserSeeder::class,
             DiscountTypeSeeder::class,
             ReturnReasonSeeder::class,
             ApprovalWorkflowSeeder::class,
-            SystemSettingSeeder::class,
             DocumentTypeSeeder::class,
             BankDataSeeder::class,
-            
+            ImportUserSeeder::class,
 
         ]);
 
-
-
-        // ====================================================
-        // 7. DATA TAMBAHAN (Vendor Manual)
-        // ====================================================
-        Vendor::firstOrCreate(['name' => 'CV Maju Jaya'], ['phone' => '08123456789']);
-        Vendor::firstOrCreate(['name' => 'PT Elektronik Sentosa'], ['phone' => '021-555555']);
-
-        $this->command->info('Database Seeding Completed Successfully.');
-        $this->command->info('Users Created: staff@app.com, manager@app.com, director@app.com (Pass: 123)');
+        $this->command->info('=============================================');
+        $this->command->info('🚀 BINGO! DATABASE SEEDING SUKSES SEMPURNA 🚀');
+        $this->command->info('=============================================');
     }
 }

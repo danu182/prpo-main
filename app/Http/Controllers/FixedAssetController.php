@@ -13,6 +13,7 @@ use Maatwebsite\Excel\Facades\Excel;
 
 class FixedAssetController extends Controller
 {
+
     public function index(Request $request)
     {
         $search = $request->input('search');
@@ -120,15 +121,7 @@ class FixedAssetController extends Controller
                         'created_by'     => auth()->id(),
                     ]);
 
-                    \App\Models\InventoryStock::create([
-                        'company_id'       => $request->company_id,
-                        'warehouse_id'     => $request->warehouse_id,
-                        'item_id'          => $request->item_id,
-                        'stock_qty'        => 1,
-                        'reference_number' => $assetNumber,
-                        'notes'            => "Masuk via Registrasi Manual: " . $assetNumber,
-                    ]);
-
+                    // PENCATATAN MUTASI STOK YANG BENAR (HANYA INI, TANPA INVENTORY_STOCKS)
                     $balanceBefore = $currentStock;
                     $balanceAfter  = $currentStock + 1;
                     $currentStock  = $balanceAfter;
@@ -145,6 +138,8 @@ class FixedAssetController extends Controller
                         'created_by'       => auth()->id(),
                     ]);
                 }
+
+                // Update total stok terakhir di Master Barang
                 $itemMaster->update(['current_stock' => $currentStock]);
             });
 
@@ -362,6 +357,7 @@ class FixedAssetController extends Controller
         }
     }
 
+
     // =========================================================================
     // 4. KEPUTUSAN ATASAN & 🔥 SMART AUTO-CREATE ITEM 🔥
     // =========================================================================
@@ -406,7 +402,9 @@ class FixedAssetController extends Controller
                         $item = \App\Models\Item::lockForUpdate()->where('code', $row->kode_barang)->first();
                     }
 
-                    // B. Jika Tidak Ketemu / Kosong, Eksekusi Smart Auto-Create
+                    // ===========================================================
+                    // B. Jika Item Belum Ada, Eksekusi Smart Auto-Create Item
+                    // ===========================================================
                     if (!$item) {
                         $namaAsetBaru = $row->nama_spesifik_aset;
                         $item = \App\Models\Item::lockForUpdate()->where('name', $namaAsetBaru)->first();
@@ -417,34 +415,70 @@ class FixedAssetController extends Controller
                             $newCode  = 'ITM-' . str_pad($nextId, 4, '0', STR_PAD_LEFT);
                             $slug     = \Illuminate\Support\Str::slug($namaAsetBaru) . '-' . \Illuminate\Support\Str::random(4);
 
-                            $cat = \App\Models\Category::firstOrCreate(['code' => 'AST'], ['name' => 'Aset Tetap']);
+                            // 🔥 INTEGRASI TYPE EXCEL -> SUB-CATEGORY SISTEM 🔥
+                            $typeName = !empty($row->tipe_aset) ? $row->tipe_aset : 'Umum';
+
+                            // Cari atau buat kategori berdasarkan "Type" di Excel
+                            $cat = \App\Models\Category::firstOrCreate(
+                                ['name' => $typeName],
+                                ['code' => strtoupper(substr(preg_replace('/[^A-Za-z]/', '', $typeName), 0, 3))]
+                            );
+
                             $uom = \App\Models\Uom::firstOrCreate(['code' => 'PCS'], ['name' => 'Pieces']);
 
                             $item = \App\Models\Item::create([
                                 'code'           => $newCode,
                                 'slug'           => $slug,
                                 'name'           => $namaAsetBaru,
-                                'category_id'    => $cat->id,
+                                'category_id'    => $cat->id, // Otomatis mengikat ke kategori/tipe yang benar
                                 'uom_id'         => $uom->id,
-                                'item_type_code' => 'STK',
+                                'item_type_code' => 'STK', // Netral sesuai kebijakan akuntansi
                                 'is_trackable'   => 1,
                                 'is_active'      => 1,
                                 'current_stock'  => 0,
-                                'specification'  => 'Aset dibuat otomatis via Smart Auto-Create'
+                                'specification'  => 'Item dibuat otomatis dari tipe: ' . $typeName
                             ]);
                         }
                     }
 
-                    // C. Tarik Data Relasi
+                    // ===========================================================
+                    // C. Tarik Data Relasi (Company, Warehouse, Status, Dept, User)
+                    // ===========================================================
                     $company = \App\Models\Company::where('name', 'like', "%{$row->nama_pt}%")->first();
                     $warehouse = \App\Models\Warehouse::where('name', 'like', "%{$row->nama_gudang}%")->first();
                     $status = \App\Models\Status::where('type', 'AST')->where('name', 'like', "%".explode('(', $row->status_aset)[0]."%")->first();
 
-                    $assignedTo = null;
-                    if ($status && $status->slug === 'in_use' && !empty($row->nama_peminjam)) {
-                        $user = \App\Models\User::where('name', 'like', "%{$row->nama_peminjam}%")->first();
-                        $assignedTo = $user ? $user->id : null;
+                    // 🔥 INTEGRASI DEPARTEMEN SECARA RESMI 🔥
+                    $departmentId = null;
+                    if (!empty($row->departemen)) {
+                        $deptCode = strtoupper(substr(preg_replace('/[^A-Za-z]/', '', $row->departemen), 0, 3));
+                        $dept = \App\Models\Department::firstOrCreate(
+                            ['name' => $row->departemen],
+                            ['code' => $deptCode]
+                        );
+                        $departmentId = $dept->id;
                     }
+
+                    // 🔥 INTEGRASI USER PENERIMA & KUMPULAN HISTORI EXCEL 🔥
+                    $assignedTo = null;
+                    $extraNotes = ""; // <-- Mengganti $failNote dan $departementNote menjadi 1 nama baku
+
+                    if (!empty($row->nama_peminjam)) {
+                        $user = \App\Models\User::where('name', 'like', "%{$row->nama_peminjam}%")->first();
+                        if ($user) {
+                            $assignedTo = $user->id;
+                            if (!$status || $status->slug !== 'in_use') {
+                                $status = \App\Models\Status::where('type', 'AST')->where('slug', 'in_use')->first();
+                            }
+                        } else {
+                            $extraNotes .= "\n• User (Excel): " . $row->nama_peminjam;
+                        }
+                    }
+
+                    // Handle catatan sejarah PO lama, Supplier, dan Kondisi Fisik (menggunakan enter \n agar rapi)
+                    if (!empty($row->condition) && $row->condition !== '-') { $extraNotes .= "\n• Kondisi: " . $row->condition; }
+                    if (!empty($row->po_number) && $row->po_number !== '-') { $extraNotes .= "\n• PO Lama: " . $row->po_number; }
+                    if (!empty($row->supplier) && $row->supplier !== '-') { $extraNotes .= "\n• Vendor Asal: " . $row->supplier; }
 
                     $currency = \App\Models\Currency::where('code', strtoupper($row->mata_uang))->first();
 
@@ -453,19 +487,20 @@ class FixedAssetController extends Controller
                     $nextSeq = $lastAsset ? ((int) substr($lastAsset->asset_number, -4)) + 1 : 1;
                     $assetNumber = "AST/{$yearMonth}/" . str_pad($nextSeq, 4, '0', STR_PAD_LEFT);
 
-                    // E. Simpan Buku Aset
+                    // E. Simpan ke Buku Besar Aset
                     $asset = \App\Models\FixedAsset::create([
                         'asset_number'            => $assetNumber,
                         'item_id'                 => $item->id,
                         'name'                    => $row->nama_spesifik_aset ?: $item->name,
                         'warehouse_id'            => $warehouse ? $warehouse->id : 1,
                         'company_id'              => $company ? $company->id : 1,
+                        'department_id'           => $departmentId, // Kolom departemen resmi
                         'serial_number'           => $row->serial_number,
                         'accounting_asset_number' => $row->label_akuntansi,
                         'status_id'               => $status ? $status->id : 1,
                         'assigned_to'             => $assignedTo,
                         'spesifikasi_detail'      => $row->spesifikasi,
-                        'notes'                   => $row->catatan,
+                        'notes'                   => trim($row->catatan . $extraNotes), // <-- Ini yang bikin error tadi, sekarang sudah FIX
                         'acquisition_date'        => $row->tanggal_perolehan,
                         'purchase_price'          => $row->harga_beli ?: 0,
                         'currency_id'             => $currency ? $currency->id : 1,
@@ -474,13 +509,16 @@ class FixedAssetController extends Controller
                     ]);
 
                     \App\Models\FixedAssetHistory::create([
-                        'fixed_asset_id' => $asset->id, 'status' => $status ? $status->name : 'Unknown',
-                        'assigned_to' => $assignedTo, 'notes' => 'Di-import via Karantina (Batch: '.$batch->batch_number.')', 'created_by' => auth()->id()
+                        'fixed_asset_id' => $asset->id,
+                        'status'         => $status ? $status->name : 'Unknown',
+                        'assigned_to'    => $assignedTo,
+                        'notes'          => trim('Di-import via Karantina (Batch: '.$batch->batch_number.')' . $extraNotes),
+                        'created_by'     => auth()->id()
                     ]);
 
                     // F. Mutasi Stok
-                    $currStock = (float) $item->current_stock;
-                    $item->update(['current_stock' => $currStock + 1]);
+                    // $currStock = (float) $item->current_stock;
+                    // $item->update(['current_stock' => $currStock + 1]);
 
                     \App\Models\InventoryStock::create([
                         'company_id' => $company ? $company->id : 1, 'warehouse_id' => $warehouse ? $warehouse->id : 1,
@@ -502,6 +540,8 @@ class FixedAssetController extends Controller
             DB::rollBack(); return back()->with('error', 'Terjadi kesalahan sistem: ' . $e->getMessage());
         }
     }
+
+
 
     public function cancelImport($batch_id)
     {
@@ -571,14 +611,17 @@ class FixedAssetController extends Controller
     public function searchItems(Request $request)
     {
         $search = $request->search;
-        $items = \App\Models\Item::where('item_type_code', 'AST')
+
+        // Dibuat lebih longgar, mencari ke semua Item yang Aktif
+        $items = \App\Models\Item::where('is_active', 1)
                     ->when($search, function($query) use ($search) {
                         $query->where(function($q) use ($search) {
                             $q->where('name', 'like', "%{$search}%")
                               ->orWhere('code', 'like', "%{$search}%");
                         });
                     })
-                    ->limit(30)->get();
+                    ->limit(30)
+                    ->get();
 
         $formattedItems = [];
         foreach ($items as $item) {

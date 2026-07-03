@@ -50,8 +50,8 @@
                 <thead class="bg-light fw-bold text-muted border-bottom">
                     <tr>
                         <th class="py-3 ps-4" width="25%">Profil Karyawan</th>
-                        <th class="py-3" width="20%">Perusahaan & Jabatan</th>
-                        <th class="py-3" width="25%">Hak Akses (Roles)</th>
+                        <th class="py-3" width="25%">PT & Departemen</th>
+                        <th class="py-3" width="20%">Hak Akses (Roles)</th>
                         <th class="py-3 text-center" width="10%">Status</th>
                         <th class="py-3 pe-4 text-end" width="20%">Aksi</th>
                     </tr>
@@ -76,7 +76,8 @@
                         </td>
                         <td class="py-3">
                             <div class="fw-bold text-primary"><i class="bi bi-building me-1"></i> {{ optional($user->company)->name ?? 'Pusat (Tanpa PT)' }}</div>
-                            <div class="mt-1 small text-muted">{{ $user->job_title ?? 'Staf' }}</div>
+                            <div class="mt-1 small text-dark"><i class="bi bi-diagram-3 me-1"></i> {{ optional($user->department)->name ?? 'Belum ada Dept' }}</div>
+                            <div class="mt-1 small text-muted"><i class="bi bi-person-badge me-1"></i> {{ $user->job_title ?? 'Staf' }}</div>
                         </td>
                         <td class="py-3">
                             <div class="flex-wrap gap-1 d-flex">
@@ -134,33 +135,45 @@
 
                                         <div class="mb-3 row g-3">
                                             <div class="col-md-6">
-                                                <label class="form-label fw-bold small text-muted">Password Baru <span class="fw-normal text-danger" style="font-size:0.7rem;">(Kosongkan jika tidak ingin mengubah)</span></label>
+                                                <label class="form-label fw-bold small text-muted">Password Baru <span class="fw-normal text-danger" style="font-size:0.7rem;">(Kosongkan jika tidak ubah)</span></label>
                                                 <input type="password" name="password" class="shadow-sm form-control" placeholder="Minimal 6 karakter">
                                             </div>
                                             <div class="col-md-6">
-                                                <label class="form-label fw-bold small text-muted">Konfirmasi Password Baru</label>
+                                                <label class="form-label fw-bold small text-muted">Konfirmasi Password</label>
                                                 <input type="password" name="password_confirmation" class="shadow-sm form-control" placeholder="Ketik ulang password">
                                             </div>
                                         </div>
 
                                         <hr class="border-dashed text-muted">
 
-                                        <div class="mb-4 row g-3">
-                                            <div class="col-md-4">
-                                                <label class="form-label fw-bold small text-muted">Perusahaan</label>
+                                        <div class="mb-3 row g-3">
+                                            <div class="col-md-6">
+                                                <label class="form-label fw-bold small text-muted">Perusahaan (PT)</label>
                                                 <select name="company_id" class="shadow-sm form-select">
-                                                    <option value="">-- Pusat --</option>
+                                                    <option value="">-- Pusat (Tanpa PT) --</option>
                                                     @foreach($companies as $cmp)
                                                         <option value="{{ $cmp->id }}" {{ $user->company_id == $cmp->id ? 'selected' : '' }}>{{ $cmp->name }}</option>
                                                     @endforeach
                                                 </select>
                                             </div>
-                                            <div class="col-md-4">
+                                            <div class="col-md-6">
+                                                <label class="form-label fw-bold small text-muted">Departemen</label>
+                                                <select name="department_id" class="shadow-sm form-select">
+                                                    <option value="">-- Pilih Departemen --</option>
+                                                    @foreach($departments as $dept)
+                                                        <option value="{{ $dept->id }}" {{ $user->department_id == $dept->id ? 'selected' : '' }}>{{ $dept->name }}</option>
+                                                    @endforeach
+                                                </select>
+                                            </div>
+                                        </div>
+
+                                        <div class="mb-4 row g-3">
+                                            <div class="col-md-6">
                                                 <label class="form-label fw-bold small text-muted">Jabatan</label>
                                                 <input type="text" name="job_title" class="shadow-sm form-control" value="{{ $user->job_title }}">
                                             </div>
-                                            <div class="col-md-4">
-                                                <label class="form-label fw-bold small text-muted">Status</label>
+                                            <div class="col-md-6">
+                                                <label class="form-label fw-bold small text-muted">Status Akun</label>
                                                 <select name="is_active" class="shadow-sm form-select">
                                                     <option value="1" {{ $user->is_active ? 'selected' : '' }}>🟢 Aktif</option>
                                                     <option value="0" {{ !$user->is_active ? 'selected' : '' }}>🔴 Nonaktif</option>
@@ -218,66 +231,77 @@
                     <h5 class="modal-title fw-bold"><i class="bi bi-person-plus-fill me-2"></i>Pendaftaran Karyawan Baru</h5>
                     <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
                 </div>
-
                 <div class="p-4 modal-body bg-light text-start">
-                    <div class="row g-3">
+
+                    <div class="mb-3 row g-3">
                         <div class="col-md-6">
                             <label class="form-label fw-bold small text-muted">Nama Lengkap <span class="text-danger">*</span></label>
-                            {{-- Tambahkan old('name') --}}
-                            <input type="text" name="name" class="shadow-sm form-control" value="{{ old('name') }}" required>
+                            <input type="text" name="name" class="shadow-sm form-control" required>
                         </div>
                         <div class="col-md-6">
                             <label class="form-label fw-bold small text-muted">Email Perusahaan <span class="text-danger">*</span></label>
-                            {{-- Tambahkan old('email') --}}
-                            <input type="email" name="email" class="shadow-sm form-control" value="{{ old('email') }}" required>
+                            <input type="email" name="email" class="shadow-sm form-control" required>
                         </div>
+                    </div>
+
+                    <div class="mb-3 row g-3">
                         <div class="col-md-6">
                             <label class="form-label fw-bold small text-muted">Buat Password <span class="text-danger">*</span></label>
-                            <input type="password" name="password" class="shadow-sm form-control" placeholder="Minimal 6 karakter" required minlength="6">
+                            <input type="password" name="password" class="shadow-sm form-control" placeholder="Minimal 6 karakter" required>
                         </div>
                         <div class="col-md-6">
                             <label class="form-label fw-bold small text-muted">Konfirmasi Password <span class="text-danger">*</span></label>
-                            <input type="password" name="password_confirmation" class="shadow-sm form-control" required minlength="6">
+                            <input type="password" name="password_confirmation" class="shadow-sm form-control" required>
                         </div>
+                    </div>
+
+                    <hr class="border-dashed text-muted">
+
+                    <div class="mb-3 row g-3">
                         <div class="col-md-6">
-                            <label class="form-label fw-bold small text-muted">Perusahaan</label>
+                            <label class="form-label fw-bold small text-muted">Perusahaan (PT)</label>
                             <select name="company_id" class="shadow-sm form-select">
                                 <option value="">-- Pusat (Tanpa PT) --</option>
-                                @foreach($companies as $company)
-                                    {{-- Cek old('company_id') agar pilihan dropdown tidak reset --}}
-                                    <option value="{{ $company->id }}" {{ old('company_id') == $company->id ? 'selected' : '' }}>
-                                        {{ $company->name }}
-                                    </option>
+                                @foreach($companies as $cmp)
+                                    <option value="{{ $cmp->id }}">{{ $cmp->name }}</option>
                                 @endforeach
                             </select>
                         </div>
                         <div class="col-md-6">
-                            <label class="form-label fw-bold small text-muted">Jabatan</label>
-                            {{-- Tambahkan old('job_title') --}}
-                            <input type="text" name="job_title" class="shadow-sm form-control" value="{{ old('job_title') }}" placeholder="Cth: Staf Gudang">
-                        </div>
-                        <div class="mt-3 col-12">
-                            <label class="form-label fw-bold small text-dark"><i class="bi bi-shield-check text-warning me-1"></i> Otoritas Awal (Role)</label>
-                            <div class="p-3 bg-white border rounded shadow-sm">
-                                <div class="row g-2">
-                                    @foreach($roles as $role)
-                                        <div class="col-md-4 col-sm-6">
-                                            <div class="form-check">
-                                                {{-- Cek old('roles') berbentuk array agar centang tidak hilang --}}
-                                                <input class="cursor-pointer form-check-input" type="checkbox" name="roles[]" value="{{ $role->name }}" id="addRole{{ $role->id }}"
-                                                {{ (is_array(old('roles')) && in_array($role->name, old('roles'))) ? 'checked' : '' }}>
-                                                <label class="form-check-label small fw-semibold text-dark" for="addRole{{ $role->id }}">
-                                                    {{ $role->name }}
-                                                </label>
-                                            </div>
-                                        </div>
-                                    @endforeach
-                                </div>
-                            </div>
+                            <label class="form-label fw-bold small text-muted">Departemen</label>
+                            <select name="department_id" class="shadow-sm form-select">
+                                <option value="">-- Pilih Departemen --</option>
+                                @foreach($departments as $dept)
+                                    <option value="{{ $dept->id }}">{{ $dept->name }}</option>
+                                @endforeach
+                            </select>
                         </div>
                     </div>
-                </div>
 
+                    <div class="mb-4 row g-3">
+                        <div class="col-md-12">
+                            <label class="form-label fw-bold small text-muted">Jabatan</label>
+                            <input type="text" name="job_title" class="shadow-sm form-control" placeholder="Cth: Staf Gudang">
+                        </div>
+                    </div>
+
+                    <div class="p-3 mb-2 bg-white border rounded shadow-sm">
+                        <label class="mb-1 form-label fw-bold small text-dark"><i class="bi bi-shield-lock-fill text-warning me-1"></i> Otoritas Awal (Role)</label>
+                        <div class="mt-2 row g-2">
+                            @foreach($roles as $role)
+                            <div class="col-md-4 col-sm-6">
+                                <div class="form-check">
+                                    <input class="form-check-input" type="checkbox" name="roles[]" value="{{ $role->name }}" id="role_new_{{ $role->id }}">
+                                    <label class="mt-1 form-check-label small fw-bold" for="role_new_{{ $role->id }}">
+                                        {{ $role->name }}
+                                    </label>
+                                </div>
+                            </div>
+                            @endforeach
+                        </div>
+                    </div>
+
+                </div>
                 <div class="p-3 bg-white modal-footer border-top">
                     <button type="button" class="px-4 border btn btn-light rounded-pill fw-bold" data-bs-dismiss="modal">Batal</button>
                     <button type="submit" class="px-4 text-white shadow-sm btn btn-dark rounded-pill fw-bold">Simpan Karyawan</button>

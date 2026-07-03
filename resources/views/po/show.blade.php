@@ -80,24 +80,43 @@
                 </form>
             @endif
 
-            {{-- 3. TOMBOL SETUJUI & TOLAK (Hanya muncul saat Pending Approval) --}}
+            {{-- 3. LOGIKA SMART APPROVAL - MENGUNCI TOMBOL HANYA UNTUK YANG BERHAK --}}
             @if($statusSlug == 'pending_approval')
-                <form action="{{ route('po.decide', $po->po_number) }}" method="POST" class="d-inline" id="formApprove">
-                    @csrf
-                    <input type="hidden" name="action" value="APPROVE">
-                    <button type="button" onclick="confirmApprove()" class="px-4 shadow-sm btn btn-success rounded-pill fw-bold">
-                        <i class="bi bi-check-circle-fill me-1"></i> Setujui PO
-                    </button>
-                </form>
+                @php
+                    // Cek giliran persetujuan saat ini
+                    $currentApproval = \App\Models\DocumentApproval::with('role')
+                        ->where('document_id', $po->id)
+                        ->where('document_type', get_class($po))
+                        ->where('status', 'PENDING')
+                        ->orderBy('step_order', 'asc')
+                        ->first();
 
-                <form action="{{ route('po.decide', $po->po_number) }}" method="POST" class="d-inline" id="formReject">
-                    @csrf
-                    <input type="hidden" name="action" value="REJECT">
-                    <input type="hidden" name="note" id="rejectNoteInput">
-                    <button type="button" onclick="confirmRejectWithNote()" class="px-4 shadow-sm btn btn-danger rounded-pill fw-bold">
-                        <i class="bi bi-x-circle-fill me-1"></i> Tolak PO
-                    </button>
-                </form>
+                    // Verifikasi apakah pengguna login memiliki role tersebut (Khusus Super Admin selalu boleh Bypass)
+                    $canApprove = $currentApproval && (auth()->user()->hasRole($currentApproval->role->name) || auth()->user()->hasRole('Super Admin'));
+                @endphp
+
+                @if($canApprove)
+                    <form action="{{ route('po.decide', $po->po_number) }}" method="POST" class="d-inline" id="formApprove">
+                        @csrf
+                        <input type="hidden" name="action" value="APPROVE">
+                        <button type="button" onclick="confirmApprove()" class="px-4 shadow-sm btn btn-success rounded-pill fw-bold">
+                            <i class="bi bi-check-circle-fill me-1"></i> Setujui PO
+                        </button>
+                    </form>
+
+                    <form action="{{ route('po.decide', $po->po_number) }}" method="POST" class="d-inline" id="formReject">
+                        @csrf
+                        <input type="hidden" name="action" value="REJECT">
+                        <input type="hidden" name="note" id="rejectNoteInput">
+                        <button type="button" onclick="confirmRejectWithNote()" class="px-4 shadow-sm btn btn-danger rounded-pill fw-bold">
+                            <i class="bi bi-x-circle-fill me-1"></i> Tolak PO
+                        </button>
+                    </form>
+                @else
+                    <div class="px-4 py-2 border rounded-pill bg-light text-muted fw-bold shadow-sm d-inline-block">
+                        <i class="bi bi-hourglass-split me-1"></i> Menunggu Persetujuan: {{ $currentApproval ? $currentApproval->role->name : 'Atasan' }}
+                    </div>
+                @endif
             @endif
 
             {{-- 4. TOMBOL TERIMA BARANG (GOODS RECEIPT) --}}

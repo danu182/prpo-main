@@ -97,9 +97,23 @@
                             <div class="mt-1 small text-muted"><i class="bi bi-clock me-1"></i>{{ \Carbon\Carbon::parse($gi->created_at)->format('H:i') }} WIB</div>
                         </td>
                         <td class="py-3 text-dark fw-semibold">{{ \Carbon\Carbon::parse($gi->issue_date)->format('d M Y') }}</td>
-                        <td class="py-3 fw-bold text-dark">
-                            <i class="bi bi-person-badge me-1 text-info"></i> {{ $gi->requester_name }}
-                            <div class="mt-1 small text-muted fw-normal text-truncate" style="max-width: 150px;" title="{{ $gi->notes }}">{{ $gi->notes ?? '-' }}</div>
+                        <td class="align-middle">
+                            <div class="fw-bold text-dark fs-6">{{ $gi->requester_name }}</div>
+
+                            @php
+                                // Robot mencari data profil karyawan ini secara dinamis untuk mengambil PT-nya
+                                $userPenerima = \App\Models\User::with('company')->where('name', $gi->requester_name)->first();
+                                $namaPt = $userPenerima ? (optional($userPenerima->company)->name ?? 'Kantor Pusat') : 'Unknown PT';
+                            @endphp
+
+                            <div class="gap-1 mt-1 d-flex flex-column">
+                                <div class="small text-muted" style="font-size: 0.75rem;">
+                                    <i class="bi bi-building me-1 text-primary"></i> {{ $namaPt }}
+                                </div>
+                                <div class="small text-muted" style="font-size: 0.75rem;">
+                                    <i class="bi bi-diagram-3 me-1 text-info"></i> {{ $gi->department ?? 'Tanpa Dept' }}
+                                </div>
+                            </div>
                         </td>
                         <td class="py-3 text-muted">{{ $gi->department ?? '-' }}</td>
 
@@ -190,7 +204,7 @@
                                                     <td class="py-2 align-middle ps-3 text-muted">{{ $loop->iteration }}</td>
                                                     <td class="py-2 align-middle font-monospace text-muted">{{ optional($det->item)->code ?? '-' }}</td>
                                                     <td class="py-2 align-middle fw-bold text-dark">{{ optional($det->item)->name ?? '-' }}</td>
-                                                    
+
                                                     {{-- 🔥 BONUS: TAMBAHKAN SATUAN UOM DI SINI 🔥 --}}
                                                     <td class="py-2 text-center align-middle text-danger fw-bold">
                                                         <i class="bi bi-box-arrow-up-right me-1"></i>{{ (float)$det->qty_issued }} <span class="fw-normal text-muted" style="font-size: 0.75rem;">{{ optional(optional($det->item)->uom)->name ?? 'Unit' }}</span>

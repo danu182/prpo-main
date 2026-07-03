@@ -550,7 +550,6 @@ class PurchaseRequestController extends Controller
 
     public function decide(Request $request, string $slug)
     {
-
         $pr = PurchaseRequest::where('pr_number', $slug)->firstOrFail();
         $pembuatPR = User::find($pr->user_id);
 
@@ -560,7 +559,9 @@ class PurchaseRequestController extends Controller
             }
         }
 
-        $currentApproval = \App\Models\DocumentApproval::where('document_id', $pr->id)
+        // 🔥 PERBAIKAN 1: Wajib menggunakan with('role') agar bisa mengambil nama jabatan
+        $currentApproval = \App\Models\DocumentApproval::with('role')
+            ->where('document_id', $pr->id)
             ->where('document_type', get_class($pr))
             ->where('status', 'PENDING')
             ->orderBy('step_order', 'asc')
@@ -570,8 +571,16 @@ class PurchaseRequestController extends Controller
             return redirect()->back()->with('error', 'Dokumen ini tidak sedang menunggu persetujuan Anda.');
         }
 
+        // 🔥 PERBAIKAN 2: TEMBOK BESI ANTI BYPASS OTORITAS 🔥
+        if ($currentApproval && !auth()->user()->hasRole($currentApproval->role->name) && !auth()->user()->hasRole('Super Admin')) {
+            return redirect()->back()->with('error', 'AKSES DITOLAK: Giliran persetujuan saat ini adalah wewenang ' . $currentApproval->role->name . '. Anda tidak memiliki hak akses!');
+        }
+
         $approverRoleName = $currentApproval ? $currentApproval->role->name : 'Atasan';
 
+        // ==========================================
+        // EKSEKUSI PENOLAKAN GLOBAL
+        // ==========================================
         if ($request->global_action === 'REJECT') {
             if ($currentApproval) {
                 $currentApproval->update(['status' => 'REJECTED', 'approved_by' => auth()->id(), 'approved_at' => now()]);
@@ -592,6 +601,9 @@ class PurchaseRequestController extends Controller
             return redirect()->route('pr.index')->with('error', 'Purchase Request ditolak secara keseluruhan.');
         }
 
+        // ==========================================
+        // EKSEKUSI PERSETUJUAN PER ITEM
+        // ==========================================
         $totalApprovedItems = 0;
         $rejectedDetails = [];
         $vendorDetails = [];
@@ -621,10 +633,12 @@ class PurchaseRequestController extends Controller
             }
         }
 
+        // Jika semua item ditolak, tolak dokumen secara keseluruhan
         if ($totalApprovedItems === 0) {
             $currentApproval->update(['status' => 'REJECTED', 'approved_by' => auth()->id(), 'approved_at' => now()]);
             $statusRejected = \App\Models\Status::where('type', 'PR')->where('slug', 'rejected')->first();
             if ($statusRejected) $pr->update(['status_id' => $statusRejected->id, 'current_approval_level' => 0]);
+
             $this->logHistory($pr->id, 'Ditolak (Otomatis)', "PR ditolak otomatis karena semua item ditolak oleh " . auth()->user()->name . " ($approverRoleName)");
 
             if ($pembuatPR) $pembuatPR->notify(new DocumentApprovalNotification('PR Ditolak ❌', "Semua item pada PR Nomor {$pr->pr_number} telah ditolak.", route('pr.show', $pr->id)));
@@ -632,6 +646,9 @@ class PurchaseRequestController extends Controller
             return redirect()->route('pr.index')->with('error', 'PR ditolak karena semua item di dalamnya ditolak.');
         }
 
+        // ==========================================
+        // DOKUMEN LOLOS, LANJUTKAN WORKFLOW MATRIKS
+        // ==========================================
         $currentApproval->update(['status' => 'APPROVED', 'approved_by' => auth()->id(), 'approved_at' => now()]);
         $pr->update(['current_approval_level' => $currentApproval->step_order]);
 
@@ -654,6 +671,7 @@ class PurchaseRequestController extends Controller
             $catatan .= "Diteruskan ke Lapis Berikutnya: **" . strtoupper($nextRoleName) . "**\n";
             $successMsg = "Disetujui! Dokumen telah diteruskan ke $nextRoleName.";
         } else {
+            // JIKA SUDAH FINAL
             $statusFinal = \App\Models\Status::where('type', 'PR')->where('slug', 'approved')->first();
             if ($statusFinal) $pr->update(['status_id' => $statusFinal->id]);
 

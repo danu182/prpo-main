@@ -43,6 +43,7 @@ class GoodsIssueController extends Controller
 
     public function create()
     {
+        // 🔥 TAMBAHKAN 'department' PADA FUNGSI WITH 🔥
         $users = \App\Models\User::with(['company', 'department'])->orderBy('name', 'asc')->get();
         $warehouses = \App\Models\Warehouse::orderBy('name', 'asc')->get();
 
@@ -150,24 +151,6 @@ class GoodsIssueController extends Controller
                         $itemNote = "Dikeluarkan Aset:\n" . implode("\n", $assetInfoArr);
                         if (!empty($data['notes'])) $itemNote .= "\nCatatan: " . $data['notes'];
 
-                        // 🔥 PERBAIKAN FATAL: CATAT MUTASI OUT PADA KARTU STOK MASTER WALAUPUN INI ASET 🔥
-                        $balanceBefore = (float) $item->current_stock;
-                        $balanceAfter = $balanceBefore - $qtyRequested;
-
-                        \App\Models\StockMutation::create([
-                            'item_id'          => $item->id,
-                            'warehouse_id'     => $request->warehouse_id,
-                            'type'             => 'OUT',
-                            'qty'              => $qtyRequested,
-                            'balance_before'   => $balanceBefore,
-                            'balance_after'    => $balanceAfter,
-                            'reference_number' => $giNumber,
-                            'notes'            => "Aset diserahkan ke {$request->requester_name}.",
-                            'created_by'       => auth()->id(),
-                        ]);
-
-                        $item->update(['current_stock' => $balanceAfter]);
-
                     } else {
                         $qtyInput = (float) ($data['qty_issued'] ?? 0);
                         $uomId = $data['uom_info'] ?? null;
@@ -220,8 +203,10 @@ class GoodsIssueController extends Controller
                             $itemNote .= ($itemNote ? " | " : "") . "SN: " . $snStringForNote;
                         }
                         $itemNote = trim($itemNote . " | Dikeluarkan fisik: {$qtyInput} {$finalUomString}", ' |');
+                    }
 
-                        // PEMOTONGAN INVENTORY STOCK (HANYA UNTUK BARANG BIASA)
+                    // 🔥 PERBAIKAN KRUSIAL: JANGAN POTONG STOK JIKA YANG DIKELUARKAN ADALAH ASET! 🔥
+                    if (!$isModeAsset) {
                         $issueMethod = $item->issue_method ?? 'FIFO';
                         $sortDirection = ($issueMethod === 'LIFO') ? 'desc' : 'asc';
 
@@ -422,13 +407,14 @@ class GoodsIssueController extends Controller
                 $masterItem = \App\Models\Item::lockForUpdate()->find($giItem->item_id);
                 if (!$masterItem) continue;
 
+                // 🔥 CEK APAKAH INI PENGELUARAN ASET ATAU BARANG BIASA 🔥
                 preg_match_all('/AST\/[0-9]{4}\/[0-9]{2}\/[0-9]{4}/', $giItem->notes, $matches);
                 $borrowedAssets = $matches[0];
                 $isAssetIssue = !empty($borrowedAssets);
 
                 if ($isAssetIssue) {
+                    // JIKA ASET: HANYA KEMBALIKAN STATUS ASET (STOK GUDANG TIDAK BOLEH DITAMBAH)
                     $assetsToRestore = \App\Models\FixedAsset::whereIn('asset_number', $borrowedAssets)->get();
-                    $qtyToRestore = $assetsToRestore->count();
                     $statusIdAvailable = \App\Models\Status::where('type', 'AST')->where('slug', 'available')->value('id');
 
                     foreach ($assetsToRestore as $asset) {
@@ -446,25 +432,6 @@ class GoodsIssueController extends Controller
                             'warehouse_id' => $gi->warehouse_id,
                         ]);
                     }
-
-                    // 🔥 PERBAIKAN FATAL: KEMBALIKAN SALDO MASTER & MUTASI IN JIKA TRANSAKSI ASET DIBATALKAN 🔥
-                    $balanceBefore = (float) $masterItem->current_stock;
-                    $balanceAfter = $balanceBefore + $qtyToRestore;
-
-                    \App\Models\StockMutation::create([
-                        'item_id'          => $masterItem->id,
-                        'warehouse_id'     => $gi->warehouse_id,
-                        'type'             => 'IN',
-                        'qty'              => $qtyToRestore,
-                        'balance_before'   => $balanceBefore,
-                        'balance_after'    => $balanceAfter,
-                        'reference_number' => $gi->gi_number . '-VOID',
-                        'notes'            => "Pembatalan Transaksi Aset (VOID). Stok master dikembalikan.",
-                        'created_by'       => auth()->id(),
-                    ]);
-
-                    $masterItem->update(['current_stock' => $balanceAfter]);
-
                 } else {
                     // JIKA BARANG BIASA: KEMBALIKAN STOK FISIK KE GUDANG
                     $conversionFactor = 1;
@@ -561,6 +528,8 @@ class GoodsIssueController extends Controller
     // ==========================================
     // 7. PENCARIAN BARANG (AJAX)
     // ==========================================
+    // ==========================================
+
     public function searchItems(Request $request)
     {
         $search = $request->search;
@@ -576,16 +545,19 @@ class GoodsIssueController extends Controller
 
         $results = [];
         foreach ($items as $item) {
+            // 1. Hitung Stok Biasa (Murni dari tabel Inventory, karena aset sudah otomatis terpotong saat kapitalisasi)
             $availableBulk = \App\Models\InventoryStock::where('item_id', $item->id)
                                 ->where('warehouse_id', $warehouseId)
                                 ->sum('stock_qty');
 
+            // 2. Hitung Stok Aset (Murni dari tabel Fixed Assets)
             $assetStock = \App\Models\FixedAsset::where('item_id', $item->id)
                                 ->where('warehouse_id', $warehouseId)
                                 ->whereHas('status', function($q) {
                                     $q->where('slug', 'available');
                                 })->count();
 
+            // 3. Total Keseluruhan Fisik di Gudang
             $totalStockDisplay = $availableBulk + $assetStock;
 
             if ($totalStockDisplay <= 0) continue;
@@ -626,7 +598,7 @@ class GoodsIssueController extends Controller
                     $q->where('warehouse_id', $warehouseId)->orWhereNull('warehouse_id');
                 })
                 ->where(function($q) {
-                    $q->whereNull('assigned_to')->orWhereIn('status_id', [1, 30]);
+                    $q->whereNull('assigned_to')->orWhereIn('status_id', [1, 30]); // 1 atau 30 biasanya ID untuk 'Available'
                 })
                 ->when($search, function($query) use ($search) {
                     $query->where(function($q) use ($search) {
@@ -718,6 +690,9 @@ class GoodsIssueController extends Controller
         }
     }
 
+    // ========================================================
+    // 🔥 PENCARI SERIAL NUMBER (BARANG LACAK / MINOR ASSET) 🔥
+    // ========================================================
     public function searchSns(Request $request)
     {
         $search = $request->search;

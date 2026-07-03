@@ -7,39 +7,38 @@ use Illuminate\Database\Seeder;
 
 class CategorySeeder extends Seeder
 {
-    /**
-     * Run the database seeds.
-     */
     public function run(): void
     {
-        $categories = [
-            // ==========================================
-            // KATEGORI BARANG STOK (INVENTORY)
-            // ==========================================
-            ['name' => 'Alat Tulis Kantor (ATK)', 'code' => 'ATK'],
-            ['name' => 'Perlengkapan Umum (Consumables)', 'code' => 'CNS'],
-            ['name' => 'Makanan & Minuman (Pantry)', 'code' => 'FNB'],      // Baru: Kopi, Galon, Snack
-            ['name' => 'Bahan Baku & Bumbu Dapur', 'code' => 'BBK'],        // Baru: Beras, Minyak, Garam, Daging
-            ['name' => 'Suku Cadang & Onderdil (Spareparts)', 'code' => 'SPR'], // Baru: Ban, Oli, Kabel, Baut
+        // ==========================================
+        // 1. BUAT KATEGORI INDUK (PARENT)
+        // ==========================================
+        $invParent = Category::firstOrCreate(['code' => 'INV'], ['name' => 'Barang Stok (Inventory)']);
+        $astParent = Category::firstOrCreate(['code' => 'AST'], ['name' => 'Aset Tetap (Fixed Assets)']);
+        $svcParent = Category::firstOrCreate(['code' => 'SVC'], ['name' => 'Jasa / Layanan (Non-Stok)']);
 
-            // ==========================================
-            // KATEGORI BARANG ASET TETAP (FIXED ASSETS)
-            // ==========================================
-            ['name' => 'Elektronik & IT', 'code' => 'ELK'],
-            ['name' => 'Furniture & Fixture', 'code' => 'FNR'],
-            ['name' => 'Kendaraan & Transportasi', 'code' => 'KND'],
-            ['name' => 'Mesin & Peralatan', 'code' => 'MSN'],
+        // ==========================================
+        // 2. BUAT ANAK KATEGORI / SUB-TIPE (CHILDREN)
+        // ==========================================
+        $subCategories = [
+            // Anak dari Inventory
+            ['name' => 'Alat Tulis Kantor (ATK)', 'code' => 'ATK', 'parent_id' => $invParent->id],
+            ['name' => 'Perlengkapan Umum',       'code' => 'CNS', 'parent_id' => $invParent->id],
+            ['name' => 'Makanan & Minuman',       'code' => 'FNB', 'parent_id' => $invParent->id],
 
-            // ==========================================
-            // KATEGORI JASA / NON-STOK
-            // ==========================================
-            ['name' => 'Jasa & Layanan Profesional', 'code' => 'JSA'],
+            // Anak dari Aset Tetap (Sesuaikan dengan TYPE di Excel Anda)
+            ['name' => 'Elektronik & IT',         'code' => 'ELK', 'parent_id' => $astParent->id],
+            ['name' => 'Furniture & Fixture',     'code' => 'FNR', 'parent_id' => $astParent->id],
+            ['name' => 'Laptops',                 'code' => 'LAP', 'parent_id' => $astParent->id], // Sesuai Excel
+            ['name' => 'Handphone',               'code' => 'HPN', 'parent_id' => $astParent->id], // Sesuai Excel
+
+            // Anak dari Jasa
+            ['name' => 'Jasa Profesional',        'code' => 'JSA', 'parent_id' => $svcParent->id],
         ];
 
-        foreach ($categories as $cat) {
+        foreach ($subCategories as $sub) {
             Category::firstOrCreate(
-                ['code' => $cat['code']],
-                ['name' => $cat['name']]
+                ['code' => $sub['code']],
+                ['name' => $sub['name'], 'parent_id' => $sub['parent_id']]
             );
         }
     }

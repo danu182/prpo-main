@@ -80,9 +80,14 @@
                         <label class="form-label small fw-bold text-muted">Penerima / Karyawan <span class="text-danger">*</span></label>
                         <select name="requester_name" id="requester_select" class="shadow-sm form-select select2-user" required>
                             <option value="">-- Cari Nama Karyawan --</option>
-                           @foreach($users as $user)
-                                <option value="{{ $user->name }}" data-dept="{{ $user->department ?: ($user->company->name ?? '-') }}">
-                                    {{ $user->name }}
+                            @foreach($users as $user)
+                                @php
+                                    // Tarik singkatan PT (Code) atau Nama PT, dan Nama Departemen
+                                    $ptName = optional($user->company)->code ?? optional($user->company)->name ?? 'Pusat';
+                                    $deptName = optional($user->department)->name ?? 'Tanpa Dept';
+                                @endphp
+                                <option value="{{ $user->name }}" data-dept="{{ $deptName }}">
+                                    {{ $user->name }} • {{ $ptName }} ({{ $deptName }})
                                 </option>
                             @endforeach
                         </select>

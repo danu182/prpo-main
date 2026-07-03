@@ -726,29 +726,79 @@ class PurchaseOrderController extends Controller
         DB::beginTransaction();
         try {
             $po = \App\Models\PurchaseOrder::where('po_number', $slug)->firstOrFail();
-            foreach(auth()->user()->unreadNotifications as $notification) if(isset($notification->data['url']) && str_contains($notification->data['url'], route('po.show', $po->po_number))) $notification->markAsRead();
-            $currentApproval = \App\Models\DocumentApproval::with('role')->where('document_id', $po->id)->where('document_type', get_class($po))->where('status', 'PENDING')->orderBy('step_order', 'asc')->first();
+            foreach(auth()->user()->unreadNotifications as $notification)
+                if(isset($notification->data['url']) && str_contains($notification->data['url'], route('po.show', $po->po_number)))
+                    $notification->markAsRead();
+
+            $currentApproval = \App\Models\DocumentApproval::with('role')
+                ->where('document_id', $po->id)
+                ->where('document_type', get_class($po))
+                ->where('status', 'PENDING')
+                ->orderBy('step_order', 'asc')
+                ->first();
+
             $action = strtoupper($request->input('action', ''));
-            if (!$currentApproval && $action !== 'REJECT') { DB::rollBack(); return redirect()->back()->with('error', 'Dokumen ini tidak menunggu persetujuan Anda.'); }
+
+            // 1. Validasi Dokumen
+            if (!$currentApproval && $action !== 'REJECT') {
+                DB::rollBack();
+                return redirect()->back()->with('error', 'Dokumen ini tidak menunggu persetujuan apapun saat ini.');
+            }
+
+            // 🔥 2. TEMBOK BESI: Cegah By-pass Otoritas! 🔥
+            if ($currentApproval && !auth()->user()->hasRole($currentApproval->role->name) && !auth()->user()->hasRole('Super Admin')) {
+                DB::rollBack();
+                return redirect()->back()->with('error', 'AKSES DITOLAK: Giliran persetujuan saat ini adalah wewenang ' . $currentApproval->role->name . '. Anda tidak memiliki hak!');
+            }
+
             $approverRoleName = $currentApproval && $currentApproval->role ? $currentApproval->role->name : 'Atasan';
+
+            // 3. Eksekusi REJECT
             if ($action === 'REJECT') {
                 if ($currentApproval) $currentApproval->update(['status' => 'REJECTED', 'approved_by' => auth()->id(), 'approved_at' => now()]);
                 $statusRejected = \App\Models\Status::where('type', 'PO')->whereIn('slug', ['draft', 'rejected'])->first();
                 if ($statusRejected) $po->update(['status_id' => $statusRejected->id]);
                 if (\Schema::hasColumn('purchase_orders', 'current_approval_level')) $po->update(['current_approval_level' => 0]);
                 $reason = $request->input('note', 'Ditolak secara global');
-                $this->logHistory($po->id, 'Ditolak', "Dokumen ditolak oleh " . auth()->user()->name . " ($approverRoleName). Alasan: $reason");
-                DB::commit(); return redirect()->route('po.show', $po->po_number)->with('error', 'PO ditolak dan dikembalikan ke Draft.');
+                $this->logHistory($po->id, 'Ditolak', "Dokumen ditolak oleh " . auth()->user()->name . " (Sebagai $approverRoleName). Alasan: $reason");
+                DB::commit();
+                return redirect()->route('po.show', $po->po_number)->with('error', 'PO ditolak dan dikembalikan ke Draft.');
             }
+
+            // 4. Eksekusi APPROVE
             $currentApproval->update(['status' => 'APPROVED', 'approved_by' => auth()->id(), 'approved_at' => now()]);
             if (\Schema::hasColumn('purchase_orders', 'current_approval_level')) $po->update(['current_approval_level' => $currentApproval->step_order]);
-            $nextApproval = \App\Models\DocumentApproval::with('role')->where('document_id', $po->id)->where('document_type', get_class($po))->where('status', 'PENDING')->orderBy('step_order', 'asc')->first();
-            $actionText = 'Disetujui (' . strtoupper($approverRoleName) . ')'; $catatan = "Dokumen disetujui pada tahap ini.\n";
-            if ($nextApproval) { $nextRoleName = $nextApproval->role ? $nextApproval->role->name : 'Atasan Berikutnya'; $catatan .= "Diteruskan ke: **" . strtoupper($nextRoleName) . "**\n"; $successMsg = "Disetujui! Diteruskan ke $nextRoleName."; }
-            else { $statusFinal = \App\Models\Status::where('type', 'PO')->whereIn('slug', ['issued', 'approved'])->first(); if ($statusFinal) $po->update(['status_id' => $statusFinal->id]); $actionText = 'Disetujui Final'; $catatan .= "Persetujuan Matriks telah SELESAI.\n"; $successMsg = "Hore! Dokumen PO telah disetujui secara FINAL!"; }
+
+            $nextApproval = \App\Models\DocumentApproval::with('role')
+                ->where('document_id', $po->id)
+                ->where('document_type', get_class($po))
+                ->where('status', 'PENDING')
+                ->orderBy('step_order', 'asc')
+                ->first();
+
+            $actionText = 'Disetujui (' . strtoupper($approverRoleName) . ')';
+            $catatan = "Dokumen disetujui pada tahap ini oleh " . auth()->user()->name . ".\n";
+
+            if ($nextApproval) {
+                $nextRoleName = $nextApproval->role ? $nextApproval->role->name : 'Atasan Berikutnya';
+                $catatan .= "Diteruskan ke: **" . strtoupper($nextRoleName) . "**\n";
+                $successMsg = "Disetujui! Diteruskan ke $nextRoleName.";
+            } else {
+                $statusFinal = \App\Models\Status::where('type', 'PO')->whereIn('slug', ['issued', 'approved'])->first();
+                if ($statusFinal) $po->update(['status_id' => $statusFinal->id]);
+                $actionText = 'Disetujui Final';
+                $catatan .= "Persetujuan Matriks telah SELESAI.\n";
+                $successMsg = "Hore! Dokumen PO telah disetujui secara FINAL!";
+            }
+
             $this->logHistory($po->id, $actionText, $catatan);
-            DB::commit(); return redirect()->route('po.show', $po->po_number)->with('success', $successMsg);
-        } catch (\Exception $e) { DB::rollBack(); return back()->with('error', 'Terjadi kesalahan sistem: ' . $e->getMessage()); }
+            DB::commit();
+            return redirect()->route('po.show', $po->po_number)->with('success', $successMsg);
+
+        } catch (\Exception $e) {
+            DB::rollBack();
+            return back()->with('error', 'Terjadi kesalahan sistem: ' . $e->getMessage());
+        }
     }
 
     public function deleteAttachment($id) {

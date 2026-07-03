@@ -1,11 +1,17 @@
 @extends('layouts.app')
 
 @push('css')
+<link href="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css" rel="stylesheet" />
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/select2-bootstrap-5-theme@1.3.0/dist/select2-bootstrap-5-theme.min.css" />
+
 <style>
-    /* Select2 Kustomisasi */
+    /* Select2 Kustomisasi Modern */
     .select2-container .select2-selection--single { height: 38px !important; border: 1px solid #e2e8f0 !important; border-radius: 8px !important; }
     .select2-container--default .select2-selection--single .select2-selection__rendered { line-height: 36px !important; color: #475569 !important; }
     .select2-container--default .select2-selection--single .select2-selection__arrow { height: 36px !important; }
+
+    /* Membatasi tinggi maksimal hasil pencarian agar rapi */
+    .select2-results__options { max-height: 250px !important; overflow-y: auto !important; }
 
     /* Avatar Modern */
     .avatar-circle-modern {
@@ -128,7 +134,6 @@
                 </thead>
                 <tbody>
                     @forelse($assets as $ast)
-                        {{-- BARIS INDUK (Data Utama Aset) --}}
                         <tr class="main-row">
                             <td>
                                 <div class="d-flex align-items-center">
@@ -187,12 +192,10 @@
 
                             <td class="text-end">
                                 <div class="gap-1 d-flex justify-content-end">
-                                    {{-- Tombol Detail Expand --}}
                                     <button class="btn-action-icon" type="button" data-bs-toggle="collapse" data-bs-target="#collapse-{{ $ast->id }}" title="Lihat Detail">
                                         <i class="bi bi-chevron-down"></i>
                                     </button>
 
-                                    {{-- Dropdown Opsi Minimalis --}}
                                     <div class="dropdown">
                                         <button class="btn-action-icon" type="button" data-bs-toggle="dropdown" title="Opsi Aset">
                                             <i class="bi bi-three-dots-vertical"></i>
@@ -216,7 +219,6 @@
                             </td>
                         </tr>
 
-                        {{-- BARIS ANAK (Rincian Aset - Collapse) --}}
                         <tr class="collapse-row">
                             <td colspan="4">
                                 <div class="collapse" id="collapse-{{ $ast->id }}">
@@ -282,7 +284,6 @@
                             </td>
                         </tr>
 
-                        {{-- MODAL RIWAYAT ASET (Tetap sama, tidak perlu diubah layout strukturnya) --}}
                         <div class="modal fade" id="modalHistory{{ $ast->id }}" tabindex="-1">
                             <div class="modal-dialog modal-dialog-centered modal-lg modal-dialog-scrollable">
                                 <div class="overflow-hidden border-0 shadow-lg modal-content rounded-4">
@@ -367,7 +368,7 @@
     </div>
 </div>
 
-{{-- MODAL EDIT ASET --}}
+{{-- 1. MODAL EDIT ASET --}}
 <div class="modal fade" id="editModal" tabindex="-1">
     <div class="modal-dialog modal-lg modal-dialog-centered">
         <div class="overflow-hidden border-0 shadow-lg modal-content rounded-4">
@@ -398,7 +399,6 @@
                                 <label class="form-label fw-bold small text-muted">Spesifikasi Detail / Unik Unit</label>
                                 <textarea name="spesifikasi_detail" class="shadow-sm form-control" rows="3"></textarea>
                             </div>
-                            {{-- 🔥 TAMPILAN EDIT MATA UANG & HARGA 🔥 --}}
                             <div class="mb-3">
                                 <label class="form-label fw-bold small text-muted">Mata Uang & Nilai Wajar</label>
                                 <div class="shadow-sm input-group">
@@ -456,7 +456,7 @@
     </div>
 </div>
 
-{{-- MODAL TAMBAH ASET MANUAL --}}
+{{-- 2. MODAL TAMBAH ASET MANUAL (HIBAH) --}}
 <div class="modal fade" id="modalAddAsset" tabindex="-1">
     <div class="modal-dialog modal-dialog-centered modal-lg">
         <div class="overflow-hidden border-0 shadow-lg modal-content rounded-4">
@@ -585,7 +585,7 @@
     </div>
 </div>
 
-{{-- MODAL IMPORT EXCEL --}}
+{{-- 3. MODAL IMPORT EXCEL --}}
 <div class="modal fade" id="modalImportAset" tabindex="-1">
     <div class="modal-dialog modal-dialog-centered">
         <div class="overflow-hidden border-0 shadow-lg modal-content rounded-4">
@@ -645,9 +645,10 @@
             }
         });
 
+        // 🔥 Inisialisasi Pencarian Barang Ajax yang Rapi 🔥
         $('.select2-item-ajax').select2({
             theme: 'bootstrap-5',
-            dropdownParent: $('#modalAddAsset'),
+            dropdownParent: $('#modalAddAsset'), // Sekarang aman karena tidak ada ID ganda
             placeholder: '-- Ketik minimal 2 huruf --',
             minimumInputLength: 2,
             ajax: {
@@ -660,8 +661,17 @@
                 processResults: function (data) {
                     return { results: data };
                 },
-                cache: true
+                cache: true,
+                error: function(jqXHR, textStatus, errorThrown) {
+                    console.error("Gagal menarik data barang: ", textStatus, errorThrown);
+                }
             }
+        });
+
+        // Init untuk user select2 di modal Edit
+        $('.select2-user').select2({
+            theme: 'bootstrap-5',
+            dropdownParent: $('#editModal')
         });
 
         $('#editModal').on('show.bs.modal', function (event) {
@@ -676,10 +686,9 @@
             var company_id = button.data('company-id');
             var status_id = button.data('status-id');
             var assigned_to = button.data('assigned-to');
+            var price = button.data('price');
             var notes = button.data('notes');
-            var price = button.data('price'); // 🔥 Tangkap Data Harga
-            var notes = button.data('notes');
-            var currency_id = button.data('currency-id'); // 🔥 Tambah ini
+            var currency_id = button.data('currency-id');
 
             var modal = $(this);
 
@@ -691,8 +700,8 @@
             modal.find('input[name="accounting_asset_number"]').val(accounting_number);
             modal.find('textarea[name="spesifikasi_detail"]').val(spesifikasi);
             modal.find('textarea[name="notes"]').val(notes);
-            modal.find('input[name="purchase_price"]').val(price); // 🔥 Masukkan Harga ke Input
-            modal.find('select[name="currency_id"]').val(currency_id); // 🔥 Tambah ini
+            modal.find('input[name="purchase_price"]').val(price);
+            modal.find('select[name="currency_id"]').val(currency_id);
 
             modal.find('select[name="company_id"]').val(company_id).trigger('change');
             modal.find('select[name="status_id"]').val(status_id).trigger('change');

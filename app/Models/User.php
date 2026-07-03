@@ -3,11 +3,14 @@
 namespace App\Models;
 
 // use Illuminate\Contracts\Auth\MustVerifyEmail;
+
+use App\Models\Department as ModelsDepartment;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 // use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
 use Spatie\Permission\Traits\HasRoles; // PENTING: Import Spatie
+
 
 class User extends Authenticatable
 {
@@ -20,6 +23,7 @@ class User extends Authenticatable
         'company_id', // Pastikan company_id ada di sini
         'job_title',
         'is_active',
+        'department_id',
         'avatar',      // <--- Tambahkan
         'signature',   // <--- Tambahkan
     ];
@@ -41,5 +45,14 @@ class User extends Authenticatable
     public function company()
     {
         return $this->belongsTo(Company::class);
+    }
+
+
+    /**
+     * Relasi: Satu User memiliki/berada di satu Departemen (Divisi)
+     */
+    public function department()
+    {
+        return $this->belongsTo(Department::class, 'department_id');
     }
 }
