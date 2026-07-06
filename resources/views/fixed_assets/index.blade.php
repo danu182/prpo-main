@@ -52,6 +52,11 @@
     .dropdown-action-menu .dropdown-item:hover { background-color: #f8fafc; }
 
     .timeline-container .border-bottom:last-child { border-bottom: 0 !important; padding-bottom: 0 !important; margin-bottom: 0 !important; }
+
+    /* 🔥 KUSTOMISASI CKEDITOR AGAR RAPI DI DALAM MODAL 🔥 */
+    .ck-editor__editable_inline { min-height: 150px; border-bottom-left-radius: 8px !important; border-bottom-right-radius: 8px !important; }
+    .ck-toolbar { border-top-left-radius: 8px !important; border-top-right-radius: 8px !important; background-color: #f8fafc !important; }
+    .ck.ck-balloon-panel { z-index: 1056 !important; /* Mencegah toolbar tertutup modal */ }
 </style>
 @endpush
 
@@ -395,10 +400,13 @@
                                 <label class="form-label fw-bold small text-muted">No. Aset (Label Akuntansi)</label>
                                 <input type="text" name="accounting_asset_number" class="shadow-sm form-control border-info">
                             </div>
+
+                            {{-- 🔥 PERBAIKAN: Textarea CKEditor Edit 🔥 --}}
                             <div class="mb-3">
                                 <label class="form-label fw-bold small text-muted">Spesifikasi Detail / Unik Unit</label>
-                                <textarea name="spesifikasi_detail" class="shadow-sm form-control" rows="3"></textarea>
+                                <textarea name="spesifikasi_detail" id="spesifikasi_editor_edit" class="shadow-sm form-control" rows="3"></textarea>
                             </div>
+
                             <div class="mb-3">
                                 <label class="form-label fw-bold small text-muted">Mata Uang & Nilai Wajar</label>
                                 <div class="shadow-sm input-group">
@@ -557,9 +565,10 @@
                                 </div>
                             </div>
 
+                            {{-- 🔥 PERBAIKAN: Textarea CKEditor Tambah Aset 🔥 --}}
                             <div class="mb-3">
                                 <label class="form-label fw-bold small text-muted">Spesifikasi Detail / Merek <span class="text-danger">*</span></label>
-                                <textarea name="spesifikasi_detail" class="shadow-sm form-control" rows="2" placeholder="Sertakan detail spesifikasi..." required></textarea>
+                                <textarea name="spesifikasi_detail" id="spesifikasi_editor_add" class="shadow-sm form-control" rows="4" placeholder="Sertakan detail spesifikasi..."></textarea>
                             </div>
 
                             <div class="row">
@@ -632,6 +641,9 @@
 <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
 
+{{-- 🔥 SCRIPT CKEDITOR 5 CLASSIC 🔥 --}}
+<script src="https://cdn.ckeditor.com/ckeditor5/39.0.1/classic/ckeditor.js"></script>
+
 <script>
     $(document).ready(function() {
 
@@ -645,10 +657,10 @@
             }
         });
 
-        // 🔥 Inisialisasi Pencarian Barang Ajax yang Rapi 🔥
+        // Inisialisasi Pencarian Barang Ajax
         $('.select2-item-ajax').select2({
             theme: 'bootstrap-5',
-            dropdownParent: $('#modalAddAsset'), // Sekarang aman karena tidak ada ID ganda
+            dropdownParent: $('#modalAddAsset'),
             placeholder: '-- Ketik minimal 2 huruf --',
             minimumInputLength: 2,
             ajax: {
@@ -668,12 +680,43 @@
             }
         });
 
-        // Init untuk user select2 di modal Edit
         $('.select2-user').select2({
             theme: 'bootstrap-5',
             dropdownParent: $('#editModal')
         });
 
+        // 🔥 INISIALISASI CKEDITOR 5 🔥
+        let editorAdd, editorEdit;
+
+        // CKEditor untuk Modal Tambah
+        ClassicEditor
+            .create(document.querySelector('#spesifikasi_editor_add'), {
+                toolbar: [ 'heading', '|', 'bold', 'italic', 'bulletedList', 'numberedList', 'blockQuote', '|', 'undo', 'redo' ]
+            })
+            .then(editor => {
+                editorAdd = editor;
+                // Sinkronisasi data ke textarea asli setiap kali ada perubahan
+                editor.model.document.on('change:data', () => {
+                    document.querySelector('#spesifikasi_editor_add').value = editor.getData();
+                });
+            })
+            .catch(error => { console.error(error); });
+
+        // CKEditor untuk Modal Edit
+        ClassicEditor
+            .create(document.querySelector('#spesifikasi_editor_edit'), {
+                toolbar: [ 'heading', '|', 'bold', 'italic', 'bulletedList', 'numberedList', 'blockQuote', '|', 'undo', 'redo' ]
+            })
+            .then(editor => {
+                window.editorEdit = editor; // Jadikan global agar mudah dipanggil saat show.bs.modal
+                editor.model.document.on('change:data', () => {
+                    document.querySelector('#spesifikasi_editor_edit').value = editor.getData();
+                });
+            })
+            .catch(error => { console.error(error); });
+
+
+        // Event saat Modal Edit Terbuka
         $('#editModal').on('show.bs.modal', function (event) {
             var button = $(event.relatedTarget);
 
@@ -698,7 +741,6 @@
 
             modal.find('input[name="serial_number"]').val(serial_number);
             modal.find('input[name="accounting_asset_number"]').val(accounting_number);
-            modal.find('textarea[name="spesifikasi_detail"]').val(spesifikasi);
             modal.find('textarea[name="notes"]').val(notes);
             modal.find('input[name="purchase_price"]').val(price);
             modal.find('select[name="currency_id"]').val(currency_id);
@@ -706,6 +748,13 @@
             modal.find('select[name="company_id"]').val(company_id).trigger('change');
             modal.find('select[name="status_id"]').val(status_id).trigger('change');
             modal.find('select[name="assigned_to"]').val(assigned_to).trigger('change');
+
+            // 🔥 SUNTIKKAN DATA SPESIFIKASI KE DALAM CKEDITOR 🔥
+            if (window.editorEdit) {
+                window.editorEdit.setData(spesifikasi ? spesifikasi : '');
+            } else {
+                modal.find('textarea[name="spesifikasi_detail"]').val(spesifikasi);
+            }
         });
     });
 

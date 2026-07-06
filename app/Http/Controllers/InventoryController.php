@@ -6,7 +6,7 @@ use App\Models\InventoryMovement;
 use App\Models\InventoryStock;
 use App\Models\Item;
 use App\Models\StockMutation;
-use App\Models\Warehouse; 
+use App\Models\Warehouse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
@@ -27,7 +27,7 @@ class InventoryController extends Controller
         $warehouseId = $request->input('warehouse_id');
 
         $warehouses = \App\Models\Warehouse::orderBy('name')->get();
-        
+
         // 🔥 FILTER SUPER AMAN: Kecualikan JSA/NST, tapi TETAP BAWA kode yang KOSONG (NULL)
         $allItems = \App\Models\Item::where(function($q) {
             $q->whereNotIn('item_type_code', ['JSA', 'NST'])
@@ -81,7 +81,7 @@ class InventoryController extends Controller
     {
         $request->validate([
             'item_id'      => 'required',
-            'warehouse_id' => 'required', 
+            'warehouse_id' => 'required',
             'qty'          => 'required|integer|min:1',
             'notes'        => 'required'
         ]);
@@ -114,7 +114,7 @@ class InventoryController extends Controller
                 if (class_exists(InventoryMovement::class)) {
                     InventoryMovement::create([
                         'inventory_stock_id' => $stock->id,
-                        'warehouse_id'       => $request->warehouse_id, 
+                        'warehouse_id'       => $request->warehouse_id,
                         'type'               => 'OUT',
                         'qty'                => $request->qty,
                         'reference_number'   => 'USE/' . date('YmdHis'),
@@ -130,7 +130,7 @@ class InventoryController extends Controller
                     'type'             => 'OUT',
                     'qty'              => $request->qty,
                     'balance_before'   => $balanceBefore,
-                    'balance_after'    => $balanceAfter, 
+                    'balance_after'    => $balanceAfter,
                     'reference_number' => 'USE/' . date('YmdHis'),
                     'notes'            => $request->notes,
                     'created_by'       => auth()->id()
@@ -149,55 +149,78 @@ class InventoryController extends Controller
     public function show($id, Request $request)
     {
         $warehouseId = $request->input('warehouse_id');
-        // 🔥 PASTIKAN HANYA BARANG STK
-        // $item = Item::where('item_type_code', 'STK')->findOrFail($id);
         $item = \App\Models\Item::with('uom')->where('item_type_code', 'STK')->findOrFail($id);
 
-        // Hitung Total Fisik Terkini (Akurat berdasarkan Gudang)
-        $currentStock = \App\Models\InventoryStock::where('item_id', $id)
+        // 1. HITUNG SALDO TERKINI (Kotak Biru) - Mutlak dari Database Fisik
+        $bulkStock = \App\Models\InventoryStock::where('item_id', $id)
             ->when($warehouseId, function($q) use ($warehouseId) {
                 $q->where('warehouse_id', $warehouseId);
             })->sum('stock_qty');
 
-        // Tarik riwayat mutasi
-        $mutations = StockMutation::with('warehouse')
+        $assetStock = \App\Models\FixedAsset::where('item_id', $id)
+            ->whereHas('status', function($q) {
+                $q->where('slug', 'available');
+            })
+            ->when($warehouseId, function($q) use ($warehouseId) {
+                $q->where('warehouse_id', $warehouseId);
+            })->count();
+
+        $currentStock = $bulkStock + $assetStock;
+
+        // 2. TARIK RIWAYAT MUTASI
+        $mutations = \App\Models\StockMutation::with('warehouse')
             ->where('item_id', $id)
             ->when($warehouseId, function($q) use ($warehouseId) {
                 $q->where('warehouse_id', $warehouseId);
             })
+            ->orderBy('created_at', 'desc')
             ->orderBy('id', 'desc')
             ->paginate(20)
             ->withQueryString();
 
-        // LOGIKA KARTU STOK DINAMIS (ANTI-RANCU)
+        // 3. LOGIKA KARTU STOK DINAMIS (FORWARD CALCULATION = ANTI RANCU)
         if ($mutations->count() > 0) {
-            $firstMutationOnPage = $mutations->first();
+            $oldestMutationOnPage = $mutations->last();
 
-            $newerIn = StockMutation::where('item_id', $id)
+            // Hitung total IN masa lalu sebelum mutasi paling tua di halaman ini
+            $pastIn = \App\Models\StockMutation::where('item_id', $id)
                 ->when($warehouseId, function($q) use ($warehouseId) { $q->where('warehouse_id', $warehouseId); })
-                ->where('id', '>', $firstMutationOnPage->id)
-                ->where('type', 'IN')->sum('qty');
+                ->where(function($q) use ($oldestMutationOnPage) {
+                    $q->where('created_at', '<', $oldestMutationOnPage->created_at)
+                      ->orWhere(function($q2) use ($oldestMutationOnPage) {
+                          $q2->where('created_at', '=', $oldestMutationOnPage->created_at)
+                             ->where('id', '<', $oldestMutationOnPage->id);
+                      });
+                })->where('type', 'IN')->sum('qty');
 
-            $newerOut = StockMutation::where('item_id', $id)
+            // Hitung total OUT masa lalu
+            $pastOut = \App\Models\StockMutation::where('item_id', $id)
                 ->when($warehouseId, function($q) use ($warehouseId) { $q->where('warehouse_id', $warehouseId); })
-                ->where('id', '>', $firstMutationOnPage->id)
-                ->where('type', 'OUT')->sum('qty');
+                ->where(function($q) use ($oldestMutationOnPage) {
+                    $q->where('created_at', '<', $oldestMutationOnPage->created_at)
+                      ->orWhere(function($q2) use ($oldestMutationOnPage) {
+                          $q2->where('created_at', '=', $oldestMutationOnPage->created_at)
+                             ->where('id', '<', $oldestMutationOnPage->id);
+                      });
+                })->where('type', 'OUT')->sum('qty');
 
-            $runningBalance = $currentStock - $newerIn + $newerOut;
+            $runningBalance = $pastIn - $pastOut;
 
-            foreach ($mutations as $mut) {
-                $mut->dynamic_balance = $runningBalance;
+            // Loop dari yang tertua ke terbaru untuk halaman ini
+            $reversed = $mutations->reverse();
+            foreach ($reversed as $mut) {
                 if ($mut->type === 'IN') {
-                    $runningBalance -= $mut->qty; 
+                    $runningBalance += $mut->qty;
                 } else {
-                    $runningBalance += $mut->qty; 
+                    $runningBalance -= $mut->qty;
                 }
+                $mut->dynamic_balance = $runningBalance;
             }
         }
 
-        $warehouses = Warehouse::orderBy('name')->get();
+        $warehouses = \App\Models\Warehouse::orderBy('name')->get();
 
-        return view('inventory.show', compact('item', 'mutations', 'warehouses', 'warehouseId', 'currentStock'));
+        return view('inventory.show', compact('item', 'mutations', 'warehouses', 'warehouseId', 'currentStock', 'bulkStock', 'assetStock'));
     }
 
     // ==========================================
@@ -237,11 +260,11 @@ class InventoryController extends Controller
                 StockMutation::create([
                     'item_id'          => $request->item_id,
                     'warehouse_id'     => $request->warehouse_id,
-                    'type'             => 'IN', 
+                    'type'             => 'IN',
                     'qty'              => $request->qty,
-                    'balance_before'   => $balanceBefore, 
-                    'balance_after'    => $balanceAfter,  
-                    'reference_number' => 'SA/' . date('YmdHis'), 
+                    'balance_before'   => $balanceBefore,
+                    'balance_after'    => $balanceAfter,
+                    'reference_number' => 'SA/' . date('YmdHis'),
                     'notes'            => $request->notes,
                     'created_by'       => auth()->id()
                 ]);
@@ -289,7 +312,7 @@ class InventoryController extends Controller
     {
         $request->validate([
             'import_file'     => 'required|file|mimes:xlsx,xls,csv|max:10240',
-            'attachment_file' => 'nullable|file|mimes:pdf,jpg,jpeg,png|max:5120', 
+            'attachment_file' => 'nullable|file|mimes:pdf,jpg,jpeg,png|max:5120',
         ], ['import_file.required' => 'File Excel wajib diupload!']);
 
         try {
@@ -320,7 +343,7 @@ class InventoryController extends Controller
             // 🔥 TARIK DATA MASTER (HANYA AMBIL item_type_code) 🔥
             $allItems = \App\Models\Item::select('id', 'code', 'name', 'item_type_code')
                 ->get()->keyBy(function($item) { return strtolower(trim($item->code)); });
-            
+
             $warehouses = \App\Models\Warehouse::pluck('id', 'name')->mapWithKeys(function ($id, $name) { return [strtolower(trim($name)) => $id]; })->toArray();
             $validCurrencies = \App\Models\Currency::where('is_active', 1)->pluck('id', 'code')->mapWithKeys(function ($id, $code) { return [strtoupper(trim($code)) => $id]; })->toArray();
 
@@ -340,7 +363,7 @@ class InventoryController extends Controller
                 } else {
                     $itemData = $allItems[$itemCode];
                     $realName = $itemData->name;
-                    
+
                     if ($itemData->item_type_code === 'JSA') {
                         $isRowValid = false; $errorMessages[] = "DITOLAK: Ini Jasa/Layanan.";
                     } elseif ($itemData->item_type_code === 'NST') {
@@ -391,7 +414,7 @@ class InventoryController extends Controller
     public function processImport(Request $request)
     {
         $tempExcelPath = $request->file_path;
-        $tempAttachmentPath = $request->attachment_path; 
+        $tempAttachmentPath = $request->attachment_path;
 
         if (!\Illuminate\Support\Facades\Storage::disk('local')->exists($tempExcelPath)) {
             return redirect()->route('inventory.index')->with('error', 'File import sudah kadaluarsa atau terhapus.');
@@ -405,7 +428,7 @@ class InventoryController extends Controller
 
             $excelExtension = pathinfo($tempExcelPath, PATHINFO_EXTENSION);
             $finalExcelPath = $folderPath . '/Data_Excel_' . $batchNumber . '.' . $excelExtension;
-            
+
             $fileContent = \Illuminate\Support\Facades\Storage::disk('local')->get($tempExcelPath);
             \Illuminate\Support\Facades\Storage::disk('public')->put($finalExcelPath, $fileContent);
 
@@ -466,12 +489,12 @@ class InventoryController extends Controller
                 $isRowValid = false; $errorMessages[] = 'Kode TIDAK TERDAFTAR';
             } else {
                 $itemData = $allItems[$itemCode];
-                if ($itemData->item_type_code === 'JSA') { 
-                    $isRowValid = false; $errorMessages[] = 'DITOLAK: Ini JASA'; 
-                } elseif ($itemData->item_type_code === 'NST') { 
-                    $isRowValid = false; $errorMessages[] = 'DITOLAK: Ini Non-Stok'; 
-                } elseif ($itemData->item_type_code !== 'STK') { 
-                    $isRowValid = false; $errorMessages[] = 'DITOLAK: Tipe Tidak Valid'; 
+                if ($itemData->item_type_code === 'JSA') {
+                    $isRowValid = false; $errorMessages[] = 'DITOLAK: Ini JASA';
+                } elseif ($itemData->item_type_code === 'NST') {
+                    $isRowValid = false; $errorMessages[] = 'DITOLAK: Ini Non-Stok';
+                } elseif ($itemData->item_type_code !== 'STK') {
+                    $isRowValid = false; $errorMessages[] = 'DITOLAK: Tipe Tidak Valid';
                 }
             }
 
@@ -498,7 +521,7 @@ class InventoryController extends Controller
                     $row['harga_satuan'] ?? '',
                     $row['mata_uang'] ?? '',
                     $row['catatan'] ?? '',
-                    implode(" | ", $errorMessages), 
+                    implode(" | ", $errorMessages),
                 ];
             }
         }
@@ -519,9 +542,9 @@ class InventoryController extends Controller
         // Hitung stok bulk yang tersedia di setiap gudang
         foreach ($warehouses as $wh) {
             $totalPhysical = \App\Models\InventoryStock::where('item_id', $item->id)->where('warehouse_id', $wh->id)->sum('stock_qty');
-            
+
             $totalAsAsset = \App\Models\FixedAsset::where('item_id', $item->id)->where('warehouse_id', $wh->id)
-                ->whereHas('status', function($q) { $q->where('slug', 'available'); }) 
+                ->whereHas('status', function($q) { $q->where('slug', 'available'); })
                 ->count();
 
             $wh->available_regular_stock = max(0, $totalPhysical - $totalAsAsset);
@@ -533,7 +556,7 @@ class InventoryController extends Controller
     // ==========================================
     // 3. EKSEKUSI SULAP STOK BIASA -> ASET TETAP (VERSI SLUG)
     // ==========================================
-    
+
 
 
 
@@ -546,10 +569,10 @@ class InventoryController extends Controller
             'warehouse_id'         => 'required|exists:warehouses,id',
             'qty'                  => 'required|integer|min:1',
             'acc_asset_number'     => 'required|array',
-            'acc_asset_number.*'   => 'required|string', 
+            'acc_asset_number.*'   => 'required|string',
             'sn'                   => 'required|array',
-            'sn.*'                 => 'required|string', 
-            'specs'                => 'nullable|array',  
+            'sn.*'                 => 'required|string',
+            'specs'                => 'nullable|array',
             'notes'                => 'nullable|array',
         ]);
 
@@ -571,14 +594,14 @@ class InventoryController extends Controller
                 $statusAvailable = \App\Models\Status::where('type', 'AST')->where('slug', 'available')->first();
 
                 // 2. Mesin Pembuat Nomor Aset Sistem
-                $yearMonth = date('Y/m'); 
+                $yearMonth = date('Y/m');
                 $lastAsset = \App\Models\FixedAsset::where('asset_number', 'like', "AST/{$yearMonth}/%")->orderBy('id', 'desc')->lockForUpdate()->first();
                 $nextSeq = $lastAsset ? ((int) substr($lastAsset->asset_number, -4)) + 1 : 1;
 
                 // 3. Daftarkan aset ke database (Mapping langsung ke kolom tabel)
                 for ($i = 0; $i < $qtyToConvert; $i++) {
                     $sysAssetNumber = "AST/{$yearMonth}/" . str_pad($nextSeq, 4, '0', STR_PAD_LEFT);
-                    
+
                     $accAssetNum = trim($request->acc_asset_number[$i]);
                     $currentSn   = trim($request->sn[$i]);
                     $currentSpec = trim($request->specs[$i] ?? '');
@@ -594,12 +617,12 @@ class InventoryController extends Controller
                         'company_id'               => \App\Models\Warehouse::find($request->warehouse_id)->company_id ?? 1,
                         'name'                     => $item->name,
                         'acquisition_date'         => now()->toDateString(),
-                        'purchase_price'           => 0, 
+                        'purchase_price'           => 0,
                         'status_id'                => $statusAvailable->id ?? 1,
                         'notes'                    => $currentNote ?: "Kapitalisasi Mandiri dari Stok Gudang pada " . now()->format('d M Y H:i')
                     ]);
-                    
-                    $nextSeq++; 
+
+                    $nextSeq++;
                 }
             });
 

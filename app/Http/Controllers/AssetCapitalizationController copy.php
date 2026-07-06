@@ -181,16 +181,16 @@ class AssetCapitalizationController extends Controller
                             $stockRow->decrement('stock_qty', $potong);
                             $qtySisaPotong -= $potong;
 
-                            // 🔥 HACK BYPASS DATABASE: TYPE "OUT", TAPI ADA KODE [CAPITALIZE] DI NOTES 🔥
+                            // 🔥 PERBAIKAN FATAL: UBAH TIPE JADI "CAPITALIZE", AGAR MASTER SALDO (KOTAK BIRU) TIDAK TERPOTONG! 🔥
                             StockMutation::create([
                                 'item_id'          => $masterItem->id,
                                 'warehouse_id'     => $stockRow->warehouse_id,
-                                'type'             => 'OUT',
+                                'type'             => 'CAPITALIZE', // Tipe NETRAL
                                 'qty'              => $potong,
                                 'balance_before'   => $saldoTotalSaatIni,
-                                'balance_after'    => $saldoTotalSaatIni, // Saldo tetap sama, tidak dipotong
+                                'balance_after'    => $saldoTotalSaatIni, // Saldo tetap sama
                                 'reference_number' => $gr->gr_number,
-                                'notes'            => "[CAPITALIZE] Kapitalisasi menjadi Aset Tetap",
+                                'notes'            => "Kapitalisasi menjadi Aset Tetap",
                                 'created_by'       => auth()->id(),
                             ]);
                         }
@@ -320,17 +320,17 @@ class AssetCapitalizationController extends Controller
                 ]);
             }
 
-            // 3. CATAT MUTASI REVERT (Tipe: IN, TAPI ADA KODE [DE-CAPITALIZE])
+            // 3. CATAT MUTASI REVERT (Tipe: DE-CAPITALIZE)
             if (class_exists(\App\Models\StockMutation::class)) {
                 \App\Models\StockMutation::create([
                     'item_id'          => $masterItem->id,
                     'warehouse_id'     => $asset->warehouse_id,
-                    'type'             => 'IN', // Tipe Database Masuk Lolos
+                    'type'             => 'DE-CAPITALIZE', // Status Netral
                     'qty'              => 1,
                     'balance_before'   => $balanceBefore,
-                    'balance_after'    => $balanceAfter, // Saldo Utama Tetap Sama
+                    'balance_after'    => $balanceAfter,
                     'reference_number' => $asset->asset_number,
-                    'notes'            => "[DE-CAPITALIZE] Pembatalan Pengakuan Aset (VOID).",
+                    'notes'            => "Pembatalan Pengakuan Aset (VOID).",
                     'created_by'       => auth()->id(),
                 ]);
             }

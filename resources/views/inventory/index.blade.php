@@ -133,33 +133,47 @@
                     </tr>
                 </thead>
                 <tbody>
-                    {{-- 🔥 SEKARANG KITA LOOPING MASTER ITEM, BUKAN INVENTORY STOCK 🔥 --}}
                     @forelse($stocks as $item)
                         <tr>
                             <td class="py-3 ps-4">
                                 <span class="border badge bg-secondary-subtle text-secondary border-secondary-subtle rounded-pill">
-                                    <i class="bi bi-shop me-1"></i> 
+                                    <i class="bi bi-shop me-1"></i>
                                     {{ $warehouseId ? $warehouses->firstWhere('id', $warehouseId)->name : 'Semua Gudang' }}
                                 </span>
                             </td>
                             <td class="py-3 text-muted" style="font-family: monospace;">{{ $item->code }}</td>
                             <td class="py-3 fw-bold text-dark">{{ $item->name }}</td>
+
+                            {{-- 🔥 TAMPILAN STOK GABUNGAN & RINCIANNYA 🔥 --}}
                             <td class="py-3 text-center">
-                                <span class="fw-bold fs-6 {{ $item->total_stock > 0 ? 'text-success' : 'text-danger' }}">
-                                    {{ (float)$item->total_stock }} 
-                                    <span class="fw-normal text-muted ms-1 fs-6">{{ optional($item->uom)->name ?? 'PCS' }}</span>
-                                </span>
+                                <div class="fw-bold fs-6 {{ (float)$item->current_stock > 0 ? 'text-success' : 'text-danger' }}">
+                                    {{ (float)$item->current_stock }}
+                                    <span class="fw-normal text-muted ms-1" style="font-size: 0.75rem;">{{ optional($item->uom)->name ?? 'PCS' }}</span>
+                                </div>
+
+                                {{-- Rincian jika stok lebih dari 0 --}}
+                                @if((float)$item->current_stock > 0)
+                                    <div class="mt-1" style="font-size: 0.65rem;">
+                                        @if((float)$item->bulk_stock > 0)
+                                            <span class="px-2 py-1 border rounded bg-light text-secondary me-1">Biasa: {{ (float)$item->bulk_stock }}</span>
+                                        @endif
+                                        @if((float)$item->asset_stock > 0)
+                                            <span class="px-2 py-1 border rounded bg-info-subtle text-info-emphasis border-info-subtle">Aset: {{ (float)$item->asset_stock }}</span>
+                                        @endif
+                                    </div>
+                                @endif
                             </td>
+
                             <td class="text-center align-middle">
-                                <div class="d-flex justify-content-center gap-2">
+                                <div class="gap-2 d-flex justify-content-center">
                                     {{-- Tombol Kartu Stok (Selalu Muncul) --}}
-                                    <a href="{{ route('inventory.show', $item->id) }}" class="btn btn-sm btn-outline-info rounded-pill fw-bold px-3">
+                                    <a href="{{ route('inventory.show', $item->id) }}" class="px-3 btn btn-sm btn-outline-info rounded-pill fw-bold">
                                         <i class="bi bi-clock-history me-1"></i> Kartu Stok
                                     </a>
-                                    
+
                                     {{-- Tombol Kapitalisasi (Hanya muncul untuk Stok Biasa yang BUKAN Jasa & BUKAN Aset Master) --}}
                                     @if($item->is_stockable && !$item->is_asset)
-                                    <a href="{{ route('inventory.capitalize.form', $item->code) }}" class="btn btn-sm btn-outline-warning rounded-pill fw-bold px-3" title="Sulap Stok Biasa Menjadi Aset">
+                                    <a href="{{ route('inventory.capitalize.form', $item->code) }}" class="px-3 btn btn-sm btn-outline-warning rounded-pill fw-bold" title="Sulap Stok Biasa Menjadi Aset">
                                         <i class="bi bi-magic me-1"></i> Jadikan Aset
                                     </a>
                                     @endif
@@ -246,7 +260,6 @@
 <div class="modal fade" id="modalImportSaldo" tabindex="-1">
     <div class="modal-dialog modal-dialog-centered">
         <div class="border-0 shadow-lg modal-content rounded-4">
-            {{-- 🔥 PERBAIKAN 1: Arahkan action ke preview_import 🔥 --}}
             <form action="{{ route('inventory.preview_import') }}" method="POST" enctype="multipart/form-data">
                 @csrf
                 <div class="text-white border-0 modal-header bg-success">
@@ -274,7 +287,6 @@
                 </div>
                 <div class="p-3 modal-footer border-top bg-light">
                     <button type="button" class="px-4 border btn btn-light rounded-pill fw-bold" data-bs-dismiss="modal">Batal</button>
-                    {{-- 🔥 PERBAIKAN 2: Ubah teks tombol menjadi Preview 🔥 --}}
                     <button type="submit" class="px-4 shadow-sm btn btn-success rounded-pill fw-bold">
                         <i class="bi bi-eye me-1"></i> Preview Import
                     </button>
