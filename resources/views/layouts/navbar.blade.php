@@ -1,4 +1,4 @@
-<nav class="bg-white shadow-sm navbar navbar-expand-lg navbar-floating sticky-top">
+<nav class="bg-white shadow-sm navbar navbar-expand-lg navbar-floating sticky-top" style="z-index: 1050;">
     <div class="p-0 px-3 container-fluid">
 
         {{-- LOGO BRAND --}}
@@ -31,7 +31,7 @@
                 {{-- 2. PURCHASING DROPDOWN --}}
                 @canany(['view_pr', 'view_po'])
                 <li class="nav-item dropdown">
-                    <a class="nav-link dropdown-toggle px-3 {{ request()->routeIs('pr.*', 'po.*') ? 'active bg-primary-subtle text-primary rounded-pill' : 'text-secondary' }}" href="#" role="button" data-bs-toggle="dropdown">
+                    <a class="nav-link dropdown-toggle px-3 {{ request()->routeIs('pr.*', 'po.*') ? 'active bg-primary-subtle text-primary rounded-pill' : 'text-secondary' }}" href="#" role="button" data-bs-toggle="dropdown" aria-expanded="false">
                         Purchasing
                     </a>
                     <ul class="mt-2 border-0 shadow-sm dropdown-menu rounded-4">
@@ -65,7 +65,7 @@
                 {{-- 4. WAREHOUSE DROPDOWN --}}
                 @canany(['view_inventory', 'manage_gi', 'view_assets', 'manage_items'])
                 <li class="nav-item dropdown">
-                    <a class="nav-link dropdown-toggle px-3 {{ request()->routeIs('asset-capitalizations.*', 'assets.*', 'goods-issues.*', 'goods-issue-returns.*', 'stock-transfers.*', 'employee-inventories.*', 'stock-adjustments.*', 'fixed-assets.*', 'items.*', 'inventory.*', 'rtv.*') ? 'active bg-primary-subtle text-primary rounded-pill' : 'text-secondary' }}" href="#" role="button" data-bs-toggle="dropdown">
+                    <a class="nav-link dropdown-toggle px-3 {{ request()->routeIs('asset-capitalizations.*', 'assets.*', 'goods-issues.*', 'goods-issue-returns.*', 'stock-transfers.*', 'employee-inventories.*', 'stock-adjustments.*', 'fixed-assets.*', 'items.*', 'inventory.*', 'rtv.*') ? 'active bg-primary-subtle text-primary rounded-pill' : 'text-secondary' }}" href="#" role="button" data-bs-toggle="dropdown" aria-expanded="false">
                         Warehouse
                     </a>
                     <ul class="mt-2 border-0 shadow-sm dropdown-menu rounded-4" style="min-width: 250px;">
@@ -122,7 +122,7 @@
                         $totalFinanceNotif = $apDebtCount + $opexPendingCount;
                     @endphp
 
-                    <a class="nav-link dropdown-toggle px-3 {{ request()->routeIs('payments.*', 'vendor-invoices.*', 'bills.*') ? 'active bg-primary-subtle text-primary rounded-pill' : 'text-secondary' }}" href="#" role="button" data-bs-toggle="dropdown">
+                    <a class="nav-link dropdown-toggle px-3 {{ request()->routeIs('payments.*', 'vendor-invoices.*', 'bills.*') ? 'active bg-primary-subtle text-primary rounded-pill' : 'text-secondary' }}" href="#" role="button" data-bs-toggle="dropdown" aria-expanded="false">
                         Finance
                         @if($totalFinanceNotif > 0)
                             <span class="badge bg-danger rounded-pill ms-1" style="font-size: 0.65rem;">{{ $totalFinanceNotif }}</span>
@@ -163,7 +163,7 @@
                 {{-- 7. SETTINGS --}}
                 @can('manage_roles')
                 <li class="nav-item dropdown">
-                    <a class="nav-link dropdown-toggle px-3 {{ request()->routeIs('users.*', 'roles.*', 'workflows.*', 'document-types.*') ? 'active bg-primary-subtle text-primary rounded-pill' : 'text-secondary' }}" href="#" role="button" data-bs-toggle="dropdown">
+                    <a class="nav-link dropdown-toggle px-3 {{ request()->routeIs('users.*', 'roles.*', 'workflows.*', 'document-types.*') ? 'active bg-primary-subtle text-primary rounded-pill' : 'text-secondary' }}" href="#" role="button" data-bs-toggle="dropdown" aria-expanded="false">
                         Settings
                     </a>
                     <ul class="mt-2 border-0 shadow-sm dropdown-menu dropdown-menu-end rounded-4">
@@ -186,53 +186,81 @@
                     <i class="bi bi-search"></i>
                 </a>
 
-                {{-- 🔥 PUSAT NOTIFIKASI 🔥 --}}
+                {{-- 🔥 PUSAT NOTIFIKASI (UPDATE PO) 🔥 --}}
                 @php
-                    $user = auth()->user();
                     $pendingPRs = collect();
+                    $pendingPOs = collect();
                     $countPendingPRs = 0;
+                    $countPendingPOs = 0;
+                    $totalNotif = 0;
 
-                    if ($user) {
-                        $userRoleIds = $user->roles->pluck('id')->toArray();
-                        $pendingPRs = \App\Models\PurchaseRequest::whereHas('approvals', function($q) use ($userRoleIds) {
-                            $q->where('status', 'PENDING')->whereIn('role_id', $userRoleIds);
-                        })->latest()->take(5)->get();
+                    if (auth()->check()) {
+                        $userRoles = auth()->user()->roles->pluck('id')->toArray();
 
-                        $countPendingPRs = \App\Models\PurchaseRequest::whereHas('approvals', function($q) use ($userRoleIds) {
-                            $q->where('status', 'PENDING')->whereIn('role_id', $userRoleIds);
-                        })->count();
+                        // Cek Data PR
+                        if(class_exists('\App\Models\PurchaseRequest')) {
+                            $countPendingPRs = \App\Models\PurchaseRequest::whereHas('approvals', function($q) use ($userRoles) {
+                                $q->where('status', 'PENDING')->whereIn('role_id', $userRoles);
+                            })->count();
+
+                            if ($countPendingPRs > 0) {
+                                $pendingPRs = \App\Models\PurchaseRequest::whereHas('approvals', function($q) use ($userRoles) {
+                                    $q->where('status', 'PENDING')->whereIn('role_id', $userRoles);
+                                })->latest()->take(5)->get();
+                            }
+                        }
+
+                        // Cek Data PO
+                        if(class_exists('\App\Models\PurchaseOrder')) {
+                            $countPendingPOs = \App\Models\PurchaseOrder::whereHas('approvals', function($q) use ($userRoles) {
+                                $q->where('status', 'PENDING')->whereIn('role_id', $userRoles);
+                            })->count();
+
+                            if ($countPendingPOs > 0) {
+                                $pendingPOs = \App\Models\PurchaseOrder::with(['vendor', 'company'])->whereHas('approvals', function($q) use ($userRoles) {
+                                    $q->where('status', 'PENDING')->whereIn('role_id', $userRoles);
+                                })->latest()->take(5)->get();
+                            }
+                        }
+
+                        $totalNotif = $countPendingPRs + $countPendingPOs;
                     }
                 @endphp
 
                 <div class="dropdown">
-                    <a class="shadow-sm btn btn-light rounded-circle d-flex align-items-center justify-content-center position-relative text-secondary" href="#" role="button" data-bs-toggle="dropdown" aria-expanded="false" style="width: 40px; height: 40px;">
+                    <a class="shadow-sm btn btn-light rounded-circle d-flex align-items-center justify-content-center position-relative text-secondary" href="#" role="button" data-bs-toggle="dropdown" data-bs-auto-close="outside" aria-expanded="false" style="width: 40px; height: 40px;">
                         <i class="bi bi-bell fs-5"></i>
-                        @if($countPendingPRs > 0)
-                            <span class="top-0 p-1 border position-absolute start-100 translate-middle badge border-light rounded-circle bg-danger" style="width: 12px; height: 12px;"><span class="visually-hidden">unread messages</span></span>
+                        @if($totalNotif > 0)
+                            <span class="top-0 p-1 border position-absolute start-100 translate-middle badge border-light rounded-circle bg-danger" style="width: 12px; height: 12px;"><span class="visually-hidden">unread</span></span>
                         @endif
                     </a>
 
-                    <div class="p-0 mt-2 overflow-hidden border-0 shadow-lg dropdown-menu dropdown-menu-end rounded-4" style="width: 320px;">
-                        <div class="px-3 py-3 text-white bg-primary d-flex justify-content-between align-items-center">
+                    <div class="p-0 mt-2 border-0 shadow-lg dropdown-menu dropdown-menu-end rounded-4" style="width: 350px; z-index: 1060;">
+                        <div class="px-3 py-3 text-white bg-primary d-flex justify-content-between align-items-center" style="border-top-left-radius: var(--bs-border-radius-xl); border-top-right-radius: var(--bs-border-radius-xl);">
                             <h6 class="mb-0 fw-bold"><i class="bi bi-bell-fill me-2"></i> Pusat Notifikasi</h6>
-                            @if($countPendingPRs > 0)<span class="bg-white badge text-primary rounded-pill">{{ $countPendingPRs }} Baru</span>@endif
+                            @if($totalNotif > 0)<span class="bg-white shadow-sm badge text-primary rounded-pill">{{ $totalNotif }} Baru</span>@endif
                         </div>
 
                         {{-- TABS NOTIFIKASI --}}
                         <ul class="nav nav-tabs nav-fill border-bottom-0 bg-light" id="notifTab" role="tablist">
                             <li class="nav-item" role="presentation">
-                                <button class="py-2 border-0 border-2 nav-link active fw-bold small rounded-0 border-bottom border-primary text-primary" id="pr-tab" data-bs-toggle="tab" data-bs-target="#notif-pr" type="button" role="tab">Request (PR)</button>
+                                <button class="py-2 border-0 border-2 nav-link active fw-bold small rounded-0 border-bottom border-primary text-primary" id="pr-tab" data-bs-toggle="tab" data-bs-target="#notif-pr" type="button" role="tab">
+                                    Request (PR) @if($countPendingPRs > 0)<span class="ms-1 badge bg-danger rounded-pill" style="font-size: 0.6rem;">{{ $countPendingPRs }}</span>@endif
+                                </button>
                             </li>
                             <li class="nav-item" role="presentation">
-                                <button class="py-2 border-0 nav-link fw-bold small rounded-0 text-muted" id="po-tab" data-bs-toggle="tab" data-bs-target="#notif-po" type="button" role="tab">Order (PO)</button>
+                                <button class="py-2 border-0 nav-link fw-bold small rounded-0 text-muted" id="po-tab" data-bs-toggle="tab" data-bs-target="#notif-po" type="button" role="tab" onclick="this.classList.add('active', 'border-bottom', 'border-success', 'border-2', 'text-success'); this.classList.remove('text-muted'); document.getElementById('pr-tab').classList.remove('active', 'border-bottom', 'border-primary', 'border-2', 'text-primary'); document.getElementById('pr-tab').classList.add('text-muted');">
+                                    Order (PO) @if($countPendingPOs > 0)<span class="ms-1 badge bg-danger rounded-pill" style="font-size: 0.6rem;">{{ $countPendingPOs }}</span>@endif
+                                </button>
                             </li>
                         </ul>
 
-                        <div class="tab-content" id="notifTabContent">
-                            {{-- TAB PR --}}
+                        <div class="tab-content" id="notifTabContent" style="max-height: 350px; overflow-y: auto;">
+
+                            {{-- ================= TAB PR ================= --}}
                             <div class="tab-pane fade show active" id="notif-pr" role="tabpanel">
                                 @if($countPendingPRs > 0)
-                                    <div class="list-group list-group-flush" style="max-height: 280px; overflow-y: auto;">
+                                    <div class="list-group list-group-flush">
                                         @foreach($pendingPRs as $notifPr)
                                             <a href="{{ route('pr.show', $notifPr->pr_number) }}" class="py-3 list-group-item list-group-item-action border-bottom">
                                                 <div class="mb-1 d-flex w-100 justify-content-between align-items-center">
@@ -249,7 +277,7 @@
                                             </a>
                                         @endforeach
                                     </div>
-                                    <div class="p-2 text-center bg-light">
+                                    <div class="p-2 text-center bg-light border-top">
                                         <a href="{{ route('pr.index') }}" class="text-decoration-none small fw-bold text-primary">Lihat Semua PR <i class="bi bi-arrow-right"></i></a>
                                     </div>
                                 @else
@@ -260,12 +288,35 @@
                                 @endif
                             </div>
 
-                            {{-- TAB PO (Placeholder) --}}
+                            {{-- ================= TAB PO ================= --}}
                             <div class="tab-pane fade" id="notif-po" role="tabpanel">
-                                <div class="py-5 text-center bg-white text-muted">
-                                    <i class="mb-2 bi bi-inbox text-secondary" style="font-size: 2.5rem; display: block;"></i>
-                                    <span class="small fw-bold">Belum ada fitur notifikasi PO.</span>
-                                </div>
+                                @if($countPendingPOs > 0)
+                                    <div class="list-group list-group-flush">
+                                        @foreach($pendingPOs as $notifPo)
+                                            <a href="{{ route('po.show', $notifPo->po_number) }}" class="py-3 list-group-item list-group-item-action border-bottom">
+                                                <div class="mb-1 d-flex w-100 justify-content-between align-items-center">
+                                                    <strong class="text-success small">{{ $notifPo->po_number }}</strong>
+                                                    <small class="text-muted" style="font-size: 0.65rem;">{{ \Carbon\Carbon::parse($notifPo->po_date)->diffForHumans() }}</small>
+                                                </div>
+                                                <div class="mb-1 text-dark small fw-semibold text-truncate">
+                                                    <i class="bi bi-shop me-1 text-secondary"></i> {{ optional($notifPo->vendor)->name ?? 'Vendor Tidak Diketahui' }}
+                                                </div>
+                                                <div class="mt-2 text-muted d-flex justify-content-between align-items-center" style="font-size: 0.75rem;">
+                                                    <span class="text-truncate" style="max-width: 150px;"><i class="bi bi-building me-1"></i> {{ optional($notifPo->company)->name ?? 'Head Office' }}</span>
+                                                    <span class="fw-bold text-dark">{{ $notifPo->currency ?? 'IDR' }} {{ number_format($notifPo->grand_total, 0, ',', '.') }}</span>
+                                                </div>
+                                            </a>
+                                        @endforeach
+                                    </div>
+                                    <div class="p-2 text-center bg-light border-top">
+                                        <a href="{{ route('po.index') }}" class="text-decoration-none small fw-bold text-success">Lihat Semua PO <i class="bi bi-arrow-right"></i></a>
+                                    </div>
+                                @else
+                                    <div class="py-5 text-center bg-white text-muted">
+                                        <i class="mb-2 bi bi-check2-circle text-success" style="font-size: 2.5rem; display: block;"></i>
+                                        <span class="small fw-bold">Semua Order telah disetujui.</span>
+                                    </div>
+                                @endif
                             </div>
                         </div>
                     </div>
@@ -286,7 +337,7 @@
                         <i class="bi bi-chevron-down text-muted me-1 d-none d-xl-block" style="font-size: 0.7rem;"></i>
                     </a>
 
-                    <ul class="p-2 mt-3 border-0 shadow-lg dropdown-menu dropdown-menu-end rounded-4" style="min-width: 240px;">
+                    <ul class="p-2 mt-3 border-0 shadow-lg dropdown-menu dropdown-menu-end rounded-4" style="min-width: 240px; z-index: 1060;">
                         <li class="px-3 py-2 mb-2 border bg-light rounded-3">
                             <div class="text-muted small fw-bold text-uppercase" style="font-size: 0.65rem; letter-spacing: 0.5px;">Signed in as</div>
                             <div class="text-dark fw-bolder fs-6 text-truncate" title="{{ Auth::user()->name }}">{{ Auth::user()->name }}</div>
@@ -316,3 +367,20 @@
         </div>
     </div>
 </nav>
+
+{{-- Script Khusus Tab Navbar --}}
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        var prTab = document.getElementById('pr-tab');
+        var poTab = document.getElementById('po-tab');
+
+        if(prTab && poTab) {
+            prTab.addEventListener('click', function() {
+                this.classList.add('active', 'border-bottom', 'border-primary', 'border-2', 'text-primary');
+                this.classList.remove('text-muted');
+                poTab.classList.remove('active', 'border-bottom', 'border-success', 'border-2', 'text-success');
+                poTab.classList.add('text-muted');
+            });
+        }
+    });
+</script>

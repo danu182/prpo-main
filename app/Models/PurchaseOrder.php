@@ -35,6 +35,11 @@ class PurchaseOrder extends Model
                     ->orderBy('step_order', 'asc');
     }
 
+    // public function approvals()
+    // {
+    //     return $this->morphMany(\App\Models\DocumentApproval::class, 'document');
+    // }
+
     public function creator()
     {
         return $this->belongsTo(User::class, 'created_by');
@@ -94,7 +99,7 @@ class PurchaseOrder extends Model
     public function user()
     {
         // Asumsinya kolom di tabel purchase_orders adalah 'created_by'
-        return $this->belongsTo(User::class, 'created_by'); 
+        return $this->belongsTo(User::class, 'created_by');
     }
 
 
