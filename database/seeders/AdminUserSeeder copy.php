@@ -24,11 +24,13 @@ class AdminUserSeeder extends Seeder
         Role::firstOrCreate(['name' => 'Finance']);
         Role::firstOrCreate(['name' => 'Gudang']);
         Role::firstOrCreate(['name' => 'Purchasing']);
-        Role::firstOrCreate(['name' => 'Manager']);
-        Role::firstOrCreate(['name' => 'Direktur']);
+        Role::firstOrCreate(['name' => 'manager']);
+        Role::firstOrCreate(['name' => 'direktur']);
         Role::firstOrCreate(['name' => 'Staff']);
+
+        // 🔥 ROLE BARU: PEMBUAT PR & SUPERVISOR 🔥
+        Role::firstOrCreate(['name' => 'Staff PR']);
         Role::firstOrCreate(['name' => 'Supervisor']);
-        Role::firstOrCreate(['name' => 'Opex & Asset']);
 
         // ==========================================
         // 2. AMBIL DATA COMPANY & DEPARTMENT
@@ -68,7 +70,7 @@ class AdminUserSeeder extends Seeder
                 'is_active'     => 1,
             ]
         );
-        $direktur->assignRole('Direktur');
+        $direktur->assignRole('direktur');
 
         $finance = User::updateOrCreate(
             ['email' => 'finance@app.com'],
@@ -94,6 +96,21 @@ class AdminUserSeeder extends Seeder
         );
         $purchasing->assignRole('Purchasing');
 
+        // 🔥 USER KHUSUS PEMBUAT PR 🔥
+        $stafPR = User::updateOrCreate(
+            ['email' => 'staf_pr@app.com'],
+            [
+                'name'          => 'Joko (Khusus Buat PR)',
+                'password'      => Hash::make('123'),
+                'company_id'    => $hoId,
+                'department_id' => null,
+                'job_title'     => 'Staff Requester',
+                'is_active'     => 1,
+            ]
+        );
+        $stafPR->assignRole('Staff PR');
+
+        // 🔥 USER KHUSUS SUPERVISOR (ATASAN PR LAPIS 1) 🔥
         $supervisor = User::updateOrCreate(
             ['email' => 'supervisor@app.com'],
             [
@@ -107,21 +124,8 @@ class AdminUserSeeder extends Seeder
         );
         $supervisor->assignRole('Supervisor');
 
-        $opexAsset = User::updateOrCreate(
-            ['email' => 'asset@app.com'],
-            [
-                'name'          => 'Tim GA/IT (Asset Manager)',
-                'password'      => Hash::make('123'),
-                'company_id'    => $hoId,
-                'department_id' => $deptIT ? $deptIT->id : null,
-                'job_title'     => 'Asset Controller',
-                'is_active'     => 1,
-            ]
-        );
-        $opexAsset->assignRole('Opex & Asset');
-
         // ==========================================
-        // 4. TEAM CABANG 1 & 2
+        // 4. TEAM CABANG 1 (Hitawasana)
         // ==========================================
         $manager = User::updateOrCreate(
             ['email' => 'manager@app.com'],
@@ -133,7 +137,7 @@ class AdminUserSeeder extends Seeder
                 'is_active'     => 1,
             ]
         );
-        $manager->assignRole('Manager');
+        $manager->assignRole('manager');
 
         $gudang = User::updateOrCreate(
             ['email' => 'gudang@app.com'],
@@ -147,6 +151,9 @@ class AdminUserSeeder extends Seeder
         );
         $gudang->assignRole('Gudang');
 
+        // ==========================================
+        // 5. TEAM CABANG 2 (DestinAsian)
+        // ==========================================
         $staff = User::updateOrCreate(
             ['email' => 'karyawan@app.com'],
             [

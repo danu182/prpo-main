@@ -26,48 +26,63 @@ class PurchaseRequestController extends Controller
 {
     use InteractsWithMedia;
 
-    public function index(\Illuminate\Http\Request $request)
+
+    public function index(Request $request)
     {
         $search = $request->input('search');
-        $statusFilter = $request->input('status');
-        $deptFilter = $request->input('department');
-
-        $statuses = \App\Models\Status::where('type', 'PR')->orderBy('sequence')->get();
-        $companies = \App\Models\Company::all();
-
+        $status = $request->input('status');
+        $departmentId = $request->input('department_id');
         $user = auth()->user();
 
-        $requests = \App\Models\PurchaseRequest::with(['status', 'company', 'user', 'purchaseOrders'])
-            ->when(!$user->hasAnyRole(['Super Admin', 'Purchasing', 'manager', 'direktur', 'Finance', 'Gudang']), function ($query) use ($user) {
-                $query->where('user_id', $user->id);
-            })
-            ->when($search, function ($query) use ($search) {
-                $query->where(function ($q) use ($search) {
-                    $q->where('pr_number', 'like', "%{$search}%")
-                      ->orWhereHas('user', function ($qUser) use ($search) {
-                          $qUser->where('name', 'like', "%{$search}%");
-                      });
-                });
-            })
-            ->when($statusFilter, function ($query) use ($statusFilter) {
-                $query->whereHas('status', function ($q) use ($statusFilter) {
-                    $q->where('name', $statusFilter);
-                });
-            })
-            ->when($deptFilter, function ($query) use ($deptFilter) {
-                if ($deptFilter === 'Head Office') {
-                    $query->whereNull('company_id');
-                } else {
-                    $query->whereHas('company', function ($q) use ($deptFilter) {
-                        $q->where('name', $deptFilter);
-                    });
-                }
-            })
-            ->latest()
-            ->paginate(10);
+        // 1. Tarik semua Role ID yang dimiliki user saat ini
+        $userRoleIds = $user->roles->pluck('id')->toArray();
 
-        return view('pr.index', compact('requests', 'companies', 'statuses'));
+        $query = \App\Models\PurchaseRequest::with(['requester', 'department', 'approvals.role'])
+            ->when($search, function ($q) use ($search) {
+                $q->where('pr_number', 'like', "%{$search}%")
+                  ->orWhereHas('requester', function ($q2) use ($search) {
+                      $q2->where('name', 'like', "%{$search}%");
+                  });
+            })
+            ->when($status, function ($q) use ($status) {
+                $q->whereHas('status', function ($qStatus) use ($status) {
+                    $qStatus->where('name', $status);
+                });
+            })
+            ->when($departmentId, function ($q) use ($departmentId) {
+                $q->where('department_id', $departmentId);
+            });
+
+        // 🔥 LOGIKA VISIBILITAS (PINTU AKSES) 🔥
+        if (!$user->hasAnyRole(['Super Admin', 'super-admin'])) {
+            $query->where(function ($q) use ($user, $userRoleIds) {
+                // A. Pembuat PR
+                $q->where('user_id', $user->id)
+
+                  // B. Approver yang sedang ditunggu
+                  ->orWhereHas('approvals', function ($qApprovals) use ($userRoleIds) {
+                      $qApprovals->where('status', 'PENDING')
+                                 ->whereIn('role_id', $userRoleIds);
+                  })
+
+                  // C. Riwayat Approver
+                  ->orWhereHas('approvals', function ($qApprovals) use ($user) {
+                      $qApprovals->where('approved_by', $user->id);
+                  });
+            });
+        }
+
+        // PERUBAHAN: Gunakan nama variabel $requests agar sesuai dengan Blade Anda!
+        $requests = $query->latest()->paginate(10)->withQueryString();
+
+        // 🔥 INI OBATNYA: Mengirim variabel $statuses dan $companies yang dicari Blade 🔥
+        $statuses = \App\Models\Status::where('type', 'PR')->orderBy('sequence')->get();
+        $companies = \App\Models\Company::orderBy('name')->get();
+        $departments = \App\Models\Department::orderBy('name')->get();
+
+        return view('pr.index', compact('requests', 'search', 'status', 'statuses', 'companies', 'departments'));
     }
+
 
     // 1. FUNGSI CREATE (DIKOSONGKAN DARI $items AGAR RINGAN)
     public function create()

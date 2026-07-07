@@ -11,64 +11,111 @@ class RolePermissionSeeder extends Seeder
 {
     public function run(): void
     {
-        // 1. Reset cached roles and permissions
+        // 1. Bersihkan cache Spatie agar permission baru langsung terbaca
         app()[\Spatie\Permission\PermissionRegistrar::class]->forgetCachedPermissions();
 
-        // 2. Buat Daftar Izin (Permissions) sesuai Navbar + TAMBAHAN BARU
+        // ==========================================
+        // 2. DAFTARKAN SEMUA IZIN (PERMISSIONS) GRANULAR
+        // ==========================================
         $permissions = [
-            'view_pr', 'view_po', 'view_bills',         // Purchasing
-            'view_gr', 'view_inventory', 'manage_gi',   // Gudang & Receiving
-            'view_assets', 'manage_items',              // IT / Master Data
-            'view_invoices', 'view_payments',           // Finance
-            'manage_roles',                             // Admin
-            'view_reports'                              // Laporan (BARU)
+            // Hak Akses PR (Purchase Requisition)
+            'view_pr',
+            'create_pr',
+            'edit_own_pr',  // Khusus Staff edit PR miliknya sendiri
+            'approve_pr',   // Khusus Atasan
+
+            // Hak Akses PO (Purchase Order)
+            'view_po',
+            'create_po',
+            'approve_po',   // Khusus Atasan/Direktur
+
+            // Hak Akses Gudang (Inventory & Receiving)
+            'view_gr',
+            'create_gr',    // Terima Barang
+            'view_inventory',
+            'manage_gi',    // Keluarkan Barang (Goods Issue)
+
+            // Hak Akses Master Data & Aset (Opex / Capex)
+            'manage_items',
+            'view_assets',
+            'manage_assets',
+            'manage_opex',
+
+            // Hak Akses Keuangan (Finance)
+            'view_bills',
+            'view_invoices',
+            'manage_invoices',
+            'view_payments',
+            'manage_payments',
+
+            // Hak Akses General & Admin
+            'view_reports',
+            'manage_roles'
         ];
 
         foreach ($permissions as $permission) {
             Permission::firstOrCreate(['name' => $permission]);
         }
 
-        // 3. Buat Role dan Assign Izinnya
-
-        // A. Role GUDANG
-        $roleGudang = Role::firstOrCreate(['name' => 'Staf Gudang']);
-        $roleGudang->syncPermissions(['view_gr', 'view_inventory', 'manage_gi', 'manage_items']);
-
-        // B. Role PURCHASING
-        $rolePurchasing = Role::firstOrCreate(['name' => 'Purchasing']);
-        $rolePurchasing->syncPermissions(['view_pr', 'view_po', 'view_bills', 'manage_items']);
-
-        // C. Role FINANCE (Diberi tambahan akses view_reports)
-        $roleFinance = Role::firstOrCreate(['name' => 'Finance']);
-        $roleFinance->syncPermissions(['view_invoices', 'view_payments', 'view_bills', 'view_reports']);
-
-        // D. Role IT / GA (General Affairs)
-        $roleIT = Role::firstOrCreate(['name' => 'IT / GA Asset']);
-        $roleIT->syncPermissions(['view_assets', 'manage_items']);
-
         // ==========================================
-        // E. Role MANAGER (UNTUK APPROVAL)
+        // 3. BUAT ROLE & SINKRONISASI HAK AKSES
         // ==========================================
-        $roleManager = Role::firstOrCreate(['name' => 'manager']);
-        $roleManager->syncPermissions(['view_pr', 'view_po', 'view_reports']);
 
-        // ==========================================
-        // F. Role DIREKTUR (UNTUK APPROVAL)
-        // ==========================================
-        $roleDirektur = Role::firstOrCreate(['name' => 'direktur']);
-        $roleDirektur->syncPermissions(['view_po', 'view_payments', 'view_reports']);
-
-        // ==========================================
-        // G. Role STAFF (KARYAWAN BIASA)
-        // ==========================================
+        // A. ROLE STAFF (Bisa buat & edit PR sendiri)
         $roleStaff = Role::firstOrCreate(['name' => 'Staff']);
-        $roleStaff->syncPermissions(['view_pr']); // HANYA BISA AKSES MENU PR UNTUK MINTA BARANG
+        $roleStaff->syncPermissions([
+            'view_pr', 'create_pr', 'edit_own_pr'
+        ]);
 
-        // H. Role SUPER ADMIN (Bisa semuanya!)
+        // B. ROLE SUPERVISOR (Approval Lapis 1)
+        $roleSupervisor = Role::firstOrCreate(['name' => 'Supervisor']);
+        $roleSupervisor->syncPermissions([
+            'view_pr', 'approve_pr', 'view_reports'
+        ]);
+
+        // C. ROLE MANAGER (Approval Lapis 2)
+        $roleManager = Role::firstOrCreate(['name' => 'Manager']);
+        $roleManager->syncPermissions([
+            'view_pr', 'approve_pr', 'view_po', 'approve_po', 'view_reports'
+        ]);
+
+        // D. ROLE DIREKTUR (Approval Final)
+        $roleDirektur = Role::firstOrCreate(['name' => 'Direktur']);
+        $roleDirektur->syncPermissions([
+            'view_pr', 'view_po', 'approve_po', 'view_payments', 'view_reports'
+        ]);
+
+        // E. ROLE PURCHASING (Bikin PO dari PR)
+        $rolePurchasing = Role::firstOrCreate(['name' => 'Purchasing']);
+        $rolePurchasing->syncPermissions([
+            'view_pr', 'view_po', 'create_po', 'manage_items', 'view_bills'
+        ]);
+
+        // F. ROLE GUDANG (Terima & Keluar Barang)
+        $roleGudang = Role::firstOrCreate(['name' => 'Gudang']);
+        $roleGudang->syncPermissions([
+            'view_po', 'view_gr', 'create_gr', 'view_inventory', 'manage_gi', 'manage_items'
+        ]);
+
+        // G. ROLE OPEX & FIXED ASSET (IT/GA)
+        $roleAsset = Role::firstOrCreate(['name' => 'Opex & Asset']);
+        $roleAsset->syncPermissions([
+            'view_assets', 'manage_assets', 'manage_opex', 'manage_items', 'view_inventory'
+        ]);
+
+        // H. ROLE FINANCE (Tagihan & Pembayaran)
+        $roleFinance = Role::firstOrCreate(['name' => 'Finance']);
+        $roleFinance->syncPermissions([
+            'view_po', 'view_gr', 'view_bills', 'view_invoices', 'manage_invoices', 'view_payments', 'manage_payments', 'view_reports'
+        ]);
+
+        // I. ROLE SUPER ADMIN (Bisa Semua Akses!)
         $roleAdmin = Role::firstOrCreate(['name' => 'Super Admin']);
         $roleAdmin->syncPermissions(Permission::all());
 
-        // 4. Berikan Role Super Admin ke User Pertama (Biasanya akun Anda)
+        // ==========================================
+        // 4. BERIKAN SUPER ADMIN KE USER ID 1
+        // ==========================================
         $user = User::first();
         if ($user) {
             $user->assignRole('Super Admin');

@@ -82,7 +82,7 @@ class PurchaseRequest extends Model
     // Kita harus kasih tahu Laravel bahwa kolomnya bernama 'pr_item_id'
     public function vendorQuotes()
     {
-        // Ganti VendorQuote::class dengan nama Model vendor Komandan 
+        // Ganti VendorQuote::class dengan nama Model vendor Komandan
         // (misal: PurchaseRequestItemVendor::class jika namanya itu)
         return $this->hasMany(VendorQuote::class, 'pr_item_id', 'id');
     }
@@ -94,6 +94,35 @@ class PurchaseRequest extends Model
         // Menyambungkan PR dengan tabel Riwayat (History)
         return $this->hasMany(\App\Models\PurchaseRequestHistory::class, 'purchase_request_id', 'id');
     }
+
+
+    /**
+     * Relasi ke matriks persetujuan (DocumentApproval)
+     */
+    public function approvals()
+    {
+        return $this->morphMany(\App\Models\DocumentApproval::class, 'document');
+    }
+
+
+    /**
+     * Relasi ke pembuat PR (User / Requester)
+     */
+    public function requester()
+    {
+        // Menghubungkan user_id ke tabel users
+        return $this->belongsTo(\App\Models\User::class, 'user_id');
+    }
+
+
+    public function department()
+    {
+        return $this->belongsTo(\App\Models\Department::class, 'department_id');
+    }
+
+
+
+
 
 }
 
