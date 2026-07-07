@@ -149,82 +149,6 @@ class FixedAssetController extends Controller
         }
     }
 
-    // public function update(Request $request, $id)
-    // {
-    //     $request->validate([
-    //         'serial_number'           => 'nullable|string|max:255',
-    //         'status_id'               => 'required|exists:statuses,id',
-    //         'accounting_asset_number' => 'nullable|string|max:255',
-    //         'spesifikasi_detail'      => 'nullable|string',
-    //         'assigned_to'             => 'nullable|exists:users,id',
-    //         'notes'                   => 'nullable|string',
-    //         'purchase_price'          => 'nullable|numeric|min:0',
-    //     ]);
-
-    //     try {
-    //         DB::transaction(function () use ($request, $id) {
-    //             $asset = FixedAsset::with('status')->findOrFail($id);
-
-    //             $oldStatusSlug = optional($asset->status)->slug;
-    //             $oldAssignee = $asset->assigned_to;
-
-    //             $newStatus = Status::find($request->status_id);
-    //             $assignedTo = in_array($newStatus->slug, ['available', 'disposed', 'maintenance', 'returned']) ? null : $request->assigned_to;
-
-    //             $isChanged = ($oldStatusSlug !== $newStatus->slug) || ($oldAssignee != $assignedTo);
-
-    //             $asset->update([
-    //                 'serial_number'           => $request->serial_number,
-    //                 'accounting_asset_number' => $request->accounting_asset_number,
-    //                 'spesifikasi_detail'      => $request->spesifikasi_detail,
-    //                 'status_id'               => $request->status_id,
-    //                 'assigned_to'             => $assignedTo,
-    //                 'notes'                   => $request->notes,
-    //                 'purchase_price'          => $request->purchase_price,
-    //             ]);
-
-    //             if ($isChanged) {
-    //                 $systemNote = '';
-
-    //                 if ($oldStatusSlug === 'available' && $newStatus->slug === 'in_use') {
-    //                     $user = User::find($assignedTo);
-    //                     $systemNote = "Aset diserahkan kepada: " . ($user ? $user->name : 'Unknown') . ".";
-    //                 } elseif ($oldStatusSlug === 'in_use' && $newStatus->slug === 'available') {
-    //                     $oldUser = User::find($oldAssignee);
-    //                     $systemNote = "Aset dikembalikan ke Gudang/IT dari: " . ($oldUser ? $oldUser->name : 'Unknown') . ".";
-    //                 } elseif ($oldStatusSlug === 'in_use' && $newStatus->slug === 'in_use' && $oldAssignee != $assignedTo) {
-    //                     $oldUser = User::find($oldAssignee);
-    //                     $newUser = User::find($assignedTo);
-    //                     $systemNote = "Aset dipindahtangankan langsung dari " . ($oldUser ? $oldUser->name : 'Unknown') . " kepada " . ($newUser ? $newUser->name : 'Unknown') . ".";
-    //                 } elseif ($newStatus->slug === 'maintenance') {
-    //                     $systemNote = "Aset masuk status perbaikan/maintenance.";
-    //                 } elseif ($newStatus->slug === 'disposed') {
-    //                     $systemNote = "🔴 ASET DIHAPUSBUKUKAN (DISPOSED): Aset telah ditarik dari peredaran dan dihapus dari kekayaan aktif perusahaan.";
-    //                 }
-
-    //                 $finalNote = $systemNote;
-    //                 if ($request->notes && $request->notes !== $asset->notes) {
-    //                     $finalNote = $systemNote ? $systemNote . " | Catatan Baru: " . $request->notes : "Catatan: " . $request->notes;
-    //                 }
-
-    //                 \App\Models\FixedAssetHistory::create([
-    //                     'fixed_asset_id' => $asset->id,
-    //                     'status'         => $newStatus->name,
-    //                     'assigned_to'    => $assignedTo,
-    //                     'notes'          => $finalNote ?: 'Perubahan status / data aset.',
-    //                     'created_by'     => auth()->id(),
-    //                 ]);
-    //             }
-    //         });
-
-    //         return back()->with('success', 'Informasi Aset berhasil diperbarui & Riwayat telah dicatat!');
-    //     } catch (\Exception $e) {
-    //         return back()->with('error', 'Gagal memperbarui aset: ' . $e->getMessage());
-    //     }
-    // }
-
-
-
     public function update(Request $request, $id)
     {
         $request->validate([
@@ -262,75 +186,20 @@ class FixedAssetController extends Controller
                 if ($isChanged) {
                     $systemNote = '';
 
-                    // LOGIKA 1: PENYERAHAN ASET MANUAL
                     if ($oldStatusSlug === 'available' && $newStatus->slug === 'in_use') {
                         $user = User::find($assignedTo);
                         $systemNote = "Aset diserahkan kepada: " . ($user ? $user->name : 'Unknown') . ".";
-
-                        // 🔥 OTOMATIS CATAT MUTASI KELUAR & POTONG STOK 🔥
-                        $masterItem = \App\Models\Item::lockForUpdate()->find($asset->item_id);
-                        if ($masterItem) {
-                            $currStock = (float) $masterItem->current_stock;
-                            $masterItem->update(['current_stock' => $currStock - 1]);
-                            \App\Models\StockMutation::create([
-                                'item_id' => $masterItem->id, 'warehouse_id' => $asset->warehouse_id,
-                                'type' => 'OUT', 'qty' => 1, 'balance_before' => $currStock, 'balance_after' => $currStock - 1,
-                                'reference_number' => 'GI-AST-' . $asset->asset_number,
-                                'notes' => "Aset diserahkan langsung ke User via Master Aset", 'created_by' => auth()->id()
-                            ]);
-                        }
-                    }
-
-                    // LOGIKA 2: PENGEMBALIAN ASET DARI USER KE GUDANG PERUSAHAAN (RETUR)
-                    elseif ($oldStatusSlug === 'in_use' && $newStatus->slug === 'available') {
+                    } elseif ($oldStatusSlug === 'in_use' && $newStatus->slug === 'available') {
                         $oldUser = User::find($oldAssignee);
                         $systemNote = "Aset dikembalikan ke Gudang/IT dari: " . ($oldUser ? $oldUser->name : 'Unknown') . ".";
-
-                        // 🔥 OTOMATIS CATAT MUTASI MASUK & TAMBAH STOK 🔥
-                        $masterItem = \App\Models\Item::lockForUpdate()->find($asset->item_id);
-                        if ($masterItem) {
-                            $currStock = (float) $masterItem->current_stock;
-                            $masterItem->update(['current_stock' => $currStock + 1]);
-                            \App\Models\StockMutation::create([
-                                'item_id' => $masterItem->id, 'warehouse_id' => $asset->warehouse_id,
-                                'type' => 'IN', 'qty' => 1, 'balance_before' => $currStock, 'balance_after' => $currStock + 1,
-                                'reference_number' => 'RET-AST-' . $asset->asset_number,
-                                'notes' => "Aset dikembalikan ke Gudang oleh User", 'created_by' => auth()->id()
-                            ]);
-                        }
-                    }
-
-                    // LOGIKA 3: PINDAH TANGAN ANTAR USER
-                    elseif ($oldStatusSlug === 'in_use' && $newStatus->slug === 'in_use' && $oldAssignee != $assignedTo) {
+                    } elseif ($oldStatusSlug === 'in_use' && $newStatus->slug === 'in_use' && $oldAssignee != $assignedTo) {
                         $oldUser = User::find($oldAssignee);
                         $newUser = User::find($assignedTo);
                         $systemNote = "Aset dipindahtangankan langsung dari " . ($oldUser ? $oldUser->name : 'Unknown') . " kepada " . ($newUser ? $newUser->name : 'Unknown') . ".";
-                        // Stok tetap, karena hanya pindah tangan user
-                    }
-
-                    // LOGIKA 4: RUSAK / MAINTENANCE
-                    elseif ($newStatus->slug === 'maintenance') {
+                    } elseif ($newStatus->slug === 'maintenance') {
                         $systemNote = "Aset masuk status perbaikan/maintenance.";
-                    }
-
-                    // LOGIKA 5: DIHANCURKAN / DISPOSED
-                    elseif ($newStatus->slug === 'disposed') {
+                    } elseif ($newStatus->slug === 'disposed') {
                         $systemNote = "🔴 ASET DIHAPUSBUKUKAN (DISPOSED): Aset telah ditarik dari peredaran dan dihapus dari kekayaan aktif perusahaan.";
-
-                        // 🔥 OTOMATIS CATAT MUTASI KELUAR JIKA ASALNYA DARI GUDANG 🔥
-                        if (in_array($oldStatusSlug, ['available', 'maintenance', 'returned'])) {
-                            $masterItem = \App\Models\Item::lockForUpdate()->find($asset->item_id);
-                            if ($masterItem) {
-                                $currStock = (float) $masterItem->current_stock;
-                                $masterItem->update(['current_stock' => $currStock - 1]);
-                                \App\Models\StockMutation::create([
-                                    'item_id' => $masterItem->id, 'warehouse_id' => $asset->warehouse_id,
-                                    'type' => 'OUT', 'qty' => 1, 'balance_before' => $currStock, 'balance_after' => $currStock - 1,
-                                    'reference_number' => 'DISP-' . $asset->asset_number,
-                                    'notes' => "[CAPITALIZE] Penghapusan Aset Tetap", 'created_by' => auth()->id()
-                                ]);
-                            }
-                        }
                     }
 
                     $finalNote = $systemNote;
@@ -348,12 +217,11 @@ class FixedAssetController extends Controller
                 }
             });
 
-            return back()->with('success', 'Informasi Aset berhasil diperbarui & Mutasi Stok telah dicatat!');
+            return back()->with('success', 'Informasi Aset berhasil diperbarui & Riwayat telah dicatat!');
         } catch (\Exception $e) {
             return back()->with('error', 'Gagal memperbarui aset: ' . $e->getMessage());
         }
     }
-
 
     public function printBast($id)
     {
@@ -415,6 +283,7 @@ class FixedAssetController extends Controller
 
             $batchNumber = 'AST-IMP-' . date('Ymd-His');
 
+            // Tangani Dokumen Pendukung BAST
             $finalDocPath = null;
             if ($request->hasFile('support_doc')) {
                 $doc = $request->file('support_doc');
@@ -422,6 +291,7 @@ class FixedAssetController extends Controller
                 $finalDocPath = $doc->storeAs('Upload_asset/' . $batchNumber, $docName, 'public');
             }
 
+            // 1. Buat Header Batch Karantina
             $batch = \App\Models\FixedAssetImportBatch::create([
                 'batch_number' => $batchNumber,
                 'user_id'      => auth()->id(),
@@ -430,6 +300,7 @@ class FixedAssetController extends Controller
                 'support_doc'  => $finalDocPath,
             ]);
 
+            // 2. Gunakan Kurir Import untuk baca Excel ke Tabel Karantina
             \Maatwebsite\Excel\Facades\Excel::import(new \App\Imports\FixedAssetImport($batch->id), $fullPath);
 
             Storage::disk('local')->delete($filePath);
@@ -459,6 +330,7 @@ class FixedAssetController extends Controller
         try {
             $batch = \App\Models\FixedAssetImportBatch::findOrFail($batch_id);
 
+            // Validasi: Pastikan tidak ada baris error
             if ($batch->details->where('is_valid', 0)->count() > 0) {
                 throw new \Exception("Ada baris data yang error. Harap perbaiki form Excel Anda dan upload ulang.");
             }
@@ -530,7 +402,9 @@ class FixedAssetController extends Controller
                         $item = \App\Models\Item::lockForUpdate()->where('code', $row->kode_barang)->first();
                     }
 
+                    // ===========================================================
                     // B. Jika Item Belum Ada, Eksekusi Smart Auto-Create Item
+                    // ===========================================================
                     if (!$item) {
                         $namaAsetBaru = $row->nama_spesifik_aset;
                         $item = \App\Models\Item::lockForUpdate()->where('name', $namaAsetBaru)->first();
@@ -541,8 +415,10 @@ class FixedAssetController extends Controller
                             $newCode  = 'ITM-' . str_pad($nextId, 4, '0', STR_PAD_LEFT);
                             $slug     = \Illuminate\Support\Str::slug($namaAsetBaru) . '-' . \Illuminate\Support\Str::random(4);
 
+                            // 🔥 INTEGRASI TYPE EXCEL -> SUB-CATEGORY SISTEM 🔥
                             $typeName = !empty($row->tipe_aset) ? $row->tipe_aset : 'Umum';
 
+                            // Cari atau buat kategori berdasarkan "Type" di Excel
                             $cat = \App\Models\Category::firstOrCreate(
                                 ['name' => $typeName],
                                 ['code' => strtoupper(substr(preg_replace('/[^A-Za-z]/', '', $typeName), 0, 3))]
@@ -554,9 +430,9 @@ class FixedAssetController extends Controller
                                 'code'           => $newCode,
                                 'slug'           => $slug,
                                 'name'           => $namaAsetBaru,
-                                'category_id'    => $cat->id,
+                                'category_id'    => $cat->id, // Otomatis mengikat ke kategori/tipe yang benar
                                 'uom_id'         => $uom->id,
-                                'item_type_code' => 'STK',
+                                'item_type_code' => 'STK', // Netral sesuai kebijakan akuntansi
                                 'is_trackable'   => 1,
                                 'is_active'      => 1,
                                 'current_stock'  => 0,
@@ -565,11 +441,14 @@ class FixedAssetController extends Controller
                         }
                     }
 
-                    // C. Tarik Data Relasi
+                    // ===========================================================
+                    // C. Tarik Data Relasi (Company, Warehouse, Status, Dept, User)
+                    // ===========================================================
                     $company = \App\Models\Company::where('name', 'like', "%{$row->nama_pt}%")->first();
                     $warehouse = \App\Models\Warehouse::where('name', 'like', "%{$row->nama_gudang}%")->first();
                     $status = \App\Models\Status::where('type', 'AST')->where('name', 'like', "%".explode('(', $row->status_aset)[0]."%")->first();
 
+                    // 🔥 INTEGRASI DEPARTEMEN SECARA RESMI 🔥
                     $departmentId = null;
                     if (!empty($row->departemen)) {
                         $deptCode = strtoupper(substr(preg_replace('/[^A-Za-z]/', '', $row->departemen), 0, 3));
@@ -580,8 +459,9 @@ class FixedAssetController extends Controller
                         $departmentId = $dept->id;
                     }
 
+                    // 🔥 INTEGRASI USER PENERIMA & KUMPULAN HISTORI EXCEL 🔥
                     $assignedTo = null;
-                    $extraNotes = "";
+                    $extraNotes = ""; // <-- Mengganti $failNote dan $departementNote menjadi 1 nama baku
 
                     if (!empty($row->nama_peminjam)) {
                         $user = \App\Models\User::where('name', 'like', "%{$row->nama_peminjam}%")->first();
@@ -595,6 +475,7 @@ class FixedAssetController extends Controller
                         }
                     }
 
+                    // Handle catatan sejarah PO lama, Supplier, dan Kondisi Fisik (menggunakan enter \n agar rapi)
                     if (!empty($row->condition) && $row->condition !== '-') { $extraNotes .= "\n• Kondisi: " . $row->condition; }
                     if (!empty($row->po_number) && $row->po_number !== '-') { $extraNotes .= "\n• PO Lama: " . $row->po_number; }
                     if (!empty($row->supplier) && $row->supplier !== '-') { $extraNotes .= "\n• Vendor Asal: " . $row->supplier; }
@@ -606,39 +487,6 @@ class FixedAssetController extends Controller
                     $nextSeq = $lastAsset ? ((int) substr($lastAsset->asset_number, -4)) + 1 : 1;
                     $assetNumber = "AST/{$yearMonth}/" . str_pad($nextSeq, 4, '0', STR_PAD_LEFT);
 
-                    // 🔥 PERBAIKAN FORMAT TANGGAL: Translator Bulan Indonesia ke Format MySQL 🔥
-                    $rawDate = $row->tanggal_perolehan;
-                    $formattedDate = null;
-
-                    if (!empty($rawDate)) {
-                        // Jika format sudah YYYY-MM-DD
-                        if (preg_match("/^[0-9]{4}-(0[1-9]|1[0-2])-(0[1-9]|[1-2][0-9]|3[0-1])$/", $rawDate)) {
-                            $formattedDate = $rawDate;
-                        }
-                        // Jika formatnya teks campur sari Indonesia (Misal: 26 Febuari 2019)
-                        else {
-                            $indonesianMonths = [
-                                'Januari' => '01', 'Jan' => '01', 'Februari' => '02', 'Febuari' => '02', 'Feb' => '02',
-                                'Maret' => '03', 'Mar' => '03', 'April' => '04', 'Apr' => '04', 'Mei' => '05', 'May' => '05',
-                                'Juni' => '06', 'Jun' => '06', 'Juli' => '07', 'Jul' => '07', 'Agustus' => '08', 'Agu' => '08', 'Aug' => '08',
-                                'September' => '09', 'Sep' => '09', 'Oktober' => '10', 'Okt' => '10', 'Oct' => '10',
-                                'November' => '11', 'Nov' => '11', 'Desember' => '12', 'Des' => '12', 'Dec' => '12'
-                            ];
-
-                            $dateStr = str_ireplace(array_keys($indonesianMonths), array_values($indonesianMonths), $rawDate);
-                            try {
-                                // Coba parsing string yang sudah ditranslate
-                                $formattedDate = \Carbon\Carbon::parse($dateStr)->format('Y-m-d');
-                            } catch (\Exception $e) {
-                                // Jika gagal parah, gunakan hari ini
-                                $formattedDate = date('Y-m-d');
-                            }
-                        }
-                    } else {
-                        // Jika di Excel kosong
-                        $formattedDate = date('Y-m-d');
-                    }
-
                     // E. Simpan ke Buku Besar Aset
                     $asset = \App\Models\FixedAsset::create([
                         'asset_number'            => $assetNumber,
@@ -646,14 +494,14 @@ class FixedAssetController extends Controller
                         'name'                    => $row->nama_spesifik_aset ?: $item->name,
                         'warehouse_id'            => $warehouse ? $warehouse->id : 1,
                         'company_id'              => $company ? $company->id : 1,
-                        'department_id'           => $departmentId,
+                        'department_id'           => $departmentId, // Kolom departemen resmi
                         'serial_number'           => $row->serial_number,
                         'accounting_asset_number' => $row->label_akuntansi,
                         'status_id'               => $status ? $status->id : 1,
                         'assigned_to'             => $assignedTo,
                         'spesifikasi_detail'      => $row->spesifikasi,
-                        'notes'                   => trim($row->catatan . $extraNotes),
-                        'acquisition_date'        => $formattedDate, // <-- Tanggal yang sudah aman
+                        'notes'                   => trim($row->catatan . $extraNotes), // <-- Ini yang bikin error tadi, sekarang sudah FIX
+                        'acquisition_date'        => $row->tanggal_perolehan,
                         'purchase_price'          => $row->harga_beli ?: 0,
                         'currency_id'             => $currency ? $currency->id : 1,
                         'supporting_document'     => $batch->support_doc,
@@ -672,6 +520,7 @@ class FixedAssetController extends Controller
                     $currStock = (float) $item->current_stock;
                     $balanceAfter = $currStock + 1;
 
+                    // 1. Catat mutasi MASUK untuk Pengakuan Aset
                     \App\Models\StockMutation::create([
                         'item_id' => $item->id,
                         'warehouse_id' => $warehouse ? $warehouse->id : 1,
@@ -684,6 +533,7 @@ class FixedAssetController extends Controller
                         'created_by' => auth()->id()
                     ]);
 
+                    // 2. Jika Aset langsung berstatus "Dipakai (in_use)", otomatis buat mutasi KELUAR
                     if ($status && $status->slug === 'in_use') {
                         \App\Models\StockMutation::create([
                             'item_id' => $item->id,
@@ -710,6 +560,8 @@ class FixedAssetController extends Controller
             DB::rollBack(); return back()->with('error', 'Terjadi kesalahan sistem: ' . $e->getMessage());
         }
     }
+
+
 
     public function cancelImport($batch_id)
     {
@@ -780,6 +632,7 @@ class FixedAssetController extends Controller
     {
         $search = $request->search;
 
+        // Dibuat lebih longgar, mencari ke semua Item yang Aktif
         $items = \App\Models\Item::where('is_active', 1)
                     ->when($search, function($query) use ($search) {
                         $query->where(function($q) use ($search) {

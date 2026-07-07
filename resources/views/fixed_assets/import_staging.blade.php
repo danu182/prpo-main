@@ -1,4 +1,3 @@
-
 @extends('layouts.app')
 
 @section('content')
@@ -57,15 +56,15 @@
                 @if(in_array(strtolower($batch->status), ['draft', 'rejected']))
                     <form id="formSubmitApproval" action="{{ route('fixed-assets.submit_approval', $batch->id) }}" method="POST" class="w-100">
                         @csrf
-                        {{-- ID khusus untuk SweetAlert --}}
-                        <button type="button" id="btnSubmitApproval" class="mb-2 shadow-sm btn btn-warning w-100 fw-bold rounded-pill" {{ $errCount > 0 ? 'disabled' : '' }}>
+                        {{-- Tombol Ajukan Approval --}}
+                        <button type="button" class="mb-2 shadow-sm btn btn-warning w-100 fw-bold rounded-pill btn-ajukan-approval" {{ $errCount > 0 ? 'disabled' : '' }}>
                             Ajukan Approval <i class="bi bi-send-check ms-1"></i>
                         </button>
                     </form>
                     <form id="formCancelDraft" action="{{ route('fixed-assets.cancel_import', $batch->id) }}" method="POST" class="w-100">
                         @csrf @method('DELETE')
-                        {{-- ID khusus untuk SweetAlert --}}
-                        <button type="button" id="btnCancelDraft" class="border-2 btn btn-outline-danger w-100 fw-bold rounded-pill small">Batalkan Draft</button>
+                        {{-- Tombol Batalkan Draft --}}
+                        <button type="button" class="border-2 btn btn-outline-danger w-100 fw-bold rounded-pill small btn-batal-draft">Batalkan Draft</button>
                     </form>
 
                 @elseif(strtolower($batch->status) === 'waiting_approval' && $isApprover)
@@ -73,7 +72,6 @@
 
                     <form action="{{ route('fixed-assets.decide', $batch->id) }}" method="POST" class="mb-2 w-100">
                         @csrf <input type="hidden" name="action" value="APPROVE">
-                        {{-- PERBAIKAN: type="button" & tambah class "btn-approve-final" --}}
                         <button type="button" class="shadow-sm btn btn-success w-100 fw-bold rounded-pill btn-approve-final">
                             <i class="bi bi-check-circle-fill me-1"></i> Setujui (Approve)
                         </button>
@@ -81,7 +79,6 @@
 
                     <form action="{{ route('fixed-assets.decide', $batch->id) }}" method="POST" class="w-100">
                         @csrf <input type="hidden" name="action" value="REJECT">
-                        {{-- PERBAIKAN: type="button" & tambah class "btn-reject-final" --}}
                         <button type="button" class="border-2 btn btn-outline-danger w-100 fw-bold rounded-pill small btn-reject-final">
                             <i class="bi bi-x-circle me-1"></i> Tolak (Reject)
                         </button>
@@ -168,10 +165,72 @@
 <script>
     document.addEventListener("DOMContentLoaded", function() {
 
-        // 1. SWEETALERT UNTUK TOMBOL APPROVE
+        // ==========================================
+        // 1. SWEETALERT UNTUK TOMBOL AJUKAN APPROVAL
+        // ==========================================
+        document.querySelectorAll('.btn-ajukan-approval').forEach(btn => {
+            btn.addEventListener('click', function() {
+                const form = this.closest('form');
+                Swal.fire({
+                    title: 'Ajukan ke Atasan?',
+                    text: "Dokumen ini akan masuk ke daftar persetujuan (Approval Matrix). Anda tidak dapat mengubah data ini lagi saat dalam proses persetujuan.",
+                    icon: 'question',
+                    showCancelButton: true,
+                    confirmButtonColor: '#ffc107', // Kuning Peringatan
+                    cancelButtonColor: '#6c757d',
+                    confirmButtonText: '<i class="bi bi-send-check me-1"></i> Ya, Ajukan!',
+                    cancelButtonText: 'Batal'
+                }).then((result) => {
+                    if (result.isConfirmed) {
+                        Swal.fire({
+                            title: 'Mengirim...',
+                            text: 'Mohon tunggu, sedang mengirim ke matriks persetujuan.',
+                            icon: 'info',
+                            showConfirmButton: false,
+                            allowOutsideClick: false
+                        });
+                        form.submit();
+                    }
+                });
+            });
+        });
+
+        // ==========================================
+        // 2. SWEETALERT UNTUK TOMBOL BATAL DRAFT
+        // ==========================================
+        document.querySelectorAll('.btn-batal-draft').forEach(btn => {
+            btn.addEventListener('click', function() {
+                const form = this.closest('form');
+                Swal.fire({
+                    title: 'Batalkan Draft Karantina?',
+                    text: "Semua data yang telah diunggah di draft ini akan dihapus secara permanen dari sistem karantina.",
+                    icon: 'warning',
+                    showCancelButton: true,
+                    confirmButtonColor: '#dc3545', // Merah Bahaya
+                    cancelButtonColor: '#6c757d',
+                    confirmButtonText: '<i class="bi bi-trash-fill me-1"></i> Ya, Hapus!',
+                    cancelButtonText: 'Batal'
+                }).then((result) => {
+                    if (result.isConfirmed) {
+                        Swal.fire({
+                            title: 'Menghapus...',
+                            text: 'Sistem sedang membersihkan data karantina.',
+                            icon: 'info',
+                            showConfirmButton: false,
+                            allowOutsideClick: false
+                        });
+                        form.submit();
+                    }
+                });
+            });
+        });
+
+        // ==========================================
+        // 3. SWEETALERT UNTUK TOMBOL APPROVE (FINAL)
+        // ==========================================
         document.querySelectorAll('.btn-approve-final').forEach(btn => {
             btn.addEventListener('click', function() {
-                const form = this.closest('form'); // Ambil form tempat tombol ini berada
+                const form = this.closest('form');
 
                 Swal.fire({
                     title: 'Mengesahkan Import Aset?',
@@ -179,12 +238,11 @@
                     icon: 'success',
                     showCancelButton: true,
                     confirmButtonColor: '#198754', // Hijau Sukses
-                    cancelButtonColor: '#6c757d',  // Abu-abu Batal
+                    cancelButtonColor: '#6c757d',
                     confirmButtonText: '<i class="bi bi-check-circle-fill me-1"></i> Ya, Sahkan Aset!',
                     cancelButtonText: 'Batal'
                 }).then((result) => {
                     if (result.isConfirmed) {
-                        // Munculkan loading agar user tidak klik 2 kali
                         Swal.fire({
                             title: 'Mengesahkan...',
                             text: 'Sistem sedang memindahkan aset dan merekam pergerakan stok.',
@@ -192,20 +250,22 @@
                             showConfirmButton: false,
                             allowOutsideClick: false
                         });
-                        form.submit(); // Eksekusi form ke Controller
+                        form.submit();
                     }
                 });
             });
         });
 
-        // 2. SWEETALERT UNTUK TOMBOL REJECT
+        // ==========================================
+        // 4. SWEETALERT UNTUK TOMBOL REJECT (FINAL)
+        // ==========================================
         document.querySelectorAll('.btn-reject-final').forEach(btn => {
             btn.addEventListener('click', function() {
                 const form = this.closest('form');
 
                 Swal.fire({
                     title: 'Tolak Pengajuan?',
-                    text: "Berkas Karantina ini akan dikembalikan ke status Draft untuk diperbaiki.",
+                    text: "Berkas Karantina ini akan dikembalikan ke status Draft untuk diperbaiki oleh staf.",
                     icon: 'error',
                     showCancelButton: true,
                     confirmButtonColor: '#dc3545', // Merah Danger
@@ -216,7 +276,7 @@
                     if (result.isConfirmed) {
                         Swal.fire({
                             title: 'Menolak...',
-                            text: 'Mengembalikan berkas ke staf.',
+                            text: 'Mengembalikan berkas ke staf pengunggah.',
                             icon: 'info',
                             showConfirmButton: false,
                             allowOutsideClick: false
