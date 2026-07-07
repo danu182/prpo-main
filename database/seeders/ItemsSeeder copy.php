@@ -22,55 +22,42 @@ class ItemsSeeder extends Seeder
         // Siapkan default UOM ID
         $defaultUomId = !empty($uomIds) ? array_values($uomIds)[0] : 1;
 
-        // 🌟 1. DAFTAR BARANG ELEKTRONIK WAJIB (Pasti Masuk)
-        $mandatoryElectronics = [
-            'Laptop MacBook',
-            'PC Windows Rakitan',
-            'Desktop iMac',
-            'Desktop Windows',
-            'Laptop Windows',
-            'Printer',
-            'Server',
-            'NAS',
-            'Mikrotik',
-            'Hand Phone',
-            'Scanner',
-        ];
-
-        // Jalankan perulangan total 80 item
         for($i = 1; $i <= 80; $i++){
 
-            // 🌟 2. LOGIKA PAKSA: Selama array wajib masih ada isinya, paksa simpan barang elektronik tersebut
-            if (!empty($mandatoryElectronics)) {
-                $type = 'STK';
-                $stockCategory = 'ELK';
-                $name = array_shift($mandatoryElectronics); // Ambil satu per satu dari daftar wajib
-            } else {
-                // Jika daftar wajib sudah habis dimasukkan semua, kembali ke logika acak Faker
-                $type = $faker->randomElement(['STK', 'STK', 'STK', 'JSA']);
-                $stockCategory = $faker->randomElement(['ATK', 'CNS', 'FNB', 'BBK', 'SPR', 'ELK', 'FNR', 'KND', 'MSN']);
-            }
+            // Hanya ada 2 Logika Utama di Master: STK (Fisik) dan JSA (Layanan)
+            $type = $faker->randomElement(['STK', 'STK', 'STK', 'JSA']);
 
             if ($type === 'STK') {
                 $itemTypeCode = 'STK';
+
+                // 🔥 PERBAIKAN: Stok Master Barang WAJIB 0.
+                // Stok fisik harus masuk melalui Goods Receipt atau Adjusment Stock!
                 $currentStock = 0;
+
                 $minStock = $faker->numberBetween(5, 20);
                 $maxStock = $faker->numberBetween(100, 500);
 
+                // Variasi Kategori (Dari ATK sampai Mesin)
+                $stockCategory = $faker->randomElement(['ATK', 'CNS', 'FNB', 'BBK', 'SPR', 'ELK', 'FNR', 'KND', 'MSN']);
                 $categoryId = $catIds[$stockCategory] ?? 1;
                 $code = 'SKU-' . $stockCategory . '-' . str_pad($i, 5, '0', STR_PAD_LEFT);
+
+                // Logika Trackable (Apakah butuh Serial Number di Gudang?)
                 $is_trackable = in_array($stockCategory, ['ELK', 'KND', 'MSN']) ? 1 : 0;
 
-                // Penamaan Dinamis untuk sisa baris yang acak (jika stockCategory adalah ELK lagi)
-                if (!isset($name)) {
-                    if ($stockCategory === 'ATK') $name = $faker->randomElement(['Kertas HVS A4', 'Tinta Printer', 'Pulpen Pilot']);
-                    elseif ($stockCategory === 'CNS') $name = $faker->randomElement(['Sabun Cuci', 'Tisu Paseo', 'Pembersih Lantai']);
-                    elseif ($stockCategory === 'FNB') $name = $faker->randomElement(['Kopi Kapal Api', 'Air Galon Aqua', 'Gula Pasir']);
-                    elseif ($stockCategory === 'BBK') $name = $faker->randomElement(['Beras Premium', 'Minyak Goreng', 'Daging Sapi']);
-                    elseif ($stockCategory === 'ELK') $name = $faker->randomElement(['Laptop MacBook', 'PC Windows Rakitan', 'Desktop iMac', 'Printer', 'Server', 'NAS', 'Mikrotik']);
-                    elseif ($stockCategory === 'KND') $name = $faker->randomElement(['Mobil Fortuner', 'Innova Zenix', 'Motor Beat']);
-                    else $name = $faker->randomElement(['Ban Michelin', 'Oli Shell', 'Genset Cummins', 'Forklift Toyota']);
-                }
+                // Penamaan Dinamis
+                if ($stockCategory === 'ATK') $name = $faker->randomElement(['Kertas HVS A4', 'Tinta Printer', 'Pulpen Pilot']);
+                elseif ($stockCategory === 'CNS') $name = $faker->randomElement(['Sabun Cuci', 'Tisu Paseo', 'Pembersih Lantai']);
+                elseif ($stockCategory === 'FNB') $name = $faker->randomElement(['Kopi Kapal Api', 'Air Galon Aqua', 'Gula Pasir']);
+                elseif ($stockCategory === 'BBK') $name = $faker->randomElement(['Beras Premium', 'Minyak Goreng', 'Daging Sapi']);
+                elseif ($stockCategory === 'ELK') $name = $faker->randomElement(['Laptop MacBook',]);
+                elseif ($stockCategory === 'ELK') $name = $faker->randomElement(['PC Windows Rakitan']);
+                elseif ($stockCategory === 'ELK') $name = $faker->randomElement(['Desktop IMac']);
+                elseif ($stockCategory === 'ELK') $name = $faker->randomElement(['Desktop Windows']);
+                elseif ($stockCategory === 'ELK') $name = $faker->randomElement(['Laptop Windoes']);
+                elseif ($stockCategory === 'ELK') $name = $faker->randomElement(['Printer']);
+                elseif ($stockCategory === 'KND') $name = $faker->randomElement(['Mobil Fortuner', 'Innova Zenix', 'Motor Beat']);
+                else $name = $faker->randomElement(['Ban Michelin', 'Oli Shell', 'Genset Cummins', 'Forklift Toyota']);
 
                 $uomId = $uomIds['PCS'] ?? $defaultUomId;
 
@@ -106,9 +93,6 @@ class ItemsSeeder extends Seeder
                 'created_at'     => now(),
                 'updated_at'     => now(),
             ]);
-
-            // Hapus isi variabel name agar loop berikutnya bisa diisi data baru
-            unset($name);
         }
     }
 }

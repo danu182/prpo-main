@@ -22,10 +22,14 @@ class CompanySeeder extends Seeder
 
         // 2. Daftar Entitas Perusahaan dari Excel Anda (Wajib Ada untuk Import)
         $excelCompanies = [
-            ['name' => 'Hitawasana',    'code' => 'HTW'],
-            ['name' => 'DestinAsian',   'code' => 'DES'],
-            ['name' => 'Scop3Group',    'code' => 'SCP'],
-            ['name' => 'Asset di Jual', 'code' => 'ADJ'],
+            ['name' => 'Dama', 'code' => 'DM'],
+            ['name' => 'Mahapala', 'code' => 'MH'],
+            ['name' => 'Joy', 'code' => 'JY'],
+            ['name' => 'Hitawasana', 'code' => 'HT'],
+            ['name' => 'TBS', 'code' => 'TBSS'],
+            ['name' => 'DA Media Private', 'code' => 'DA Media P '],
+            ['name' => 'Gita Mulia', 'code' => 'Gita MT'],
+
         ];
 
         foreach ($excelCompanies as $comp) {
