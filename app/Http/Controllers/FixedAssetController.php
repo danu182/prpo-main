@@ -711,16 +711,24 @@ class FixedAssetController extends Controller
         }
     }
 
+
+
     public function cancelImport($batch_id)
     {
         $batch = \App\Models\FixedAssetImportBatch::findOrFail($batch_id);
-        if (\Illuminate\Support\Facades\Storage::disk('public')->exists($batch->support_doc)) {
+
+        // 🔥 PERBAIKAN: Pastikan support_doc tidak kosong/null sebelum dicek keberadaannya
+        if (!empty($batch->support_doc) && \Illuminate\Support\Facades\Storage::disk('public')->exists($batch->support_doc)) {
             \Illuminate\Support\Facades\Storage::disk('public')->delete($batch->support_doc);
         }
+
         $batch->details()->delete();
         $batch->delete();
+
         return redirect()->route('fixed-assets.index')->with('success', 'Draft Import Aset dibatalkan.');
     }
+
+
 
     public function downloadTemplate()
     {

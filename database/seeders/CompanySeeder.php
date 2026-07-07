@@ -37,7 +37,7 @@ class CompanySeeder extends Seeder
                 ['name' => $comp['name']],
                 [
                     'code' => $comp['code'],
-                    'address' => 'Sesuai Data Entitas',
+                    'address' => 'Gedung Pusat, Lt. 5, Jl. Sudirman No. 1, Jakarta',
                     'is_head_office' => false,
                 ]
             );

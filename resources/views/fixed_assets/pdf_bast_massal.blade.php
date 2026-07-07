@@ -2,7 +2,7 @@
 <html lang="id">
 <head>
     <meta charset="UTF-8">
-    <title>BAST Massal - {{ $batch->batch_id }}</title>
+    <title>BAST Massal - {{ $batch->batch_id ?? $batch->batch_number }}</title>
     <style>
         body { font-family: 'Helvetica', Arial, sans-serif; font-size: 12pt; line-height: 1.5; color: #333; }
         .header { text-align: center; border-bottom: 2px solid #333; padding-bottom: 10px; margin-bottom: 20px; }
@@ -21,16 +21,19 @@
 <body>
 
     @foreach($assets->groupBy('assigned_to') as $userId => $userAssets)
-        @php $peminjam = $userAssets->first()->user; @endphp
+        @php
+            $peminjam = $userAssets->first()->user;
+            $company = $userAssets->first()->company;
+        @endphp
 
         <div class="header">
-            <h2 style="margin:0;">PT PERUSAHAAN KOMANDAN JAYA</h2>
-            <p style="margin:5px 0 0 0; font-size:10pt;">Gedung Pusat, Lt. 5, Jl. Sudirman No. 1, Jakarta</p>
+            <h2 style="margin:0; text-transform: uppercase;">'PT '{{ $company->name ?? 'PT PERUSAHAAN KOMANDAN JAYA' }}</h2>
+            <p style="margin:5px 0 0 0; font-size:10pt;">{{ $company->address ?? 'Gedung Pusat, Lt. 5, Jl. Sudirman No. 1, Jakarta' }}</p>
         </div>
 
         <div style="text-align: center;">
             <div class="title">BERITA ACARA SERAH TERIMA (BAST) ASET</div>
-            <div class="subtitle">Nomor Batch Referensi: {{ $batch->batch_id }}</div>
+            <div class="subtitle">Nomor Batch Referensi: {{ $batch->batch_id ?? $batch->batch_number }}</div>
         </div>
 
         <p style="margin-top: 30px;">Pada hari ini, diserahkan aset perusahaan dengan rincian sebagai berikut:</p>
@@ -52,20 +55,27 @@
             <thead>
                 <tr>
                     <th width="5%">No</th>
-                    <th width="20%">No. Aset</th>
+                    {{-- 🔥 NAMA KOLOM DIPERBARUI 🔥 --}}
+                    <th width="25%">No. Aset & Akuntansi</th>
                     <th width="35%">Nama Barang & Spesifikasi</th>
                     <th width="20%">S/N Fisik</th>
-                    <th width="20%">Kondisi</th>
+                    <th width="15%">Kondisi</th>
                 </tr>
             </thead>
             <tbody>
                 @foreach($userAssets as $index => $asset)
                 <tr>
                     <td style="text-align: center;">{{ $index + 1 }}</td>
-                    <td>{{ $asset->asset_number }}</td>
+
+                    {{-- 🔥 ISI KOLOM DIGABUNGKAN DENGAN RAPI 🔥 --}}
                     <td>
-                        <strong>{{ $asset->item->name ?? '-' }}</strong><br>
-                        <span style="font-size: 9pt;">{{ $asset->spesifikasi_detail }}</span>
+                        <strong>{{ $asset->asset_number }}</strong><br>
+                        <span style="font-size: 9pt;">FA: {{ $asset->accounting_asset_number ?? '-' }}</span>
+                    </td>
+
+                    <td>
+                        <strong>{{ $asset->name ?? optional($asset->item)->name ?? '-' }}</strong><br>
+                        <span style="font-size: 9pt;">{!! strip_tags($asset->spesifikasi_detail) !!}</span>
                     </td>
                     <td>{{ $asset->serial_number ?? '-' }}</td>
                     <td style="text-align: center;">Baik / Baru</td>
@@ -97,7 +107,6 @@
             </tr>
         </table>
 
-        {{-- Jangan beri page-break di halaman terakhir --}}
         @if(!$loop->last)
             <div class="page-break"></div>
         @endif
