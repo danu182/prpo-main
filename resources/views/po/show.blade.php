@@ -20,7 +20,7 @@
         .navbar, .btn, .nav, footer { display: none !important; }
         #printable-area { box-shadow: none !important; border: none !important; }
         .container { max-width: 100% !important; padding: 0 !important; }
-        .d-print-none { display: none !important; } /* Sembunyikan riwayat saat dicetak */
+        .d-print-none { display: none !important; }
     }
 
     /* Tambahan CSS untuk Timeline */
@@ -38,7 +38,7 @@
 <div class="container pb-5 text-dark">
 
     {{-- HEADER HALAMAN & TOMBOL AKSI --}}
-    <div class="mb-4 d-flex justify-content-between align-items-center">
+    <div class="flex-wrap gap-3 mb-4 d-flex justify-content-between align-items-center">
         <div>
             <h4 class="mb-0 fw-bold text-dark">
                 <i class="bi bi-file-earmark-text-fill me-2 text-primary"></i> Detail Purchase Order
@@ -53,15 +53,21 @@
             $statusSlug = strtolower(optional($po->status)->slug ?? 'draft');
         @endphp
 
-        <div class="gap-2 d-flex">
-            {{-- 1. TOMBOL EDIT PO (Terkunci Otomatis Jika Sudah Ada Approval) --}}
+        <div class="flex-wrap gap-2 d-flex">
+            {{-- 🔥 1. TOMBOL CETAK PO 🔥 --}}
+            @if(in_array($statusSlug, ['approved', 'issued', 'partial_receipt', 'fully_received', 'completed']))
+                <a href="{{ route('po.print', $po->po_number) }}" target="_blank" class="px-4 shadow-sm btn btn-dark rounded-pill fw-bold">
+                    <i class="bi bi-printer-fill me-1"></i> Cetak PO
+                </a>
+            @endif
+
+            {{-- 2. TOMBOL EDIT PO (Terkunci Otomatis Jika Sudah Ada Approval) --}}
             @if(in_array($statusSlug, ['draft', '', 'pending_approval', 'rejected']))
                 @if(!$hasBeenPartiallyApproved)
                     <a href="{{ route('po.edit', $po->po_number) }}" class="px-4 shadow-sm btn btn-warning text-dark rounded-pill fw-bold">
                         <i class="bi bi-pencil-fill me-1"></i> Edit PO
                     </a>
                 @else
-                    {{-- Tampilkan tombol mati (disabled) agar user tahu kenapa tidak bisa diedit --}}
                     <span class="d-inline-block" tabindex="0" data-bs-toggle="tooltip" title="Tidak dapat diedit karena sudah ada persetujuan yang masuk.">
                         <button class="px-4 shadow-sm btn btn-warning text-dark rounded-pill fw-bold" type="button" disabled style="opacity: 0.5;">
                             <i class="bi bi-lock-fill me-1"></i> Terkunci
@@ -70,20 +76,19 @@
                 @endif
             @endif
 
-            {{-- 2. TOMBOL AJUKAN APPROVAL (Muncul saat Draft atau DITOLAK) --}}
+            {{-- 3. TOMBOL AJUKAN APPROVAL --}}
             @if(in_array($statusSlug, ['draft', '', 'rejected']))
                 <form action="{{ route('po.submit_approval', $po->po_number) }}" method="POST" class="d-inline" id="formSubmitApproval">
                     @csrf
                     <button type="button" onclick="confirmSubmit()" class="px-4 shadow-sm btn btn-primary rounded-pill fw-bold">
-                        <i class="bi bi-send-fill me-1"></i> Ajukan Ulang Approval
+                        <i class="bi bi-send-fill me-1"></i> Ajukan Approval
                     </button>
                 </form>
             @endif
 
-            {{-- 3. LOGIKA SMART APPROVAL - MENGUNCI TOMBOL HANYA UNTUK YANG BERHAK --}}
+            {{-- 4. LOGIKA SMART APPROVAL --}}
             @if($statusSlug == 'pending_approval')
                 @php
-                    // Cek giliran persetujuan saat ini
                     $currentApproval = \App\Models\DocumentApproval::with('role')
                         ->where('document_id', $po->id)
                         ->where('document_type', get_class($po))
@@ -91,8 +96,7 @@
                         ->orderBy('step_order', 'asc')
                         ->first();
 
-                    // Verifikasi apakah pengguna login memiliki role tersebut (Khusus Super Admin selalu boleh Bypass)
-                    $canApprove = $currentApproval && (auth()->user()->hasRole($currentApproval->role->name) || auth()->user()->hasRole('Super Admin'));
+                    $canApprove = $currentApproval && (auth()->user()->hasRole($currentApproval->role->name) || auth()->user()->hasRole(['Super Admin', 'super-admin', 'Super Administrator']));
                 @endphp
 
                 @if($canApprove)
@@ -113,21 +117,23 @@
                         </button>
                     </form>
                 @else
-                    <div class="px-4 py-2 border rounded-pill bg-light text-muted fw-bold shadow-sm d-inline-block">
+                    <div class="px-4 py-2 border shadow-sm rounded-pill bg-light text-muted fw-bold d-inline-block">
                         <i class="bi bi-hourglass-split me-1"></i> Menunggu Persetujuan: {{ $currentApproval ? $currentApproval->role->name : 'Atasan' }}
                     </div>
                 @endif
             @endif
 
-            {{-- 4. TOMBOL TERIMA BARANG (GOODS RECEIPT) --}}
-            @if(in_array($statusSlug, ['issued', 'partial_receipt']))
+            {{-- 5. TOMBOL TERIMA BARANG (GOODS RECEIPT) --}}
+            @if(in_array($statusSlug, ['issued', 'approved', 'partial_receipt']))
+                @can('create_gr')
                 <a href="{{ route('gr.create', $po->id) }}" class="px-4 shadow-sm btn btn-success rounded-pill fw-bold">
                     <i class="bi bi-box-seam me-1"></i> Terima Barang
                 </a>
+                @endcan
             @endif
 
-            {{-- 5. TOMBOL BATALKAN PO --}}
-            @if(in_array($statusSlug, ['draft', 'pending_approval', 'issued', '']))
+            {{-- 6. TOMBOL BATALKAN PO --}}
+            @if(in_array($statusSlug, ['draft', 'pending_approval', 'issued', 'approved', '']))
                 <form action="{{ route('po.cancel', $po->po_number) }}" method="POST" class="d-inline" id="formCancel">
                     @csrf
                     <input type="hidden" name="cancel_reason" id="cancelReasonInput">
@@ -143,7 +149,6 @@
     {{-- KERTAS DOKUMEN PO --}}
     {{-- ========================================================================= --}}
     <div class="overflow-hidden border-0 shadow card rounded-4" id="printable-area">
-        {{-- Pita Header --}}
         <div class="p-2 bg-primary"></div>
 
         <div class="p-5 card-body">
@@ -249,19 +254,6 @@
                                             @endforeach
                                         </div>
                                     @endif
-
-                                    {{-- 🔥 TAMPILKAN LAMPIRAN PAKSA DARI DATABASE RAW 🔥 --}}
-                                    {{-- @if(isset($item->raw_attachments) && count($item->raw_attachments) > 0)
-                                        <div class="flex-wrap gap-2 pt-2 mt-2 border-top border-light d-flex">
-                                            @foreach($item->raw_attachments as $idx => $vFile)
-                                                <a href="{{ asset('storage/' . $vFile->file_path) }}" target="_blank" class="px-2 py-1 border badge bg-info-subtle text-info-emphasis text-decoration-none border-info-subtle" title="{{ $vFile->file_name }}">
-                                                    <i class="bi bi-paperclip"></i> Lampiran {{ $idx + 1 }}
-                                                </a>
-                                            @endforeach
-                                        </div>
-                                    @endif --}}
-
-
                                 </td>
 
                                 {{-- KOLOM 3: QTY & UOM --}}
@@ -270,10 +262,7 @@
 
                                     @php
                                         $uomDisplay = $item->uom;
-
-                                        // 🔥 JIKA UOM KOSONG ATAU HANYA BERISI ANGKA ID (EFEK BUG LAMA) 🔥
                                         if (empty($uomDisplay) || is_numeric($uomDisplay)) {
-                                            // Coba tarik nama aslinya dari UOM_ID
                                             if (!empty($item->uom_id)) {
                                                 $uomMaster = \App\Models\ItemUom::find($item->uom_id);
                                                 if ($uomMaster) {
@@ -282,8 +271,6 @@
                                                 }
                                             }
                                         }
-
-                                        // Jika ternyata masih kosong juga, ambil satuan dasar pabrik
                                         if (empty($uomDisplay) || is_numeric($uomDisplay)) {
                                             $uomDisplay = optional($item->item)->unit ?? 'PCS';
                                         }
@@ -441,10 +428,78 @@
 
         </div>
     </div>
-    {{-- END KERTAS DOKUMEN PO --}}
 
     {{-- ========================================================================= --}}
-    {{-- 📄 SECTION LAMPIRAN DOKUMEN (TIDAK IKUT DICETAK) 📄 --}}
+    {{-- 🔥 RIWAYAT PENERIMAAN BARANG GUDANG (GOODS RECEIPT) 🔥 --}}
+    {{-- ========================================================================= --}}
+    @php
+        // Tarik data Goods Receipt yang menginduk ke PO ini
+        $receipts = [];
+        if(class_exists('\App\Models\GoodsReceipt')) {
+            $receipts = \App\Models\GoodsReceipt::with(['user', 'status'])
+                        ->where('purchase_order_id', $po->id)
+                        ->orderBy('created_at', 'desc')
+                        ->get();
+        }
+    @endphp
+
+    <div class="mt-4 border-0 shadow-sm card rounded-4 d-print-none">
+        <div class="py-3 bg-white card-header border-bottom">
+            <h6 class="mb-0 fw-bold text-dark"><i class="bi bi-boxes me-2 text-success"></i>Riwayat Penerimaan Barang (GR) Gudang</h6>
+        </div>
+        <div class="p-0 card-body table-responsive">
+            @if(count($receipts) > 0)
+                <table class="table mb-0 align-middle table-hover">
+                    <thead class="bg-light text-muted small text-uppercase">
+                        <tr>
+                            <th class="ps-4">No. Dokumen GR</th>
+                            <th>Tanggal Terima</th>
+                            <th>Petugas Gudang</th>
+                            <th>Catatan</th>
+                            <th class="text-center pe-4">Status</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach($receipts as $gr)
+                            <tr>
+                                <td class="ps-4 fw-bold text-primary">
+                                    <a href="{{ route('gr.show', $gr->gr_number) }}" class="text-decoration-none">
+                                        <i class="bi bi-box-arrow-in-down-left me-1"></i> {{ $gr->gr_number }}
+                                    </a>
+                                </td>
+                                <td class="text-muted fw-medium">{{ \Carbon\Carbon::parse($gr->receipt_date)->format('d M Y') }}</td>
+                                <td>
+                                    <div class="d-flex align-items-center">
+                                        <i class="bi bi-person-circle text-muted me-2 fs-5"></i>
+                                        <span class="fw-semibold">{{ optional($gr->user)->name ?? 'System' }}</span>
+                                    </div>
+                                </td>
+                                <td class="text-muted small">{{ $gr->notes ?? '-' }}</td>
+                                <td class="text-center pe-4">
+                                    @if($gr->status)
+                                        <span class="badge bg-{{ $gr->status->color }}-subtle text-{{ $gr->status->color }} rounded-pill border border-{{ $gr->status->color }}-subtle px-3">
+                                            {{ mb_strtoupper($gr->status->name) }}
+                                        </span>
+                                    @else
+                                        <span class="px-3 badge bg-success rounded-pill">DITERIMA</span>
+                                    @endif
+                                </td>
+                            </tr>
+                        @endforeach
+                    </tbody>
+                </table>
+            @else
+                <div class="py-5 text-center text-muted small">
+                    <i class="mb-2 opacity-50 bi bi-box-seam fs-3 d-block text-secondary"></i>
+                    Pihak gudang belum menerima atau mencatat kedatangan barang untuk PO ini.
+                </div>
+            @endif
+        </div>
+    </div>
+
+
+    {{-- ========================================================================= --}}
+    {{-- SECTION LAMPIRAN DOKUMEN --}}
     {{-- ========================================================================= --}}
     <div class="mt-4 border-0 shadow-sm card rounded-4 d-print-none">
         <div class="py-3 bg-white card-header border-bottom d-flex align-items-center">
@@ -454,16 +509,17 @@
             <h6 class="mb-0 fw-bold text-dark">Lampiran Penawaran & Dokumen Pendukung (Header PO)</h6>
         </div>
         <div class="p-4 card-body">
-           {{-- 🔥 TAMPILKAN LAMPIRAN PAKSA DARI DATABASE RAW 🔥 --}}
-                @if(isset($item->raw_attachments) && count($item->raw_attachments) > 0)
-                    <div class="flex-wrap gap-2 pt-2 mt-2 border-top border-light d-flex">
-                        @foreach($item->raw_attachments as $idx => $vFile)
-                            <a href="{{ asset('storage/' . $vFile->file_path) }}" target="_blank" class="px-2 py-1 border badge bg-info-subtle text-info-emphasis text-decoration-none border-info-subtle" title="{{ $vFile->file_name }}">
-                                <i class="bi bi-paperclip"></i> Lampiran {{ $idx + 1 }}
-                            </a>
-                        @endforeach
-                    </div>
-                @endif
+            @if(isset($item->raw_attachments) && count($item->raw_attachments) > 0)
+                <div class="flex-wrap gap-2 pt-2 mt-2 border-top border-light d-flex">
+                    @foreach($item->raw_attachments as $idx => $vFile)
+                        <a href="{{ asset('storage/' . $vFile->file_path) }}" target="_blank" class="px-2 py-1 border badge bg-info-subtle text-info-emphasis text-decoration-none border-info-subtle" title="{{ $vFile->file_name }}">
+                            <i class="bi bi-paperclip"></i> Lampiran {{ $idx + 1 }}
+                        </a>
+                    @endforeach
+                </div>
+            @else
+                <span class="text-muted small fst-italic">Tidak ada dokumen lampiran pendukung.</span>
+            @endif
         </div>
     </div>
 

@@ -79,7 +79,7 @@ Route::middleware('auth')->group(function () {
     Route::prefix('po')->name('po.')->group(function () {
         Route::get('/', [PurchaseOrderController::class, 'index'])->name('index')->middleware('can:view_po');
 
-        // Memproses dari PR (Tetap pakai ID/Slug PR sebagai acuan awal)
+        // Memproses dari PR
         Route::get('/process-pr/{slug}', [PurchaseOrderController::class, 'processPr'])->name('process_pr')->middleware('can:view_po');
         Route::post('/store-from-pr/{slug}', [PurchaseOrderController::class, 'storeFromPr'])->name('store_from_pr')->middleware('can:view_po');
 
@@ -88,25 +88,20 @@ Route::middleware('auth')->group(function () {
         Route::get('/edit/{slug}', [PurchaseOrderController::class, 'edit'])->name('edit')->middleware('can:view_po');
         Route::post('/update/{slug}', [PurchaseOrderController::class, 'update'])->name('update')->middleware('can:view_po');
 
+        // 🔥 TAMBAHKAN ROUTE PRINT DI SINI 🔥
+        Route::get('/print/{slug}', [PurchaseOrderController::class, 'printPdf'])->name('print')->middleware('can:view_po');
+
         // Approval Khusus
-        // Ganti route approve & reject menjadi:
         Route::post('/decide/{slug}', [PurchaseOrderController::class, 'decide'])->name('decide');
 
-        // Rute Lampiran tetap pakai ID karena ini per file
-        // Route::delete('/delete-attachment/{id}', [PurchaseOrderController::class, 'deleteAttachment'])->name('attachment.destroy');
+        // Rute Lampiran
         Route::get('/delete-attachment/{id}', [PurchaseOrderController::class, 'deleteAttachment'])->name('delete_attachment');
         Route::post('/submit-approval/{slug}', [PurchaseOrderController::class, 'submitApproval'])->name('submit_approval');
 
         // Cancel PO pakai Slug
         Route::post('/{slug}/cancel', [PurchaseOrderController::class, 'cancel'])->name('cancel')->middleware('can:view_po');
-
-        // Route untuk Hapus Lampiran Barang
         Route::get('/po/attachment/item/{id}/delete', [\App\Http\Controllers\PurchaseOrderController::class, 'deleteItemAttachment'])->name('po.delete_item_attachment');
-
-        // Route untuk Hapus Lampiran Header PO
         Route::get('/po/attachment/header/{id}/delete', [\App\Http\Controllers\PurchaseOrderController::class, 'deleteHeaderAttachment'])->name('po.delete_header_attachment');
-
-
     });
 
 

@@ -76,4 +76,23 @@ class GoodsReceipt extends Model implements HasMedia
     }
 
 
+    /**
+     * Relasi ke Petugas Gudang (User)
+     */
+    public function user()
+    {
+        // Sesuaikan dengan nama kolom pembuat di tabel Anda.
+        // Jika menggunakan 'user_id', hapus parameter 'created_by'.
+        return $this->belongsTo(\App\Models\User::class, 'received_by');
+    }
+
+    /**
+     * Relasi ke Status Dokumen GR
+     */
+    public function status()
+    {
+        return $this->belongsTo(\App\Models\Status::class, 'status_id');
+    }
+
+
 }

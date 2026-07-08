@@ -780,6 +780,36 @@ class PurchaseOrderController extends Controller
         return view('po.show', compact('po', 'charges', 'extraDiscounts', 'hasBeenPartiallyApproved'));
     }
 
+
+    // =========================================================================
+    // CETAK PURCHASE ORDER (PDF)
+    // =========================================================================
+    public function printPdf($slug)
+    {
+        $po = \App\Models\PurchaseOrder::with([
+            'items.item.itemUoms',
+            'vendor',
+            'company',
+            'billToCompany',
+            'status',
+            'user',
+            'purchaseRequest.department',
+            'approvals.approver', // 🔥 INI YANG DIPERBAIKI (sebelumnya approvals.user)
+            'approvals.role'
+        ])->where('po_number', $slug)->firstOrFail();
+
+        $charges = \DB::table('purchase_order_charges')->where('purchase_order_id', $po->id)->get();
+        $extraDiscounts = \DB::table('purchase_order_discounts')->where('purchase_order_id', $po->id)->get();
+
+        $hasBeenApproved = $po->approvals->where('status', 'APPROVED')->isNotEmpty();
+
+        $pdf = \Barryvdh\DomPDF\Facade\Pdf::loadView('po.print_pdf', compact('po', 'charges', 'extraDiscounts', 'hasBeenApproved'))
+                  ->setPaper('A4', 'portrait');
+
+        return $pdf->stream('Purchase_Order_' . str_replace('/', '_', $po->po_number) . '.pdf');
+    }
+
+
     // =========================================================================
     // 8. HALAMAN INDEX PO & 🔥 VISIBILITAS APPROVAL 🔥
     // =========================================================================
