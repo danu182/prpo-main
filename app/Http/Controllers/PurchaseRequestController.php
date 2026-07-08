@@ -768,21 +768,24 @@ class PurchaseRequestController extends Controller
 
     public function print($slug)
     {
-
         // 1. Tarik data PR Utama
         $pr = \App\Models\PurchaseRequest::with(['items.vendorQuotes.vendor', 'items.item.itemUoms', 'user', 'company', 'status'])
                 ->where('pr_number', $slug)
                 ->firstOrFail();
 
-        // 2. Tarik data Matriks Persetujuan yang dinamis untuk PR ini
-        // Kita gabungkan dengan data Role (Jabatan) dan data User yang melakukan ACC
+        // 2. Tarik data Matriks Persetujuan
         $approvals = \App\Models\DocumentApproval::with(['role', 'approver'])
                 ->where('document_id', $pr->id)
                 ->where('document_type', get_class($pr))
                 ->orderBy('step_order', 'asc')
                 ->get();
 
-        return view('pr.print', compact('pr', 'approvals'));
+        // 3. Render ke PDF (Bukan view web biasa)
+        $pdf = \Barryvdh\DomPDF\Facade\Pdf::loadView('pr.print', compact('pr', 'approvals'))
+                ->setPaper('a4', 'portrait');
+
+        // Gunakan stream() untuk membuka PDF di tab baru, atau download() untuk langsung mengunduh
+        return $pdf->stream('Dokumen-PR-' . $pr->pr_number . '.pdf');
     }
 
     public function cancel(Request $request, $slug)
