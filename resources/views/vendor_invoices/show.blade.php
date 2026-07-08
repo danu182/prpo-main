@@ -236,47 +236,118 @@
                 </div>
             @endif
 
-            {{-- TABEL RINCIAN BARANG --}}
-            <div class="mb-4 border-0 shadow-sm card rounded-4">
-                <div class="py-3 bg-white border-bottom card-header">
-                    <h6 class="mb-0 fw-bold text-dark"><i class="bi bi-list-columns me-2 text-primary"></i>Rincian Barang Ditagih</h6>
+            {{-- TABEL RINCIAN BARANG DITAGIH --}}
+                <div class="mb-4 border-0 shadow-sm card rounded-4">
+                    <div class="py-3 bg-white border-bottom card-header">
+                        <h6 class="mb-0 fw-bold text-dark"><i class="bi bi-list-columns me-2 text-primary"></i>Rincian Barang Ditagih</h6>
+                    </div>
+                    <div class="p-0 card-body table-responsive">
+                        <table class="table mb-0 align-middle table-hover table-items">
+                            <thead class="bg-light text-muted small text-uppercase fw-bold border-bottom">
+                                <tr>
+                                    <th class="py-3 ps-4" width="25%">Barang & Spesifikasi</th>
+                                    <th class="py-3" width="25%">Referensi Dokumen</th>
+                                    <th class="py-3 text-center" width="15%">Qty Ditagih</th>
+                                    <th class="py-3 text-end" width="15%">Harga Satuan</th>
+                                    <th class="py-3 text-end pe-4" width="20%">Subtotal Baris</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach($invoice->items as $item)
+                                @php
+                                    // 1. Tarik Data GR dan PO Asli dari Relasi Bawaan Anda
+                                    $grItem = $item->goodsReceiptItem ?? null;
+                                    $poItem = $grItem ? $grItem->purchaseOrderItem : null;
+
+                                    // 2. Tarik Nomor Header (GR & PO)
+                                    $grNum = $grItem ? optional($grItem->goodsReceipt)->gr_number : null;
+                                    $poNum = $poItem ? optional($poItem->purchaseOrder)->po_number : null;
+
+                                    // 3. Hitung Potongan Retur
+                                    $qtyGrAsli = $grItem ? (float) $grItem->qty_received : (float) $item->qty_invoiced;
+                                    $returQty = $qtyGrAsli - (float) $item->qty_invoiced;
+
+                                    // 4. 🔥 TARIK DOKUMEN RTV (JIKA ADA RETUR) 🔥
+                                    $rtvDocs = [];
+                                    if ($returQty > 0 && $grItem && $grItem->goods_receipt_id) {
+                                        $rtvRecords = \Illuminate\Support\Facades\DB::table('return_to_vendors')
+                                            ->where('goods_receipt_id', $grItem->goods_receipt_id)
+                                            ->select('rtv_number')
+                                            ->get();
+
+                                        $rtvDocs = $rtvRecords->pluck('rtv_number')->filter()->toArray();
+                                    }
+                                @endphp
+                                <tr>
+                                    {{-- KOLOM 1: NAMA BARANG --}}
+                                    <td class="py-3 ps-4">
+                                        <div class="fw-bold text-dark">{{ optional($item->item)->name }}</div>
+                                        <div class="text-muted small">{{ optional($item->item)->code }}</div>
+                                    </td>
+
+                                    {{-- KOLOM 2: SUMBER REFERENSI (PO, GR, RTV) --}}
+                                    <td class="py-3">
+                                        <div class="gap-1 d-flex flex-column" style="font-size: 0.75rem;">
+
+                                            {{-- Link ke PO --}}
+                                            @if($poNum)
+                                                <a href="{{ route('po.show', $poNum) }}" target="_blank" class="text-decoration-none text-primary fw-semibold" title="Lihat PO">
+                                                    <i class="bi bi-cart2 me-1"></i> {{ $poNum }}
+                                                </a>
+                                            @endif
+
+                                            {{-- Link ke GR --}}
+                                            @if($grNum)
+                                                <a href="{{ route('gr.show', $grNum) }}" target="_blank" class="text-decoration-none text-success fw-semibold" title="Lihat Surat Jalan / GR">
+                                                    <i class="bi bi-box-arrow-in-down-left me-1"></i> {{ $grNum }}
+                                                </a>
+                                            @endif
+
+                                            {{-- Label & Link RTV --}}
+                                            @if($returQty > 0)
+                                                <span class="mt-1 text-danger fw-bold" style="font-size: 0.7rem;">
+                                                    <i class="bi bi-arrow-return-left me-1"></i> Potong Retur: {{ $returQty }}
+                                                </span>
+
+                                                {{-- Munculkan Nomor RTV --}}
+                                                @if(!empty($rtvDocs))
+                                                    @foreach($rtvDocs as $rtvNum)
+                                                        <a href="{{ route('rtv.show', $rtvNum) }}" target="_blank" class="text-decoration-none text-danger fw-semibold" title="Lihat Detail Retur">
+                                                            <i class="bi bi-file-earmark-minus me-1"></i> {{ $rtvNum }}
+                                                        </a>
+                                                    @endforeach
+                                                @endif
+                                            @endif
+
+                                        </div>
+                                    </td>
+
+                                    {{-- KOLOM 3: QTY DITAGIH --}}
+                                    <td class="text-center fw-bold text-primary">
+                                        <span class="fs-6">{{ (float) $item->qty_invoiced }}</span><br>
+                                        <span class="text-muted fw-normal" style="font-size: 0.65rem; text-transform: uppercase;">
+                                            {{ optional($item->goodsReceiptItem->purchaseOrderItem)->uom ?? 'Unit' }}
+                                        </span>
+                                    </td>
+
+                                    {{-- KOLOM 4: HARGA SATUAN --}}
+                                    <td class="text-end">
+                                        {{ number_format($item->price, 2, ',', '.') }}
+                                        @if($item->discount_amount > 0)
+                                            <div class="text-danger small fw-semibold"><i class="bi bi-arrow-down-short"></i> Disc: {{ number_format($item->discount_amount, 2, ',', '.') }}</div>
+                                        @endif
+                                    </td>
+
+                                    {{-- KOLOM 5: SUBTOTAL --}}
+                                    <td class="text-end pe-4 fw-bold text-dark fs-6">
+                                        {{ number_format($item->subtotal, 2, ',', '.') }}
+                                    </td>
+                                </tr>
+                                @endforeach
+                            </tbody>
+                        </table>
+                    </div>
                 </div>
-                <div class="p-0 card-body table-responsive">
-                    <table class="table mb-0 align-middle table-hover table-items">
-                        <thead>
-                            <tr>
-                                <th class="py-3 ps-4">Barang</th>
-                                <th class="py-3 text-center">Qty Ditagih</th>
-                                <th class="py-3 text-end">Harga Satuan</th>
-                                <th class="py-3 text-end pe-4">Subtotal Baris</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            @foreach($invoice->items as $item)
-                            <tr>
-                                <td class="py-3 ps-4">
-                                    <div class="fw-bold text-dark">{{ optional($item->item)->name }}</div>
-                                    <div class="text-muted small">{{ optional($item->item)->code }}</div>
-                                </td>
-                                <td class="text-center fw-bold text-primary">
-                                    {{ (float) $item->qty_invoiced }}<br>
-                                    <span class="text-muted fw-normal" style="font-size: 0.65rem;">{{ optional($item->goodsReceiptItem->purchaseOrderItem)->uom }}</span>
-                                </td>
-                                <td class="text-end">
-                                    {{ number_format($item->price, 2, ',', '.') }}
-                                    @if($item->discount_amount > 0)
-                                        <div class="text-danger small"><i class="bi bi-arrow-down-short"></i> Disc: {{ number_format($item->discount_amount, 2, ',', '.') }}</div>
-                                    @endif
-                                </td>
-                                <td class="text-end pe-4 fw-bold text-dark">
-                                    {{ number_format($item->subtotal, 2, ',', '.') }}
-                                </td>
-                            </tr>
-                            @endforeach
-                        </tbody>
-                    </table>
-                </div>
-            </div>
         </div>
 
         {{-- KOLOM KANAN: RINGKASAN & PEMBAYARAN --}}

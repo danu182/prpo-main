@@ -18,9 +18,9 @@
             <a href="{{ route('gr.index') }}" class="px-4 bg-white shadow-sm btn btn-outline-secondary rounded-pill fw-bold">
                 <i class="bi bi-arrow-left me-1"></i> Kembali
             </a>
-            <button onclick="window.print()" class="px-4 shadow-sm btn btn-primary rounded-pill fw-bold">
-                <i class="bi bi-printer me-1"></i> Cetak / PDF
-            </button>
+            <a href="{{ route('gr.print', $gr->gr_number) }}" target="_blank" class="px-4 shadow-sm btn btn-primary rounded-pill fw-bold">
+                <i class="bi bi-file-earmark-pdf-fill me-1"></i> Cetak / PDF
+            </a>
         </div>
     </div>
 
@@ -62,12 +62,55 @@
                     </div>
                 </div>
 
-                {{-- 🔥 INI KOLOM GUDANG PENERIMA YANG BARU 🔥 --}}
+                {{-- 🔥 INI KOLOM GUDANG PENERIMA YANG BARU (ULTIMATE BYPASS) 🔥 --}}
                 <div class="pt-3 col-md-3 border-top">
                     <label class="mb-1 small fw-bold text-muted text-uppercase">Gudang Penerima</label>
                     <div class="fw-bold text-dark">
+                        @php
+                            $warehouseName = 'Gudang Utama / Default';
+
+                            // 1. Cek bawaan dari relasi GR (Jika suatu saat Anda tambahkan kolomnya)
+                            if (isset($gr->warehouse) && $gr->warehouse) {
+                                $warehouseName = $gr->warehouse->name;
+                            } else {
+                                // 2. JARING RAKSASA: Cari di inventory_movements pakai Nomor GR ATAU ID GR
+                                $mov = \Illuminate\Support\Facades\DB::table('inventory_movements')
+                                    ->where('reference_number', $gr->gr_number)
+                                    ->orWhere('reference_number', (string) $gr->id)
+                                    ->first();
+
+                                // 3. Jika tidak ada di movements, cari langsung di inventory_stocks
+                                if (!$mov) {
+                                    $mov = \Illuminate\Support\Facades\DB::table('inventory_stocks')
+                                        ->where('reference_number', $gr->gr_number)
+                                        ->orWhere('reference_number', (string) $gr->id)
+                                        ->first();
+                                }
+
+                                // 4. Jika datanya ketemu di salah satu tabel, tarik ID Gudangnya!
+                                if ($mov) {
+                                    $whId = $mov->warehouse_id ?? null;
+
+                                    // Jika warehouse_id kosong tapi ada inventory_stock_id, intip induknya
+                                    if (!$whId && isset($mov->inventory_stock_id)) {
+                                        $stockParent = \Illuminate\Support\Facades\DB::table('inventory_stocks')
+                                            ->where('id', $mov->inventory_stock_id)->first();
+                                        $whId = $stockParent->warehouse_id ?? null;
+                                    }
+
+                                    // 5. Ubah ID Gudang menjadi Nama Gudang Asli
+                                    if ($whId) {
+                                        $whMaster = \Illuminate\Support\Facades\DB::table('warehouses')->where('id', $whId)->first();
+                                        if ($whMaster) {
+                                            $warehouseName = $whMaster->name;
+                                        }
+                                    }
+                                }
+                            }
+                        @endphp
+
                         <span class="px-2 py-1 border shadow-sm badge bg-light text-dark">
-                            <i class="bi bi-box-seam text-info me-1"></i> {{ optional($gr->warehouse)->name ?? 'Gudang Utama / Default' }}
+                            <i class="bi bi-box-seam text-info me-1"></i> {{ $warehouseName }}
                         </span>
                     </div>
                 </div>

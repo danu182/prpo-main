@@ -480,25 +480,46 @@ class GoodsReceiptController extends Controller
     public function print($slug)
     {
         $gr = \App\Models\GoodsReceipt::with([
-            'po.vendor',
-            'po.company',
-            'items.item',
-            'items.condition',
-            'items.purchaseOrderItem',
-            'receiver'
+            'items.item.itemUoms',
+            'purchaseOrder.vendor',
+            'purchaseOrder.company',
+            'user',
+            'warehouse'
         ])->where('gr_number', $slug)->firstOrFail();
 
-        foreach ($gr->items as $grItem) {
-            $grItem->registered_sns = \DB::table('item_serials')
-                ->where('item_id', $grItem->item_id)
-                ->where('goods_receipt_id', $gr->id)
-                ->pluck('serial_number')
-                ->toArray();
+        // 💡 Detektif Gudang (Bypass) seperti di halaman Show
+        $warehouseName = 'Gudang Utama / Default';
+        if (isset($gr->warehouse) && $gr->warehouse) {
+            $warehouseName = $gr->warehouse->name;
+        } else {
+            $mov = \Illuminate\Support\Facades\DB::table('inventory_movements')
+                ->where('reference_number', $gr->gr_number)
+                ->orWhere('reference_number', (string) $gr->id)
+                ->first();
+
+            if (!$mov) {
+                $mov = \Illuminate\Support\Facades\DB::table('inventory_stocks')
+                    ->where('reference_number', $gr->gr_number)
+                    ->orWhere('reference_number', (string) $gr->id)
+                    ->first();
+            }
+
+            if ($mov) {
+                $whId = $mov->warehouse_id ?? null;
+                if (!$whId && isset($mov->inventory_stock_id)) {
+                    $stockParent = \Illuminate\Support\Facades\DB::table('inventory_stocks')
+                        ->where('id', $mov->inventory_stock_id)->first();
+                    $whId = $stockParent->warehouse_id ?? null;
+                }
+                if ($whId) {
+                    $whMaster = \Illuminate\Support\Facades\DB::table('warehouses')->where('id', $whId)->first();
+                    if ($whMaster) $warehouseName = $whMaster->name;
+                }
+            }
         }
 
-        // Render menjadi file PDF menggunakan DomPDF
-        $pdf = \Barryvdh\DomPDF\Facade\Pdf::loadView('gr.print', compact('gr'))
-                    ->setPaper('A4', 'portrait');
+        $pdf = \Barryvdh\DomPDF\Facade\Pdf::loadView('gr.print', compact('gr', 'warehouseName'))
+                  ->setPaper('A4', 'portrait');
 
         return $pdf->stream('Goods_Receipt_' . str_replace('/', '_', $gr->gr_number) . '.pdf');
     }

@@ -16,7 +16,7 @@
         .doc-number { font-size: 11pt; font-weight: bold; text-align: right; }
 
         .info-table { width: 100%; border-collapse: collapse; margin-bottom: 20px; font-size: 9pt; }
-        .info-table td { vertical-align: top; padding: 3px 0; }
+        .info-table td { vertical-align: top; padding: 4px 0; }
         .info-table .label { width: 18%; color: #555; }
         .info-table .colon { width: 2%; }
         .info-table .val { width: 30%; font-weight: bold; }
@@ -73,7 +73,13 @@
         </tr>
         <tr>
             <td class="label">Tanggal Terima</td><td class="colon">:</td><td class="val">{{ \Carbon\Carbon::parse($gr->received_date)->translatedFormat('d F Y') }}</td>
-            <td class="label">Catatan</td><td class="colon">:</td><td class="val" style="font-weight: normal;">{{ $gr->notes ?? '-' }}</td>
+
+            {{-- 🔥 INI TAMBAHAN GUDANG PENERIMA 🔥 --}}
+            <td class="label">Gudang Penerima</td><td class="colon">:</td><td class="val">{{ $warehouseName ?? 'Gudang Utama / Default' }}</td>
+        </tr>
+        <tr>
+            <td class="label">Catatan</td><td class="colon">:</td>
+            <td colspan="4" style="font-weight: normal; font-style: italic;">{{ $gr->notes ?? '-' }}</td>
         </tr>
     </table>
 
