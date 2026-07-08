@@ -17,11 +17,14 @@ class ProfileUpdateRequest extends FormRequest
     {
         return [
             'name' => ['required', 'string', 'max:255'],
-            'email' => ['required', 'email', 'max:255', Rule::unique(User::class)->ignore($this->user()->id)],
-
-            // Tambahkan 2 baris ini
-            'foto_profile' => ['nullable', 'image', 'mimes:jpeg,png,jpg', 'max:2048'],
-            'signature'    => ['nullable', 'image', 'mimes:png', 'max:1024'], // Saran: signature pakai PNG (transparan)
+            'email' => [
+                'required',
+                'string',
+                'lowercase',
+                'email',
+                'max:255',
+                Rule::unique(User::class)->ignore($this->user()->id),
+            ],
         ];
     }
 }
