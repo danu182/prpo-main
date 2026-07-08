@@ -235,7 +235,7 @@
                                                             <i class="bi bi-file-earmark-text-fill text-danger me-1"></i> {{ $file->file_name }}
                                                         </a>
                                                         {{-- 🔥 TOMBOL HAPUS LAMPIRAN ITEM 🔥 --}}
-                                                        <a href="{{ route('po.delete_item_attachment', $file->id) }}" class="p-0 px-1 btn btn-sm text-danger" onclick="return confirm('Hapus lampiran ini secara permanen?')">
+                                                        <a href="{{ route('po.po.delete_item_attachment', $file->id) }}" class="p-0 px-1 btn btn-sm text-danger" onclick="return confirm('Hapus lampiran ini secara permanen?')">
                                                             <i class="bi bi-trash-fill"></i>
                                                         </a>
                                                     </div>
