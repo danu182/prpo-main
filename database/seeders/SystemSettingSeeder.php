@@ -74,6 +74,15 @@ class SystemSettingSeeder extends Seeder
                 'setting_value' => 'attachments/asset_manual',
                 'description'   => 'Folder penyimpanan lampiran Registrasi Aset Manual (Hibah)'
             ],
+
+             // ==========================================
+            // MODUL users
+            // ==========================================
+            [
+                'setting_key'   => 'path_user_profile',
+                'setting_value' => 'users',
+                'description'   => 'Folder penyimpanan lampiran foto profile dan tanda tanagan users'
+            ],
         ];
 
         foreach ($settings as $data) {
