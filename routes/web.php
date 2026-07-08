@@ -418,19 +418,20 @@ Route::middleware('auth')->group(function () {
     });
 
 
-    // ====================================================
+
+   // ====================================================
     // 5. MODUL FINANCE (A/P, BILLS, PAYMENTS)
     // ====================================================
     Route::prefix('vendor-invoices')->name('vendor-invoices.')->middleware(['can:view_invoices'])->group(function () {
         Route::get('/', [VendorInvoiceController::class, 'index'])->name('index');
 
         // 🔥 1. RUTE STATIS & SPESIFIK (HARUS DI ATAS AGAR TIDAK TERTELAN)
+        Route::get('/vendor-payments', [VendorInvoiceController::class, 'paymentList'])->name('vendor-payments.list'); // Pindahkan ke sini!
         Route::post('/bulk-from-gr', [VendorInvoiceController::class, 'createBulkFromGr'])->name('createBulkFromGr');
         Route::delete('/attachment/{id}', [VendorInvoiceController::class, 'deleteAttachment'])->name('deleteAttachment');
         Route::delete('/payment/{id}/cancel', [VendorInvoiceController::class, 'cancelPayment'])->name('cancelPayment');
 
-        // 🔥 2. RUTE PRINT (Nama diperbaiki jadi 'print' saja karena sudah di dalam grup)
-        // Parameter diubah jadi {slug} agar selaras dengan controller Anda
+        // 🔥 2. RUTE PRINT
         Route::get('/{slug}/print', [VendorInvoiceController::class, 'print'])->name('print')->where('slug', '.*');
 
         // 🔥 3. RUTE DINAMIS DENGAN AKSI TERTENTU
@@ -443,7 +444,6 @@ Route::middleware('auth')->group(function () {
         // 🔥 4. RUTE SHOW (WAJIB PALING BAWAH KARENA DIA LUBANG HITAM / CATCH-ALL)
         Route::get('/{slug}', [VendorInvoiceController::class, 'show'])->name('show')->where('slug', '.*');
     });
-
 
 
     // ====================================================
@@ -552,6 +552,7 @@ Route::middleware('auth')->group(function () {
 
 });
 
+
     // ====================================================
     // settings
     // ====================================================
@@ -559,8 +560,6 @@ Route::middleware('auth')->group(function () {
         Route::resource('workflows', \App\Http\Controllers\ApprovalWorkflowController::class);
         Route::resource('document-types', \App\Http\Controllers\DocumentTypeController::class);
     });
-
-
 
 
 

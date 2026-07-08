@@ -135,95 +135,106 @@
                 </div>
             </div>
 
-            {{-- LACI DOKUMEN FAKTUR PAJAK / GARANSI (SEKARANG SELALU TERBUKA) --}}
-            <div class="mb-4 border-0 shadow-sm card rounded-4">
-                <div class="py-3 bg-white border-bottom card-header d-flex justify-content-between align-items-center">
-                    <h6 class="mb-0 fw-bold text-dark"><i class="bi bi-folder2-open me-2 text-warning"></i>Laci Dokumen Invoice</h6>
-                    <span class="border badge bg-light text-dark"><i class="bi bi-info-circle me-1"></i>Bisa diupload kapan saja</span>
-                </div>
-                <div class="p-4 card-body">
+            {{-- LACI DOKUMEN FAKTUR PAJAK / GARANSI --}}
+            @if(!$isDraft)
+                <div class="mb-4 border-0 shadow-sm card rounded-4">
+                    <div class="py-3 bg-white border-bottom card-header d-flex justify-content-between align-items-center">
+                        <h6 class="mb-0 fw-bold text-dark"><i class="bi bi-folder2-open me-2 text-warning"></i>Laci Dokumen Invoice</h6>
+                        <span class="border badge bg-light text-dark"><i class="bi bi-info-circle me-1"></i>Bisa diupload kapan saja</span>
+                    </div>
+                    <div class="p-4 card-body">
 
-                    {{-- Form Upload Multi File --}}
-                    <form action="{{ route('vendor-invoices.uploadAttachment', $invoice->invoice_number) }}" method="POST" enctype="multipart/form-data" class="mb-4">
-                        @csrf
+                        {{-- Form Upload Multi File --}}
+                        <form action="{{ route('vendor-invoices.uploadAttachment', $invoice->invoice_number) }}" method="POST" enctype="multipart/form-data" class="mb-4">
+                            @csrf
 
-                        {{-- Wadah Baris --}}
-                        <div id="invoice-attachment-container">
-                            <div class="mb-2 row g-2 align-items-end invoice-attachment-row">
-                                <div class="col-md-5">
-                                    <label class="mb-1 small fw-bold text-muted">Jenis Dokumen</label>
-                                    <input list="documentTypeOptions" name="document_types[]" class="form-control form-control-sm" placeholder="Ketik atau pilih jenis..." required autocomplete="off">
-                                </div>
-                                <div class="col-md-6">
-                                    <label class="mb-1 small fw-bold text-muted">Pilih File (PDF/JPG/PNG)</label>
-                                    <input type="file" name="attachment_files[]" class="form-control form-control-sm" accept=".pdf,.jpg,.jpeg,.png" required>
-                                </div>
-                                <div class="col-md-1 text-end">
-                                    {{-- Tombol hapus baris --}}
-                                    <button type="button" class="btn btn-sm btn-outline-danger w-100" onclick="removeInvoiceDocRow(this)" title="Hapus"><i class="bi bi-trash"></i></button>
+                            {{-- Wadah Baris --}}
+                            <div id="invoice-attachment-container">
+                                <div class="mb-2 row g-2 align-items-end invoice-attachment-row">
+                                    <div class="col-md-5">
+                                        <label class="mb-1 small fw-bold text-muted">Jenis Dokumen</label>
+                                        <input list="documentTypeOptions" name="document_types[]" class="form-control form-control-sm" placeholder="Ketik atau pilih jenis..." required autocomplete="off">
+                                    </div>
+                                    <div class="col-md-6">
+                                        <label class="mb-1 small fw-bold text-muted">Pilih File (PDF/JPG/PNG)</label>
+                                        <input type="file" name="attachment_files[]" class="form-control form-control-sm" accept=".pdf,.jpg,.jpeg,.png" required>
+                                    </div>
+                                    <div class="col-md-1 text-end">
+                                        {{-- Tombol hapus baris --}}
+                                        <button type="button" class="btn btn-sm btn-outline-danger w-100" onclick="removeInvoiceDocRow(this)" title="Hapus"><i class="bi bi-trash"></i></button>
+                                    </div>
                                 </div>
                             </div>
-                        </div>
 
-                        {{-- Tombol Aksi Bawah --}}
-                        <div class="mt-3 d-flex justify-content-between">
-                            <button type="button" class="px-3 btn btn-sm btn-outline-primary rounded-pill fw-bold" onclick="addInvoiceDocRow()">
-                                <i class="bi bi-plus-circle me-1"></i> Tambah File
-                            </button>
-                            <button type="submit" class="px-4 btn btn-sm btn-dark rounded-pill fw-bold">
-                                <i class="bi bi-upload me-1"></i> Upload Semua File
-                            </button>
-                        </div>
-                    </form>
+                            {{-- Tombol Aksi Bawah --}}
+                            <div class="mt-3 d-flex justify-content-between">
+                                <button type="button" class="px-3 btn btn-sm btn-outline-primary rounded-pill fw-bold" onclick="addInvoiceDocRow()">
+                                    <i class="bi bi-plus-circle me-1"></i> Tambah File
+                                </button>
+                                <button type="submit" class="px-4 btn btn-sm btn-dark rounded-pill fw-bold">
+                                    <i class="bi bi-upload me-1"></i> Upload Semua File
+                                </button>
+                            </div>
+                        </form>
 
-                    {{-- Datalist --}}
-                    <datalist id="documentTypeOptions">
-                        <option value="Faktur Pajak (E-Faktur)"></option>
-                        <option value="Surat Jalan (DO)"></option>
-                        <option value="Sertifikat Garansi"></option>
-                        <option value="Kwitansi Fisik"></option>
-                        <option value="Bukti Potong PPh"></option>
-                    </datalist>
+                        {{-- Datalist --}}
+                        <datalist id="documentTypeOptions">
+                            <option value="Faktur Pajak (E-Faktur)"></option>
+                            <option value="Surat Jalan (DO)"></option>
+                            <option value="Sertifikat Garansi"></option>
+                            <option value="Kwitansi Fisik"></option>
+                            <option value="Bukti Potong PPh"></option>
+                        </datalist>
 
-                    {{-- Daftar File Laci --}}
-                    @if(isset($invoice->attachments) && $invoice->attachments->count() > 0)
-                        <div class="table-responsive">
-                            <table class="table mb-0 align-middle border table-sm table-hover">
-                                <thead class="bg-light text-muted small">
-                                    <tr>
-                                        <th>Jenis</th>
-                                        <th>Nama File</th>
-                                        <th>Waktu Upload</th>
-                                        <th class="text-center">Aksi</th>
-                                    </tr>
-                                </thead>
-                                <tbody class="small">
-                                    @foreach($invoice->attachments as $doc)
-                                    <tr>
-                                        <td class="fw-bold text-dark"><i class="bi bi-file-earmark-check text-success me-1"></i>{{ $doc->document_type }}</td>
-                                        <td><a href="{{ asset('storage/' . $doc->file_path) }}" target="_blank" class="text-decoration-none">{{ Str::limit($doc->file_name, 35) }}</a></td>
-                                        <td class="text-muted">{{ $doc->created_at->format('d M Y, H:i') }}</td>
-                                        <td class="text-center">
-                                            <form action="{{ route('vendor-invoices.deleteAttachment', $doc->id) }}" method="POST" class="form-delete-doc">
-                                                @csrf
-                                                @method('DELETE')
-                                                <button type="button" class="p-0 btn btn-sm btn-link text-danger btn-delete-doc" title="Hapus Dokumen">
-                                                    <i class="bi bi-trash fs-5"></i>
-                                                </button>
-                                            </form>
-                                        </td>
-                                    </tr>
-                                    @endforeach
-                                </tbody>
-                            </table>
-                        </div>
-                    @else
-                        <div class="p-3 text-center border border-dashed rounded text-muted small bg-light">
-                            Belum ada dokumen yang dilampirkan.
-                        </div>
-                    @endif
+                        {{-- Daftar File Laci --}}
+                        @if(isset($invoice->attachments) && $invoice->attachments->count() > 0)
+                            <div class="table-responsive">
+                                <table class="table mb-0 align-middle border table-sm table-hover">
+                                    <thead class="bg-light text-muted small">
+                                        <tr>
+                                            <th>Jenis</th>
+                                            <th>Nama File</th>
+                                            <th>Waktu Upload</th>
+                                            <th class="text-center">Aksi</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody class="small">
+                                        @foreach($invoice->attachments as $doc)
+                                        <tr>
+                                            <td class="fw-bold text-dark"><i class="bi bi-file-earmark-check text-success me-1"></i>{{ $doc->document_type }}</td>
+                                            <td><a href="{{ asset('storage/' . $doc->file_path) }}" target="_blank" class="text-decoration-none">{{ Str::limit($doc->file_name, 35) }}</a></td>
+                                            <td class="text-muted">{{ $doc->created_at->format('d M Y, H:i') }}</td>
+                                            <td class="text-center">
+                                                <form action="{{ route('vendor-invoices.deleteAttachment', $doc->id) }}" method="POST" onsubmit="return confirm('Hapus dokumen ini?')">
+                                                    @csrf
+                                                    @method('DELETE')
+                                                    <button type="submit" class="p-0 btn btn-sm btn-link text-danger" title="Hapus"><i class="bi bi-trash"></i></button>
+                                                </form>
+                                            </td>
+                                        </tr>
+                                        @endforeach
+                                    </tbody>
+                                </table>
+                            </div>
+                        @else
+                            <div class="p-3 text-center border border-dashed rounded text-muted small bg-light">
+                                Belum ada dokumen yang dilampirkan.
+                            </div>
+                        @endif
+                    </div>
                 </div>
-            </div>
+            @else
+                {{-- JIKA MASIH DRAFT: GEMBOK LACI! --}}
+                <div class="mb-4 border-0 shadow-sm opacity-75 card rounded-4 bg-light">
+                    <div class="py-3 bg-transparent border-bottom card-header d-flex justify-content-between align-items-center">
+                        <h6 class="mb-0 fw-bold text-muted"><i class="bi bi-folder-x me-2"></i>Laci Dokumen Terkunci</h6>
+                    </div>
+                    <div class="p-4 text-center card-body">
+                        <i class="bi bi-lock-fill text-muted" style="font-size: 2rem;"></i>
+                        <p class="mt-2 mb-0 text-muted small fw-bold">Selesaikan dan Posting tagihan (di kotak atas) terlebih dahulu untuk membuka Laci Dokumen.</p>
+                    </div>
+                </div>
+            @endif
 
             {{-- TABEL RINCIAN BARANG DITAGIH --}}
                 <div class="mb-4 border-0 shadow-sm card rounded-4">
@@ -589,34 +600,6 @@
             row.querySelector('input[name="attachment_files[]"]').value = '';
         }
     }
-
-    // 🔥 LOGIKA POP-UP HAPUS DOKUMEN LAMPIRAN (SWEETALERT) 🔥
-    document.querySelectorAll('.btn-delete-doc').forEach(button => {
-        button.addEventListener('click', function() {
-            let form = this.closest('.form-delete-doc');
-
-            Swal.fire({
-                title: 'Hapus Dokumen?',
-                text: "File lampiran ini akan dihapus secara permanen dari sistem dan tidak dapat dikembalikan.",
-                icon: 'warning',
-                showCancelButton: true,
-                confirmButtonColor: '#dc3545', // Warna merah danger
-                cancelButtonColor: '#6c757d', // Warna abu-abu secondary
-                confirmButtonText: '<i class="bi bi-trash"></i> Ya, Hapus File!',
-                cancelButtonText: 'Batal'
-            }).then((result) => {
-                if (result.isConfirmed) {
-                    // Tampilkan animasi loading saat menghapus
-                    Swal.fire({
-                        title: 'Menghapus Dokumen...',
-                        allowOutsideClick: false,
-                        didOpen: () => Swal.showLoading()
-                    });
-                    form.submit();
-                }
-            });
-        });
-    });
 
 
     // 🔥 LOGIKA POP-UP ALASAN PEMBATALAN PEMBAYARAN 🔥

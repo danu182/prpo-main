@@ -21,7 +21,7 @@
     }
     .gr-modal-table th { font-size: 0.75rem; }
     .gr-modal-table td { font-size: 0.85rem; vertical-align: middle; }
-    
+
     /* Custom Checkbox */
     .custom-checkbox { width: 18px; height: 18px; cursor: pointer; }
 </style>
@@ -36,9 +36,15 @@
             <h4 class="mb-0 fw-bold text-dark"><i class="bi bi-receipt me-2 text-primary"></i>Daftar Tagihan Vendor (A/P)</h4>
             <div class="mt-1 text-muted small">Kelola hutang usaha, faktur vendor, dan riwayat pembayaran.</div>
         </div>
-        <button type="button" class="shadow-sm btn btn-primary rounded-pill fw-bold px-4" data-bs-toggle="modal" data-bs-target="#createInvoiceModal">
-            <i class="bi bi-plus-circle me-1"></i> Buat Tagihan Baru
-        </button>
+        {{-- BUNGKUS KEDUA TOMBOL DI SINI AGAR JARAKNYA PAS --}}
+        <div class="d-flex gap-2">
+            <a href="{{ route('vendor-invoices.vendor-payments.list') }}" class="shadow-sm btn btn-outline-success rounded-pill fw-bold">
+                <i class="bi bi-clock-history me-1"></i> Riwayat Pembayaran
+            </a>
+            <button type="button" class="shadow-sm btn btn-primary rounded-pill fw-bold px-4" data-bs-toggle="modal" data-bs-target="#createInvoiceModal">
+                <i class="bi bi-plus-circle me-1"></i> Buat Tagihan Baru
+            </button>
+        </div>
     </div>
 
     {{-- FLASH MESSAGES --}}
@@ -100,7 +106,7 @@
                             if($statusSlug == 'posted') $badgeColor = 'primary';
                             if($statusSlug == 'partial') $badgeColor = 'warning';
                             if($statusSlug == 'paid') $badgeColor = 'success';
-                            
+
                             $isOverdue = ($statusSlug != 'paid' && \Carbon\Carbon::parse($inv->due_date)->isPast());
                         @endphp
                         <tr>
@@ -126,10 +132,26 @@
                                     <br><span class="badge bg-danger-subtle text-danger mt-1" style="font-size:0.65rem;">Terlambat</span>
                                 @endif
                             </td>
-                            <td class="text-end">
-                                <div class="fw-bolder text-dark fs-6">
-                                    <span class="text-muted small fw-normal me-1">IDR</span>{{ number_format($inv->grand_total, 0, ',', '.') }}
-                                </div>
+                            <td class="text-center">
+                                @php
+                                    // 🔥 Perbaikan: Menggunakan $inv, bukan $invoice 🔥
+                                    $totalPaid = $inv->payments->sum('amount');
+                                    $sisaHutang = $inv->grand_total - $totalPaid;
+                                @endphp
+
+                                {{-- Grand Total --}}
+                                <div class="fw-bold text-dark">IDR {{ number_format($inv->grand_total, 0, ',', '.') }}</div>
+
+                                {{-- Jika sudah ada pembayaran sebagian, tampilkan sisanya --}}
+                                @if($totalPaid > 0 && $sisaHutang > 0)
+                                    <span class="mt-1 badge bg-warning-subtle text-warning-emphasis border border-warning-subtle">
+                                        Sisa: IDR {{ number_format($sisaHutang, 0, ',', '.') }}
+                                    </span>
+                                @elseif($sisaHutang <= 0 && $totalPaid > 0)
+                                    <span class="mt-1 badge bg-success-subtle text-success-emphasis border border-success-subtle">
+                                        LUNAS
+                                    </span>
+                                @endif
                             </td>
                             <td class="text-center">
                                 <span class="badge bg-{{ $badgeColor }}-subtle text-{{ $badgeColor }} border border-{{ $badgeColor }}-subtle rounded-pill status-badge">
@@ -179,10 +201,10 @@
                 </div>
                 <button type="button" class="btn-close shadow-none" data-bs-dismiss="modal" aria-label="Close"></button>
             </div>
-            
+
             <div class="modal-body p-0">
                 @if($readyGrs->count() > 0)
-                    
+
                     {{-- 🔥 TAMBAHAN: KOTAK PENCARIAN REAL-TIME 🔥 --}}
                     <div class="p-3 bg-light border-bottom sticky-top" style="z-index: 11; top: 0;">
                         <div class="input-group input-group-sm">
@@ -244,16 +266,16 @@
                     </div>
                 @endif
             </div>
-            
+
             <div class="modal-footer bg-light border-top-0 pt-3 pb-3 d-flex justify-content-between align-items-center" style="border-radius: 0 0 16px 16px;">
                 <button type="button" class="btn btn-secondary rounded-pill px-4" data-bs-dismiss="modal">Tutup</button>
-                
+
                 {{-- FORM TERSEMBUNYI UNTUK BULK INVOICE --}}
                 <form id="bulkInvoiceForm" action="{{ route('vendor-invoices.createBulkFromGr') }}" method="POST" class="d-none">
                     @csrf
                     <input type="hidden" name="gr_ids" id="bulkGrIdsInput">
                 </form>
-                
+
                 <button type="button" id="btnBulkInvoice" class="btn btn-warning shadow-sm rounded-pill px-4 fw-bold" disabled>
                     <i class="bi bi-intersect me-1"></i> Gabungkan Tagihan (<span id="bulkCount">0</span>)
                 </button>
@@ -268,7 +290,7 @@
 <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
 <script>
     document.addEventListener('DOMContentLoaded', function() {
-        
+
         // 1. LOGIKA UNTUK TOMBOL SINGLE INVOICE
         document.querySelectorAll('.btn-process-inv').forEach(button => {
             button.addEventListener('click', function() {
@@ -304,15 +326,15 @@
             let checkedBoxes = document.querySelectorAll('.gr-checkbox:checked');
             let count = checkedBoxes.length;
             bulkCountSpan.innerText = count;
-            
+
             // Aktifkan tombol gabung jika ada 1 atau lebih yang dicentang
             btnBulkInvoice.disabled = count === 0;
-            
+
             if(checkAllBtn) {
                 checkAllBtn.checked = (count === grCheckboxes.length && count > 0);
             }
         }
-        
+
         if(checkAllBtn) {
             checkAllBtn.addEventListener('change', function() {
                 // Hanya centang baris yang SEDANG TAMPIL (tidak disembunyikan oleh filter pencarian)
@@ -385,7 +407,7 @@
                         row.style.display = 'none';
                         // Opsional: Hilangkan centang jika baris disembunyikan
                         let cb = row.querySelector('.gr-checkbox');
-                        if (cb) cb.checked = false; 
+                        if (cb) cb.checked = false;
                     }
                 });
                 // Update counter tombol gabung jika ada centang yang dibatalkan

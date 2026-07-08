@@ -28,9 +28,16 @@ class VendorPayment extends Model
     }
 
 
-    public function attachments() 
+    public function attachments()
     {
         return $this->hasMany(VendorPaymentAttachment::class, 'vendor_payment_id');
+    }
+
+
+    // Relasi ke Tagihan (Vendor Invoice)
+    public function vendorInvoice()
+    {
+        return $this->belongsTo(\App\Models\VendorInvoice::class, 'vendor_invoice_id');
     }
 
 }

@@ -301,39 +301,43 @@
                     </div>
                     <div class="p-0 card-body table-responsive">
                         <table class="table mb-0 align-middle table-hover">
-                            <thead class="bg-light text-muted small fw-bold">
+                            <thead class="bg-light text-muted small text-uppercase">
                                 <tr>
-                                    <th class="py-3 ps-4">No. Invoice</th>
+                                    <th>No. Invoice</th>
                                     <th>Jatuh Tempo</th>
-                                    <th class="text-end pe-4">Nominal Tagihan</th>
-                                </tr>
+                                    <th class="text-end">Sisa Hutang</th> </tr>
                             </thead>
                             <tbody>
-                                @forelse($urgentApBills ?? [] as $ap)
+                                {{-- Asumsi variabel looping Anda adalah $apInvoices --}}
+                                @forelse($urgentApBills as $inv)
                                     @php
-                                        $isOverdue = $ap->due_date ? \Carbon\Carbon::parse($ap->due_date)->isPast() : false;
+                                        // Hitung total yang sudah dibayar dan sisanya
+                                        $totalPaid = $inv->payments->sum('amount');
+                                        $sisaHutang = $inv->grand_total - $totalPaid;
                                     @endphp
                                     <tr>
-                                        <td class="py-3 ps-4">
-                                            <a href="#" class="fw-bold text-decoration-none d-block">{{ $ap->invoice_number ?? $ap->id }}</a>
-                                            <div class="mt-1 text-truncate small text-muted" style="max-width: 150px;" title="{{ $ap->vendor->name ?? '-' }}"><i class="bi bi-building me-1"></i>{{ $ap->vendor->name ?? '-' }}</div>
-                                        </td>
                                         <td>
-                                            <span class="{{ $isOverdue ? 'badge bg-danger text-white px-2 py-1' : 'fw-semibold text-dark' }}">
-                                                {{ $ap->due_date ? \Carbon\Carbon::parse($ap->due_date)->format('d M Y') : '-' }}
-                                                @if($isOverdue) <i class="bi bi-alarm ms-1" title="Overdue!"></i> @endif
-                                            </span>
+                                            <a href="{{ route('vendor-invoices.show', $inv->invoice_number) }}" class="fw-bold text-decoration-none">{{ $inv->invoice_number }}</a>
+                                            <div class="small text-muted"><i class="bi bi-shop me-1"></i>{{ optional($inv->vendor)->name }}</div>
                                         </td>
-                                        <td class="text-end fw-bold text-primary pe-4">
-                                            Rp {{ number_format($ap->grand_total ?? 0, 0, ',', '.') }}
+                                        <td class="small fw-semibold text-danger">
+                                            {{ \Carbon\Carbon::parse($inv->due_date)->format('d M Y') }}
+                                        </td>
+                                        <td class="text-end">
+                                            {{-- Tampilkan Sisa Hutang dengan warna mencolok --}}
+                                            <span class="fw-bolder text-danger fs-6">Rp {{ number_format($sisaHutang, 0, ',', '.') }}</span>
+
+                                            {{-- Opsional: Info jika sudah dicicil --}}
+                                            @if($totalPaid > 0)
+                                                <div class="text-muted" style="font-size: 0.65rem;">
+                                                    (Total Asli: Rp {{ number_format($inv->grand_total, 0, ',', '.') }})
+                                                </div>
+                                            @endif
                                         </td>
                                     </tr>
                                 @empty
                                     <tr>
-                                        <td colspan="3" class="py-4 text-center text-muted">
-                                            <i class="mb-2 opacity-50 bi bi-check2-circle fs-3 d-block text-success"></i>
-                                            Tidak ada Invoice Vendor mendesak. Aman!
-                                        </td>
+                                        <td colspan="3" class="py-4 text-center text-muted small">Tidak ada tagihan mendesak.</td>
                                     </tr>
                                 @endforelse
                             </tbody>

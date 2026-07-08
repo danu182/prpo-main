@@ -112,7 +112,6 @@ class DashboardController extends Controller
             // Jika modul AP belum siap, abaikan agar Dashboard tidak mati
         }
 
-
         // =========================================================
         // 4. SUSUN DATA GRAFIK
         // =========================================================
@@ -125,31 +124,11 @@ class DashboardController extends Controller
             $chartDataAP[]   = $monthlyAP[$i] ?? 0;
         }
 
-        // PASTIKAN VARIABLE A/P IKUT DIKIRIM KE VIEW
+        // PASTIKAN SEMUA VARIABEL LENGKAP ADA DI SINI
         return view('dashboard', compact(
             'opexBulanIni', 'poBulanIni', 'apUnpaid', 'opexUnpaid',
             'chartBulan', 'chartDataOpex', 'chartDataPO', 'chartDataAP',
             'urgentBills', 'pendingBills', 'urgentApBills', 'pendingApBills', 'currentYear'
-        ));
-
-
-        // =========================================================
-        // 4. SUSUN DATA GRAFIK
-        // =========================================================
-        $chartBulan = ['Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Ags', 'Sep', 'Okt', 'Nov', 'Des'];
-        $chartDataOpex = []; $chartDataPO = []; $chartDataAP = [];
-
-        for ($i = 1; $i <= 12; $i++) {
-            $chartDataOpex[] = $monthlyOpex[$i] ?? 0;
-            $chartDataPO[]   = $monthlyPO[$i] ?? 0;
-            $chartDataAP[]   = $monthlyAP[$i] ?? 0;
-        }
-
-        // Pastikan variabel $pendingBills ikut dikirim ke view
-        return view('dashboard', compact(
-            'opexBulanIni', 'poBulanIni', 'apUnpaid', 'opexUnpaid',
-            'chartBulan', 'chartDataOpex', 'chartDataPO', 'chartDataAP',
-            'urgentBills', 'pendingBills', 'currentYear'
         ));
     }
 

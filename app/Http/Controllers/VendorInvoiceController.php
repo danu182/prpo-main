@@ -358,7 +358,26 @@ class VendorInvoiceController extends Controller
         try {
             $invoice = VendorInvoice::where('invoice_number', $slug)->firstOrFail();
 
-            $paymentNumber = 'PAY-' . date('Y-m-d') . '-' . str_pad(rand(1, 9999), 4, '0', STR_PAD_LEFT);
+            // 🔥 LOGIKA NOMOR URUT PEMBAYARAN OTOMATIS (RESET PER HARI) 🔥
+        $datePrefix = \Carbon\Carbon::parse($request->payment_date ?? now())->format('Y-m-d');
+        $prefix = 'PAY-' . $datePrefix . '-';
+
+        // Cari pembayaran terakhir di tanggal tersebut
+        $lastPayment = \App\Models\VendorPayment::where('payment_number', 'like', $prefix . '%')
+            ->orderBy('payment_number', 'desc')
+            ->first();
+
+        if ($lastPayment) {
+            // Ambil 4 digit terakhir, ubah ke angka, lalu tambah 1
+            $lastSequence = (int) substr($lastPayment->payment_number, -4);
+            $newSequence = $lastSequence + 1;
+        } else {
+            // Jika belum ada transaksi di hari itu, mulai dari 1
+            $newSequence = 1;
+        }
+
+        // Format angka menjadi 4 digit (contoh: 0001, 0002, 0010)
+        $paymentNumber = $prefix . str_pad($newSequence, 4, '0', STR_PAD_LEFT);
             $payment = \App\Models\VendorPayment::create([
                 'payment_number'    => $paymentNumber,
                 'vendor_invoice_id' => $invoice->id,
@@ -594,5 +613,22 @@ class VendorInvoiceController extends Controller
         // Gunakan stream() untuk melihat di tab baru, atau download() untuk langsung unduh file
         return $pdf->stream('Tagihan_Vendor_' . str_replace('/', '_', $invoice->invoice_number) . '.pdf');
     }
+
+
+    // =========================================================================
+    // HALAMAN DAFTAR SEMUA PEMBAYARAN (KAS KELUAR)
+    // =========================================================================
+    public function paymentList()
+    {
+        // Tambahkan with(['vendorInvoice.vendor']) agar query ringan dan tidak error
+        $payments = \App\Models\VendorPayment::with(['vendorInvoice.vendor'])
+            ->orderBy('payment_date', 'desc')
+            ->orderBy('created_at', 'desc')
+            ->get();
+
+        return view('vendor_invoices.payment_list', compact('payments'));
+    }
+
+
 
 }
