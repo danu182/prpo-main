@@ -131,7 +131,8 @@
                     </td>
                     <td class="text-center">{{ (float)$item->qty_ordered }} {{ $item->uom }}</td>
                     <td class="text-right">{{ number_format($item->unit_price, 0, ',', '.') }}</td>
-                    <td class="text-center" style="font-size: 8pt;">
+                    {{-- Ganti <td> untuk Disc/Tax menjadi seperti ini --}}
+                    <td class="text-right" style="font-size: 8pt; white-space: nowrap;">
                         @if($item->discount_amount > 0)
                             <span style="color: red;">D: {{ number_format($item->discount_amount, 0, ',', '.') }}</span><br>
                         @endif
@@ -139,7 +140,7 @@
                             <span style="color: blue;">T: {{ number_format($item->tax_amount, 0, ',', '.') }}</span>
                         @endif
                         @if($item->discount_amount == 0 && $item->tax_amount == 0)
-                            -
+                            <div class="text-center">-</div>
                         @endif
                     </td>
                     <td class="text-right">{{ number_format($item->subtotal + $item->tax_amount, 0, ',', '.') }}</td>
