@@ -335,18 +335,41 @@ class PurchaseOrderController extends Controller
                         }
                     }
 
+                    // ==========================================
+                    // 🔥 PERBAIKAN LOGIKA DISKON EKSTRA 🔥
+                    // ==========================================
                     $poExtraDiscountTotal = 0;
                     if ($request->has('extra_discounts')) {
                         foreach ($request->extra_discounts as $disc) {
-                            if (!empty($disc['amount'])) {
+                            if (!empty($disc['amount']) && $disc['amount'] > 0) {
+
+                                // 1. Ambil data Tipe Diskon dari Database untuk mengetahui (Percent / Nominal)
+                                $discountType = \App\Models\DiscountType::find($disc['discount_type_id']);
+                                $discValueInput = (float) $disc['amount'];
+                                $finalDiscountAmount = 0;
+
+                                // 2. Hitung Nominal Diskon (DPP vs Grand Total)
+                                if ($discountType && strtoupper($discountType->type) === 'PERCENT') {
+                                    // Jika tipe diskon adalah Persentase (misal: 2%)
+                                    // Menghitung persen biasanya dikalikan dengan Subtotal Kotor (Gross)
+                                    $finalDiscountAmount = ($poSubtotalGross * $discValueInput) / 100;
+                                } else {
+                                    // Jika tipe diskon adalah Nominal Rupiah / Fixed (misal: Potongan 50.000)
+                                    $finalDiscountAmount = $discValueInput;
+                                }
+
+                                // 3. Simpan ke database
                                 DB::table('purchase_order_discounts')->insert([
                                     'purchase_order_id' => $po->id,
                                     'name' => $disc['discount_type_id'],
-                                    'amount' => $disc['amount'],
+                                    // 🔥 Simpan Nominal yang SUDAH DIHITUNG (Rupiahnya), bukan persennya
+                                    'amount' => $finalDiscountAmount,
                                     'created_at' => now(),
                                     'updated_at' => now()
                                 ]);
-                                $poExtraDiscountTotal += $disc['amount'];
+
+                                // 4. Tambahkan ke Total Diskon Ekstra
+                                $poExtraDiscountTotal += $finalDiscountAmount;
                             }
                         }
                     }
