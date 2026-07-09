@@ -59,6 +59,10 @@
                 <a href="{{ route('po.print', $po->po_number) }}" target="_blank" class="px-4 shadow-sm btn btn-dark rounded-pill fw-bold">
                     <i class="bi bi-printer-fill me-1"></i> Cetak PO
                 </a>
+                {{-- TOMBOL 2: CETAK PO LENGKAP + LAMPIRAN BERKAS --}}
+                <a href="{{ route('po.po.print_complete', $po->po_number) }}" target="_blank" class="shadow-sm btn btn-success rounded-pill fw-bold">
+                    <i class="bi bi-file-earmark-pdf-fill me-1"></i> Cetak Dokumen Lengkap (+ Lampiran)
+                </a>
             @endif
 
             {{-- 2. TOMBOL EDIT PO (Terkunci Otomatis Jika Sudah Ada Approval) --}}

@@ -27,6 +27,8 @@ use Illuminate\Support\Facades\Storage;
 use App\Models\User;
 use App\Notifications\DocumentApprovalNotification;
 
+use Webklex\PDFMerger\Facades\PDFMergerFacade as PDFMerger; // Pastikan panggil facade merger
+
 class PurchaseOrderController extends Controller
 {
     // =========================================================================
@@ -807,6 +809,110 @@ class PurchaseOrderController extends Controller
                   ->setPaper('A4', 'portrait');
 
         return $pdf->stream('Purchase_Order_' . str_replace('/', '_', $po->po_number) . '.pdf');
+    }
+
+
+
+
+    // =========================================================================
+    // 🔥 CETAK PURCHASE ORDER + LAMPIRAN PENDUKUNG (COMBINED PDF) 🔥
+    // =========================================================================
+    public function printCompletePdf($slug)
+    {
+        // 1. Tarik data PO beserta Lampiran Item-nya
+        $po = \App\Models\PurchaseOrder::with([
+            'items.item.itemUoms', 'vendor', 'company', 'status', 'user', 'approvals.approver', 'approvals.role',
+            'items.attachments'
+        ])->where('po_number', $slug)->firstOrFail();
+
+        $charges = \DB::table('purchase_order_charges')->where('purchase_order_id', $po->id)->get();
+        $extraDiscounts = \DB::table('purchase_order_discounts')->where('purchase_order_id', $po->id)->get();
+        $hasBeenApproved = $po->approvals->where('status', 'APPROVED')->isNotEmpty();
+
+        // 2. Buat PDF Dokumen Utama (PO)
+        $poPdf = \Barryvdh\DomPDF\Facade\Pdf::loadView('po.print_pdf', compact('po', 'charges', 'extraDiscounts', 'hasBeenApproved'))
+                 ->setPaper('A4', 'portrait');
+
+        $tempDir = storage_path('app/public/temp_pdf');
+        if (!file_exists($tempDir)) {
+            mkdir($tempDir, 0777, true);
+        }
+
+        $poFilename = 'main_po_' . $po->id . '_' . time() . '.pdf';
+        $poPath = $tempDir . '/' . $poFilename;
+        file_put_contents($poPath, $poPdf->output());
+
+        // 3. Inisialisasi PDF Merger
+        $oMerger = \Webklex\PDFMerger\Facades\PDFMergerFacade::init();
+        $oMerger->addPDF($poPath, 'all');
+
+        // 🔥 AMBIL SETTING FOLDER DARI DATABASE SEBAGAI BACKUP PATH 🔥
+        $settingPath = \DB::table('system_settings')->where('setting_key', 'path_po_attachment')->value('setting_value') ?? 'attachments/purchase_order';
+
+        // 4. Loop & Cari Semua File Lampiran Pendukung
+        $tempFilesToDelete = [$poPath];
+
+        foreach ($po->items as $item) {
+            if ($item->attachments && $item->attachments->count() > 0) {
+                foreach ($item->attachments as $file) {
+
+                    // Coba baca path langsung dari database
+                    $filePath = storage_path('app/public/' . $file->file_path);
+
+                    // Jika file tidak ditemukan, gunakan path dari system_settings digabung nama file
+                    if (!file_exists($filePath)) {
+                        $filePath = storage_path('app/public/' . trim($settingPath, '/') . '/' . $file->file_path);
+                    }
+
+                    // Eksekusi jika file fisik benar-benar ada
+                    if (file_exists($filePath)) {
+                        $extension = strtolower(pathinfo($filePath, PATHINFO_EXTENSION));
+
+                        if ($extension === 'pdf') {
+                            $oMerger->addPDF($filePath, 'all');
+                        }
+                        elseif (in_array($extension, ['jpg', 'jpeg', 'png'])) {
+
+                            // Gunakan path dinamis yang sama untuk merender gambar
+                            $publicImgPath = public_path('storage/' . $file->file_path);
+                            if (!file_exists($publicImgPath)) {
+                                $publicImgPath = public_path('storage/' . trim($settingPath, '/') . '/' . $file->file_path);
+                            }
+
+                            $imgPdf = \Barryvdh\DomPDF\Facade\Pdf::loadHTML("
+                                <body style='margin:0; padding:0; text-align:center;'>
+                                    <img src='" . $publicImgPath . "' style='width:100%; height:auto; max-height:280mm; object-fit:contain;'>
+                                </body>
+                            ")->setPaper('a4', 'portrait');
+
+                            $imgTempName = 'img_convert_' . uniqid() . '.pdf';
+                            $imgTempPath = $tempDir . '/' . $imgTempName;
+
+                            file_put_contents($imgTempPath, $imgPdf->output());
+
+                            $oMerger->addPDF($imgTempPath, 'all');
+                            $tempFilesToDelete[] = $imgTempPath;
+                        }
+                    }
+                }
+            }
+        }
+
+        // 5. Gabungkan Semua File Menjadi Satu
+        $oMerger->merge();
+        $finalPdfOutput = $oMerger->output();
+
+        // 6. Hapus SEMUA File Sampah/Sementara
+        foreach ($tempFilesToDelete as $trashPath) {
+            if (file_exists($trashPath)) {
+                unlink($trashPath);
+            }
+        }
+
+        // 7. Stream File Hasil Gabungan Lengkap ke Browser
+        return response($finalPdfOutput)
+                ->header('Content-Type', 'application/pdf')
+                ->header('Content-Disposition', 'inline; filename="PO_Lengkap_' . str_replace('/', '_', $po->po_number) . '.pdf"');
     }
 
 

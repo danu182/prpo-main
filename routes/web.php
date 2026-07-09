@@ -90,6 +90,7 @@ Route::middleware('auth')->group(function () {
 
         // 🔥 TAMBAHKAN ROUTE PRINT DI SINI 🔥
         Route::get('/print/{slug}', [PurchaseOrderController::class, 'printPdf'])->name('print')->middleware('can:view_po');
+        Route::get('/po/{slug}/print-complete', [PurchaseOrderController::class, 'printCompletePdf'])->name('po.print_complete');
 
         // Approval Khusus
         Route::post('/decide/{slug}', [PurchaseOrderController::class, 'decide'])->name('decide');
