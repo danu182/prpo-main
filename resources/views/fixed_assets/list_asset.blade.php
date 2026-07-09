@@ -10,7 +10,10 @@
             <p class="mb-0 text-secondary">Manajemen inventaris IT, riwayat pengguna, departemen, dan nilai perolehan.</p>
         </div>
         <div class="gap-2 d-flex">
-            <a href="#" class="btn btn-outline-secondary"><i class="bi bi-file-earmark-excel"></i> Export Excel</a>
+            {{-- TOMBOL EXPORT MENGIRIMKAN SEMUA FILTER (request->all) KE ROUTE EXPORT --}}
+            <a href="{{ route('fixed-assets.master_list_export', request()->all()) }}" class="btn btn-outline-secondary">
+                <i class="bi bi-file-earmark-excel text-success"></i> Export Excel
+            </a>
             <a href="{{ route('fixed-assets.index') }}" class="btn btn-primary"><i class="bi bi-plus-lg"></i> Register Aset Baru</a>
         </div>
     </div>

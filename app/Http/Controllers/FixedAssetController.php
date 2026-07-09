@@ -881,6 +881,17 @@ class FixedAssetController extends Controller
 
 
 
+    // =========================================================================
+    // 🔥 FUNGSI EXPORT MASTER LIST KE EXCEL 🔥
+    // =========================================================================
+    public function exportMasterList(\Illuminate\Http\Request $request)
+    {
+        $namaFile = 'Laporan_Master_Data_Aset_' . date('Y-m-d_H-i-s') . '.xlsx';
+
+        // request()->all() dikirim ke Export Class agar Excel mengunduh data yang difilter saja
+        return \Maatwebsite\Excel\Facades\Excel::download(new \App\Exports\MasterAssetExport($request->all()), $namaFile);
+    }
+
 
 
 }

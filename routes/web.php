@@ -189,6 +189,9 @@ Route::middleware('auth')->group(function () {
         // 🔥 ROUTE BARU: MASTER LIST ASET DENGAN FILTER 🔥
         Route::get('/master-list', [FixedAssetController::class, 'masterList'])->name('master_list');
 
+        // 🔥 TAMBAHKAN ROUTE EXPORT INI 🔥
+        Route::get('/master-list/export', [FixedAssetController::class, 'exportMasterList'])->name('master_list_export');
+
     });
 
     Route::prefix('assets')->name('assets.')->middleware(['can:view_assets'])->group(function () {
