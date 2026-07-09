@@ -186,6 +186,8 @@ Route::middleware('auth')->group(function () {
         // Jalur Riwayat Hibah
         Route::get('/hibah-history', [App\Http\Controllers\FixedAssetController::class, 'hibahHistory'])->name('hibah_history');
 
+        // 🔥 ROUTE BARU: MASTER LIST ASET DENGAN FILTER 🔥
+        Route::get('/master-list', [FixedAssetController::class, 'masterList'])->name('master_list');
 
     });
 

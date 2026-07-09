@@ -52,8 +52,13 @@ class AssetsTemplateExport implements WithMultipleSheets
             // =======================================================
             new class implements FromCollection, WithHeadings, WithTitle {
                 public function collection() {
-                    // Hanya tampilkan yang tipenya Aset/Fisik jika diperlukan, atau semua item
-                    return Item::select('code', 'name')->orderBy('name')->get();
+                    // 🔥 HANYA TARIK ITEM YANG STATUSNYA AKTIF (Tidak Nonaktif) 🔥
+                    // Sesuaikan 'is_active', 1 dengan nama kolom aktif di tabel items Anda
+                    // (misalnya: 'status', 'active' atau 'is_active', true)
+                    return Item::select('code', 'name')
+                               ->where('is_active', 1)
+                               ->orderBy('name')
+                               ->get();
                 }
                 public function headings(): array { return ['KODE BARANG (COPAS KE FORM)', 'NAMA ASET TETAP']; }
                 public function title(): string { return '3. Referensi Barang'; }

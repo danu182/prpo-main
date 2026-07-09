@@ -120,4 +120,14 @@ class FixedAsset extends Model
 
 
 
+    /**
+     * Relasi ke tabel Department (Departemen / Divisi)
+     */
+    public function department()
+    {
+        return $this->belongsTo(\App\Models\Department::class, 'department_id');
+    }
+
+
+
 }

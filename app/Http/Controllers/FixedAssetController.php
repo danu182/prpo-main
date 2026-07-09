@@ -823,4 +823,64 @@ class FixedAssetController extends Controller
 
         return view('fixed_assets.hibah_history', compact('hibahs'));
     }
+
+
+
+    // =========================================================================
+    // 🔥 MASTER LIST ASET (FIX FILTER & MASTER ITEM) 🔥
+    // =========================================================================
+    public function masterList(\Illuminate\Http\Request $request)
+    {
+        $query = \App\Models\FixedAsset::with([
+            'item.category',
+            'assignee.department',
+            'company',
+            'department',
+            'status',
+            'warehouse' // 🔥 TAMBAHKAN INI AGAR NAMA GUDANG TERBACA 🔥
+        ]);
+
+        // 🔥 PERBAIKAN LOGIKA FILTER KEBERADAAN ASET 🔥
+        if ($request->filled('status')) {
+            if ($request->status === 'in_use') {
+                $query->whereNotNull('assigned_to'); // Jika dipakai, assigned_to ada isinya
+            } elseif ($request->status === 'in_warehouse') {
+                $query->whereNull('assigned_to');    // Jika di gudang, assigned_to kosong
+            }
+        }
+
+        if ($request->filled('search')) {
+            $search = $request->search;
+            $query->where(function($q) use ($search) {
+                $q->where('asset_number', 'like', "%{$search}%")
+                  ->orWhere('accounting_asset_number', 'like', "%{$search}%")
+                  ->orWhere('serial_number', 'like', "%{$search}%")
+                  ->orWhere('name', 'like', "%{$search}%")
+                  ->orWhere('spesifikasi_detail', 'like', "%{$search}%")
+                  ->orWhereHas('assignee', function($userQ) use ($search) {
+                      $userQ->where('name', 'like', "%{$search}%");
+                  })
+                  // Tambahan: Bisa mencari berdasarkan Kode SKU Master Barang juga!
+                  ->orWhereHas('item', function($itemQ) use ($search) {
+                      $itemQ->where('code', 'like', "%{$search}%");
+                  });
+            });
+        }
+
+        $assets = $query->latest()->paginate(15)->withQueryString();
+
+        $totalAssets = \App\Models\FixedAsset::count();
+        $inUse = \App\Models\FixedAsset::whereNotNull('assigned_to')->count();
+        $inWarehouse = \App\Models\FixedAsset::whereNull('assigned_to')->count();
+        $totalValue = \App\Models\FixedAsset::sum('purchase_price');
+
+        return view('fixed_assets.list_asset', compact(
+            'assets', 'totalAssets', 'inUse', 'inWarehouse', 'totalValue'
+        ));
+    }
+
+
+
+
+
 }
