@@ -980,23 +980,22 @@ class FixedAssetController extends Controller
                 // 4. UPDATE KARTU STOK MASTER ITEM (+1)
                 $item = \App\Models\Item::find($asset->item_id);
                 if ($item) {
+                    $balanceBefore = $item->current_stock; // Catat stok sebelum ditambah
+
                     $item->current_stock += 1;
                     $item->save();
 
-                    // 🔥 5. CATAT KE KARTU MUTASI STOK (INVENTORY LEDGER) 🔥
-                    // Pastikan nama model 'ItemStockHistory' dan kolomnya sesuai dengan database Anda
+                    // 🔥 5. CATAT KE KARTU MUTASI STOK (RETUR MASUK) 🔥
                     \App\Models\StockMutation::create([
                         'item_id'          => $item->id,
                         'warehouse_id'     => $request->warehouse_id,
-                        'transaction_type' => 'MASUK', // Atau sesuaikan dengan kode sistem Anda (misal: 'IN' / 'RETURN')
+                        'type'             => 'IN',  // Sesuai ENUM di database
+                        'qty'              => 1,
+                        'balance_before'   => $balanceBefore,
+                        'balance_after'    => $item->current_stock,
                         'reference_number' => 'RET/' . date('Y/m/d') . '/' . $asset->asset_number,
-                        'description'      => 'Pengembalian Aset (' . $asset->asset_number . ') dari User ID: ' . $previousUserId,
-                        'qty_in'           => 1,
-                        'qty_out'          => 0,
-                        'balance'          => $item->current_stock,
+                        'notes'            => 'Pengembalian Aset (' . $asset->asset_number . ') dari User ID: ' . $previousUserId,
                         'created_by'       => auth()->id(),
-                        'created_at'       => now(),
-                        'updated_at'       => now()
                     ]);
                 }
             });
@@ -1053,23 +1052,24 @@ class FixedAssetController extends Controller
                 // 3. UPDATE KARTU STOK MASTER ITEM (-1 KELUAR)
                 $item = \App\Models\Item::find($asset->item_id);
                 if ($item) {
+                    $balanceBefore = $item->current_stock; // Catat stok sebelum dikurangi
+
                     $item->current_stock -= 1;
                     $item->save();
 
-                    // 4. CATAT MUTASI KELUAR
-                    \App\Models\ItemStockHistory::create([
+                    // 🔥 4. CATAT MUTASI KELUAR (HANDOVER) 🔥
+                    \App\Models\StockMutation::create([
                         'item_id'          => $item->id,
                         'warehouse_id'     => $previousWarehouseId,
-                        'transaction_type' => 'KELUAR',
+                        'type'             => 'OUT', // Sesuai ENUM di database
+                        'qty'              => 1,     // Tetap 1 karena tipe-nya sudah 'OUT'
+                        'balance_before'   => $balanceBefore,
+                        'balance_after'    => $item->current_stock,
                         'reference_number' => 'GI-AST/' . date('Y/m/d') . '/' . $asset->asset_number,
-                        'description'      => 'Penyerahan Aset (' . $asset->asset_number . ') ke User ID: ' . $request->assigned_to,
-                        'qty_in'           => 0,
-                        'qty_out'          => 1,
-                        'balance'          => $item->current_stock,
+                        'notes'            => 'Penyerahan Aset (' . $asset->asset_number . ') ke User ID: ' . $request->assigned_to,
                         'created_by'       => auth()->id(),
-                        'created_at'       => now(),
-                        'updated_at'       => now()
                     ]);
+
                 }
             });
 
@@ -1079,6 +1079,7 @@ class FixedAssetController extends Controller
             return redirect()->back()->with('error', 'Gagal menyerahkan aset: ' . $e->getMessage());
         }
     }
+
 
 
 
@@ -1110,8 +1111,11 @@ class FixedAssetController extends Controller
                 $history->durasi = null;
             } elseif ($history->status === 'RETURNED') {
                 if ($lastHandoverDate) {
-                    $days = $history->created_at->diffInDays($lastHandoverDate);
-                    // Jika dikembalikan di hari yang sama, hitung 1 hari
+                    // 🔥 PERBAIKAN: Gunakan startOfDay() agar perhitungannya murni selisih tanggal (bilangan bulat)
+                    $startDate = \Carbon\Carbon::parse($lastHandoverDate)->startOfDay();
+                    $endDate = \Carbon\Carbon::parse($history->created_at)->startOfDay();
+                    $days = $startDate->diffInDays($endDate);
+
                     $history->durasi = ($days == 0 ? 1 : $days) . ' Hari Dipakai';
                     $lastHandoverDate = null; // Reset setelah dikembalikan
                 }
@@ -1124,7 +1128,11 @@ class FixedAssetController extends Controller
 
         // Hitung durasi pemakaian saat ini (jika aset sedang dipakai dan belum dikembalikan)
         if ($lastHandoverDate && $asset->assigned_to) {
-            $days = now()->diffInDays($lastHandoverDate);
+            // 🔥 PERBAIKAN: Gunakan startOfDay() untuk perhitungan hari ini
+            $startDate = \Carbon\Carbon::parse($lastHandoverDate)->startOfDay();
+            $today = now()->startOfDay();
+            $days = $startDate->diffInDays($today);
+
             $asset->current_usage_duration = ($days == 0 ? 1 : $days) . ' Hari';
         }
 
