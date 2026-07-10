@@ -52,7 +52,7 @@
                 <tbody>
                     @forelse($assets as $index => $asset)
                         @php
-                            // Logika Kategori Otomatis (Sama persis dengan Master List)
+                            // Logika Kategori Otomatis
                             $subCategoryName = optional(optional($asset->item)->category)->name ?? '';
                             $subCategoryCode = optional(optional($asset->item)->category)->code ?? '';
 
@@ -69,140 +69,204 @@
                                 }
                             }
                         @endphp
-                        <tr>
-                            <td class="text-center ps-3">{{ $assets->firstItem() + $index }}</td>
+                        <tr style="height: 100px;"> {{-- 🔥 Menambah tinggi baris agar lega --}}
+                            <td class="text-center align-middle ps-3">{{ $assets->firstItem() + $index }}</td>
 
                             {{-- KOLOM 1: IDENTITAS & KODE ASET --}}
-                            <td>
-                                <div class="fw-bold text-primary">{{ $asset->asset_number ?? 'Belum Ada Kode' }}</div>
-                                <div class="text-secondary" style="font-size: 0.72rem;"><span class="fw-bold text-dark">Acc Code:</span> {{ $asset->accounting_asset_number ?? '-' }}</div>
-                                <div class="text-secondary" style="font-size: 0.72rem;"><span class="fw-bold text-dark">S/N:</span> {{ $asset->serial_number ?? '-' }}</div>
+                            <td class="align-middle">
+                                <div class="mb-1 fw-bold text-primary" style="font-size: 0.9rem;">{{ $asset->asset_number ?? 'Belum Ada Kode' }}</div>
+                                <div class="mb-1 text-secondary" style="font-size: 0.72rem;"><span class="fw-bold text-dark">Acc Code:</span> {{ $asset->accounting_asset_number ?? '-' }}</div>
+                                <div class="text-secondary" style="font-size: 0.72rem;"><span class="fw-bold text-dark">S/N:</span> <span class="px-1 border rounded bg-light">{{ $asset->serial_number ?? '-' }}</span></div>
                             </td>
 
                             {{-- KOLOM 2: KATEGORI / TYPE --}}
-                            <td>
-                                <span class="px-2 py-1 mb-1 border badge bg-primary-subtle text-primary border-primary">
+                            <td class="align-middle">
+                                <span class="px-2 py-1 mb-2 border badge bg-primary-subtle text-primary border-primary d-inline-block">
                                     {{ $subCategoryName }}
                                 </span>
-                                    <div class="ms-1 text-muted" style="font-size: 0.72rem; fw-semibold">Name: {{ optional($asset->item)->name ?? 'TANPA NAMA' }}</div>
+                                <div class="text-muted" style="font-size: 0.7rem; font-weight: 600;">
+                                    <i class="opacity-50 bi bi-tag-fill me-1"></i>{{ $subCategoryCode }}
+                                </div>
                             </td>
 
                             {{-- KOLOM 3: NAMA BARANG & SPESIFIKASI --}}
-                            <td>
-                                <div class="mb-1">
-                                    <span class="badge bg-secondary" style="font-size: 0.7rem; letter-spacing: 0.5px;">
+                            <td class="align-middle">
+                                <div class="mb-2">
+                                    <span class="opacity-75 badge bg-secondary" style="font-size: 0.65rem; letter-spacing: 0.5px;">
                                         <i class="bi bi-upc-scan me-1"></i> {{ optional($asset->item)->code ?? 'TANPA-SKU' }}
                                     </span>
                                 </div>
-                                <div class="fw-bold text-dark text-wrap" style="max-width: 220px;">
+                                <div class="mb-1 fw-bold text-dark text-wrap" style="max-width: 250px; font-size: 0.85rem;">
                                     {{ $asset->name ?? optional($asset->item)->name ?? 'Nama Tidak Diketahui' }}
                                 </div>
-                                <div class="mt-1 text-muted text-wrap" style="max-width: 220px; font-size: 0.75rem; line-height: 1.2;">
-                                    {{ $asset->spesifikasi_detail ?? '-' }}
+                                <div class="text-muted text-wrap" style="max-width: 250px; font-size: 0.7rem; line-height: 1.3;">
+                                    {{ Str::limit($asset->spesifikasi_detail ?? '-', 60) }}
                                 </div>
                             </td>
 
                             {{-- KOLOM 4: USER / GUDANG & DEPT --}}
-                            <td>
+                            <td class="align-middle">
                                 @if(!empty($asset->assigned_to))
-                                    <div class="fw-bold text-danger">
+                                    <div class="mb-1 fw-bold text-danger">
                                         <i class="bi bi-person-workspace me-1"></i> {{ optional($asset->assignee)->name ?? 'Unknown User' }}
                                     </div>
-                                    <div class="mt-1 text-muted fw-medium" style="font-size: 0.72rem;">
-                                        <i class="bi bi-diagram-3"></i> Dept: {{ optional(optional($asset->assignee)->department)->name ?? optional($asset->department)->name ?? '-' }}
+                                    <div class="text-muted fw-medium" style="font-size: 0.7rem;">
+                                        <i class="opacity-50 bi bi-diagram-3 me-1"></i> Dept: {{ Str::limit(optional(optional($asset->assignee)->department)->name ?? optional($asset->department)->name ?? '-', 20) }}
                                     </div>
                                 @else
-                                    <div class="fw-bold text-success">
-                                        <i class="bi bi-shop me-1"></i> {{ optional($asset->warehouse)->name ?? 'Gudang Belum Di-set' }}
+                                    <div class="mb-1 fw-bold text-success">
+                                        <i class="bi bi-shop me-1"></i> {{ Str::limit(optional($asset->warehouse)->name ?? 'Gudang Belum Di-set', 20) }}
                                     </div>
-                                    <div class="mt-1 text-muted fw-medium" style="font-size: 0.72rem;">
-                                        <i class="bi bi-box-seam"></i> Nganggur (Tersedia di Gudang)
+                                    <div class="text-muted fw-medium" style="font-size: 0.7rem;">
+                                        <span class="py-1 border badge border-success text-success bg-success-subtle"><i class="bi bi-check2-circle me-1"></i> Available</span>
                                     </div>
                                 @endif
                             </td>
 
                             {{-- KOLOM 5: PT, TGL PEROLEHAN, & HARGA --}}
-                            <td>
-                                <div class="fw-bold text-secondary" title="Entitas Pemilik Aset">
-                                    <i class="bi bi-buildings text-primary me-1"></i> {{ optional($asset->company)->name ?? '-' }}
+                            <td class="align-middle">
+                                <div class="mb-1 fw-bold text-dark" title="Entitas Pemilik Aset" style="font-size: 0.8rem;">
+                                    <i class="bi bi-buildings text-primary me-1"></i> {{ Str::limit(optional($asset->company)->name ?? '-', 20) }}
                                 </div>
-                                <div class="mt-1 text-muted" style="font-size: 0.72rem;">
-                                    <i class="bi bi-calendar3"></i> {{ $asset->acquisition_date ? \Carbon\Carbon::parse($asset->acquisition_date)->format('d M Y') : '-' }}
+                                <div class="mb-1 text-muted" style="font-size: 0.7rem;">
+                                    <i class="opacity-50 bi bi-calendar3 me-1"></i> {{ $asset->acquisition_date ? \Carbon\Carbon::parse($asset->acquisition_date)->format('d M Y') : '-' }}
                                 </div>
-                                <div class="mt-1 text-success fw-bold" style="font-size: 0.75rem;">
+                                <div class="text-success fw-bold" style="font-size: 0.75rem;">
                                     {{ optional($asset->currency)->code ?? 'IDR' }} {{ number_format($asset->purchase_price, 0, ',', '.') }}
                                 </div>
                             </td>
 
                             {{-- KOLOM 6: CATATAN (NOTES) --}}
-                            <td>
-                                <div class="text-muted text-wrap" style="max-width: 180px; font-size: 0.75rem; line-height: 1.3;">
+                            <td class="align-middle">
+                                <div class="p-2 border rounded text-muted text-wrap bg-light" style="max-width: 180px; font-size: 0.7rem; line-height: 1.4; min-height: 40px;">
                                     @if(!empty($asset->notes))
-                                        <i class="bi bi-chat-left-text text-secondary me-1"></i> {{ $asset->notes }}
+                                        <i class="bi bi-chat-quote-fill text-secondary me-1"></i> {{ Str::limit($asset->notes, 50) }}
                                     @else
-                                        -
+                                        <span class="opacity-50"><i>Tidak ada catatan</i></span>
                                     @endif
                                 </div>
                             </td>
 
                             {{-- KOLOM 7: AKSI TRANSAKSI & CETAK BAST/BAPA --}}
-                            <td class="text-center pe-3">
-                                @if(!empty($asset->assigned_to))
-                                    {{-- Jika sedang dipakai: Bisa Retur & Cetak BAST --}}
-                                    <button type="button" class="py-1 mb-1 btn btn-sm btn-outline-danger fw-bold w-100" data-bs-toggle="modal" data-bs-target="#returnModal{{ $asset->id }}">
-                                        <i class="bi bi-arrow-return-left"></i> Retur ke Gudang
-                                    </button>
-                                    <a href="{{ route('fixed-assets.bast', $asset->id) }}" target="_blank" class="py-1 btn btn-sm btn-secondary fw-bold w-100">
-                                        <i class="bi bi-printer"></i> Cetak BAST
+                            <td class="text-center align-middle pe-3">
+                                <div class="gap-1 d-flex flex-column"> {{-- 🔥 Menggunakan gap agar rapi --}}
+                                    @if(!empty($asset->assigned_to))
+                                        {{-- Jika sedang dipakai: Bisa Retur & Cetak BAST --}}
+                                        <button type="button" class="shadow-sm btn btn-sm btn-outline-danger fw-bold" style="font-size: 0.75rem;" data-bs-toggle="modal" data-bs-target="#returnModal{{ $asset->id }}">
+                                            <i class="bi bi-arrow-return-left"></i> Retur ke Gudang
+                                        </button>
+                                        <a href="{{ route('fixed-assets.bast', $asset->id) }}" target="_blank" class="shadow-sm btn btn-sm btn-dark fw-bold" style="font-size: 0.75rem;">
+                                            <i class="bi bi-printer"></i> Cetak BAST
+                                        </a>
+                                    @else
+                                        {{-- Jika di gudang: Bisa Serahkan & Cetak BAPA --}}
+                                        <button type="button" class="shadow-sm btn btn-sm btn-primary fw-bold" style="font-size: 0.75rem;" data-bs-toggle="modal" data-bs-target="#handoverModal{{ $asset->id }}">
+                                            <i class="bi bi-person-plus"></i> Serahkan Aset
+                                        </button>
+                                        <a href="{{ route('fixed-assets.bapa', $asset->id) }}" target="_blank" class="shadow-sm btn btn-sm btn-outline-dark fw-bold" style="font-size: 0.75rem;">
+                                            <i class="bi bi-printer"></i> Cetak BAPA
+                                        </a>
+                                    @endif
+
+                                    {{-- 🔥 Tombol Riwayat selalu muncul untuk semua kondisi aset 🔥 --}}
+                                    <a href="{{ route('fixed-assets.history', $asset->id) }}" class="mt-1 shadow-sm btn btn-sm btn-warning text-dark fw-bold" style="font-size: 0.75rem;">
+                                        <i class="bi bi-clock-history"></i> Lihat Riwayat
                                     </a>
-                                @else
-                                    {{-- Jika di gudang: Bisa Serahkan & Cetak BAPA --}}
-                                    <button type="button" class="py-1 mb-1 shadow-sm btn btn-sm btn-primary fw-bold w-100" data-bs-toggle="modal" data-bs-target="#handoverModal{{ $asset->id }}">
-                                        <i class="bi bi-person-plus"></i> Serahkan Aset
-                                    </button>
-                                    <a href="{{ route('fixed-assets.bapa', $asset->id) }}" target="_blank" class="py-1 btn btn-sm btn-outline-secondary fw-bold w-100">
-                                        <i class="bi bi-printer"></i> Cetak BAPA
-                                    </a>
-                                @endif
+                                </div>
                             </td>
                         </tr>
 
-                        {{-- ========================================== --}}
-                        {{-- 🔥 MODAL PROSES PENGEMBALIAN ASET (RETUR) 🔥 --}}
-                        {{-- ========================================== --}}
+                        {{-- MODAL PROSES PENGEMBALIAN ASET (RETUR) --}}
                         @if(!empty($asset->assigned_to))
-                        {{-- ... (BIARKAN KODE MODAL RETURN YANG LAMA TETAP ADA DI SINI) ... --}}
+                        <div class="modal fade text-start" id="returnModal{{ $asset->id }}" tabindex="-1" aria-hidden="true">
+                            <div class="modal-dialog modal-dialog-centered">
+                                <div class="border-0 shadow-lg modal-content rounded-4">
+                                    <div class="text-white modal-header bg-danger border-bottom-0 rounded-top-4">
+                                        <h6 class="modal-title fw-bold">
+                                            <i class="bi bi-arrow-return-left me-2"></i> Form Pengembalian Aset
+                                        </h6>
+                                        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+                                    </div>
+                                    <form action="{{ route('fixed-assets.return', $asset->id) }}" method="POST">
+                                        @csrf
+                                        <div class="modal-body bg-light">
+                                            <div class="p-3 mb-4 border-0 shadow-sm alert alert-danger bg-danger-subtle rounded-3">
+                                                <div class="mb-1 fw-bold text-danger"><i class="bi bi-qr-code-scan me-1"></i> {{ $asset->asset_number }}</div>
+                                                <div class="small text-dark fw-bold">{{ $asset->name ?? optional($asset->item)->name }}</div>
+                                                <hr class="my-2 opacity-25 border-danger">
+                                                <div class="small text-danger fw-bold">
+                                                    <i class="bi bi-person-workspace me-1"></i> Kembali dari: {{ optional($asset->assignee)->name }}
+                                                </div>
+                                            </div>
+
+                                            <div class="mb-3">
+                                                <label class="form-label fw-bold text-dark small">Tujuan Gudang <span class="text-danger">*</span></label>
+                                                <select name="warehouse_id" class="form-select border-danger-subtle" required>
+                                                    <option value="">-- Pilih Gudang Sesuai Entitas --</option>
+                                                    @foreach($warehouses as $wh)
+                                                        <option value="{{ $wh->id }}">{{ $wh->name }}</option>
+                                                    @endforeach
+                                                </select>
+                                            </div>
+
+                                            <div class="row">
+                                                <div class="mb-3 col-md-6">
+                                                    <label class="form-label fw-bold text-dark small">Kondisi Aset <span class="text-danger">*</span></label>
+                                                    <select name="status_id" class="form-select border-danger-subtle" required>
+                                                        <option value="">-- Pilih Kondisi --</option>
+                                                        @foreach($statuses as $st)
+                                                            <option value="{{ $st->id }}" {{ str_contains(strtolower($st->name), 'normal') || str_contains(strtolower($st->name), 'available') ? 'selected' : '' }}>{{ $st->name }}</option>
+                                                        @endforeach
+                                                    </select>
+                                                </div>
+                                                <div class="mb-3 col-md-6">
+                                                    <label class="form-label fw-bold text-dark small">Tanggal Kembali <span class="text-danger">*</span></label>
+                                                    <input type="date" name="return_date" class="form-control border-danger-subtle" value="{{ date('Y-m-d') }}" required>
+                                                </div>
+                                            </div>
+
+                                            <div class="mb-1">
+                                                <label class="form-label fw-bold text-dark small">Catatan Minus / Kerusakan</label>
+                                                <textarea name="return_notes" class="form-control border-danger-subtle" rows="2" placeholder="Contoh: Lecet pemakaian, charger hilang..."></textarea>
+                                            </div>
+                                        </div>
+                                        <div class="bg-white modal-footer border-top-0 rounded-bottom-4">
+                                            <button type="button" class="btn btn-light fw-bold" data-bs-dismiss="modal">Batal</button>
+                                            <button type="submit" class="shadow-sm btn btn-danger fw-bold"><i class="bi bi-save me-1"></i> Simpan & Update Stok</button>
+                                        </div>
+                                    </form>
+                                </div>
+                            </div>
+                        </div>
                         @endif
 
-                        {{-- ========================================== --}}
-                        {{-- 🔥 MODAL PROSES PENYERAHAN ASET (GI) 🔥 --}}
-                        {{-- ========================================== --}}
+                        {{-- MODAL PROSES PENYERAHAN ASET (GI) --}}
                         @if(empty($asset->assigned_to))
-                        <div class="modal fade" id="handoverModal{{ $asset->id }}" tabindex="-1" aria-hidden="true">
+                        <div class="modal fade text-start" id="handoverModal{{ $asset->id }}" tabindex="-1" aria-hidden="true">
                             <div class="modal-dialog modal-dialog-centered">
-                                <div class="border-0 shadow-lg modal-content">
-                                    <div class="text-white modal-header bg-primary">
-                                        <h5 class="modal-title fw-bold">
+                                <div class="border-0 shadow-lg modal-content rounded-4">
+                                    <div class="text-white modal-header bg-primary border-bottom-0 rounded-top-4">
+                                        <h6 class="modal-title fw-bold">
                                             <i class="bi bi-person-plus me-2"></i> Form Penyerahan Aset
-                                        </h5>
+                                        </h6>
                                         <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
                                     </div>
                                     <form action="{{ route('fixed-assets.handover', $asset->id) }}" method="POST">
                                         @csrf
                                         <div class="modal-body bg-light">
-
-                                            <div class="p-3 mb-3 border-0 shadow-sm alert alert-primary bg-primary-subtle">
-                                                <div class="fw-bold text-primary"><i class="bi bi-qr-code-scan me-1"></i> {{ $asset->asset_number }}</div>
-                                                <div class="mt-1 small text-dark fw-bold">{{ $asset->name ?? optional($asset->item)->name }}</div>
-                                                <div class="mt-1 small text-muted">
-                                                    <i class="bi bi-shop me-1"></i> Posisi Gudang: {{ optional($asset->warehouse)->name }}
+                                            <div class="p-3 mb-4 border-0 shadow-sm alert alert-primary bg-primary-subtle rounded-3">
+                                                <div class="mb-1 fw-bold text-primary"><i class="bi bi-qr-code-scan me-1"></i> {{ $asset->asset_number }}</div>
+                                                <div class="small text-dark fw-bold">{{ $asset->name ?? optional($asset->item)->name }}</div>
+                                                <hr class="my-2 opacity-25 border-primary">
+                                                <div class="small text-muted">
+                                                    <i class="bi bi-shop me-1"></i> Dari Gudang: {{ optional($asset->warehouse)->name }}
                                                 </div>
                                             </div>
 
                                             <div class="mb-3">
                                                 <label class="form-label fw-bold text-dark small">Pilih Staf Penerima <span class="text-danger">*</span></label>
-                                                <select name="assigned_to" class="form-select select2-user" required>
-                                                    <option value="">-- Cari Nama Karyawan --</option>
+                                                <select name="assigned_to" class="form-select select2-user border-primary-subtle" required>
+                                                    <option value="">-- Ketik Nama Karyawan --</option>
                                                     @foreach($users as $user)
                                                         <option value="{{ $user->id }}">
                                                             {{ $user->name }} (Dept: {{ optional($user->department)->name ?? '-' }} | PT: {{ optional($user->company)->name ?? '-' }})
@@ -211,105 +275,32 @@
                                                 </select>
                                             </div>
 
-                                            <div class="mb-3">
-                                                <label class="form-label fw-bold text-dark small">Update Status Aset <span class="text-danger">*</span></label>
-                                                <select name="status_id" class="form-select" required>
-                                                    <option value="">-- Wajib Pilih 'In Use / Dipakai' --</option>
-                                                    @foreach($statuses as $st)
-                                                        {{-- Coba auto-select status In Use jika ada --}}
-                                                        <option value="{{ $st->id }}" {{ str_contains(strtolower($st->name), 'use') || str_contains(strtolower($st->name), 'pakai') ? 'selected' : '' }}>
-                                                            {{ $st->name }}
-                                                        </option>
-                                                    @endforeach
-                                                </select>
-                                                <div class="form-text text-muted" style="font-size: 0.7rem;">
-                                                    <i class="bi bi-info-circle"></i> Pastikan memilih status <b>In Use (Dipakai)</b> atau <b>Normal</b> saat diserahkan.
+                                            <div class="row">
+                                                <div class="mb-3 col-md-6">
+                                                    <label class="form-label fw-bold text-dark small">Update Status <span class="text-danger">*</span></label>
+                                                    <select name="status_id" class="form-select border-primary-subtle" required>
+                                                        <option value="">-- Pilih Status --</option>
+                                                        @foreach($statuses as $st)
+                                                            <option value="{{ $st->id }}" {{ str_contains(strtolower($st->name), 'use') || str_contains(strtolower($st->name), 'pakai') ? 'selected' : '' }}>
+                                                                {{ $st->name }}
+                                                            </option>
+                                                        @endforeach
+                                                    </select>
+                                                </div>
+                                                <div class="mb-3 col-md-6">
+                                                    <label class="form-label fw-bold text-dark small">Tgl. Serah Terima <span class="text-danger">*</span></label>
+                                                    <input type="date" name="handover_date" class="form-control border-primary-subtle" value="{{ date('Y-m-d') }}" required>
                                                 </div>
                                             </div>
 
-                                            <div class="mb-3">
-                                                <label class="form-label fw-bold text-dark small">Tanggal Penyerahan (BAST) <span class="text-danger">*</span></label>
-                                                <input type="date" name="handover_date" class="form-control" value="{{ date('Y-m-d') }}" required>
+                                            <div class="mb-1">
+                                                <label class="form-label fw-bold text-dark small">Catatan (Kelengkapan)</label>
+                                                <textarea name="handover_notes" class="form-control border-primary-subtle" rows="2" placeholder="Contoh: Lengkap dengan tas & charger..."></textarea>
                                             </div>
-
-                                            <div class="mb-0">
-                                                <label class="form-label fw-bold text-dark small">Catatan Tambahan (Kelengkapan)</label>
-                                                <textarea name="handover_notes" class="form-control" rows="2" placeholder="Contoh: Diserahkan lengkap beserta tas dan charger original..."></textarea>
-                                            </div>
-
                                         </div>
-                                        <div class="bg-white modal-footer">
-                                            <button type="button" class="border btn btn-light" data-bs-dismiss="modal">Batal</button>
-                                            <button type="submit" class="shadow-sm btn btn-primary fw-bold"><i class="bi bi-send-check"></i> Proses Penyerahan</button>
-                                        </div>
-                                    </form>
-                                </div>
-                            </div>
-                        </div>
-                        @endif
-                        </tr>
-
-                        {{-- MODAL PROSES PENGEMBALIAN ASET --}}
-                        @if(!empty($asset->assigned_to))
-                        <div class="modal fade" id="returnModal{{ $asset->id }}" tabindex="-1" aria-hidden="true">
-                            <div class="modal-dialog modal-dialog-centered">
-                                <div class="border-0 shadow-lg modal-content">
-                                    <div class="text-white modal-header bg-danger">
-                                        <h5 class="modal-title fw-bold">
-                                            <i class="bi bi-arrow-return-left me-2"></i> Proses Pengembalian Aset
-                                        </h5>
-                                        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
-                                    </div>
-                                    <form action="{{ route('fixed-assets.return', $asset->id) }}" method="POST">
-                                        @csrf
-                                        <div class="modal-body bg-light">
-
-                                            {{-- Info Ringkas Identitas Aset --}}
-                                            <div class="p-3 mb-3 border-0 shadow-sm alert alert-secondary">
-                                                <div class="fw-bold text-dark"><i class="bi bi-qr-code-scan text-primary me-1"></i> {{ $asset->asset_number }}</div>
-                                                <div class="mt-1 small text-dark fw-medium">{{ $asset->name ?? optional($asset->item)->name }}</div>
-                                                <div class="small text-muted" style="font-size: 0.7rem;">PT: {{ optional($asset->company)->name }}</div>
-                                                <hr class="my-2">
-                                                <div class="small text-danger fw-bold">
-                                                    <i class="bi bi-person-x me-1"></i> Pengguna Saat Ini: {{ optional($asset->assignee)->name }}
-                                                </div>
-                                            </div>
-
-                                            {{-- Form Inputs --}}
-                                            <div class="mb-3">
-                                                <label class="form-label fw-bold text-dark small">Tujuan Gudang Pengembalian <span class="text-danger">*</span></label>
-                                                <select name="warehouse_id" class="form-select" required>
-                                                    <option value="">-- Pilih Gudang Sesuai Entitas --</option>
-                                                    @foreach($warehouses as $wh)
-                                                        <option value="{{ $wh->id }}">{{ $wh->name }}</option>
-                                                    @endforeach
-                                                </select>
-                                            </div>
-
-                                            <div class="mb-3">
-                                                <label class="form-label fw-bold text-dark small">Kondisi Fisik Saat Dikembalikan <span class="text-danger">*</span></label>
-                                                <select name="status_id" class="form-select" required>
-                                                    <option value="">-- Pilih Kondisi --</option>
-                                                    @foreach($statuses as $st)
-                                                        <option value="{{ $st->id }}" {{ $asset->status_id == $st->id ? 'selected' : '' }}>{{ $st->name }}</option>
-                                                    @endforeach
-                                                </select>
-                                            </div>
-
-                                            <div class="mb-3">
-                                                <label class="form-label fw-bold text-dark small">Tanggal Pengembalian <span class="text-danger">*</span></label>
-                                                <input type="date" name="return_date" class="form-control" value="{{ date('Y-m-d') }}" required>
-                                            </div>
-
-                                            <div class="mb-0">
-                                                <label class="form-label fw-bold text-dark small">Catatan / Kelengkapan Minus / Kerusakan</label>
-                                                <textarea name="return_notes" class="form-control" rows="3" placeholder="Contoh: Baterai drop, ada lecet di casing belakang, charger bawaan hilang..."></textarea>
-                                            </div>
-
-                                        </div>
-                                        <div class="bg-white modal-footer">
-                                            <button type="button" class="border btn btn-light" data-bs-dismiss="modal">Batal</button>
-                                            <button type="submit" class="shadow-sm btn btn-danger fw-bold"><i class="bi bi-check2-circle"></i> Simpan & Update Stok Gudang</button>
+                                        <div class="bg-white modal-footer border-top-0 rounded-bottom-4">
+                                            <button type="button" class="btn btn-light fw-bold" data-bs-dismiss="modal">Batal</button>
+                                            <button type="submit" class="shadow-sm btn btn-primary fw-bold"><i class="bi bi-send-check me-1"></i> Proses Penyerahan</button>
                                         </div>
                                     </form>
                                 </div>
@@ -319,9 +310,10 @@
 
                     @empty
                         <tr>
-                            <td colspan="8" class="py-5 text-center text-muted">
-                                <i class="mb-2 bi bi-inbox fs-1 d-block"></i>
-                                Tidak ada data aset yang ditemukan untuk transaksi.
+                            <td colspan="8" class="py-5 text-center align-middle text-muted">
+                                <i class="mb-3 opacity-25 bi bi-inbox display-4 d-block"></i>
+                                <h6 class="fw-bold">Data Transaksi Kosong</h6>
+                                <p class="small">Belum ada aset yang didaftarkan untuk bertransaksi.</p>
                             </td>
                         </tr>
                     @endforelse
