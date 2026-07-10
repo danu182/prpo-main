@@ -145,18 +145,108 @@
                                 </div>
                             </td>
 
-                            {{-- KOLOM 7: AKSI TRANSAKSI --}}
+                            {{-- KOLOM 7: AKSI TRANSAKSI & CETAK BAST/BAPA --}}
                             <td class="text-center pe-3">
                                 @if(!empty($asset->assigned_to))
-                                    <button type="button" class="py-1 btn btn-sm btn-outline-danger fw-bold w-100" data-bs-toggle="modal" data-bs-target="#returnModal{{ $asset->id }}">
+                                    {{-- Jika sedang dipakai: Bisa Retur & Cetak BAST --}}
+                                    <button type="button" class="py-1 mb-1 btn btn-sm btn-outline-danger fw-bold w-100" data-bs-toggle="modal" data-bs-target="#returnModal{{ $asset->id }}">
                                         <i class="bi bi-arrow-return-left"></i> Retur ke Gudang
                                     </button>
+                                    <a href="{{ route('fixed-assets.bast', $asset->id) }}" target="_blank" class="py-1 btn btn-sm btn-secondary fw-bold w-100">
+                                        <i class="bi bi-printer"></i> Cetak BAST
+                                    </a>
                                 @else
-                                    <button type="button" class="py-1 btn btn-sm btn-primary fw-bold w-100" onclick="alert('Fitur Penyerahan (Handover/GI Aset) segera hadir!')">
+                                    {{-- Jika di gudang: Bisa Serahkan & Cetak BAPA --}}
+                                    <button type="button" class="py-1 mb-1 shadow-sm btn btn-sm btn-primary fw-bold w-100" data-bs-toggle="modal" data-bs-target="#handoverModal{{ $asset->id }}">
                                         <i class="bi bi-person-plus"></i> Serahkan Aset
                                     </button>
+                                    <a href="{{ route('fixed-assets.bapa', $asset->id) }}" target="_blank" class="py-1 btn btn-sm btn-outline-secondary fw-bold w-100">
+                                        <i class="bi bi-printer"></i> Cetak BAPA
+                                    </a>
                                 @endif
                             </td>
+                        </tr>
+
+                        {{-- ========================================== --}}
+                        {{-- 🔥 MODAL PROSES PENGEMBALIAN ASET (RETUR) 🔥 --}}
+                        {{-- ========================================== --}}
+                        @if(!empty($asset->assigned_to))
+                        {{-- ... (BIARKAN KODE MODAL RETURN YANG LAMA TETAP ADA DI SINI) ... --}}
+                        @endif
+
+                        {{-- ========================================== --}}
+                        {{-- 🔥 MODAL PROSES PENYERAHAN ASET (GI) 🔥 --}}
+                        {{-- ========================================== --}}
+                        @if(empty($asset->assigned_to))
+                        <div class="modal fade" id="handoverModal{{ $asset->id }}" tabindex="-1" aria-hidden="true">
+                            <div class="modal-dialog modal-dialog-centered">
+                                <div class="border-0 shadow-lg modal-content">
+                                    <div class="text-white modal-header bg-primary">
+                                        <h5 class="modal-title fw-bold">
+                                            <i class="bi bi-person-plus me-2"></i> Form Penyerahan Aset
+                                        </h5>
+                                        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+                                    </div>
+                                    <form action="{{ route('fixed-assets.handover', $asset->id) }}" method="POST">
+                                        @csrf
+                                        <div class="modal-body bg-light">
+
+                                            <div class="p-3 mb-3 border-0 shadow-sm alert alert-primary bg-primary-subtle">
+                                                <div class="fw-bold text-primary"><i class="bi bi-qr-code-scan me-1"></i> {{ $asset->asset_number }}</div>
+                                                <div class="mt-1 small text-dark fw-bold">{{ $asset->name ?? optional($asset->item)->name }}</div>
+                                                <div class="mt-1 small text-muted">
+                                                    <i class="bi bi-shop me-1"></i> Posisi Gudang: {{ optional($asset->warehouse)->name }}
+                                                </div>
+                                            </div>
+
+                                            <div class="mb-3">
+                                                <label class="form-label fw-bold text-dark small">Pilih Staf Penerima <span class="text-danger">*</span></label>
+                                                <select name="assigned_to" class="form-select select2-user" required>
+                                                    <option value="">-- Cari Nama Karyawan --</option>
+                                                    @foreach($users as $user)
+                                                        <option value="{{ $user->id }}">
+                                                            {{ $user->name }} (Dept: {{ optional($user->department)->name ?? '-' }} | PT: {{ optional($user->company)->name ?? '-' }})
+                                                        </option>
+                                                    @endforeach
+                                                </select>
+                                            </div>
+
+                                            <div class="mb-3">
+                                                <label class="form-label fw-bold text-dark small">Update Status Aset <span class="text-danger">*</span></label>
+                                                <select name="status_id" class="form-select" required>
+                                                    <option value="">-- Wajib Pilih 'In Use / Dipakai' --</option>
+                                                    @foreach($statuses as $st)
+                                                        {{-- Coba auto-select status In Use jika ada --}}
+                                                        <option value="{{ $st->id }}" {{ str_contains(strtolower($st->name), 'use') || str_contains(strtolower($st->name), 'pakai') ? 'selected' : '' }}>
+                                                            {{ $st->name }}
+                                                        </option>
+                                                    @endforeach
+                                                </select>
+                                                <div class="form-text text-muted" style="font-size: 0.7rem;">
+                                                    <i class="bi bi-info-circle"></i> Pastikan memilih status <b>In Use (Dipakai)</b> atau <b>Normal</b> saat diserahkan.
+                                                </div>
+                                            </div>
+
+                                            <div class="mb-3">
+                                                <label class="form-label fw-bold text-dark small">Tanggal Penyerahan (BAST) <span class="text-danger">*</span></label>
+                                                <input type="date" name="handover_date" class="form-control" value="{{ date('Y-m-d') }}" required>
+                                            </div>
+
+                                            <div class="mb-0">
+                                                <label class="form-label fw-bold text-dark small">Catatan Tambahan (Kelengkapan)</label>
+                                                <textarea name="handover_notes" class="form-control" rows="2" placeholder="Contoh: Diserahkan lengkap beserta tas dan charger original..."></textarea>
+                                            </div>
+
+                                        </div>
+                                        <div class="bg-white modal-footer">
+                                            <button type="button" class="border btn btn-light" data-bs-dismiss="modal">Batal</button>
+                                            <button type="submit" class="shadow-sm btn btn-primary fw-bold"><i class="bi bi-send-check"></i> Proses Penyerahan</button>
+                                        </div>
+                                    </form>
+                                </div>
+                            </div>
+                        </div>
+                        @endif
                         </tr>
 
                         {{-- MODAL PROSES PENGEMBALIAN ASET --}}
@@ -246,3 +336,5 @@
     </div>
 </div>
 @endsection
+
+

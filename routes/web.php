@@ -200,6 +200,14 @@ Route::middleware('auth')->group(function () {
         // Route untuk Proses Eksekusi Pengembalian (POST)
         Route::post('/{id}/return', [App\Http\Controllers\FixedAssetController::class, 'returnAsset'])->name('return');
 
+
+        // 🔥 ROUTE BARU: Proses Penyerahan Aset (POST) 🔥
+        Route::post('/{id}/handover', [App\Http\Controllers\FixedAssetController::class, 'handoverAsset'])->name('handover');
+
+
+        // 🔥 ROUTE BARU: Halaman Riwayat / Perjalanan Aset 🔥
+        Route::get('/{id}/history', [App\Http\Controllers\FixedAssetController::class, 'history'])->name('history');
+
     });
 
     Route::prefix('assets')->name('assets.')->middleware(['can:view_assets'])->group(function () {

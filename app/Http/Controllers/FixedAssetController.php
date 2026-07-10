@@ -919,11 +919,21 @@ class FixedAssetController extends Controller
 
         $assets = $query->latest()->paginate(15)->withQueryString();
 
-        // Tarik master data untuk dropdown di modal pengembalian
-        $warehouses = \App\Models\Warehouse::orderBy('name')->get();
-        $statuses = \App\Models\Status::where('type', 'AST')->orderBy('sequence')->get();
+        // Tarik master data untuk dropdown di modal pengembalian & penyerahan
+        $warehouses  = \App\Models\Warehouse::orderBy('name')->get();
+        $statuses    = \App\Models\Status::where('type', 'AST')->orderBy('sequence')->get();
+        $users = \App\Models\User::with(['department', 'company'])->orderBy('name')->get();
+        // Note: hapus 'company' di dalam array with[] jika User Anda tidak punya relasi ke tabel company.
+        $departments = \App\Models\Department::orderBy('name')->get(); // 🔥 TAMBAHAN
 
-        return view('fixed_assets.transactions', compact('assets', 'warehouses', 'statuses'));
+        // 🔥 Jangan lupa tambahkan $users dan $departments ke dalam compact()
+        // return view('fixed_assets.transactions', compact('assets', 'warehouses', 'statuses', 'users', 'departments'));
+
+        // // Tarik master data untuk dropdown di modal pengembalian
+        // $warehouses = \App\Models\Warehouse::orderBy('name')->get();
+        // $statuses = \App\Models\Status::where('type', 'AST')->orderBy('sequence')->get();
+
+        return view('fixed_assets.transactions', compact('assets', 'warehouses', 'statuses', 'users', 'departments'));
     }
 
     // =========================================================================
@@ -972,6 +982,22 @@ class FixedAssetController extends Controller
                 if ($item) {
                     $item->current_stock += 1;
                     $item->save();
+
+                    // 🔥 5. CATAT KE KARTU MUTASI STOK (INVENTORY LEDGER) 🔥
+                    // Pastikan nama model 'ItemStockHistory' dan kolomnya sesuai dengan database Anda
+                    \App\Models\StockMutation::create([
+                        'item_id'          => $item->id,
+                        'warehouse_id'     => $request->warehouse_id,
+                        'transaction_type' => 'MASUK', // Atau sesuaikan dengan kode sistem Anda (misal: 'IN' / 'RETURN')
+                        'reference_number' => 'RET/' . date('Y/m/d') . '/' . $asset->asset_number,
+                        'description'      => 'Pengembalian Aset (' . $asset->asset_number . ') dari User ID: ' . $previousUserId,
+                        'qty_in'           => 1,
+                        'qty_out'          => 0,
+                        'balance'          => $item->current_stock,
+                        'created_by'       => auth()->id(),
+                        'created_at'       => now(),
+                        'updated_at'       => now()
+                    ]);
                 }
             });
 
@@ -980,6 +1006,132 @@ class FixedAssetController extends Controller
         } catch (\Exception $e) {
             return redirect()->back()->with('error', 'Gagal mengembalikan aset: ' . $e->getMessage());
         }
+    }
+
+
+    // =========================================================================
+    // 🔥 3. MESIN PROSES PENYERAHAN ASET (HANDOVER) 🔥
+    // =========================================================================
+    public function handoverAsset(\Illuminate\Http\Request $request, $id)
+    {
+        // 1. Hapus validasi department_id karena form-nya kita buang
+        $request->validate([
+            'assigned_to'   => 'required|exists:users,id',
+            'status_id'     => 'required|exists:statuses,id',
+            'handover_date' => 'required|date',
+            'handover_notes'=> 'nullable|string'
+        ]);
+
+        try {
+            \Illuminate\Support\Facades\DB::transaction(function () use ($request, $id) {
+                $asset = \App\Models\FixedAsset::findOrFail($id);
+                $previousWarehouseId = $asset->warehouse_id;
+
+                // 🔥 SAKTI: Ambil profil lengkap Staf Penerima dari database 🔥
+                $userPenerima = \App\Models\User::findOrFail($request->assigned_to);
+
+                if (!empty($asset->assigned_to)) {
+                    throw new \Exception('Aset ini sedang dipakai dan belum dikembalikan ke gudang.');
+                }
+
+                // 1. CATAT HISTORI PENYERAHAN
+                \App\Models\FixedAssetHistory::create([
+                    'fixed_asset_id'   => $asset->id,
+                    'status'           => 'HANDOVER',
+                    'assigned_to'      => $request->assigned_to,
+                    'notes'            => 'Diserahkan ke User ID: ' . $request->assigned_to . '. Catatan: ' . $request->handover_notes,
+                    'created_by'       => auth()->id(),
+                ]);
+
+                // 2. UPDATE DATA ASET INDUK
+                $asset->assigned_to   = $request->assigned_to;
+                $asset->department_id = $userPenerima->department_id; // 🔥 OTOMATIS TERISI DARI PROFIL USER 🔥
+                $asset->warehouse_id  = null;
+                $asset->status_id     = $request->status_id;
+                $asset->save();
+
+                // 3. UPDATE KARTU STOK MASTER ITEM (-1 KELUAR)
+                $item = \App\Models\Item::find($asset->item_id);
+                if ($item) {
+                    $item->current_stock -= 1;
+                    $item->save();
+
+                    // 4. CATAT MUTASI KELUAR
+                    \App\Models\ItemStockHistory::create([
+                        'item_id'          => $item->id,
+                        'warehouse_id'     => $previousWarehouseId,
+                        'transaction_type' => 'KELUAR',
+                        'reference_number' => 'GI-AST/' . date('Y/m/d') . '/' . $asset->asset_number,
+                        'description'      => 'Penyerahan Aset (' . $asset->asset_number . ') ke User ID: ' . $request->assigned_to,
+                        'qty_in'           => 0,
+                        'qty_out'          => 1,
+                        'balance'          => $item->current_stock,
+                        'created_by'       => auth()->id(),
+                        'created_at'       => now(),
+                        'updated_at'       => now()
+                    ]);
+                }
+            });
+
+            return redirect()->back()->with('success', 'Aset berhasil diserahkan ke pengguna dan Stok Mutasi Gudang (-1) telah tercatat.');
+
+        } catch (\Exception $e) {
+            return redirect()->back()->with('error', 'Gagal menyerahkan aset: ' . $e->getMessage());
+        }
+    }
+
+
+
+
+    // =========================================================================
+    // 🔥 4. HALAMAN RIWAYAT PERJALANAN ASET (LIFECYCLE) 🔥
+    // =========================================================================
+    public function history($id)
+    {
+        // Tarik data aset beserta relasinya
+        $asset = \App\Models\FixedAsset::with(['item', 'company', 'warehouse', 'assignee'])->findOrFail($id);
+
+        // Tarik histori dan urutkan dari yang PALING LAMA ke TERBARU untuk menghitung durasi
+        $histories = \App\Models\FixedAssetHistory::where('fixed_asset_id', $id)
+            ->orderBy('created_at', 'asc')
+            ->get();
+
+        $processedHistories = collect();
+        $lastHandoverDate = null;
+
+        foreach ($histories as $history) {
+            // Ambil nama Admin yang melakukan transaksi
+            $adminName = \App\Models\User::where('id', $history->created_by)->value('name') ?? 'System';
+            $history->admin_name = $adminName;
+
+            // Logika Penghitungan Durasi
+            if ($history->status === 'HANDOVER') {
+                $lastHandoverDate = $history->created_at;
+                $history->durasi = null;
+            } elseif ($history->status === 'RETURNED') {
+                if ($lastHandoverDate) {
+                    $days = $history->created_at->diffInDays($lastHandoverDate);
+                    // Jika dikembalikan di hari yang sama, hitung 1 hari
+                    $history->durasi = ($days == 0 ? 1 : $days) . ' Hari Dipakai';
+                    $lastHandoverDate = null; // Reset setelah dikembalikan
+                }
+            } else {
+                $history->durasi = null;
+            }
+
+            $processedHistories->push($history);
+        }
+
+        // Hitung durasi pemakaian saat ini (jika aset sedang dipakai dan belum dikembalikan)
+        if ($lastHandoverDate && $asset->assigned_to) {
+            $days = now()->diffInDays($lastHandoverDate);
+            $asset->current_usage_duration = ($days == 0 ? 1 : $days) . ' Hari';
+        }
+
+        // Balikkan urutannya menjadi TERBARU ke LAMA untuk ditampilkan di halaman
+        $historiesDesc = $processedHistories->sortByDesc('created_at')->values();
+
+        return view('fixed_assets.history', compact('asset', 'historiesDesc'));
     }
 
 
