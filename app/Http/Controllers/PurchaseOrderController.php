@@ -191,9 +191,9 @@ class PurchaseOrderController extends Controller
     }
 
     // =========================================================================
-    // 3. STORE PO DARI PR (TERBITKAN PO)
+    // 🔥 PROSES TERBITKAN PO DARI PR (STORE) 🔥
     // =========================================================================
-    public function storeFromPr(Request $request, $slug, \App\Services\SystemSettingService $settingService)
+    public function storeFromPr(\Illuminate\Http\Request $request, $slug, \App\Services\SystemSettingService $settingService)
     {
         $request->validate([
             'billing_company_id' => 'required|exists:companies,id',
@@ -203,9 +203,10 @@ class PurchaseOrderController extends Controller
         ]);
 
         try {
-            DB::transaction(function () use ($request, $slug, $settingService) {
+            \Illuminate\Support\Facades\DB::transaction(function () use ($request, $slug, $settingService) {
                 $prRecord = \App\Models\PurchaseRequest::with('items')->where('pr_number', $slug)->firstOrFail();
 
+                // 1. Filter item yang dipilih (ada vendor dan Qty > 0)
                 $itemsToProcess = collect($request->po_items)->filter(function ($item) {
                     return trim($item['vendor_id'] ?? '') !== '' && (float) ($item['qty'] ?? 0) > 0;
                 });
@@ -214,12 +215,14 @@ class PurchaseOrderController extends Controller
                     throw new \Exception('Anda harus memilih Vendor Aktual minimal untuk 1 barang!');
                 }
 
+                // 2. Kelompokkan berdasarkan Vendor (Bisa pecah PO jika beda vendor)
                 $itemsByVendor = $itemsToProcess->groupBy('vendor_id');
                 $statusPending = \App\Models\Status::where('type', 'PO')->where('slug', 'pending_approval')->first();
                 $paymentTermName = \App\Models\PaymentTerm::find($request->payment_term_id)->name ?? null;
 
                 $prItemIdsToHeal = [];
 
+                // 3. Looping Pembuatan PO per Vendor
                 foreach ($itemsByVendor as $vendorId => $items) {
                     $newPoNumber = $this->generatePoNumber($request->billing_company_id);
                     $poSubtotalGross = 0;
@@ -227,8 +230,9 @@ class PurchaseOrderController extends Controller
                     $poTotalTax = 0;
                     $processedLineItems = [];
 
-                    $storagePath = (\DB::table('system_settings')->where('setting_key', 'path_po_attachment')->value('setting_value') ?: 'attachments/purchase_orders') . '/' . str_replace(['/', '\\'], '-', $newPoNumber);
+                    $storagePath = (\Illuminate\Support\Facades\DB::table('system_settings')->where('setting_key', 'path_po_attachment')->value('setting_value') ?: 'attachments/purchase_orders') . '/' . str_replace(['/', '\\'], '-', $newPoNumber);
 
+                    // A. Hitung Rincian per Item
                     foreach ($items as $itemIndex => $itemData) {
                         $qty = (float) ($itemData['qty'] ?? 0);
                         $price = (float) ($itemData['unit_price'] ?? 0);
@@ -258,19 +262,55 @@ class PurchaseOrderController extends Controller
                         ];
                     }
 
-                    $globalDiscType = strtoupper($request->global_discount_type ?? 'FIXED');
-                    $globalDiscVal = (float) ($request->global_discount_value ?? 0);
+                    // B. Hitung Diskon Global (Header PO) dari Array HTML
+                    $globalDiscArray = $request->input('global_discounts.0', []); // Ambil index ke-0
+
+                    $globalDiscType = strtoupper($globalDiscArray['type'] ?? 'FIXED');
+                    $globalDiscVal = (float) ($globalDiscArray['value'] ?? 0);
+
+                    // Hitung nominal diskonnya
                     $poGlobalDiscount = ($globalDiscType === 'PERCENT') ? (($poSubtotalGross - $poTotalItemDiscount) * ($globalDiscVal / 100)) : $globalDiscVal;
 
-                    $poGrandTotal = ($poSubtotalGross - ($poTotalItemDiscount + $poGlobalDiscount)) + $poTotalTax;
+                    // C. Hitung Diskon Ekstra Terpisah
+                    $poExtraDiscountTotal = 0;
+                    $extraDiscountData = [];
+                    if ($request->has('extra_discounts')) {
+                        foreach ($request->extra_discounts as $disc) {
+                            if (!empty($disc['amount']) && $disc['amount'] > 0) {
+                                $discountType = \App\Models\DiscountType::find($disc['discount_type_id']);
+                                $discValueInput = (float) $disc['amount'];
+                                $finalDiscountAmount = 0;
 
+                                if ($discountType && strtoupper($discountType->type) === 'PERCENT') {
+                                    $finalDiscountAmount = ($poSubtotalGross * $discValueInput) / 100;
+                                } else {
+                                    $finalDiscountAmount = $discValueInput;
+                                }
+
+                                $poExtraDiscountTotal += $finalDiscountAmount;
+
+                                $extraDiscountData[] = [
+                                    'name' => $disc['discount_type_id'],
+                                    'amount' => $finalDiscountAmount,
+                                    'created_at' => now(),
+                                    'updated_at' => now()
+                                ];
+                            }
+                        }
+                    }
+
+                    // D. Rekap Keseluruhan
+                    $totalAllDiscounts = $poTotalItemDiscount + $poGlobalDiscount + $poExtraDiscountTotal;
+                    $poGrandTotal = ($poSubtotalGross - $totalAllDiscounts) + $poTotalTax;
+
+                    // E. Simpan Header PO
                     $po = \App\Models\PurchaseOrder::create([
                         'po_number'             => $newPoNumber,
                         'purchase_request_id'   => $prRecord->id,
                         'vendor_id'             => $vendorId,
                         'bill_to_company_id'    => $request->billing_company_id,
                         'status_id'             => $statusPending ? $statusPending->id : null,
-                        'current_approval_level'=> 0,
+                        // 'current_approval_level'=> 0,
                         'po_date'               => $request->po_date ?? now(),
                         'created_by'            => auth()->id(),
                         'currency'              => $request->currency ?? 'IDR',
@@ -281,12 +321,21 @@ class PurchaseOrderController extends Controller
                         'global_discount_type'  => $globalDiscType,
                         'global_discount_value' => $globalDiscVal,
                         'subtotal'              => $poSubtotalGross,
-                        'discount_total'        => $poTotalItemDiscount + $poGlobalDiscount,
+                        'discount_total'        => $totalAllDiscounts, // Masuk ke kolom yang benar
                         'tax_total'             => $poTotalTax,
                         'charge_total'          => 0,
                         'grand_total'           => $poGrandTotal,
                     ]);
 
+                    // F. Simpan Diskon Ekstra ke Database
+                    if (!empty($extraDiscountData)) {
+                        foreach ($extraDiscountData as &$data) {
+                            $data['purchase_order_id'] = $po->id;
+                        }
+                        \Illuminate\Support\Facades\DB::table('purchase_order_discounts')->insert($extraDiscountData);
+                    }
+
+                    // G. Simpan Line Items & Lampiran
                     foreach ($processedLineItems as $line) {
                         $itemData = $line['itemData'];
                         $newPoItem = \App\Models\PurchaseOrderItem::create([
@@ -319,11 +368,12 @@ class PurchaseOrderController extends Controller
                         }
                     }
 
+                    // H. Simpan Biaya Tambahan (Charges) dan Update Grand Total Akhir
                     $poChargeTotal = 0;
                     if ($request->has('charges')) {
                         foreach ($request->charges as $charge) {
                             if (!empty($charge['amount'])) {
-                                DB::table('purchase_order_charges')->insert([
+                                \Illuminate\Support\Facades\DB::table('purchase_order_charges')->insert([
                                     'purchase_order_id' => $po->id,
                                     'name' => $charge['charge_type_id'],
                                     'amount' => $charge['amount'],
@@ -335,55 +385,18 @@ class PurchaseOrderController extends Controller
                         }
                     }
 
-                    // ==========================================
-                    // 🔥 PERBAIKAN LOGIKA DISKON EKSTRA 🔥
-                    // ==========================================
-                    $poExtraDiscountTotal = 0;
-                    if ($request->has('extra_discounts')) {
-                        foreach ($request->extra_discounts as $disc) {
-                            if (!empty($disc['amount']) && $disc['amount'] > 0) {
-
-                                // 1. Ambil data Tipe Diskon dari Database untuk mengetahui (Percent / Nominal)
-                                $discountType = \App\Models\DiscountType::find($disc['discount_type_id']);
-                                $discValueInput = (float) $disc['amount'];
-                                $finalDiscountAmount = 0;
-
-                                // 2. Hitung Nominal Diskon (DPP vs Grand Total)
-                                if ($discountType && strtoupper($discountType->type) === 'PERCENT') {
-                                    // Jika tipe diskon adalah Persentase (misal: 2%)
-                                    // Menghitung persen biasanya dikalikan dengan Subtotal Kotor (Gross)
-                                    $finalDiscountAmount = ($poSubtotalGross * $discValueInput) / 100;
-                                } else {
-                                    // Jika tipe diskon adalah Nominal Rupiah / Fixed (misal: Potongan 50.000)
-                                    $finalDiscountAmount = $discValueInput;
-                                }
-
-                                // 3. Simpan ke database
-                                DB::table('purchase_order_discounts')->insert([
-                                    'purchase_order_id' => $po->id,
-                                    'name' => $disc['discount_type_id'],
-                                    // 🔥 Simpan Nominal yang SUDAH DIHITUNG (Rupiahnya), bukan persennya
-                                    'amount' => $finalDiscountAmount,
-                                    'created_at' => now(),
-                                    'updated_at' => now()
-                                ]);
-
-                                // 4. Tambahkan ke Total Diskon Ekstra
-                                $poExtraDiscountTotal += $finalDiscountAmount;
-                            }
-                        }
-                    }
-
-                    if ($poChargeTotal > 0 || $poExtraDiscountTotal > 0) {
+                    // Update total karena charge sifatnya menambah tagihan
+                    if ($poChargeTotal > 0) {
                         $po->update([
                             'charge_total' => $poChargeTotal,
-                            'grand_total'  => $poGrandTotal + $poChargeTotal - $poExtraDiscountTotal
+                            'grand_total'  => $po->grand_total + $poChargeTotal
                         ]);
                     }
 
-                    $workflow = \DB::table('approval_workflows')->where('document_type', get_class($po))->where('is_active', 1)->first();
+                    // I. Inisiasi Workflow Approval
+                    $workflow = \Illuminate\Support\Facades\DB::table('approval_workflows')->where('document_type', get_class($po))->where('is_active', 1)->first();
                     if ($workflow) {
-                        $steps = \DB::table('approval_workflow_steps')
+                        $steps = \Illuminate\Support\Facades\DB::table('approval_workflow_steps')
                                     ->where('approval_workflow_id', $workflow->id)
                                     ->where('min_amount', '<=', $po->grand_total)
                                     ->orderBy('step_order', 'asc')
@@ -402,7 +415,7 @@ class PurchaseOrderController extends Controller
                     $this->logHistory($po->id, 'PO Diterbitkan', 'Dokumen PO diterbitkan dari PR #' . $prRecord->pr_number);
                 }
 
-                // 🔥 EKSEKUSI SELF-HEALING PR 🔥
+                // J. EKSEKUSI SELF-HEALING PR (Update status PR jika Full/Partial)
                 if (!empty($prItemIdsToHeal)) {
                     foreach(array_unique($prItemIdsToHeal) as $pid) {
                         $this->recalculatePrItemFulfillment($pid);

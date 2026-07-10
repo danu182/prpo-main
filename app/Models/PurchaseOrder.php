@@ -6,7 +6,7 @@ use Illuminate\Database\Eloquent\Model;
 
 class PurchaseOrder extends Model
 {
-    protected $guarded = ['id'];
+    protected $guarded = [];
 
     public function items()
     {
