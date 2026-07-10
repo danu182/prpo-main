@@ -96,6 +96,9 @@
                         {{-- Master List Data Aset --}}
                         <li><a class="dropdown-item py-2 {{ request()->routeIs('fixed-assets.master_list') ? 'active' : '' }}" href="{{ route('fixed-assets.master_list') }}"><i class="bi bi-server text-primary me-2"></i> Master Data Aset</a></li>
 
+                        {{-- 🔥 MENU BARU: TRANSAKSI & PENGEMBALIAN ASET 🔥 --}}
+                        <li><a class="dropdown-item py-2 {{ request()->routeIs('fixed-assets.transactions') ? 'active' : '' }}" href="{{ route('fixed-assets.transactions') }}"><i class="bi bi-arrow-left-right text-danger me-2"></i> Transaksi & Retur Aset</a></li>
+
                         {{-- Pengakuan Aset / Capitalization --}}
                         <li><a class="dropdown-item py-2 {{ request()->routeIs('asset-capitalizations.*') ? 'active' : '' }}" href="{{ route('asset-capitalizations.index') }}"><i class="bi bi-magic text-warning me-2"></i> Pengakuan Aset (Capitalization)</a></li>
 

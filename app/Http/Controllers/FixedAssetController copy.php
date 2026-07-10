@@ -668,4 +668,118 @@ class FixedAssetController extends Controller
 
         return view('fixed_assets.hibah_history', compact('hibahs'));
     }
+
+
+
+    // =========================================================================
+    // 🔥 1. HALAMAN KHUSUS TRANSAKSI ASET 🔥
+    // =========================================================================
+    public function transactions(\Illuminate\Http\Request $request)
+    {
+        // Menampilkan aset yang sedang dipakai (untuk dikembalikan)
+        // dan aset di gudang (untuk diserahkan ke staf).
+        $query = \App\Models\FixedAsset::with(['item', 'assignee', 'department', 'warehouse', 'status']);
+
+        if ($request->filled('search')) {
+            $search = $request->search;
+            $query->where(function($q) use ($search) {
+                $q->where('asset_number', 'like', "%{$search}%")
+                  ->orWhere('serial_number', 'like', "%{$search}%")
+                  ->orWhere('name', 'like', "%{$search}%")
+                  ->orWhereHas('assignee', function($userQ) use ($search) {
+                      $userQ->where('name', 'like', "%{$search}%");
+                  });
+            });
+        }
+
+        $assets = $query->latest()->paginate(15)->withQueryString();
+
+        // Tarik master data untuk dropdown di modal pengembalian
+        $warehouses = \App\Models\Warehouse::orderBy('name')->get();
+        $statuses = \App\Models\Status::where('type', 'AST')->orderBy('sequence')->get();
+
+        return view('fixed_assets.transactions', compact('assets', 'warehouses', 'statuses'));
+    }
+
+    // =========================================================================
+    // 🔥 2. MESIN PROSES PENGEMBALIAN ASET (RETURN) 🔥
+    // =========================================================================
+    public function returnAsset(\Illuminate\Http\Request $request, $id)
+    {
+        // 1. Validasi input dari form modal pengembalian
+        $request->validate([
+            'warehouse_id' => 'required|exists:warehouses,id',
+            'status_id'    => 'required|exists:statuses,id',
+            'return_date'  => 'required|date',
+            'return_notes' => 'nullable|string'
+        ]);
+
+        try {
+            // Gunakan DB Transaction agar data aman jika terjadi error di tengah proses
+            \Illuminate\Support\Facades\DB::transaction(function () use ($request, $id) {
+
+                // Cari data asetnya
+                $asset = \App\Models\FixedAsset::findOrFail($id);
+                $previousUserId = $asset->assigned_to;
+                $previousDeptId = $asset->department_id;
+
+                if (empty($previousUserId)) {
+                    throw new \Exception('Aset ini sudah berada di gudang dan tidak sedang dipegang oleh siapapun.');
+                }
+
+                // 2. CATAT HISTORI PENGEMBALIAN
+                // (Pastikan Model FixedAssetHistory sudah Anda buat sebelumnya)
+                \App\Models\FixedAssetHistory::create([
+                    'fixed_asset_id'   => $asset->id,
+                    'action'           => 'RETURNED', // Status aksi
+                    'previous_user_id' => $previousUserId,
+                    'new_user_id'      => null,
+                    'warehouse_id'     => $request->warehouse_id,
+                    'action_date'      => $request->return_date,
+                    'notes'            => 'Dikembalikan ke gudang. Catatan: ' . $request->return_notes,
+                    'created_by'       => auth()->id(),
+                ]);
+
+                // 3. UPDATE DATA ASET INDUK (Lepas ikatan dari User)
+                $asset->assigned_to   = null;
+                $asset->department_id = null; // Opsional: Kosongkan dept atau set ke Dept IT
+                $asset->warehouse_id  = $request->warehouse_id;
+                $asset->status_id     = $request->status_id;
+                $asset->save();
+
+                // 4. UPDATE KARTU STOK MASTER ITEM (+1)
+                $item = \App\Models\Item::find($asset->item_id);
+                if ($item) {
+                    $item->current_stock += 1;
+                    $item->save();
+
+                    // Opsional: Jika Anda punya tabel histori kartu stok (Inventory Ledger)
+                    // Anda bisa menambahkan logic insert ke tabel tersebut di sini.
+                    /*
+                    \App\Models\ItemStockHistory::create([
+                        'item_id' => $item->id,
+                        'warehouse_id' => $request->warehouse_id,
+                        'transaction_type' => 'ASSET_RETURN',
+                        'qty' => 1,
+                        'balance' => $item->current_stock,
+                        'reference_number' => 'RET-' . $asset->asset_number,
+                    ]);
+                    */
+                }
+            });
+
+            return redirect()->back()->with('success', 'Aset berhasil dikembalikan ke Gudang dan Stok Master Item telah bertambah +1.');
+
+        } catch (\Exception $e) {
+            return redirect()->back()->with('error', 'Gagal mengembalikan aset: ' . $e->getMessage());
+        }
+    }
+
+
+
+
+
+
+
+
 }

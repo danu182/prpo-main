@@ -18,17 +18,16 @@ class MasterAssetExport implements FromQuery, WithHeadings, WithMapping, ShouldA
     protected $filters;
     private $rowNumber = 0;
 
-    // Menerima data filter dari Controller
     public function __construct($filters)
     {
         $this->filters = $filters;
     }
 
-    // 1. Ambil Data (Sesuai dengan filter yang sedang aktif di halaman)
     public function query()
     {
+        // 🔥 TAMBAHAN: Kita load relasi 'goodsReceipt' agar data GR dan PO bisa ditarik
         $query = FixedAsset::query()->with([
-            'item.category', 'assignee.department', 'company', 'department', 'status', 'warehouse', 'currency'
+            'item.category', 'assignee.department', 'company', 'department', 'status', 'warehouse', 'currency', 'goodsReceipt'
         ]);
 
         if (!empty($this->filters['status'])) {
@@ -59,7 +58,6 @@ class MasterAssetExport implements FromQuery, WithHeadings, WithMapping, ShouldA
         return $query->latest();
     }
 
-    // 2. Judul Kolom Excel
     public function headings(): array
     {
         return [
@@ -68,7 +66,8 @@ class MasterAssetExport implements FromQuery, WithHeadings, WithMapping, ShouldA
             'KODE AKUNTANSI',
             'SERIAL NUMBER (S/N)',
             'KODE MASTER (SKU)',
-            'NAMA ASET',
+            'NAMA MASTER BARANG',
+            'NAMA ASET (SPESIFIK)',
             'KATEGORI / TYPE',
             'SPESIFIKASI',
             'PENGGUNA / GUDANG',
@@ -78,16 +77,18 @@ class MasterAssetExport implements FromQuery, WithHeadings, WithMapping, ShouldA
             'STATUS KONDISI',
             'MATA UANG',
             'HARGA BELI',
+            'REF. PO (PURCHASE ORDER)',  // 🔥 KOLOM BARU 1
+            'REF. GR (GOODS RECEIPT)',   // 🔥 KOLOM BARU 2
+            'REF. IMPORT / HIBAH',       // 🔥 KOLOM BARU 3
             'CATATAN'
         ];
     }
 
-    // 3. Mapping Data ke Kolom
     public function map($asset): array
     {
         $this->rowNumber++;
 
-        // Logika Kategori (Sama seperti di Blade)
+        // Logika Kategori
         $subCategoryName = optional(optional($asset->item)->category)->name ?? '';
         if(empty($subCategoryName)) {
             $namaBarangLower = strtolower($asset->name);
@@ -105,11 +106,31 @@ class MasterAssetExport implements FromQuery, WithHeadings, WithMapping, ShouldA
         // Logika Pengguna & Dept
         $pengguna = empty($asset->assigned_to)
             ? 'Gudang: ' . (optional($asset->warehouse)->name ?? 'Gudang Utama')
-            :  (optional($asset->assignee)->name ?? 'Unknown');
+            : (optional($asset->assignee)->name ?? 'Unknown');
 
         $dept = empty($asset->assigned_to)
             ? '-'
             : (optional(optional($asset->assignee)->department)->name ?? optional($asset->department)->name ?? '-');
+
+        // 🔥 LOGIKA PENARIKAN REFERENSI (PO, GR, HIBAH) 🔥
+
+        // 1. Nomor GR (Mengambil dari tabel GoodsReceipt)
+        $grNumber = optional($asset->goodsReceipt)->gr_number ?? optional($asset->goodsReceipt)->receipt_number ?? '-';
+
+        // 2. Nomor PO (Mencoba menarik dari relasi GR -> PO, atau langsung dari GR jika ada)
+        $poNumber = optional(optional($asset->goodsReceipt)->purchaseOrder)->po_number
+                    ?? optional($asset->goodsReceipt)->po_number
+                    ?? '-';
+
+        // 3. Referensi Import / Hibah (Mengkombinasikan batch_id dan supporting_document)
+        $importRefData = [];
+        if (!empty($asset->batch_id)) {
+            $importRefData[] = $asset->batch_id; // Biasanya berisi kode batch import
+        }
+        if (!empty($asset->supporting_document)) {
+            $importRefData[] = $asset->supporting_document; // Dokumen pendukung BAST/Hibah
+        }
+        $refHibah = !empty($importRefData) ? implode(' | ', $importRefData) : '-';
 
         return [
             $this->rowNumber,
@@ -117,6 +138,7 @@ class MasterAssetExport implements FromQuery, WithHeadings, WithMapping, ShouldA
             $asset->accounting_asset_number ?? '-',
             $asset->serial_number ?? '-',
             optional($asset->item)->code ?? '-',
+            optional($asset->item)->name ?? '-',
             $asset->name ?? optional($asset->item)->name ?? '-',
             $subCategoryName,
             $asset->spesifikasi_detail ?? '-',
@@ -127,11 +149,13 @@ class MasterAssetExport implements FromQuery, WithHeadings, WithMapping, ShouldA
             optional($asset->status)->name ?? 'Normal',
             optional($asset->currency)->code ?? 'IDR',
             $asset->purchase_price ?? 0,
+            $poNumber, // 🔥 OUTPUT KOLOM PO
+            $grNumber, // 🔥 OUTPUT KOLOM GR
+            $refHibah, // 🔥 OUTPUT KOLOM IMPORT/HIBAH
             $asset->notes ?? '-'
         ];
     }
 
-    // 4. Styling Header Excel (Warna latar, huruf tebal)
     public function styles(Worksheet $sheet)
     {
         return [

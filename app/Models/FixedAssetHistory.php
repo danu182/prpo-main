@@ -9,7 +9,7 @@ class FixedAssetHistory extends Model
 {
     use HasFactory;
 
-    protected $fillable = ['fixed_asset_id', 'status', 'assigned_to', 'notes', 'created_by'];
+    protected $guarded = [];
 
     public function assignee() {
         return $this->belongsTo(User::class, 'assigned_to');

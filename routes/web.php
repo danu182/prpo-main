@@ -192,6 +192,14 @@ Route::middleware('auth')->group(function () {
         // 🔥 TAMBAHKAN ROUTE EXPORT INI 🔥
         Route::get('/master-list/export', [FixedAssetController::class, 'exportMasterList'])->name('master_list_export');
 
+
+        // 🔥 ROUTE BARU: TRANSAKSI & PENGEMBALIAN ASET 🔥
+        // Route untuk Halaman Khusus Transaksi Aset (Serah Terima & Pengembalian)
+        Route::get('/transactions', [App\Http\Controllers\FixedAssetController::class, 'transactions'])->name('transactions');
+
+        // Route untuk Proses Eksekusi Pengembalian (POST)
+        Route::post('/{id}/return', [App\Http\Controllers\FixedAssetController::class, 'returnAsset'])->name('return');
+
     });
 
     Route::prefix('assets')->name('assets.')->middleware(['can:view_assets'])->group(function () {
