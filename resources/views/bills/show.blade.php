@@ -37,9 +37,25 @@
                 </a>
             @endif
 
-            <a href="{{ route('bills.print', $bill->bill_number) }}" target="_blank" class="shadow-sm btn btn-dark rounded-pill fw-bold">
-                <i class="bi bi-printer me-1"></i> Cetak PDF Resmi
-            </a>
+            {{-- 🔥 TOMBOL CETAK DIPERBARUI: SPLIT DROPDOWN 🔥 --}}
+            <div class="shadow-sm btn-group">
+                {{-- Tombol Utama (Kiri) --}}
+                <a href="{{ route('bills.print', $bill->bill_number) }}" target="_blank" class="btn btn-dark fw-bold rounded-start-pill">
+                    <i class="bi bi-printer me-1"></i> Cetak PDF Resmi
+                </a>
+                {{-- Tombol Panah Dropdown (Kanan) --}}
+                <button type="button" class="btn btn-dark dropdown-toggle dropdown-toggle-split rounded-end-pill" data-bs-toggle="dropdown" aria-expanded="false">
+                    <span class="visually-hidden">Toggle Dropdown</span>
+                </button>
+                {{-- Menu Pilihan --}}
+                <ul class="mt-2 border-0 shadow dropdown-menu dropdown-menu-end">
+                    <li>
+                        <a class="py-2 dropdown-item fw-medium" href="{{ route('bills.print_with_attachments', $bill->bill_number) }}" target="_blank">
+                            <i class="bi bi-file-earmark-plus text-primary me-2"></i> Cetak + Lampiran
+                        </a>
+                    </li>
+                </ul>
+            </div>
         </div>
     </div>
 

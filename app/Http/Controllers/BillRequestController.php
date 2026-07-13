@@ -943,6 +943,27 @@ class BillRequestController extends Controller
 
 
 
+    public function printWithAttachments($slug)
+    {
+        // 🔥 PERBAIKAN: Ubah pencarian dari 'slug' menjadi 'bill_number'
+        // 🔥 PERBAIKAN: Samakan relasi (with) seperti di printPdf, lalu tambahkan 'attachments'
+        $bill = \App\Models\BillRequest::with([
+            'items',
+            'company',
+            'user',
+            'charges.chargeType',
+            'discounts.discountType',
+            'attachments' // Relasi untuk lampirannya
+        ])->where('bill_number', $slug)->firstOrFail();
+
+        // Load view PDF yang ada lampirannya
+        $pdf = \Barryvdh\DomPDF\Facade\Pdf::loadView('bills.pdf_with_attachments', compact('bill'))
+                ->setPaper('A4', 'portrait');
+
+        return $pdf->stream('Tagihan_Opex_Lampiran_' . str_replace('/', '_', $bill->bill_number) . '.pdf');
+    }
+
+
 
 
 

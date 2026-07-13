@@ -61,4 +61,11 @@ class BillRequest extends Model implements HasMedia
         return $this->belongsTo(\App\Models\Status::class, 'status_id');
     }
 
+
+    public function attachments()
+    {
+        // Ganti 'BillAttachment' dengan nama Model lampiran yang Anda gunakan
+        return $this->hasMany(\App\Models\BillAttachment::class, 'bill_request_id');
+    }
+
 }
