@@ -129,5 +129,11 @@ class FixedAsset extends Model
     }
 
 
+    // Relasi ke Kategori Aset
+    public function category()
+    {
+        return $this->belongsTo(\App\Models\AssetCategory::class, 'asset_category_id');
+    }
+
 
 }
