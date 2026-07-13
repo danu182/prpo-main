@@ -303,11 +303,11 @@
                     </div>
 
                 @else
-                    {{-- Jika file berupa PDF/Docx, hanya tampilkan teks informasinya --}}
+                    {{-- Jika file berupa PDF --}}
                     <div style="margin-bottom: 15px; padding: 10px; background-color: #f8f9fa; border: 1px solid #ddd;">
                         <p><strong>File:</strong> {{ $attachment->file_name ?? $attachment->file_path }}</p>
-                        <p style="font-size: 8pt; color: #666;">
-                            <em>*File ini berformat non-gambar (PDF/Doc) sehingga tidak dapat disisipkan langsung ke lembar ini. Silakan unduh secara terpisah di sistem.*</em>
+                        <p style="font-size: 9pt; color: green; font-weight: bold;">
+                            <em>*Dokumen PDF ini telah digabungkan secara otomatis di halaman akhir cetakan ini.*</em>
                         </p>
                     </div>
                 @endif

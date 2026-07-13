@@ -945,22 +945,55 @@ class BillRequestController extends Controller
 
     public function printWithAttachments($slug)
     {
-        // 🔥 PERBAIKAN: Ubah pencarian dari 'slug' menjadi 'bill_number'
-        // 🔥 PERBAIKAN: Samakan relasi (with) seperti di printPdf, lalu tambahkan 'attachments'
         $bill = \App\Models\BillRequest::with([
-            'items',
-            'company',
-            'user',
-            'charges.chargeType',
-            'discounts.discountType',
-            'attachments' // Relasi untuk lampirannya
+            'items', 'company', 'user', 'charges.chargeType', 'discounts.discountType', 'attachments'
         ])->where('bill_number', $slug)->firstOrFail();
 
-        // Load view PDF yang ada lampirannya
+        // 1. RENDER DOMPDF SEPERTI BIASA (Untuk Halaman Tagihan & Lampiran Gambar)
         $pdf = \Barryvdh\DomPDF\Facade\Pdf::loadView('bills.pdf_with_attachments', compact('bill'))
                 ->setPaper('A4', 'portrait');
 
-        return $pdf->stream('Tagihan_Opex_Lampiran_' . str_replace('/', '_', $bill->bill_number) . '.pdf');
+        // 2. SIMPAN HASIL DOMPDF SEMENTARA DI FOLDER STORAGE
+        $tempMainPdfPath = storage_path('app/temp_bill_' . uniqid() . '.pdf');
+        $pdf->save($tempMainPdfPath);
+
+        // 3. INISIASI MESIN PENGGABUNG PDF (MERGER)
+        $merger = new \iio\libmergepdf\Merger();
+
+        // Masukkan file utama (Tagihan + Gambar) ke halaman paling depan
+        $merger->addFile($tempMainPdfPath);
+
+        // 4. CARI LAMPIRAN BERFORMAT PDF & MASUKKAN KE MERGER
+        if ($bill->attachments) {
+            foreach ($bill->attachments as $attachment) {
+                $ext = strtolower(pathinfo($attachment->file_path, PATHINFO_EXTENSION));
+
+                // Jika file adalah PDF asli
+                if ($ext === 'pdf') {
+                    $pdfAttachmentPath = public_path('storage/' . $attachment->file_path);
+
+                    // Pastikan filenya benar-benar ada di folder server
+                    if (file_exists($pdfAttachmentPath)) {
+                        $merger->addFile($pdfAttachmentPath);
+                    }
+                }
+            }
+        }
+
+        // 5. JAHIT/GABUNGKAN SEMUA PDF MENJADI SATU KESATUAN
+        $mergedPdfData = $merger->merge();
+
+        // 6. BERSIHKAN FILE SEMENTARA (Agar server tidak penuh)
+        if (file_exists($tempMainPdfPath)) {
+            unlink($tempMainPdfPath);
+        }
+
+        // 7. TAMPILKAN HASILNYA KE BROWSER USER
+        $filename = 'Tagihan_Opex_Lengkap_' . str_replace('/', '_', $bill->bill_number) . '.pdf';
+
+        return response($mergedPdfData)
+                ->header('Content-Type', 'application/pdf')
+                ->header('Content-Disposition', 'inline; filename="' . $filename . '"');
     }
 
 
