@@ -382,4 +382,54 @@ class BillPaymentController extends Controller
         }
     }
 
+
+
+
+    public function printReceiptWithAttachments($payment_slug)
+    {
+        // Sesuaikan nama Model dan Relasi lampiran Anda (Misal: BillPayment dan attachments)
+        $payment = \App\Models\BillPayment::with(['billRequest', 'attachments'])->where('payment_number', $payment_slug)->firstOrFail();
+
+        // 1. RENDER KUITANSI UTAMA
+        // Pastikan Anda membuat/menyiapkan view ini di langkah selanjutnya
+        $pdf = \Barryvdh\DomPDF\Facade\Pdf::loadView('payments.receipt_pdf_with_attachments', compact('payment'))
+                ->setPaper('A4', 'portrait');
+
+        // 2. SIMPAN HASIL SEMENTARA
+        $tempMainPdfPath = storage_path('app/temp_payment_' . uniqid() . '.pdf');
+        $pdf->save($tempMainPdfPath);
+
+        // 3. INISIASI PENGGABUNG PDF
+        $merger = new \iio\libmergepdf\Merger();
+        $merger->addFile($tempMainPdfPath);
+
+        // 4. JAHIT LAMPIRAN PDF (JIKA ADA)
+        if ($payment->attachments) {
+            foreach ($payment->attachments as $attachment) {
+                $ext = strtolower(pathinfo($attachment->file_path, PATHINFO_EXTENSION));
+                if ($ext === 'pdf') {
+                    $pdfAttachmentPath = public_path('storage/' . $attachment->file_path);
+                    if (file_exists($pdfAttachmentPath)) {
+                        $merger->addFile($pdfAttachmentPath);
+                    }
+                }
+            }
+        }
+
+        // 5. GABUNGKAN
+        $mergedPdfData = $merger->merge();
+
+        // 6. BERSIHKAN FILE SEMENTARA
+        if (file_exists($tempMainPdfPath)) {
+            unlink($tempMainPdfPath);
+        }
+
+        // 7. TAMPILKAN HASIL
+        $filename = 'Kuitansi_Lengkap_' . str_replace('/', '_', $payment->payment_number) . '.pdf';
+
+        return response($mergedPdfData)
+                ->header('Content-Type', 'application/pdf')
+                ->header('Content-Disposition', 'inline; filename="' . $filename . '"');
+    }
+
 }

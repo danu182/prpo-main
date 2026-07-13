@@ -7,6 +7,7 @@ use Illuminate\Database\Eloquent\Model;
 use Spatie\MediaLibrary\HasMedia;
 use Spatie\MediaLibrary\InteractsWithMedia;
 
+
 class BillPayment extends Model implements HasMedia
 {
     use HasFactory, InteractsWithMedia;
@@ -36,6 +37,12 @@ class BillPayment extends Model implements HasMedia
     {
         // Relasi ke PT yang melakukan pembayaran
         return $this->belongsTo(Company::class, 'paid_by_company_id');
+    }
+
+    public function attachments()
+    {
+        // Mengarah ke Model lampiran pembayaran
+        return $this->hasMany(\App\Models\PaymentAttachment::class, 'bill_payment_id');
     }
 
 

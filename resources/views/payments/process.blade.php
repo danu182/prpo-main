@@ -379,18 +379,31 @@
                                     </div>
                                 @endif
                             </div>
-                            <div class="col-md-3 text-end">
-                                {{-- Tombol Cetak Kuitansi Satuan --}}
-                                <a href="{{ route('payments.receipt.print', $history->payment_number) }}" target="_blank" class="btn btn-outline-secondary btn-sm rounded-circle" title="Cetak Kuitansi">
-                                    <i class="bi bi-printer"></i>
-                                </a>
+                            <div class="gap-1 col-md-3 text-end d-flex justify-content-end">
+                                {{-- 🔥 Tombol Cetak (Split Dropdown) 🔥 --}}
+                                <div class="shadow-sm btn-group">
+                                    <a href="{{ route('payments.receipt.print', $history->payment_number) }}" target="_blank" class="btn btn-outline-secondary btn-sm rounded-start-pill" title="Cetak Kuitansi">
+                                        <i class="bi bi-printer"></i>
+                                    </a>
+                                    <button type="button" class="btn btn-outline-secondary btn-sm dropdown-toggle dropdown-toggle-split rounded-end-pill" data-bs-toggle="dropdown" aria-expanded="false">
+                                        <span class="visually-hidden">Toggle Dropdown</span>
+                                    </button>
+                                    <ul class="mt-1 border-0 shadow dropdown-menu dropdown-menu-end">
+                                        <li>
+                                            <a class="py-2 dropdown-item fw-medium" href="{{ route('payments.receipt.print_with_attachments', $history->payment_number) }}" target="_blank">
+                                                <i class="bi bi-file-earmark-plus text-primary me-2"></i> Cetak + Lampiran
+                                            </a>
+                                        </li>
+                                    </ul>
+                                </div>
 
                                 {{-- Tombol Batalkan Pembayaran (Void) --}}
                                 <button type="button"
-                                        class="p-2 shadow-sm btn btn-outline-danger btn-sm rounded-circle btn-void-payment"
+                                        class="shadow-sm btn btn-outline-danger btn-sm rounded-circle btn-void-payment"
                                         data-id="{{ $history->payment_number }}"
                                         data-number="{{ $history->payment_number }}"
-                                        title="Batalkan Pembayaran">
+                                        title="Batalkan Pembayaran"
+                                        style="width: 32px; height: 32px; display: flex; align-items: center; justify-content: center;">
                                     <i class="bi bi-trash-fill"></i>
                                 </button>
                             </div>

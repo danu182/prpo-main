@@ -517,6 +517,9 @@ Route::middleware('auth')->group(function () {
         Route::delete('/destroy/{payment_slug}', [BillPaymentController::class, 'destroy'])->name('destroy')->where('payment_slug', '.*');
         Route::get('/receipt/print/{payment_slug}', [BillPaymentController::class, 'printReceipt'])->name('receipt.print')->where('payment_slug', '.*');
 
+        // 🔥 RUTE BARU: Cetak Kuitansi Pembayaran + Lampiran Bukti Transfer 🔥
+        Route::get('/receipt/print-with-attachments/{payment_slug}', [BillPaymentController::class, 'printReceiptWithAttachments'])->name('receipt.print_with_attachments')->where('payment_slug', '.*');
+
         // Cetak Rekap (Statement) pakai slug Tagihan
         Route::get('/statement/print/{slug}', [BillPaymentController::class, 'printStatement'])->name('statement.print')->where('slug', '.*');
     });
