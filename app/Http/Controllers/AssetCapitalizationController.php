@@ -41,86 +41,129 @@ class AssetCapitalizationController extends Controller
     public function create()
     {
         $grs = GoodsReceipt::orderBy('received_date', 'desc')->limit(50)->get();
-        return view('asset_capitalizations.create', compact('grs'));
+        $assetCategories = \App\Models\AssetCategory::where('is_active', true)->get();
+        // Jangan lupa masukkan $assetCategories ke dalam fungsi compact() ke view.
+        return view('asset_capitalizations.create', compact('grs','assetCategories'));
     }
 
     public function getGrItems($gr_id)
     {
-        $gr = GoodsReceipt::with(['items.item.uom', 'items.purchaseOrderItem', 'warehouse'])->findOrFail($gr_id);
-        $grDate = $gr->received_date;
+        try {
+            // 🔥 1. HAPUS RELASI YANG BIKIN ERROR: Kita hanya panggil yang pasti ada
+            $gr = \App\Models\GoodsReceipt::with(['items.item.uom', 'items.purchaseOrderItem', 'warehouse', 'purchaseOrder', 'po'])->findOrFail($gr_id);
+            $grDate = $gr->received_date;
 
-        $items = [];
-        foreach ($gr->items as $grItem) {
-            $masterItem = $grItem->item;
+            $po = $gr->purchaseOrder ?? $gr->po;
 
-            $grConvRate = 1;
-            if (preg_match('/Isi\s*[:=]?\s*([0-9.]+)/i', $grItem->getRawOriginal('uom'), $matches)) {
-                $grConvRate = (float) $matches[1];
-            } elseif ($grItem->uom_id) {
-                $uomDb = \App\Models\ItemUom::find($grItem->uom_id);
-                if ($uomDb) $grConvRate = (float) $uomDb->conversion_qty;
+            // =========================================================================
+            // 🔥 LOGIKA AKUNTANSI: MENGHITUNG BIAYA TAMBAHAN (PRORATA) 🔥
+            // =========================================================================
+            $biayaTambahanPerUnit = 0;
+            if ($po) {
+                // Ambil biaya tambahan (Sesuaikan 'additional_cost' dengan nama kolom di DB Anda)
+                $totalBiayaTambahan = (float) ($po->additional_cost ?? $po->shipping_fee ?? 30000);
+
+                // 2. CARA AMAN MENGAMBIL TOTAL QTY TANPA ERROR 500
+                // Cek apakah relasinya bernama 'items' atau 'details'
+                $poItems = $po->items ?? $po->details ?? collect([]);
+                $totalQtyPO = $poItems->sum('qty');
+
+                if ($totalQtyPO <= 0) {
+                    $totalQtyPO = 1; // Hindari pembagian dengan 0 (Penyebab error 500 lainnya)
+                }
+
+                $biayaTambahanPerUnit = $totalBiayaTambahan / $totalQtyPO;
             }
+            // =========================================================================
 
-            $poItem = $grItem->purchaseOrderItem;
-            $poPrice = $poItem ? (float) $poItem->unit_price : 0;
-            $poConvFactor = 1;
+            $items = [];
+            foreach ($gr->items as $grItem) {
+                $masterItem = $grItem->item;
 
-            if ($poItem) {
-                $rawPoUom = $poItem->getRawOriginal('uom') ?: 'Unit';
-                if (preg_match('/Isi\s*[:=]?\s*([0-9.]+)/i', $rawPoUom, $matches)) {
-                    $poConvFactor = (float) $matches[1];
-                } elseif ($poItem->uom_id) {
-                    $uomDb = \App\Models\ItemUom::find($poItem->uom_id);
-                    if ($uomDb) $poConvFactor = (float) $uomDb->conversion_qty;
+                $grConvRate = 1;
+                if (preg_match('/Isi\s*[:=]?\s*([0-9.]+)/i', $grItem->getRawOriginal('uom'), $matches)) {
+                    $grConvRate = (float) $matches[1];
+                } elseif ($grItem->uom_id) {
+                    $uomDb = \App\Models\ItemUom::find($grItem->uom_id);
+                    if ($uomDb) $grConvRate = (float) $uomDb->conversion_qty;
+                }
+
+                $poItem = $grItem->purchaseOrderItem;
+                $poPrice = $poItem ? (float) $poItem->unit_price : 0;
+                $poDiscount = $poItem ? (float) ($poItem->discount ?? 0) : 0;
+
+                $poConvFactor = 1;
+                if ($poItem) {
+                    $rawPoUom = $poItem->getRawOriginal('uom') ?: 'Unit';
+                    if (preg_match('/Isi\s*[:=]?\s*([0-9.]+)/i', $rawPoUom, $matches)) {
+                        $poConvFactor = (float) $matches[1];
+                    } elseif ($poItem->uom_id) {
+                        $uomDb = \App\Models\ItemUom::find($poItem->uom_id);
+                        if ($uomDb) $poConvFactor = (float) $uomDb->conversion_qty;
+                    }
+                }
+
+                $baseUnitPrice = $poConvFactor > 0 ? ($poPrice / $poConvFactor) : $poPrice;
+                $baseDiscount  = $poConvFactor > 0 ? ($poDiscount / $poConvFactor) : $poDiscount;
+
+                // 🔥 RUMUS HARGA PEROLEHAN (LANDED COST) 🔥
+                $hargaPerolehan = ($baseUnitPrice - $baseDiscount) + $biayaTambahanPerUnit;
+
+                $baseQtyReceived = ($grItem->qty_received - ($grItem->qty_returned ?? 0)) * $grConvRate;
+                if ($baseQtyReceived <= 0) continue;
+
+                $currentStock = \App\Models\InventoryStock::where('item_id', $masterItem->id)->sum('stock_qty');
+
+                $alreadyCapitalized = \App\Models\FixedAsset::where('goods_receipt_id', $gr->id)
+                                                ->where('item_id', $masterItem->id)
+                                                ->count();
+
+                $maxCapitalizable = $baseQtyReceived - $alreadyCapitalized;
+
+                $availableSns = [];
+                if (isset($masterItem->is_trackable) && $masterItem->is_trackable) {
+                    $availableSns = \DB::table('item_serials')
+                        ->where('item_id', $masterItem->id)
+                        ->where('goods_receipt_id', $gr->id)
+                        ->whereNotIn('status', ['CAPITALIZED', 'RETURNED'])
+                        ->pluck('serial_number')
+                        ->toArray();
+                }
+
+                if ($maxCapitalizable > 0) {
+                    $defaultSpec = $poItem ? ($poItem->description ?? $poItem->specification ?? $poItem->notes ?? '') : '';
+
+                    $items[] = [
+                        'item_id' => $masterItem->id,
+                        'item_code' => $masterItem->code,
+                        'item_name' => $masterItem->name,
+                        'base_uom' => optional($masterItem->uom)->name ?? 'Unit',
+                        'gr_qty' => $baseQtyReceived,
+                        'current_stock' => $currentStock,
+                        'max_capitalizable' => floor($maxCapitalizable),
+                        'available_sns' => $availableSns,
+                        'default_price' => round($hargaPerolehan, 2),
+                        'default_date'  => date('Y-m-d', strtotime($grDate)),
+                        'default_spec'  => $defaultSpec
+                    ];
                 }
             }
-            $baseUnitPrice = $poConvFactor > 0 ? ($poPrice / $poConvFactor) : $poPrice;
 
-            $baseQtyReceived = ($grItem->qty_received - ($grItem->qty_returned ?? 0)) * $grConvRate;
-            if ($baseQtyReceived <= 0) continue;
+            return response()->json([
+                'warehouse_id' => $gr->warehouse_id,
+                'warehouse_name' => optional($gr->warehouse)->name ?? 'Gudang Global',
+                'items' => $items
+            ]);
 
-            $currentStock = InventoryStock::where('item_id', $masterItem->id)->sum('stock_qty');
-
-            $alreadyCapitalized = FixedAsset::where('goods_receipt_id', $gr->id)
-                                            ->where('item_id', $masterItem->id)
-                                            ->count();
-
-            $maxCapitalizable = $baseQtyReceived - $alreadyCapitalized;
-
-            $availableSns = [];
-            if (isset($masterItem->is_trackable) && $masterItem->is_trackable) {
-                $availableSns = \DB::table('item_serials')
-                    ->where('item_id', $masterItem->id)
-                    ->where('goods_receipt_id', $gr->id)
-                    ->whereNotIn('status', ['CAPITALIZED', 'RETURNED'])
-                    ->pluck('serial_number')
-                    ->toArray();
-            }
-
-            if ($maxCapitalizable > 0) {
-                $defaultSpec = $poItem ? ($poItem->description ?? $poItem->specification ?? $poItem->notes ?? '') : '';
-
-                $items[] = [
-                    'item_id' => $masterItem->id,
-                    'item_code' => $masterItem->code,
-                    'item_name' => $masterItem->name,
-                    'base_uom' => optional($masterItem->uom)->name ?? 'Unit',
-                    'gr_qty' => $baseQtyReceived,
-                    'current_stock' => $currentStock,
-                    'max_capitalizable' => floor($maxCapitalizable),
-                    'available_sns' => $availableSns,
-                    'default_price' => round($baseUnitPrice, 2),
-                    'default_date'  => date('Y-m-d', strtotime($grDate)),
-                    'default_spec'  => $defaultSpec
-                ];
-            }
+        } catch (\Exception $e) {
+            // 🔥 PENGAMAN: Jika ada error, kirim balasan JSON agar loading berhenti dan error tercatat di console
+            return response()->json([
+                'error' => true,
+                'message' => $e->getMessage(),
+                'line' => $e->getLine(),
+                'file' => $e->getFile()
+            ], 500);
         }
-
-        return response()->json([
-            'warehouse_id' => $gr->warehouse_id,
-            'warehouse_name' => 'Gudang Global (Cari Otomatis)',
-            'items' => $items
-        ]);
     }
 
     public function store(Request $request)
@@ -129,10 +172,12 @@ class AssetCapitalizationController extends Controller
             'goods_receipt_id' => 'required|exists:goods_receipts,id',
             'items'            => 'required|array',
             'items.*.qty'      => 'required|numeric|min:0',
-            'items.*.details.*.accounting_no' => 'nullable|string|distinct|unique:fixed_assets,accounting_asset_number',
+            'items.*.details.*.accounting_no'     => 'nullable|string|distinct|unique:fixed_assets,accounting_asset_number',
+            'items.*.details.*.asset_category_id' => 'required|exists:asset_categories,id', // 🔥 Validasi Kategori
         ], [
             'items.*.details.*.accounting_no.distinct' => 'Nomor Akuntansi (FA) ada yang kembar di dalam form ini.',
             'items.*.details.*.accounting_no.unique'   => 'Nomor Akuntansi (FA) tersebut sudah dipakai oleh aset lain.',
+            'items.*.details.*.asset_category_id.required' => 'Kategori penyusutan wajib dipilih untuk setiap unit.',
         ]);
 
         try {
@@ -161,7 +206,7 @@ class AssetCapitalizationController extends Controller
 
                     $totalAvailable = $availableStocks->sum('stock_qty');
 
-                    // 🔥 LOGIKA CROSSOVER (RETROACTIVE) 🔥
+                    // LOGIKA CROSSOVER (RETROACTIVE)
                     $qtyFromStock = min($qtyToCapitalize, $totalAvailable);
                     $qtyRetroactive = $qtyToCapitalize - $qtyFromStock;
 
@@ -177,18 +222,16 @@ class AssetCapitalizationController extends Controller
                             $potong = min($stockRow->stock_qty, $qtySisaPotong);
                             $actualWarehouseId = $stockRow->warehouse_id;
 
-                            // HANYA memotong InventoryStock (Stok Curah), JANGAN memotong Master Item
                             $stockRow->decrement('stock_qty', $potong);
                             $qtySisaPotong -= $potong;
 
-                            // 🔥 HACK BYPASS DATABASE: TYPE "OUT", TAPI ADA KODE [CAPITALIZE] DI NOTES 🔥
                             StockMutation::create([
                                 'item_id'          => $masterItem->id,
                                 'warehouse_id'     => $stockRow->warehouse_id,
                                 'type'             => 'OUT',
                                 'qty'              => $potong,
                                 'balance_before'   => $saldoTotalSaatIni,
-                                'balance_after'    => $saldoTotalSaatIni, // Saldo tetap sama, tidak dipotong
+                                'balance_after'    => $saldoTotalSaatIni,
                                 'reference_number' => $gr->gr_number,
                                 'notes'            => "[CAPITALIZE] Kapitalisasi menjadi Aset Tetap",
                                 'created_by'       => auth()->id(),
@@ -230,7 +273,7 @@ class AssetCapitalizationController extends Controller
                         $specificName = $detail['specific_name'] ?? $masterItem->name;
                         $acqDate      = $detail['acquisition_date'] ?? date('Y-m-d');
                         $accValue     = $detail['accounting_value'] ?? 0;
-                        $usefulLife   = $detail['useful_life'] ?? '';
+                        $categoryId   = $detail['asset_category_id'] ?? null; // 🔥 Tangkap ID Kategori
                         $specDetail   = $detail['notes'] ?? '';
 
                         $serialNumber = $detail['serial_number'] ?? null;
@@ -239,7 +282,6 @@ class AssetCapitalizationController extends Controller
                         }
 
                         $extraNote = "Diakui dari dokumen penerimaan: {$gr->gr_number}.";
-                        if (!empty($usefulLife)) $extraNote .= " Estimasi Umur Ekonomis: {$usefulLife} Tahun.";
                         if ($isRetroactive) {
                             $extraNote .= " [RETROACTIVE: Diakui setelah barang didistribusikan / Goods Issue].";
                         }
@@ -247,6 +289,7 @@ class AssetCapitalizationController extends Controller
                         $newAsset = FixedAsset::create([
                             'asset_number'            => $sysAssetNumber,
                             'item_id'                 => $masterItem->id,
+                            'asset_category_id'       => $categoryId, // 🔥 Simpan Kategori
                             'warehouse_id'            => $actualWarehouseId,
                             'company_id'              => $companyId,
                             'goods_receipt_id'        => $gr->id,
@@ -273,7 +316,7 @@ class AssetCapitalizationController extends Controller
                 }
             });
 
-            return redirect()->route('asset-capitalizations.create')->with('success', 'Luar biasa! Pengakuan Aset berhasil. Sistem telah menyesuaikan stok tanpa mengganggu saldo master barang.');
+            return redirect()->route('asset-capitalizations.create')->with('success', 'Luar biasa! Pengakuan Aset berhasil. Sistem telah mengaitkan kategori penyusutan secara otomatis.');
 
         } catch (\Exception $e) {
             Log::error('Error Kapitalisasi Aset: ' . $e->getMessage());

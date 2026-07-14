@@ -263,7 +263,9 @@
                                                     </tr>
                                                     <tr>
                                                         <td class="pb-2 text-muted">Kategori Penyusutan</td>
-                                                        <td class="pb-2 fw-bold text-dark">: {{ optional($ast->assetCategory)->name ?? 'Kelompok 1 (Default)' }}</td>
+                                                        <td class="pb-2 fw-bold text-dark">
+                                                            : {{ $ast->assetCategory ? $ast->assetCategory->name . ' (' . $ast->assetCategory->useful_life_years . ' Tahun)' : 'Kelompok 1 (Default)' }}
+                                                        </td>
                                                     </tr>
                                                     <tr>
                                                         <td class="pb-2 text-muted">Harga Perolehan</td>

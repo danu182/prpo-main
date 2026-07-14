@@ -72,49 +72,51 @@
 <script src="https://cdn.quilljs.com/1.3.6/quill.min.js"></script>
 
 <script>
+    // 🔥 DATA KATEGORI DARI CONTROLLER 🔥
+    let categories = @json($assetCategories ?? []);
+    let categoryOptions = '<option value="">-- Pilih Kategori --</option>';
+    categories.forEach(function(cat) {
+        categoryOptions += `<option value="${cat.id}">${cat.name} (${cat.useful_life_years} Thn)</option>`;
+    });
 
     // 🔥 VALIDASI ANTI-KEMBAR SEBELUM FORM DISUBMIT 🔥
-        $('#form-capitalize').on('submit', function(e) {
-            let accNumbers = [];
-            let hasDuplicate = false;
+    $('#form-capitalize').on('submit', function(e) {
+        let accNumbers = [];
+        let hasDuplicate = false;
 
-            // Kumpulkan semua nomor FA yang diketik user
-            $('.acc-no-input').each(function() {
-                let val = $(this).val().trim();
-                if (val !== '') { // Jika tidak kosong
-                    // Jika nomor sudah ada di array, berarti duplikat!
-                    if (accNumbers.includes(val)) {
-                        hasDuplicate = true;
-                        return false; // Hentikan perulangan each
-                    }
-                    accNumbers.push(val);
+        $('.acc-no-input').each(function() {
+            let val = $(this).val().trim();
+            if (val !== '') {
+                if (accNumbers.includes(val)) {
+                    hasDuplicate = true;
+                    return false;
                 }
-            });
-
-            if (hasDuplicate) {
-                e.preventDefault(); // Hentikan pengiriman data ke server
-                Swal.fire({
-                    icon: 'error',
-                    title: 'Peringatan!',
-                    text: 'Terdapat Nomor Akuntansi (FA) yang sama/kembar di form ini. Setiap unit harus memiliki Nomor FA yang unik, atau biarkan kosong.',
-                    confirmButtonColor: '#dc3545',
-                    confirmButtonText: 'Saya Perbaiki'
-                });
-                return false;
+                accNumbers.push(val);
             }
-
-            // Jika aman, ubah tombol jadi loading
-            let btn = $('#btn-submit');
-            btn.html('<span class="spinner-border spinner-border-sm me-2"></span> Menyimpan Aset...').prop('disabled', true);
         });
+
+        if (hasDuplicate) {
+            e.preventDefault();
+            Swal.fire({
+                icon: 'error',
+                title: 'Peringatan!',
+                text: 'Terdapat Nomor Akuntansi (FA) yang sama/kembar di form ini. Setiap unit harus memiliki Nomor FA yang unik, atau biarkan kosong.',
+                confirmButtonColor: '#dc3545',
+                confirmButtonText: 'Saya Perbaiki'
+            });
+            return false;
+        }
+
+        let btn = $('#btn-submit');
+        btn.html('<span class="spinner-border spinner-border-sm me-2"></span> Menyimpan Aset...').prop('disabled', true);
+    });
 
 
     $(document).ready(function() {
         $('.select2-gr').select2({ theme: 'bootstrap-5' });
 
-        // Simpan data SN dari server ke variabel global
         let globalSnData = {};
-        let globalSpecData = {}; // 🔥 Variabel baru untuk menampung spesifikasi
+        let globalSpecData = {};
 
         $('#gr_select').on('change', function() {
             let grId = $(this).val();
@@ -134,18 +136,15 @@
                     whInfo.html(`<i class="bi bi-box-seam text-info me-1"></i> Lokasi Stok: <strong class="text-dark">${res.warehouse_name}</strong>`);
 
                     tbody.empty();
-                    globalSnData = {}; // Reset
-
-                    tbody.empty();
-                    globalSnData = {}; // Reset
-                    globalSpecData = {}; // 🔥 Reset juga
+                    globalSnData = {};
+                    globalSpecData = {};
 
                     if (res.items.length === 0) {
                         tbody.append(`<div class="mb-0 alert alert-warning fw-bold"><i class="bi bi-info-circle me-2"></i>Tidak ada stok fisik yang bisa diakui sebagai aset dari GR ini.</div>`);
                     } else {
                         res.items.forEach(item => {
                             globalSnData[item.item_id] = item.available_sns || [];
-                            globalSpecData[item.item_id] = item.default_spec || ''; // 🔥 Simpan spesifikasi ke dictionary
+                            globalSpecData[item.item_id] = item.default_spec || '';
 
                             let html = `
                             <div class="p-4 mb-4 bg-white border shadow-sm rounded-4">
@@ -189,15 +188,11 @@
 
             let itemId = $(this).data('item');
             let itemName = $(this).data('name');
-
-            // 🔥 TANGKAP NILAI DEFAULT DARI CONTROLLER 🔥
             let defaultPrice = $(this).data('price');
             let defaultDate = $(this).data('date');
 
             let container = $(`#spec-container-${itemId}`);
             let availableSns = globalSnData[itemId] || [];
-
-            // 🔥 TARIK DATA SPESIFIKASI DARI MEMORI 🔥
             let defaultSpec = globalSpecData[itemId] || '';
 
             container.empty();
@@ -212,6 +207,15 @@
                                 <span class="fw-bold text-info"><i class="bi bi-pc-display me-1"></i> Unit #${i+1}</span>
                             </div>
                             <div class="p-3 card-body">
+
+                                {{-- 🔥 INFO NILAI DARI PO 🔥 --}}
+                                <div class="px-3 py-2 mb-3 border bg-info-subtle text-info-emphasis border-info-subtle rounded-3 small">
+                                    <i class="bi bi-info-circle-fill me-1"></i> <strong>Saran Harga Perolehan: Rp ${parseFloat(defaultPrice).toLocaleString('id-ID')}</strong>
+                                    <div class="mt-1 text-muted" style="font-size: 0.7rem;">
+                                        *Hitungan bersih dari PO (DPP - Diskon + Biaya Lain).
+                                    </div>
+                                </div>
+
                                 <div class="mb-3">
                                     <label class="mb-1 small text-muted fw-bold">Nama Spesifik / Merk <span class="text-danger">*</span></label>
                                     <input type="text" name="items[${itemId}][details][${i}][specific_name]" class="form-control" value="${itemName}" required>
@@ -236,9 +240,12 @@
                                         <label class="mb-1 small text-primary-emphasis fw-bold" style="font-size:0.7rem;"><i class="bi bi-cash me-1"></i>Harga (Rp)</label>
                                         <input type="number" name="items[${itemId}][details][${i}][accounting_value]" class="form-control form-control-sm border-primary-subtle" value="${defaultPrice}">
                                     </div>
+                                    {{-- 🔥 UBAH UMUR JADI KATEGORI 🔥 --}}
                                     <div class="col-sm-4">
-                                        <label class="mb-1 small text-primary-emphasis fw-bold" style="font-size:0.7rem;"><i class="bi bi-hourglass-split me-1"></i>Umur (Tahun)</label>
-                                        <input type="number" name="items[${itemId}][details][${i}][useful_life]" class="form-control form-control-sm border-primary-subtle" placeholder="Cth: 5">
+                                        <label class="mb-1 small text-primary-emphasis fw-bold" style="font-size:0.7rem;"><i class="bi bi-tags me-1"></i>Kategori</label>
+                                        <select name="items[${itemId}][details][${i}][asset_category_id]" class="form-select form-select-sm border-primary-subtle" required>
+                                            ${categoryOptions}
+                                        </select>
                                     </div>
                                 </div>
 
@@ -262,18 +269,14 @@
                     }
                 });
 
-                // 🔥 SUNTIKKAN SPESIFIKASI DARI PO KE DALAM EDITOR 🔥
                 if (defaultSpec) {
                     quill.clipboard.dangerouslyPasteHTML(defaultSpec);
                 }
 
-                // 🔥 SINKRONISASI AWAL KE HIDDEN INPUT 🔥
-                // Agar jika user tidak mengetik apa-apa, teks dari PO tetap tersimpan!
                 var htmlContent = document.querySelector(`#editor-${itemId}-${i} .ql-editor`).innerHTML;
                 if(htmlContent === '<p><br></p>') htmlContent = '';
                 document.getElementById(`hidden-notes-${itemId}-${i}`).value = htmlContent;
 
-                // Sinkronisasi saat user mengetik
                 quill.on('text-change', function() {
                     var currentHtml = document.querySelector(`#editor-${itemId}-${i} .ql-editor`).innerHTML;
                     if(currentHtml === '<p><br></p>') currentHtml = '';
