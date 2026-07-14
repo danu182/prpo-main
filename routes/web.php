@@ -590,6 +590,29 @@ Route::middleware('auth')->group(function () {
     });
 
 
+    /// ====================================================
+    // MASTER KATEGORI ASET
+    // ====================================================
+    Route::prefix('asset-categories')->name('asset-categories.')->group(function () {
+
+        // Halaman Daftar Kategori
+        Route::get('/', [\App\Http\Controllers\AssetCategoryController::class, 'index'])->name('index');
+
+        // Proses Simpan Data Baru (Modal Tambah)
+        Route::post('/', [\App\Http\Controllers\AssetCategoryController::class, 'store'])->name('store');
+
+        // Proses Simpan Perubahan (Modal Edit)
+        Route::put('/{assetCategory}', [\App\Http\Controllers\AssetCategoryController::class, 'update'])->name('update');
+
+        // Proses Hapus Data
+        Route::delete('/{assetCategory}', [\App\Http\Controllers\AssetCategoryController::class, 'destroy'])->name('destroy');
+
+    });
+
+    // MASTER KATEGORI ASET
+    // Route::resource('asset-categories', \App\Http\Controllers\AssetCategoryController::class)->except(['create', 'edit', 'show']);
+
+
 
 
 }); // <--- PENUTUP GEMBOK UTAMA (AUTH)

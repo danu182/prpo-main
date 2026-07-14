@@ -20,7 +20,7 @@ class FixedAssetController extends Controller
         $warehouseId = $request->input('warehouse_id');
 
         $assets = FixedAsset::with([
-                'item', 'company', 'status', 'assignee.company', 'warehouse', 'goodsReceipt',
+                'item', 'company', 'status', 'assignee.company', 'warehouse', 'goodsReceipt','assetCategory', // 🔥 TAMBAHKAN INI
                 'histories' => function($q) { $q->orderBy('created_at', 'desc'); },
                 'histories.assignee', 'histories.creator'
             ])
@@ -43,14 +43,18 @@ class FixedAssetController extends Controller
         $statuses = Status::where('type', 'AST')->orderBy('sequence', 'asc')->get();
         $warehouses = \App\Models\Warehouse::orderBy('name', 'asc')->get();
         $currencies = \App\Models\Currency::where('is_active', 1)->get();
+        // Tambahkan baris ini di atas return view(...)
+        $assetCategories = \App\Models\AssetCategory::where('is_active', true)->orderBy('useful_life_years', 'asc')->get();
 
-        return view('fixed_assets.index', compact('assets', 'search', 'users', 'items', 'companies', 'statuses', 'warehouses', 'currencies'));
+        // Tambahkan variabelnya ke dalam compact()
+        return view('fixed_assets.index', compact('assets', 'search', 'users', 'items', 'companies', 'statuses', 'warehouses', 'currencies', 'assetCategories'));
     }
 
     public function store(Request $request)
     {
         $request->validate([
             'item_id'                 => 'required|exists:items,id',
+            'asset_category_id'       => 'required|exists:asset_categories,id', // 🔥 TAMBAHKAN INI
             'warehouse_id'            => 'required|exists:warehouses,id',
             'quantity'                => 'required|integer|min:1',
             'status_id'               => 'required|exists:statuses,id',
@@ -97,6 +101,7 @@ class FixedAssetController extends Controller
                     $asset = \App\Models\FixedAsset::create([
                         'asset_number'            => $assetNumber,
                         'item_id'                 => $request->item_id,
+                        'asset_category_id'       => $request->asset_category_id, // 🔥 TAMBAHKAN INI
                         'name'                    => $finalAssetName,
                         'warehouse_id'            => $request->warehouse_id,
                         'company_id'              => $request->company_id,
@@ -149,84 +154,10 @@ class FixedAssetController extends Controller
         }
     }
 
-    // public function update(Request $request, $id)
-    // {
-    //     $request->validate([
-    //         'serial_number'           => 'nullable|string|max:255',
-    //         'status_id'               => 'required|exists:statuses,id',
-    //         'accounting_asset_number' => 'nullable|string|max:255',
-    //         'spesifikasi_detail'      => 'nullable|string',
-    //         'assigned_to'             => 'nullable|exists:users,id',
-    //         'notes'                   => 'nullable|string',
-    //         'purchase_price'          => 'nullable|numeric|min:0',
-    //     ]);
-
-    //     try {
-    //         DB::transaction(function () use ($request, $id) {
-    //             $asset = FixedAsset::with('status')->findOrFail($id);
-
-    //             $oldStatusSlug = optional($asset->status)->slug;
-    //             $oldAssignee = $asset->assigned_to;
-
-    //             $newStatus = Status::find($request->status_id);
-    //             $assignedTo = in_array($newStatus->slug, ['available', 'disposed', 'maintenance', 'returned']) ? null : $request->assigned_to;
-
-    //             $isChanged = ($oldStatusSlug !== $newStatus->slug) || ($oldAssignee != $assignedTo);
-
-    //             $asset->update([
-    //                 'serial_number'           => $request->serial_number,
-    //                 'accounting_asset_number' => $request->accounting_asset_number,
-    //                 'spesifikasi_detail'      => $request->spesifikasi_detail,
-    //                 'status_id'               => $request->status_id,
-    //                 'assigned_to'             => $assignedTo,
-    //                 'notes'                   => $request->notes,
-    //                 'purchase_price'          => $request->purchase_price,
-    //             ]);
-
-    //             if ($isChanged) {
-    //                 $systemNote = '';
-
-    //                 if ($oldStatusSlug === 'available' && $newStatus->slug === 'in_use') {
-    //                     $user = User::find($assignedTo);
-    //                     $systemNote = "Aset diserahkan kepada: " . ($user ? $user->name : 'Unknown') . ".";
-    //                 } elseif ($oldStatusSlug === 'in_use' && $newStatus->slug === 'available') {
-    //                     $oldUser = User::find($oldAssignee);
-    //                     $systemNote = "Aset dikembalikan ke Gudang/IT dari: " . ($oldUser ? $oldUser->name : 'Unknown') . ".";
-    //                 } elseif ($oldStatusSlug === 'in_use' && $newStatus->slug === 'in_use' && $oldAssignee != $assignedTo) {
-    //                     $oldUser = User::find($oldAssignee);
-    //                     $newUser = User::find($assignedTo);
-    //                     $systemNote = "Aset dipindahtangankan langsung dari " . ($oldUser ? $oldUser->name : 'Unknown') . " kepada " . ($newUser ? $newUser->name : 'Unknown') . ".";
-    //                 } elseif ($newStatus->slug === 'maintenance') {
-    //                     $systemNote = "Aset masuk status perbaikan/maintenance.";
-    //                 } elseif ($newStatus->slug === 'disposed') {
-    //                     $systemNote = "🔴 ASET DIHAPUSBUKUKAN (DISPOSED): Aset telah ditarik dari peredaran dan dihapus dari kekayaan aktif perusahaan.";
-    //                 }
-
-    //                 $finalNote = $systemNote;
-    //                 if ($request->notes && $request->notes !== $asset->notes) {
-    //                     $finalNote = $systemNote ? $systemNote . " | Catatan Baru: " . $request->notes : "Catatan: " . $request->notes;
-    //                 }
-
-    //                 \App\Models\FixedAssetHistory::create([
-    //                     'fixed_asset_id' => $asset->id,
-    //                     'status'         => $newStatus->name,
-    //                     'assigned_to'    => $assignedTo,
-    //                     'notes'          => $finalNote ?: 'Perubahan status / data aset.',
-    //                     'created_by'     => auth()->id(),
-    //                 ]);
-    //             }
-    //         });
-
-    //         return back()->with('success', 'Informasi Aset berhasil diperbarui & Riwayat telah dicatat!');
-    //     } catch (\Exception $e) {
-    //         return back()->with('error', 'Gagal memperbarui aset: ' . $e->getMessage());
-    //     }
-    // }
-
-
 
     public function update(Request $request, $id)
     {
+        // 1. Validasi semua data yang datang dari Modal Edit
         $request->validate([
             'serial_number'           => 'nullable|string|max:255',
             'status_id'               => 'required|exists:statuses,id',
@@ -235,6 +166,12 @@ class FixedAssetController extends Controller
             'assigned_to'             => 'nullable|exists:users,id',
             'notes'                   => 'nullable|string',
             'purchase_price'          => 'nullable|numeric|min:0',
+
+            // 🔥 TAMBAHAN KOLOM BARU AGAR LOLOS VALIDASI 🔥
+            'asset_category_id'       => 'required|exists:asset_categories,id',
+            'acquisition_date'        => 'required|date',
+            'currency_id'             => 'required|exists:currencies,id',
+            'company_id'              => 'required|exists:companies,id',
         ]);
 
         try {
@@ -249,6 +186,7 @@ class FixedAssetController extends Controller
 
                 $isChanged = ($oldStatusSlug !== $newStatus->slug) || ($oldAssignee != $assignedTo);
 
+                // 2. Eksekusi Update ke Database
                 $asset->update([
                     'serial_number'           => $request->serial_number,
                     'accounting_asset_number' => $request->accounting_asset_number,
@@ -257,8 +195,15 @@ class FixedAssetController extends Controller
                     'assigned_to'             => $assignedTo,
                     'notes'                   => $request->notes,
                     'purchase_price'          => $request->purchase_price,
+
+                    // 🔥 TAMBAHAN KOLOM BARU AGAR TERSIMPAN KE DATABASE 🔥
+                    'asset_category_id'       => $request->asset_category_id,
+                    'acquisition_date'        => $request->acquisition_date,
+                    'currency_id'             => $request->currency_id,
+                    'company_id'              => $request->company_id,
                 ]);
 
+                // 3. Catat Histori Perubahan Status / Assignee
                 if ($isChanged) {
                     $systemNote = '';
 
@@ -267,7 +212,7 @@ class FixedAssetController extends Controller
                         $user = User::find($assignedTo);
                         $systemNote = "Aset diserahkan kepada: " . ($user ? $user->name : 'Unknown') . ".";
 
-                        // 🔥 OTOMATIS CATAT MUTASI KELUAR & POTONG STOK 🔥
+                        // OTOMATIS CATAT MUTASI KELUAR & POTONG STOK
                         $masterItem = \App\Models\Item::lockForUpdate()->find($asset->item_id);
                         if ($masterItem) {
                             $currStock = (float) $masterItem->current_stock;
@@ -286,7 +231,7 @@ class FixedAssetController extends Controller
                         $oldUser = User::find($oldAssignee);
                         $systemNote = "Aset dikembalikan ke Gudang/IT dari: " . ($oldUser ? $oldUser->name : 'Unknown') . ".";
 
-                        // 🔥 OTOMATIS CATAT MUTASI MASUK & TAMBAH STOK 🔥
+                        // OTOMATIS CATAT MUTASI MASUK & TAMBAH STOK
                         $masterItem = \App\Models\Item::lockForUpdate()->find($asset->item_id);
                         if ($masterItem) {
                             $currStock = (float) $masterItem->current_stock;
@@ -317,7 +262,7 @@ class FixedAssetController extends Controller
                     elseif ($newStatus->slug === 'disposed') {
                         $systemNote = "🔴 ASET DIHAPUSBUKUKAN (DISPOSED): Aset telah ditarik dari peredaran dan dihapus dari kekayaan aktif perusahaan.";
 
-                        // 🔥 OTOMATIS CATAT MUTASI KELUAR JIKA ASALNYA DARI GUDANG 🔥
+                        // OTOMATIS CATAT MUTASI KELUAR JIKA ASALNYA DARI GUDANG
                         if (in_array($oldStatusSlug, ['available', 'maintenance', 'returned'])) {
                             $masterItem = \App\Models\Item::lockForUpdate()->find($asset->item_id);
                             if ($masterItem) {
@@ -348,7 +293,7 @@ class FixedAssetController extends Controller
                 }
             });
 
-            return back()->with('success', 'Informasi Aset berhasil diperbarui & Mutasi Stok telah dicatat!');
+            return back()->with('success', 'Informasi Aset berhasil diperbarui sepenuhnya!');
         } catch (\Exception $e) {
             return back()->with('error', 'Gagal memperbarui aset: ' . $e->getMessage());
         }
@@ -570,6 +515,14 @@ class FixedAssetController extends Controller
                     $warehouse = \App\Models\Warehouse::where('name', 'like', "%{$row->nama_gudang}%")->first();
                     $status = \App\Models\Status::where('type', 'AST')->where('name', 'like', "%".explode('(', $row->status_aset)[0]."%")->first();
 
+                    // 🔥 LOGIKA PENCARIAN KATEGORI ASET YANG AMAN (ANTI ERROR) 🔥
+                    $assetCategory = \App\Models\AssetCategory::where('name', 'like', "%{$row->kategori_aset}%")->first();
+                    $defaultCategory = \App\Models\AssetCategory::first(); // Cari kategori apa saja yang ada
+
+                    // Jika ketemu pakai ID-nya. Jika tidak, pakai ID kategori default. Jika database kosong sama sekali, jadikan NULL.
+                    $assetCategoryId = $assetCategory ? $assetCategory->id : ($defaultCategory ? $defaultCategory->id : null);
+
+
                     $departmentId = null;
                     if (!empty($row->departemen)) {
                         $deptCode = strtoupper(substr(preg_replace('/[^A-Za-z]/', '', $row->departemen), 0, 3));
@@ -643,6 +596,7 @@ class FixedAssetController extends Controller
                     $asset = \App\Models\FixedAsset::create([
                         'asset_number'            => $assetNumber,
                         'item_id'                 => $item->id,
+                        'asset_category_id'       => $assetCategoryId, // 🔥 Gunakan variabel yang aman ini
                         'name'                    => $row->nama_spesifik_aset ?: $item->name,
                         'warehouse_id'            => $warehouse ? $warehouse->id : 1,
                         'company_id'              => $company ? $company->id : 1,
@@ -827,25 +781,25 @@ class FixedAssetController extends Controller
 
 
     // =========================================================================
-    // 🔥 MASTER LIST ASET (FIX FILTER & MASTER ITEM) 🔥
+    // 🔥 MASTER LIST ASET (FIX FILTER & MASTER ITEM & PENYUSUTAN) 🔥
     // =========================================================================
     public function masterList(\Illuminate\Http\Request $request)
     {
         $query = \App\Models\FixedAsset::with([
             'item.category',
+            'assetCategory', // Pastikan ini terpanggil
             'assignee.department',
             'company',
             'department',
             'status',
-            'warehouse' // 🔥 TAMBAHKAN INI AGAR NAMA GUDANG TERBACA 🔥
+            'warehouse'
         ]);
 
-        // 🔥 PERBAIKAN LOGIKA FILTER KEBERADAAN ASET 🔥
         if ($request->filled('status')) {
             if ($request->status === 'in_use') {
-                $query->whereNotNull('assigned_to'); // Jika dipakai, assigned_to ada isinya
+                $query->whereNotNull('assigned_to');
             } elseif ($request->status === 'in_warehouse') {
-                $query->whereNull('assigned_to');    // Jika di gudang, assigned_to kosong
+                $query->whereNull('assigned_to');
             }
         }
 
@@ -860,22 +814,28 @@ class FixedAssetController extends Controller
                   ->orWhereHas('assignee', function($userQ) use ($search) {
                       $userQ->where('name', 'like', "%{$search}%");
                   })
-                  // Tambahan: Bisa mencari berdasarkan Kode SKU Master Barang juga!
                   ->orWhereHas('item', function($itemQ) use ($search) {
                       $itemQ->where('code', 'like', "%{$search}%");
                   });
             });
         }
 
+        // Ambil data untuk tabel dengan pagination
         $assets = $query->latest()->paginate(15)->withQueryString();
 
-        $totalAssets = \App\Models\FixedAsset::count();
-        $inUse = \App\Models\FixedAsset::whereNotNull('assigned_to')->count();
-        $inWarehouse = \App\Models\FixedAsset::whereNull('assigned_to')->count();
-        $totalValue = \App\Models\FixedAsset::sum('purchase_price');
+        // 🔥 LOGIKA KALKULATOR TOTAL UANG (Ambil semua data tanpa pagination untuk dihitung)
+        // Gunakan get() agar accessor net_book_value bisa tereksekusi
+        $allAssetsForCalculation = \App\Models\FixedAsset::with('assetCategory')->get();
+
+        $totalAssets = $allAssetsForCalculation->count();
+        $inUse = $allAssetsForCalculation->whereNotNull('assigned_to')->count();
+        $inWarehouse = $allAssetsForCalculation->whereNull('assigned_to')->count();
+
+        $totalValue = $allAssetsForCalculation->sum('purchase_price');
+        $totalCurrentValue = $allAssetsForCalculation->sum('net_book_value'); // 🔥 Menjumlahkan Total Nilai Buku Saat Ini
 
         return view('fixed_assets.list_asset', compact(
-            'assets', 'totalAssets', 'inUse', 'inWarehouse', 'totalValue'
+            'assets', 'totalAssets', 'inUse', 'inWarehouse', 'totalValue', 'totalCurrentValue' // Kirim variabel baru ini ke View
         ));
     }
 

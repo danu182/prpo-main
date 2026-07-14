@@ -9,8 +9,6 @@
     .select2-container .select2-selection--single { height: 38px !important; border: 1px solid #e2e8f0 !important; border-radius: 8px !important; }
     .select2-container--default .select2-selection--single .select2-selection__rendered { line-height: 36px !important; color: #475569 !important; }
     .select2-container--default .select2-selection--single .select2-selection__arrow { height: 36px !important; }
-
-    /* Membatasi tinggi maksimal hasil pencarian agar rapi */
     .select2-results__options { max-height: 250px !important; overflow-y: auto !important; }
 
     /* Avatar Modern */
@@ -43,6 +41,7 @@
 
     /* Tag & Badges Halus */
     .badge-soft { padding: 0.4em 0.75em; font-weight: 600; border-radius: 8px; font-size: 0.7rem; letter-spacing: 0.3px; }
+    .badge-item-code { font-size: 0.65rem; background-color: #f1f5f9; color: #475569; padding: 0.2rem 0.5rem; border-radius: 4px; border: 1px solid #cbd5e1; }
 
     /* Tombol Aksi */
     .btn-action-icon { width: 34px; height: 34px; display: inline-flex; align-items: center; justify-content: center; border-radius: 8px; transition: all 0.2s; color: #64748b; border: 1px solid transparent; background: transparent; }
@@ -53,10 +52,10 @@
 
     .timeline-container .border-bottom:last-child { border-bottom: 0 !important; padding-bottom: 0 !important; margin-bottom: 0 !important; }
 
-    /* 🔥 KUSTOMISASI CKEDITOR AGAR RAPI DI DALAM MODAL 🔥 */
+    /* KUSTOMISASI CKEDITOR */
     .ck-editor__editable_inline { min-height: 150px; border-bottom-left-radius: 8px !important; border-bottom-right-radius: 8px !important; }
     .ck-toolbar { border-top-left-radius: 8px !important; border-top-right-radius: 8px !important; background-color: #f8fafc !important; }
-    .ck.ck-balloon-panel { z-index: 1056 !important; /* Mencegah toolbar tertutup modal */ }
+    .ck.ck-balloon-panel { z-index: 1056 !important; }
 </style>
 @endpush
 
@@ -69,20 +68,20 @@
             <h4 class="mb-0 fw-bold text-dark">
                 <i class="bi bi-pc-display me-2 text-info"></i> Register Aset Tetap
             </h4>
-            <div class="mt-1 text-muted small">Kelola data aset tetap, kepemilikan PT, dan peminjam.</div>
+            <div class="mt-1 text-muted small">Kelola data aset tetap, kepemilikan PT, penyusutan, dan penugasan.</div>
         </div>
 
         <div class="flex-wrap gap-2 d-flex">
             <form action="{{ route('fixed-assets.index') }}" method="GET" class="gap-2 d-flex" style="min-width: 500px;">
                 <select name="warehouse_id" class="shadow-sm form-select rounded-pill border-info" onchange="this.form.submit()" style="width: 200px;">
-                    <option value="">-- Semua Gudang --</option>
+                    <option value="">-- Semua Lokasi / Gudang --</option>
                     @foreach($warehouses as $wh)
                         <option value="{{ $wh->id }}" {{ request('warehouse_id') == $wh->id ? 'selected' : '' }}>{{ $wh->name }}</option>
                     @endforeach
                 </select>
 
                 <div class="overflow-hidden border shadow-sm input-group rounded-pill">
-                    <input type="text" name="search" class="px-4 bg-white border-0 form-control" placeholder="Cari No Aset, S/N..." value="{{ request('search') }}">
+                    <input type="text" name="search" class="px-4 bg-white border-0 form-control" placeholder="Cari No Aset, Master, S/N..." value="{{ request('search') }}">
                     <button class="px-4 text-white border-0 btn btn-info fw-bold" type="submit"><i class="bi bi-search"></i></button>
                     @if(request('search') || request('warehouse_id'))
                         <a href="{{ route('fixed-assets.index') }}" class="px-3 btn btn-light border-start text-danger" title="Reset"><i class="bi bi-x-lg"></i></a>
@@ -131,10 +130,10 @@
             <table class="table table-modern">
                 <thead>
                     <tr>
-                        <th width="35%">Identitas Aset</th>
+                        <th width="40%">Identitas & Master Aset</th>
                         <th width="15%" class="text-center">Status</th>
                         <th width="30%">Lokasi / Penanggung Jawab</th>
-                        <th width="20%" class="text-end">Aksi</th>
+                        <th width="15%" class="text-end">Aksi</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -148,6 +147,12 @@
                                     <div>
                                         <div class="fw-bold text-dark fs-6 mb-1 {{ optional($ast->status)->slug === 'disposed' ? 'text-decoration-line-through text-danger' : '' }}">
                                             {{ $ast->name ?? optional($ast->item)->name }}
+                                        </div>
+                                        <div class="mb-1 text-muted small">
+                                            <span class="badge-item-code me-1" title="Kode Master Item">
+                                                <i class="bi bi-box me-1"></i>{{ optional($ast->item)->code ?? 'No Code' }}
+                                            </span>
+                                            {{ optional($ast->item)->name ?? 'Unknown Master' }}
                                         </div>
                                         <div class="flex-wrap gap-2 d-flex">
                                             <span class="border badge-soft bg-primary-subtle text-primary border-primary-subtle">
@@ -206,7 +211,23 @@
                                             <i class="bi bi-three-dots-vertical"></i>
                                         </button>
                                         <ul class="dropdown-menu dropdown-menu-end dropdown-action-menu">
-                                            <li><a class="dropdown-item text-primary" href="#" data-bs-toggle="modal" data-bs-target="#editModal" data-id="{{ $ast->id }}" data-item-name="{{ $ast->name ?? optional($ast->item)->name }}" data-asset-number="{{ $ast->asset_number }}" data-serial="{{ $ast->serial_number }}" data-accounting="{{ $ast->accounting_asset_number }}" data-spesifikasi="{{ $ast->spesifikasi_detail }}" data-company-id="{{ $ast->company_id }}" data-status-id="{{ $ast->status_id }}" data-assigned-to="{{ $ast->assigned_to }}" data-notes="{{ $ast->notes }}" data-price="{{ (float)$ast->purchase_price }}" data-currency-id="{{ $ast->currency_id }}"><i class="bi bi-pencil-square me-2"></i> Edit Data Aset</a></li>
+                                            <li><a class="dropdown-item text-primary" href="#" data-bs-toggle="modal" data-bs-target="#editModal"
+                                                data-id="{{ $ast->id }}"
+                                                data-item-name="{{ $ast->name ?? optional($ast->item)->name }}"
+                                                data-category-id="{{ $ast->asset_category_id ?? 1 }}"
+                                                data-asset-number="{{ $ast->asset_number }}"
+                                                data-serial="{{ $ast->serial_number }}"
+                                                data-accounting="{{ $ast->accounting_asset_number }}"
+                                                data-spesifikasi="{{ $ast->spesifikasi_detail }}"
+                                                data-company-id="{{ $ast->company_id }}"
+                                                data-status-id="{{ $ast->status_id }}"
+                                                data-assigned-to="{{ $ast->assigned_to }}"
+                                                data-notes="{{ $ast->notes }}"
+                                                data-price="{{ $ast->purchase_price ?? 0 }}"
+                                                data-acquisition-date="{{ $ast->acquisition_date }}"
+                                                data-currency-id="{{ $ast->currency_id }}">
+                                                <i class="bi bi-pencil-square me-2"></i> Edit Data Aset
+                                            </a></li>
                                             <li><a class="dropdown-item text-dark" href="#" data-bs-toggle="modal" data-bs-target="#modalHistory{{ $ast->id }}"><i class="bi bi-clock-history me-2"></i> Log Riwayat Aset</a></li>
                                             <li><hr class="my-1 dropdown-divider"></li>
                                             <li><a class="dropdown-item text-dark" href="{{ route('fixed-assets.print_qr', $ast->id) }}" target="_blank"><i class="bi bi-qr-code me-2"></i> Cetak Label QR</a></li>
@@ -230,13 +251,27 @@
                                     <div class="inner-collapse-modern">
                                         <div class="row g-4">
                                             <div class="col-md-6 border-end pe-md-4">
-                                                <h6 class="mb-3 fw-bold text-dark fs-6"><i class="bi bi-card-text me-2 text-primary"></i>Spesifikasi & Nilai</h6>
+                                                <h6 class="mb-3 fw-bold text-dark fs-6"><i class="bi bi-card-text me-2 text-primary"></i>Spesifikasi & Nilai Aset</h6>
                                                 <table class="table mb-0 table-sm table-borderless small">
-                                                    <tr><td width="35%" class="pb-2 text-muted">Pemilik PT</td><td class="pb-2 fw-bold text-dark">: {{ optional($ast->company)->name ?? '-' }}</td></tr>
-                                                    <tr><td class="pb-2 text-muted">Label Akuntansi</td><td class="pb-2 fw-bold text-dark">: {{ $ast->accounting_asset_number ?? '-' }}</td></tr>
+                                                    <tr>
+                                                        <td width="35%" class="pb-2 text-muted">Pemilik PT</td>
+                                                        <td class="pb-2 fw-bold text-dark">: {{ optional($ast->company)->name ?? '-' }}</td>
+                                                    </tr>
+                                                    <tr>
+                                                        <td class="pb-2 text-muted">Label Akuntansi</td>
+                                                        <td class="pb-2 fw-bold text-dark">: {{ $ast->accounting_asset_number ?? '-' }}</td>
+                                                    </tr>
+                                                    <tr>
+                                                        <td class="pb-2 text-muted">Kategori Penyusutan</td>
+                                                        <td class="pb-2 fw-bold text-dark">: {{ optional($ast->assetCategory)->name ?? 'Kelompok 1 (Default)' }}</td>
+                                                    </tr>
                                                     <tr>
                                                         <td class="pb-2 text-muted">Harga Perolehan</td>
-                                                        <td class="pb-2 fw-bold text-success">: {{ optional($ast->currency)->symbol ?? 'Rp' }} {{ number_format($ast->purchase_price ?? 0, 0, ',', '.') }}</td>
+                                                        <td class="pb-2 fw-bold text-dark">: {{ optional($ast->currency)->symbol ?? 'Rp' }} {{ number_format($ast->purchase_price ?? 0, 0, ',', '.') }}</td>
+                                                    </tr>
+                                                    <tr>
+                                                        <td class="pb-2 text-muted">Nilai Buku Saat Ini</td>
+                                                        <td class="pb-2 fw-bold text-danger">: {{ optional($ast->currency)->symbol ?? 'Rp' }} {{ number_format($ast->net_book_value ?? $ast->purchase_price ?? 0, 0, ',', '.') }}</td>
                                                     </tr>
                                                     <tr>
                                                         <td class="align-top text-muted">Spesifikasi</td>
@@ -289,6 +324,7 @@
                             </td>
                         </tr>
 
+                        {{-- MODAL HISTORY (Jejak Rekam) --}}
                         <div class="modal fade" id="modalHistory{{ $ast->id }}" tabindex="-1">
                             <div class="modal-dialog modal-dialog-centered modal-lg modal-dialog-scrollable">
                                 <div class="overflow-hidden border-0 shadow-lg modal-content rounded-4">
@@ -375,13 +411,13 @@
 
 {{-- 1. MODAL EDIT ASET --}}
 <div class="modal fade" id="editModal" tabindex="-1">
-    <div class="modal-dialog modal-lg modal-dialog-centered">
+    <div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable">
         <div class="overflow-hidden border-0 shadow-lg modal-content rounded-4">
             <form action="" method="POST" id="formEditAsset">
                 @csrf
                 @method('PUT')
                 <div class="py-3 text-white border-0 modal-header bg-info">
-                    <h5 class="modal-title fw-bold"><i class="bi bi-sliders me-2"></i>Update Status Aset</h5>
+                    <h5 class="modal-title fw-bold"><i class="bi bi-sliders me-2"></i>Update Data Aset</h5>
                     <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
                 </div>
                 <div class="p-4 modal-body bg-light text-start">
@@ -392,6 +428,7 @@
 
                     <div class="row g-4">
                         <div class="col-md-6 border-end pe-md-4">
+                            <h6 class="pb-2 mb-3 border-bottom text-primary fw-bold"><i class="bi bi-box-seam me-2"></i>Detail Fisik</h6>
                             <div class="mb-3">
                                 <label class="form-label fw-bold small text-muted">Serial Number (S/N) Fisik</label>
                                 <input type="text" name="serial_number" class="shadow-sm form-control">
@@ -400,15 +437,20 @@
                                 <label class="form-label fw-bold small text-muted">No. Aset (Label Akuntansi)</label>
                                 <input type="text" name="accounting_asset_number" class="shadow-sm form-control border-info">
                             </div>
-
-                            {{-- 🔥 PERBAIKAN: Textarea CKEditor Edit 🔥 --}}
                             <div class="mb-3">
                                 <label class="form-label fw-bold small text-muted">Spesifikasi Detail / Unik Unit</label>
                                 <textarea name="spesifikasi_detail" id="spesifikasi_editor_edit" class="shadow-sm form-control" rows="3"></textarea>
                             </div>
+                        </div>
 
+                        <div class="col-md-6 ps-md-4">
+                            <h6 class="pb-2 mb-3 border-bottom text-primary fw-bold"><i class="bi bi-cash-coin me-2"></i>Nilai & Penyusutan</h6>
                             <div class="mb-3">
-                                <label class="form-label fw-bold small text-muted">Mata Uang & Nilai Wajar</label>
+                                <label class="form-label fw-bold small text-muted">Tanggal Perolehan <span class="text-danger">*</span></label>
+                                <input type="date" name="acquisition_date" class="shadow-sm form-control border-info" required>
+                            </div>
+                            <div class="mb-3">
+                                <label class="form-label fw-bold small text-muted">Mata Uang & Harga Beli</label>
                                 <div class="shadow-sm input-group">
                                     <select name="currency_id" class="input-group-text bg-light border-success fw-bold text-dark" style="cursor: pointer;" required>
                                         @foreach($currencies as $currency)
@@ -418,9 +460,17 @@
                                     <input type="number" name="purchase_price" class="form-control border-success" placeholder="0">
                                 </div>
                             </div>
-                        </div>
+                            <div class="mb-4">
+                                <label class="form-label fw-bold small text-muted">Kategori Penyusutan <span class="text-danger">*</span></label>
+                                <select name="asset_category_id" class="shadow-sm form-select" required>
+                                    <option value="">-- Pilih Kategori --</option>
+                                    @foreach($assetCategories as $category)
+                                        <option value="{{ $category->id }}">{{ $category->name }} ({{ $category->useful_life_years }} Thn)</option>
+                                    @endforeach
+                                </select>
+                            </div>
 
-                        <div class="col-md-6 ps-md-4">
+                            <h6 class="pb-2 mt-4 mb-3 border-bottom text-primary fw-bold"><i class="bi bi-geo-alt me-2"></i>Lokasi & Status</h6>
                             <div class="mb-3">
                                 <label class="form-label fw-bold small text-muted">Aset Milik PT / Departemen <span class="text-danger">*</span></label>
                                 <select name="company_id" class="shadow-sm form-select select2-user" style="width: 100%;" required>
@@ -450,7 +500,7 @@
                             </div>
                             <div class="mb-2">
                                 <label class="form-label fw-bold small text-muted">Catatan (Kondisi/Perubahan)</label>
-                                <textarea name="notes" class="shadow-sm form-control" rows="2" placeholder="Catatan log perubahan..."></textarea>
+                                <textarea name="notes" class="shadow-sm form-control border-warning" rows="2" placeholder="Tulis alasan perubahan data..."></textarea>
                             </div>
                         </div>
                     </div>
@@ -496,6 +546,16 @@
                             </div>
 
                             <div class="mb-3">
+                                <label class="form-label fw-bold small text-muted text-uppercase">Kategori Penyusutan <span class="text-danger">*</span></label>
+                                <select name="asset_category_id" class="shadow-sm form-select border-primary" required>
+                                    <option value="">-- Pilih Kategori Aset --</option>
+                                    @foreach($assetCategories as $category)
+                                        <option value="{{ $category->id }}">{{ $category->name }} (Umur: {{ $category->useful_life_years }} Thn)</option>
+                                    @endforeach
+                                </select>
+                            </div>
+
+                            <div class="mb-3">
                                 <label class="form-label fw-bold small text-muted">Penamaan Spesifik Aset</label>
                                 <input type="text" name="asset_name" class="shadow-sm form-control border-primary" placeholder="Cth: Laptop Core i7 Direksi...">
                                 <div class="form-text" style="font-size: 0.7rem;"><i class="bi bi-info-circle"></i> Kosongkan jika ingin menggunakan nama bawaan Master Barang.</div>
@@ -503,7 +563,7 @@
 
                             <div class="row">
                                 <div class="mb-3 col-6">
-                                    <label class="form-label fw-bold small text-muted">Tgl Diterima <span class="text-danger">*</span></label>
+                                    <label class="form-label fw-bold small text-muted">Tgl Diterima / Beli <span class="text-danger">*</span></label>
                                     <input type="date" name="acquisition_date" class="shadow-sm form-control border-info" value="{{ date('Y-m-d') }}" required>
                                 </div>
                                 <div class="mb-3 col-6">
@@ -565,7 +625,6 @@
                                 </div>
                             </div>
 
-                            {{-- 🔥 PERBAIKAN: Textarea CKEditor Tambah Aset 🔥 --}}
                             <div class="mb-3">
                                 <label class="form-label fw-bold small text-muted">Spesifikasi Detail / Merek <span class="text-danger">*</span></label>
                                 <textarea name="spesifikasi_detail" id="spesifikasi_editor_add" class="shadow-sm form-control" rows="4" placeholder="Sertakan detail spesifikasi..."></textarea>
@@ -695,7 +754,6 @@
             })
             .then(editor => {
                 editorAdd = editor;
-                // Sinkronisasi data ke textarea asli setiap kali ada perubahan
                 editor.model.document.on('change:data', () => {
                     document.querySelector('#spesifikasi_editor_add').value = editor.getData();
                 });
@@ -721,6 +779,7 @@
             var button = $(event.relatedTarget);
 
             var id = button.data('id');
+            var category_id = button.data('category-id'); // <-- Tangkap Kategori
             var itemName = button.data('item-name');
             var assetNumber = button.data('asset-number');
             var serial_number = button.data('serial');
@@ -732,6 +791,7 @@
             var price = button.data('price');
             var notes = button.data('notes');
             var currency_id = button.data('currency-id');
+            var acq_date = button.data('acquisition-date'); // <-- Tangkap Tanggal
 
             var modal = $(this);
 
@@ -739,10 +799,12 @@
             modal.find('#editModalItemName').text(itemName);
             modal.find('#editModalAssetNumber').text(assetNumber);
 
+            modal.find('select[name="asset_category_id"]').val(category_id).trigger('change'); // <-- Set Kategori
             modal.find('input[name="serial_number"]').val(serial_number);
             modal.find('input[name="accounting_asset_number"]').val(accounting_number);
             modal.find('textarea[name="notes"]').val(notes);
             modal.find('input[name="purchase_price"]').val(price);
+            modal.find('input[name="acquisition_date"]').val(acq_date); // <-- Set Tanggal
             modal.find('select[name="currency_id"]').val(currency_id);
 
             modal.find('select[name="company_id"]').val(company_id).trigger('change');
@@ -767,6 +829,7 @@
         } else {
             assignee.prop('disabled', true);
             assignee.prop('required', false);
+            assignee.val('').trigger('change'); // Reset isi dropdown jika tidak dipakai
         }
     }
 </script>

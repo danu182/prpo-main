@@ -9,25 +9,7 @@ class FixedAsset extends Model
 {
     use HasFactory;
 
-    protected $fillable = [
-        'asset_number',
-        'item_id',
-        'goods_receipt_id',
-        'serial_number',
-        'accounting_asset_number',
-        'acquisition_date',
-        'purchase_price', // <- Tambahkan ini
-        'currency_id',
-        'supporting_document', // 🔥 Tambahkan ini
-        'spesifikasi_detail',
-        'status_id', // <--- Ganti 'status' menjadi 'status_id'
-        'assigned_to',
-        'notes',
-        'name', // <---- WAJIB DITAMBAHKAN DI SINI
-        'company_id',
-        'batch_id', // 🔥 Tambahkan ini agar bisa disimpan secara massal
-        'warehouse_id',
-    ];
+    protected $guarded = [];
 
     // Relasi ke Master Barang
     public function item()
@@ -129,10 +111,36 @@ class FixedAsset extends Model
     }
 
 
-    // Relasi ke Kategori Aset
-    public function category()
+    // 1. Relasi ke Kategori Aset
+    public function assetCategory()
     {
         return $this->belongsTo(\App\Models\AssetCategory::class, 'asset_category_id');
+    }
+
+    // 2. Hitung Penyusutan per Tahun
+    public function getAnnualDepreciationAttribute()
+    {
+        $usefulLife = optional($this->assetCategory)->useful_life_years ?? 4;
+        if ($usefulLife <= 0) return 0;
+        return $this->purchase_price / $usefulLife;
+    }
+
+    // 3. Hitung Penyusutan per Bulan
+    public function getMonthlyDepreciationAttribute()
+    {
+        return $this->annual_depreciation / 12;
+    }
+
+    // 4. Hitung Nilai Buku Saat Ini (Berdasarkan acquisition_date)
+    public function getNetBookValueAttribute()
+    {
+        if (!$this->acquisition_date) return $this->purchase_price; // <-- Diubah ke acquisition_date
+
+        $monthsUsed = \Carbon\Carbon::parse($this->acquisition_date)->diffInMonths(now());
+        $accumulatedDepreciation = $monthsUsed * $this->monthly_depreciation;
+        $netBookValue = $this->purchase_price - $accumulatedDepreciation;
+
+        return $netBookValue > 0 ? $netBookValue : 0;
     }
 
 

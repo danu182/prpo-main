@@ -47,6 +47,7 @@ class DatabaseSeeder extends Seeder
             ApprovalWorkflowSeeder::class,
             DocumentTypeSeeder::class,
             BankDataSeeder::class,
+            AssetCategorySeeder::class,
             // ImportUserSeeder::class,
 
         ]);

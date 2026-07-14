@@ -57,6 +57,7 @@ class FixedAssetImport implements ToCollection, WithHeadingRow
                 'batch_id'           => $this->batchId,
                 'kode_barang'        => trim($row['kode_barang'] ?? ''),
                 'nama_spesifik_aset' => trim($row['nama_spesifik_aset'] ?? ''),
+                'kategori_aset'      => trim($row['kategori_aset'] ?? ''), // 🔥 TAMBAHAN UNTUK MENANGKAP KATEGORI DARI EXCEL
                 'serial_number'      => trim($row['serial_number'] ?? ''),
                 'label_akuntansi'    => trim($row['label_akuntansi'] ?? ''),
                 'nama_pt'            => trim($row['nama_pt'] ?? ''),

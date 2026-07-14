@@ -14,6 +14,7 @@ use App\Models\Company;
 use App\Models\Status;
 use App\Models\Warehouse;
 use App\Models\Currency;
+use App\Models\AssetCategory; // 🔥 PASTIKAN MODEL INI DI-IMPORT
 
 class AssetsTemplateExport implements WithMultipleSheets
 {
@@ -28,8 +29,8 @@ class AssetsTemplateExport implements WithMultipleSheets
             new class implements FromArray, WithTitle {
                 public function array(): array {
                     return [[
-                        'Kode Barang', 'Nama Spesifik Aset', 'Serial Number', 'Label Akuntansi',
-                        'Nama PT', 'Nama Gudang', 'Status', 'Nama Peminjam',
+                        'Kode Barang', 'Nama Spesifik Aset', 'Kategori Aset', // 🔥 TAMBAH KOLOM KATEGORI
+                        'Serial Number', 'Label Akuntansi', 'Nama PT', 'Nama Gudang', 'Status', 'Nama Peminjam',
                         'Tanggal Perolehan', 'Mata Uang', 'Harga Beli Angka Murni', 'Spesifikasi', 'Catatan'
                     ]];
                 }
@@ -52,9 +53,6 @@ class AssetsTemplateExport implements WithMultipleSheets
             // =======================================================
             new class implements FromCollection, WithHeadings, WithTitle {
                 public function collection() {
-                    // 🔥 HANYA TARIK ITEM YANG STATUSNYA AKTIF (Tidak Nonaktif) 🔥
-                    // Sesuaikan 'is_active', 1 dengan nama kolom aktif di tabel items Anda
-                    // (misalnya: 'status', 'active' atau 'is_active', true)
                     return Item::select('code', 'name')
                                ->where('is_active', 1)
                                ->orderBy('name')
@@ -109,14 +107,28 @@ class AssetsTemplateExport implements WithMultipleSheets
             },
 
             // =======================================================
-            // 🔥 SHEET 8: PANDUAN PENGISIAN (DISESUAIKAN UNTUK SMART AUTO-CREATE) 🔥
+            // 🔥 SHEET 8: REFERENSI KATEGORI ASET (BARU) 🔥
+            // =======================================================
+            new class implements FromCollection, WithHeadings, WithTitle {
+                public function collection() {
+                    return AssetCategory::where('is_active', 1)
+                                        ->select('name', 'useful_life_years')
+                                        ->orderBy('useful_life_years')
+                                        ->get();
+                }
+                public function headings(): array { return ['KATEGORI ASET (COPAS KE FORM)', 'UMUR EKONOMIS (TAHUN)']; }
+                public function title(): string { return '8. Referensi Kategori Aset'; }
+            },
+
+            // =======================================================
+            // SHEET 9: PANDUAN PENGISIAN
             // =======================================================
             new class implements FromArray, WithHeadings, WithTitle {
                 public function array(): array {
                     return [
-                        // 🔥 PERBAIKAN: Kode Barang jadi OPSIONAL, Nama Spesifik jadi WAJIB jika kode kosong
                         ['Kode Barang', 'OPSIONAL', 'Ambil dari Sheet 3. KOSONGKAN jika barang belum ada di Katalog, sistem akan membuatkannya otomatis.'],
                         ['Nama Spesifik Aset', 'WAJIB (Jika Kode Kosong)', 'Cth: Laptop Core i7. WAJIB DIISI jika Kode Barang di atas dikosongkan.'],
+                        ['Kategori Aset', 'OPSIONAL', 'Ambil dari Sheet 8. Menentukan umur penyusutan. Jika kosong, sistem otomatis memasukkannya ke Kelompok 1 (4 Tahun).'], // 🔥 TAMBAHAN PANDUAN
                         ['Serial Number', 'OPSIONAL', 'Nomor Seri / S/N fisik.'],
                         ['Label Akuntansi', 'OPSIONAL', 'Nomor aset dari Keuangan (Cth: FA-001).'],
                         ['Nama PT', 'WAJIB', 'Ambil dari Sheet 4 (Referensi PT).'],
@@ -131,7 +143,7 @@ class AssetsTemplateExport implements WithMultipleSheets
                     ];
                 }
                 public function headings(): array { return ['NAMA KOLOM', 'SIFAT', 'PANDUAN PENGISIAN']; }
-                public function title(): string { return '8. Panduan Pengisian'; }
+                public function title(): string { return '9. Panduan Pengisian'; }
             }
         ];
     }

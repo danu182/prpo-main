@@ -49,6 +49,12 @@
                 <div class="card-body">
                     <div class="text-muted small fw-bold text-uppercase">Total Nilai Perolehan</div>
                     <div class="fs-4 fw-bold text-info">IDR {{ number_format($totalValue, 0, ',', '.') }}</div>
+
+                    {{-- 🔥 TAMBAHKAN BARIS INI TEPAT DI BAWAHNYA 🔥 --}}
+                    <div class="pt-2 mt-2 border-top">
+                        <div class="text-muted small">Nilai Buku Saat Ini:</div>
+                        <div class="fs-6 fw-bold text-danger">IDR {{ number_format($totalCurrentValue, 0, ',', '.') }}</div>
+                    </div>
                 </div>
             </div>
         </div>
@@ -90,7 +96,7 @@
                         <th width="15%">User Pengguna / Gudang</th>
                         <th width="13%">Perolehan & Status</th>
                         <th width="13%">Catatan / Notes</th> {{-- 🔥 KOLOM CATATAN BARU 🔥 --}}
-                        <th width="12%" class="text-end pe-3">Harga Beli</th>
+                        <th width="12%" class="text-end pe-3">Harga Beli & Nilai Saat Ini</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -207,8 +213,16 @@
                             </td>
 
                             {{-- 7: HARGA BELI --}}
-                            <td class="text-end fw-bold text-success pe-3 fs-6">
-                                {{ optional($asset->currency)->code ?? 'IDR' }} {{ number_format($asset->purchase_price, 0, ',', '.') }}
+                            <td class="text-end" style="width: 15%;">
+                                {{-- Harga Beli Asli (Dicoret kecil di atas) --}}
+                                <div class="text-muted text-decoration-line-through" style="font-size: 0.75rem;">
+                                    IDR {{ number_format($asset->purchase_price ?? 0, 0, ',', '.') }}
+                                </div>
+
+                                {{-- Nilai Buku Saat Ini (Ditampilkan lebih besar) --}}
+                                <div class="fw-bold text-success">
+                                    IDR {{ number_format($asset->net_book_value ?? $asset->purchase_price ?? 0, 0, ',', '.') }}
+                                </div>
                             </td>
                         </tr>
                     @empty
