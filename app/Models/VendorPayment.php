@@ -9,11 +9,7 @@ class VendorPayment extends Model
 {
     use HasFactory;
 
-    protected $fillable = [
-        'payment_number', 'vendor_invoice_id', 'payment_date',
-        'payment_method', 'bank_name', 'reference_number',
-        'amount', 'proof_file', 'notes', 'created_by'
-    ];
+    protected $guarded = [];
 
     // Relasi ke Tagihan
     public function invoice()

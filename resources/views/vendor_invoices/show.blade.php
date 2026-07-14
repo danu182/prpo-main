@@ -52,6 +52,12 @@
             <a href="{{ route('vendor-invoices.print', $invoice->invoice_number) }}" target="_blank" class="shadow-sm btn btn-dark rounded-pill fw-bold">
                 <i class="bi bi-printer me-1"></i> Cetak Resmi
             </a>
+            {{-- TAMPILKAN TOMBOL KWITANSI HANYA JIKA STATUS SUDAH LUNAS (PAID) --}}
+            @if(optional($invoice->status)->slug === 'paid')
+                <a href="{{ route('vendor-invoices.print', ['slug' => $invoice->invoice_number]) }}" target="_blank" class="btn btn-outline-success fw-bold">
+                    <i class="bi bi-patch-check-fill me-1"></i> Cetak Kwitansi Lunas
+                </a>
+            @endif
 
             @if($isPayable)
                 <button type="button" class="px-4 shadow-sm btn btn-success rounded-pill fw-bold" data-bs-toggle="modal" data-bs-target="#paymentModal">
@@ -411,9 +417,15 @@
                                     <div class="fw-bold text-dark">{{ $pay->payment_number }}</div>
                                     <div class="badge bg-success">IDR {{ number_format($pay->amount, 0, ',', '.') }}</div>
                                 </div>
-                                <div class="mb-1 text-muted small"><i class="bi bi-calendar-check me-1"></i>{{ \Carbon\Carbon::parse($pay->payment_date)->format('d M Y') }} | {{ strtoupper($pay->payment_method) }}</div>
+
+                                {{-- Menampilkan Tanggal dan Nama Metode Pembayaran --}}
+                                <div class="mb-1 text-muted small">
+                                    <i class="bi bi-calendar-check me-1"></i>{{ \Carbon\Carbon::parse($pay->payment_date)->format('d M Y') }} |
+                                    <span class="fw-bold">{{ strtoupper(optional($pay->paymentMethod)->name ?? $pay->payment_method ?? 'METODE LAINNYA') }}</span>
+                                </div>
+
                                 @if($pay->bank_name)
-                                    <div class="mb-2 text-muted" style="font-size: 0.7rem;">Bank: {{ $pay->bank_name }} (Ref: {{ $pay->reference_number }})</div>
+                                    <div class="mb-2 text-muted" style="font-size: 0.7rem;">Bank: {{ $pay->bank_name }} (Ref: {{ $pay->reference_number ?? '-' }})</div>
                                 @endif
 
                                 {{-- Menampilkan File Bukti Transfer Jika Ada --}}
@@ -427,16 +439,44 @@
                                     </div>
                                 @endif
 
-                                {{-- 🔥 Tombol Batalkan Pembayaran (SweetAlert UI) 🔥 --}}
-                                <div class="pt-2 mt-3 text-end border-top">
-                                    <form action="{{ route('vendor-invoices.cancelPayment', $pay->id) }}" method="POST" class="form-cancel-payment">
+                                {{-- 🔥 ACTION BUTTONS: CETAK MULTI-VERSION & BATALKAN 🔥 --}}
+                                <div class="gap-2 pt-2 mt-3 border-top d-flex justify-content-end align-items-center">
+
+                                    {{-- Dropdown Pilihan Cetak PDF --}}
+                                    <div class="dropdown">
+                                        <button class="py-1 btn btn-sm btn-outline-dark rounded-3 dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false" style="font-size: 0.7rem;">
+                                            <i class="bi bi-file-earmark-pdf-fill me-1"></i>Cetak PDF
+                                        </button>
+                                        <ul class="border-0 shadow dropdown-menu dropdown-menu-end" style="font-size: 0.75rem;">
+                                            <li>
+                                                <a class="py-2 dropdown-item" href="{{ route('vendor-invoices.vendor-payments.pdf-voucher', $pay->id) }}" target="_blank">
+                                                    <i class="bi bi-file-text me-2 text-primary"></i>1. Hanya Bukti Pengeluaran Kas
+                                                </a>
+                                            </li>
+                                            @if($pay->attachments && $pay->attachments->count() > 0)
+                                            <li>
+                                                <a class="py-2 dropdown-item" href="{{ route('vendor-invoices.vendor-payments.pdf-complete', $pay->id) }}" target="_blank">
+                                                    <i class="bi bi-file-earmark-zip me-2 text-success"></i>2. Bukti Kas + Gabung Lampiran
+                                                </a>
+                                            </li>
+                                            @else
+                                            <li>
+                                                <span class="py-2 cursor-not-allowed dropdown-item text-muted bg-light">
+                                                    <i class="bi bi-exclamation-circle me-2"></i>2. Gabung Lampiran (Tidak ada file)
+                                                </span>
+                                            </li>
+                                            @endif
+                                        </ul>
+                                    </div>
+
+                                    {{-- Tombol Batalkan Pembayaran (SweetAlert UI) --}}
+                                    <form action="{{ route('vendor-invoices.cancelPayment', $pay->id) }}" method="POST" class="m-0 form-cancel-payment">
                                         @csrf
                                         @method('DELETE')
-                                        {{-- Input tersembunyi untuk menyimpan alasan dari pop-up --}}
                                         <input type="hidden" name="cancel_reason" class="cancel-reason-input">
 
                                         <button type="button" class="py-1 btn btn-sm btn-outline-danger rounded-3 btn-trigger-cancel" style="font-size: 0.7rem;">
-                                            <i class="bi bi-x-circle-fill me-1"></i>Batalkan Pembayaran
+                                            <i class="bi bi-x-circle-fill me-1"></i>Batalkan
                                         </button>
                                     </form>
                                 </div>
@@ -478,12 +518,16 @@
                         <input type="date" name="payment_date" class="form-control" value="{{ date('Y-m-d') }}" required>
                     </div>
                     <div class="mb-3 row g-3">
-                        <div class="col-md-6">
-                            <label class="mb-1 fw-bold small text-muted">Metode *</label>
-                            <select name="payment_method" class="form-select" required>
-                                <option value="transfer">Transfer Bank</option>
-                                <option value="cash">Tunai (Cash)</option>
-                                <option value="giro">Cek / Giro</option>
+                        <div class="mb-3 col-md-6">
+                            <label class="mb-1 fw-bold small text-muted">Metode Pembayaran <span class="text-danger">*</span></label>
+                            <select name="payment_method" id="payment_method_select" class="form-select" required>
+                                <option value="" data-require-ref="1">-- Pilih Metode --</option>
+                                @foreach ($payment_method as $paymed)
+                                    {{-- 🔥 SISIPKAN DATA REQUIRE_REFERENCE DI SINI 🔥 --}}
+                                    <option value="{{ $paymed->name }}" data-require-ref="{{ $paymed->require_reference }}">
+                                        {{ $paymed->name }}
+                                    </option>
+                                @endforeach
                             </select>
                         </div>
                         <div class="col-md-6">
@@ -496,9 +540,9 @@
                             <label class="mb-1 fw-bold small text-muted">Bank Asal (Opsional)</label>
                             <input type="text" name="bank_name" class="form-control" placeholder="Cth: BCA Pusat">
                         </div>
-                        <div class="col-md-6">
-                            <label class="mb-1 fw-bold small text-muted">No. Referensi (Opsional)</label>
-                            <input type="text" name="reference_number" class="form-control" placeholder="No. Transaksi / Giro">
+                        <div class="mb-3 col-md-6" id="reference_wrapper">
+                            <label class="mb-1 fw-bold small text-muted">Nomor Referensi / Bank</label>
+                            <input type="text" name="reference_number" id="reference_input" class="form-control" placeholder="Cth: BCA / TRX-123456...">
                         </div>
                     </div>
                     <div class="mb-3">
@@ -539,7 +583,10 @@
 @endsection
 
 @push('scripts')
+<script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
+
 <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+
 <script>
     // ---------------------------------------------------------
     // 1. FUNGSI UNTUK MODAL PEMBAYARAN (TOMBOL HIJAU)
@@ -698,6 +745,27 @@
             }
         });
     }
+
+    $(document).ready(function() {
+        // 🔥 DETEKSI PERUBAHAN PADA DROPDOWN METODE PEMBAYARAN 🔥
+        $('#payment_method_select').on('change', function() {
+
+            // Tangkap nilai require_reference (0 atau 1) dari opsi yang sedang dipilih
+            let requireRef = $(this).find(':selected').data('require-ref');
+
+            // Jika metode pembayaran TIDAK butuh referensi (Contoh: Kas Tunai = 0)
+            if (requireRef == 0) {
+                $('#reference_wrapper').slideUp(); // Animasi menyembunyikan kolom
+                $('#reference_input').val('');     // Kosongkan isinya otomatis agar tidak masuk ke database
+                $('#reference_input').removeAttr('required'); // Hapus atribut wajib isi (jika ada)
+            }
+            // Jika butuh referensi (Contoh: Transfer = 1)
+            else {
+                $('#reference_wrapper').slideDown(); // Animasi memunculkan kolom
+                // $('#reference_input').attr('required', true); // Aktifkan jika Anda ingin referensi wajib diisi
+            }
+        });
+    });
 
 </script>
 @endpush

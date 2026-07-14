@@ -455,6 +455,17 @@ Route::middleware('auth')->group(function () {
 
         // 🔥 2. RUTE PRINT
         Route::get('/{slug}/print', [VendorInvoiceController::class, 'print'])->name('print')->where('slug', '.*');
+        Route::get('/{id}/Paymentsprint', [\App\Http\Controllers\VendorInvoiceController::class, 'printPayment'])->name('payment.print');
+
+        // 1. Versi Bukti Pengeluaran Kas Saja (PDF)
+        Route::get('/vendor-payments/{id}/pdf-voucher', [\App\Http\Controllers\VendorInvoiceController::class, 'pdfVoucher'])
+            ->name('vendor-payments.pdf-voucher')
+            ->middleware(['can:view_invoices']);
+
+        // 2. Versi Bukti Pengeluaran Kas + Lampiran Gabungan (PDF)
+        Route::get('/vendor-payments/{id}/pdf-complete', [\App\Http\Controllers\VendorInvoiceController::class, 'pdfComplete'])
+            ->name('vendor-payments.pdf-complete')
+            ->middleware(['can:view_invoices']);
 
         // 🔥 3. RUTE DINAMIS DENGAN AKSI TERTENTU
         Route::post('/from-gr/{slug}', [VendorInvoiceController::class, 'createFromGr'])->name('createFromGr')->where('slug', '.*');
@@ -465,6 +476,9 @@ Route::middleware('auth')->group(function () {
 
         // 🔥 4. RUTE SHOW (WAJIB PALING BAWAH KARENA DIA LUBANG HITAM / CATCH-ALL)
         Route::get('/{slug}', [VendorInvoiceController::class, 'show'])->name('show')->where('slug', '.*');
+
+
+        // Route::get('/paym{id}/print', [\App\Http\Controllers\VendorInvoiceController::class, 'printPayment'])->name('vendor-payments.print');
     });
 
 
@@ -495,6 +509,10 @@ Route::middleware('auth')->group(function () {
         // 🔥 RUTE BARU: Cetak PDF beserta Lampirannya
         Route::get('/print-with-attachments/{slug}', [\App\Http\Controllers\BillRequestController::class, 'printWithAttachments'])->name('print_with_attachments')->where('slug', '.*');
 
+        // 🔥 PERBAIKAN: Masukkan ke sini! (Di atas rute show, di dalam grup vendor-invoices)
+        // Dengan begini, namanya otomatis kembali menjadi vendor-invoices.final-receipt sesuai file Blade Anda
+       Route::get('/final-receipt/{slug}', [\App\Http\Controllers\VendorInvoiceController::class, 'finalReceipt'])->name('final-receipt')->where('slug', '.*');
+
         // 🔥 PERBAIKAN: Membuang awalan 'bills.' agar tidak terjadi Double Naming 🔥
         Route::post('/{slug}/add-attachment', [\App\Http\Controllers\BillRequestController::class, 'addLateAttachment'])->name('add_attachment')->where('slug', '.*');
         Route::post('/{slug}/void-payment', [\App\Http\Controllers\BillRequestController::class, 'voidPayment'])->name('void_payment')->where('slug', '.*');
@@ -503,6 +521,14 @@ Route::middleware('auth')->group(function () {
         Route::post('/{slug}/stop-recurring', [\App\Http\Controllers\BillRequestController::class, 'stopRecurring'])->name('stop_recurring')->where('slug', '.*');
 
     });
+
+
+    // ==========================================
+    // 🔥 PANDUAN PERBAIKAN: LETAKKAN DI LUAR GRUP BILLS 🔥
+    // ==========================================
+    Route::get('/vendor-invoices/{slug}/final-receipt', [\App\Http\Controllers\VendorInvoiceController::class, 'finalReceipt'])
+         ->name('vendor-invoices.final-receipt')
+         ->middleware(['can:view_invoices']);
 
 
 

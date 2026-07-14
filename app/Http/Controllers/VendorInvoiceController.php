@@ -6,6 +6,7 @@ use Illuminate\Http\Request;
 use App\Models\GoodsReceipt;
 use App\Models\VendorInvoice;
 use App\Models\VendorInvoiceItem;
+use App\Models\PaymentMethod;
 use Illuminate\Support\Facades\DB;
 use PDF;
 
@@ -305,8 +306,11 @@ class VendorInvoiceController extends Controller
             'attachments' // 🔥 Relasi Lampiran Dipanggil di sini!
         ])->where('invoice_number', $slug)->firstOrFail();
 
-        return view('vendor_invoices.show', compact('invoice'));
-    }
+        $payment_method= PaymentMethod::all();
+
+        return view('vendor_invoices.show', compact('invoice','payment_method'));
+
+        }
 
     // ==========================================
     // 6. UPDATE DATA INVOICE FISIK
@@ -341,17 +345,17 @@ class VendorInvoiceController extends Controller
         return redirect()->back()->with('success', $pesan);
     }
 
-    // ==========================================
+   // ==========================================
     // 7. BAYAR INVOICE (DENGAN MULTI ATTACHMENT DINAMIS)
     // ==========================================
     public function storePayment(Request $request, $slug)
     {
         $request->validate([
-            'payment_date'   => 'required|date',
-            'payment_method' => 'required|string',
-            'amount'         => 'required|numeric|min:1',
-            'attachments'    => 'nullable|array',
-            'attachments.*'  => 'nullable|file|mimes:jpg,jpeg,png,pdf|max:5120',
+            'payment_date'     => 'required|date',
+            'payment_method'   => 'required|string', // 🔥 UBAH KEMBALI KE payment_method
+            'amount'           => 'required|numeric|min:1',
+            'attachments'      => 'nullable|array',
+            'attachments.*'    => 'nullable|file|mimes:jpg,jpeg,png,pdf|max:5120',
         ]);
 
         DB::beginTransaction();
@@ -359,30 +363,31 @@ class VendorInvoiceController extends Controller
             $invoice = VendorInvoice::where('invoice_number', $slug)->firstOrFail();
 
             // 🔥 LOGIKA NOMOR URUT PEMBAYARAN OTOMATIS (RESET PER HARI) 🔥
-        $datePrefix = \Carbon\Carbon::parse($request->payment_date ?? now())->format('Y-m-d');
-        $prefix = 'PAY-' . $datePrefix . '-';
+            $datePrefix = \Carbon\Carbon::parse($request->payment_date ?? now())->format('Y-m-d');
+            $prefix = 'PAY-' . $datePrefix . '-';
 
-        // Cari pembayaran terakhir di tanggal tersebut
-        $lastPayment = \App\Models\VendorPayment::where('payment_number', 'like', $prefix . '%')
-            ->orderBy('payment_number', 'desc')
-            ->first();
+            // Cari pembayaran terakhir di tanggal tersebut
+            $lastPayment = \App\Models\VendorPayment::where('payment_number', 'like', $prefix . '%')
+                ->orderBy('payment_number', 'desc')
+                ->first();
 
-        if ($lastPayment) {
-            // Ambil 4 digit terakhir, ubah ke angka, lalu tambah 1
-            $lastSequence = (int) substr($lastPayment->payment_number, -4);
-            $newSequence = $lastSequence + 1;
-        } else {
-            // Jika belum ada transaksi di hari itu, mulai dari 1
-            $newSequence = 1;
-        }
+            if ($lastPayment) {
+                // Ambil 4 digit terakhir, ubah ke angka, lalu tambah 1
+                $lastSequence = (int) substr($lastPayment->payment_number, -4);
+                $newSequence = $lastSequence + 1;
+            } else {
+                // Jika belum ada transaksi di hari itu, mulai dari 1
+                $newSequence = 1;
+            }
 
-        // Format angka menjadi 4 digit (contoh: 0001, 0002, 0010)
-        $paymentNumber = $prefix . str_pad($newSequence, 4, '0', STR_PAD_LEFT);
+            // Format angka menjadi 4 digit (contoh: 0001, 0002, 0010)
+            $paymentNumber = $prefix . str_pad($newSequence, 4, '0', STR_PAD_LEFT);
+
             $payment = \App\Models\VendorPayment::create([
                 'payment_number'    => $paymentNumber,
                 'vendor_invoice_id' => $invoice->id,
                 'payment_date'      => $request->payment_date,
-                'payment_method'    => $request->payment_method,
+                'payment_method'    => $request->payment_method, // 🔥 SESUAIKAN DENGAN NAMA KOLOM DI DATABASE
                 'bank_name'         => $request->bank_name,
                 'reference_number'  => $request->reference_number,
                 'amount'            => $request->amount,
@@ -411,16 +416,20 @@ class VendorInvoiceController extends Controller
                 }
             }
 
-            // Logic Update Status Invoice (Partial / Paid)
-            $totalPaidSoFar = $invoice->payments()->sum('amount');
-            $statusTarget = ($totalPaidSoFar >= $invoice->grand_total) ? 'paid' : 'partial';
+            // ========================================================
+            // 🔥 LOGIKA UPDATE STATUS (FIXED PRECISION) 🔥
+            // ========================================================
+            $totalPaidSoFar = round($invoice->payments()->sum('amount'), 2);
+            $grandTotal     = round($invoice->grand_total, 2);
+
+            $statusTarget = ($totalPaidSoFar >= $grandTotal) ? 'paid' : 'partial';
 
             $newStatus = \App\Models\Status::where('type', 'INV')->where('slug', $statusTarget)->first();
             if ($newStatus) {
                 $invoice->update(['status_id' => $newStatus->id]);
             }
 
-            // Update PO Status jika lunas
+            // Update PO Status jika invoice lunas
             if ($statusTarget === 'paid' && $invoice->purchase_order_id) {
                 $poCompletedStatus = \App\Models\Status::where('type', 'PO')->where('slug', 'completed')->first();
                 if ($poCompletedStatus) {
@@ -627,6 +636,125 @@ class VendorInvoiceController extends Controller
             ->get();
 
         return view('vendor_invoices.payment_list', compact('payments'));
+    }
+
+
+    // ==========================================
+    // 8. CETAK BUKTI PEMBAYARAN (PAYMENT VOUCHER)
+    // ==========================================
+    public function printPayment($id)
+    {
+        // 🔥 PERBAIKAN: Hanya panggil relasi yang benar-benar ada dan dibutuhkan (invoice dan vendor)
+        $payment = \App\Models\VendorPayment::with(['invoice.vendor'])->findOrFail($id);
+
+        // Hitung total yang sudah dibayar hingga titik pembayaran ini (untuk mengetahui sisa)
+        $invoice = $payment->invoice;
+        $totalPaid = $invoice->payments()->sum('amount');
+        $sisaTagihan = $invoice->grand_total - $totalPaid;
+
+        // Return ke tampilan cetak khusus
+        return view('vendor_invoices.print_payment', compact('payment', 'invoice', 'sisaTagihan'));
+    }
+
+
+    // ==========================================
+    // VERSI 1: HANYA VOUCHER BUKTI BAYAR (PDF)
+    // ==========================================
+    public function pdfVoucher($id)
+    {
+        $payment = \App\Models\VendorPayment::with(['invoice.vendor'])->findOrFail($id);
+
+        $invoice = $payment->invoice;
+        $totalPaid = $invoice->payments()->sum('amount');
+        $sisaTagihan = max(0, $invoice->grand_total - $totalPaid);
+        $withAttachments = false; // Tanpa lampiran
+
+        $pdf = Pdf::loadView('vendor_invoices.pdf_payment', compact('payment', 'invoice', 'sisaTagihan', 'withAttachments'))
+                  ->setPaper('a4', 'portrait');
+
+        return $pdf->stream('Voucher_Payment_' . $payment->payment_number . '.pdf');
+    }
+
+    // ========================================================
+    // VERSI 2: VOUCHER + GABUNGAN LAMPIRAN PDF & GAMBAR (MURNI MERGER)
+    // ========================================================
+    public function pdfComplete($id)
+    {
+        $payment = \App\Models\VendorPayment::with(['invoice.vendor', 'attachments'])->findOrFail($id);
+
+        $invoice = $payment->invoice;
+        $totalPaid = $invoice->payments()->sum('amount');
+        $sisaTagihan = max(0, $invoice->grand_total - $totalPaid);
+
+        // 🔥 1. RENDER DOMPDF: Khusus untuk halaman utama Voucher & Lampiran berformat Gambar (JPG/PNG)
+        $withAttachments = true;
+        $pdf = \Barryvdh\DomPDF\Facade\Pdf::loadView('vendor_invoices.pdf_payment', compact('payment', 'invoice', 'sisaTagihan', 'withAttachments'))
+                  ->setPaper('a4', 'portrait');
+
+        // 🔥 2. SIMPAN HASIL DOMPDF SEMENTARA DI STORAGE
+        $tempMainPdfPath = storage_path('app/temp_payment_' . uniqid() . '.pdf');
+        $pdf->save($tempMainPdfPath);
+
+        // 🔥 3. INISIASI MESIN PENGGABUNG PDF (MERGER)
+        $merger = new \iio\libmergepdf\Merger();
+
+        // Masukkan file utama (Voucher + Lampiran Gambar) ke halaman paling depan
+        $merger->addFile($tempMainPdfPath);
+
+        // 🔥 4. CARI LAMPIRAN BERFORMAT PDF ASLI & MASUKKAN KE MERGER
+        if ($payment->attachments) {
+            foreach ($payment->attachments as $attachment) {
+                $ext = strtolower(pathinfo($attachment->file_path, PATHINFO_EXTENSION));
+
+                if ($ext === 'pdf') {
+                    // Gunakan public_path karena file disimpan di folder public storage
+                    $pdfAttachmentPath = public_path('storage/' . $attachment->file_path);
+
+                    // Pastikan berkas fisiknya benar-benar ada di server sebelum dijahit
+                    if (file_exists($pdfAttachmentPath)) {
+                        $merger->addFile($pdfAttachmentPath);
+                    }
+                }
+            }
+        }
+
+        // 🔥 5. JAHIT/GABUNGKAN SEMUA PDF MENJADI SATU FILE UTUH
+        $mergedPdfData = $merger->merge();
+
+        // 🔥 6. BERSIHKAN FILE SEMENTARA (Agar RAM & Disk Server Lega)
+        if (file_exists($tempMainPdfPath)) {
+            unlink($tempMainPdfPath);
+        }
+
+        // 🔥 7. TAMPILKAN HASIL GABUNGAN KE BROWSER USER
+        $filename = 'Complete_Payment_' . str_replace('/', '_', $payment->payment_number) . '.pdf';
+
+        return response($mergedPdfData)
+                ->header('Content-Type', 'application/pdf')
+                ->header('Content-Disposition', 'inline; filename="' . $filename . '"');
+    }
+
+
+
+    // ========================================================
+    // 9. CETAK KWITANSI PELUNASAN FINAL (OFFICIAL RECEIPT)
+    // ========================================================
+    public function finalReceipt($slug)
+    {
+
+        // Panggil invoice beserta seluruh riwayat pembayarannya
+        $invoice = \App\Models\VendorInvoice::with(['vendor', 'payments'])->where('invoice_number', $slug)->firstOrFail();
+
+        // Proteksi keamanan: Jika belum lunas, tidak boleh cetak kwitansi final
+        if (optional($invoice->status)->slug !== 'paid') {
+            return back()->with('error', 'Kwitansi Final belum bisa dicetak karena tagihan belum lunas!');
+        }
+
+        // Render menggunakan DomPDF
+        $pdf = \Barryvdh\DomPDF\Facade\Pdf::loadView('vendor_invoices.pdf_final_receipt', compact('invoice'))
+                  ->setPaper('a4', 'portrait');
+
+        return $pdf->stream('Kwitansi_Lunas_Final_' . str_replace('/', '_', $invoice->invoice_number) . '.pdf');
     }
 
 
