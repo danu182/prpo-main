@@ -505,6 +505,8 @@ Route::middleware('auth')->group(function () {
 
         Route::delete('/attachment/{slug}/{mediaId}', [\App\Http\Controllers\BillRequestController::class, 'destroyAttachment'])->name('destroyAttachment')->where('slug', '.*');
         Route::get('/print/{slug}', [\App\Http\Controllers\BillRequestController::class, 'printPdf'])->name('print')->where('slug', '.*');
+        Route::get('/prinBpr/{slug}', [\App\Http\Controllers\BillRequestController::class, 'prinBpr'])->name('prinBpr')->where('slug', '.*');
+
 
         // 🔥 RUTE BARU: Cetak PDF beserta Lampirannya
         Route::get('/print-with-attachments/{slug}', [\App\Http\Controllers\BillRequestController::class, 'printWithAttachments'])->name('print_with_attachments')->where('slug', '.*');

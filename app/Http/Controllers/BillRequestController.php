@@ -425,9 +425,6 @@ class BillRequestController extends Controller
 
             // 9. UPLOAD LAMPIRAN (MENGGUNAKAN KONSEP PR/PO)
             if ($request->hasFile('attachments')) {
-                // Ambil path dari system_settings, fallback ke 'attachments/bills' jika belum diisi
-                // Sesuaikan kuncinya menjadi path_bills_opex dan fallback-nya menjadi attachments/opex
-                // Sesuaikan kuncinya menjadi path_bills_opex dan fallback-nya menjadi attachments/opex
                 $basePath = \DB::table('system_settings')->where('setting_key', 'path_bills_opex')->value('setting_value') ?: 'attachments/opex';
                 $safeBillNumber = str_replace(['/', '\\'], '-', $bill->bill_number);
                 $storagePath = $basePath . '/' . $safeBillNumber;
@@ -450,16 +447,51 @@ class BillRequestController extends Controller
 
             $this->logHistory($bill, 'CREATED', "Membuat tagihan baru No: {$billNumber}");
 
-            // 🔥 SEEDING WORKFLOW AUTOMATION 🔥
-            $workflow = \DB::table('approval_workflows')->whereIn('document_type', ['OPEX', 'App\Models\BillRequest'])->where('is_active', 1)->first();
-            if ($workflow) {
-                $steps = \DB::table('approval_workflow_steps')->where('approval_workflow_id', $workflow->id)->orderBy('step_order', 'asc')->get();
-                foreach ($steps as $step) {
+            // =====================================================================
+            // 🔥 SEEDING WORKFLOW AUTOMATION (HYBRID LOGIC: DEFAULT VS EXCEPTION) 🔥
+            // =====================================================================
+            $userDeptId = auth()->user()->department_id;
+            $documentTypeClass = 'App\Models\BillRequest';
+
+            // 1. Cari Matriks Spesifik (Khusus untuk departemen si Pembuat)
+            $workflow = \App\Models\ApprovalWorkflow::with('steps')
+                ->where('document_type', $documentTypeClass)
+                ->where('department_id', $userDeptId)
+                ->where('is_active', true)
+                ->first();
+
+            // 2. Jika tidak punya aturan khusus, gunakan Matriks Umum (Default)
+            if (!$workflow) {
+                $workflow = \App\Models\ApprovalWorkflow::with('steps')
+                    ->where('document_type', $documentTypeClass)
+                    ->whereNull('department_id') // Mencari yang kosong
+                    ->where('is_active', true)
+                    ->first();
+            }
+
+            // 3. Generate Antrean Approval (Jika Matriks Ditemukan)
+            if ($workflow && $workflow->steps->count() > 0) {
+                foreach ($workflow->steps as $step) {
+
+                    // Pengecekan Minimal Nominal (Jika total tagihan di bawah batas minimal, lewati lapis ini)
+                    if ($step->min_amount > 0 && $bill->amount < $step->min_amount) {
+                        continue; // Skip orang ini karena nominal tidak memenuhi syarat
+                    }
+
                     \App\Models\DocumentApproval::create([
-                        'document_id' => $bill->id, 'document_type' => 'App\Models\BillRequest',
-                        'role_id' => $step->role_id, 'step_order' => $step->step_order, 'status' => 'PENDING'
+                        'document_id'          => $bill->id,
+                        'document_type'        => $documentTypeClass,
+                        'step_order'           => $step->step_order,
+                        'role_id'              => $step->role_id,
+                        'target_department_id' => $step->target_department_id, // Simpan juga target departemennya
+                        'status'               => 'PENDING'
                     ]);
                 }
+            } else {
+                // Jika tidak ada matriks sama sekali, otomatis APPROVED (Sesuai cara kerja sistem Anda)
+                $approvedStatusId = $this->getStatusId('approved') ?? 3;
+                $bill->update(['status_id' => $approvedStatusId]);
+                $this->logHistory($bill, 'APPROVED', "Auto-Approved karena tidak ada aturan/matriks persetujuan aktif untuk departemen ini.");
             }
 
             \DB::commit();
@@ -742,6 +774,21 @@ class BillRequestController extends Controller
         $bill = \App\Models\BillRequest::with(['items', 'company', 'user', 'charges.chargeType', 'discounts.discountType'])->where('bill_number', $slug)->firstOrFail();
         $pdf = \Barryvdh\DomPDF\Facade\Pdf::loadView('bills.print_pdf', compact('bill'))->setPaper('A4', 'portrait');
         return $pdf->stream('Tagihan_Opex_' . str_replace('/', '_', $bill->bill_number) . '.pdf');
+    }
+
+    // untuk print BPR
+    public function prinBpr($slug)
+    {
+        // Pastikan relasi user dan company terpanggil agar nama PT dan nama Requester muncul
+        $bill = \App\Models\BillRequest::with(['items', 'user', 'company'])->where('bill_number', $slug)->firstOrFail();
+
+        $pdf = \Barryvdh\DomPDF\Facade\Pdf::loadView('bills.pdf_bpr', compact('bill'))
+                ->setPaper('a4', 'portrait');
+
+        // 🔥 PERBAIKAN: Ganti karakter '/' menjadi '_' agar tidak ditolak oleh sistem sebagai folder
+        $safeFilename = 'BPR_' . str_replace('/', '_', $bill->bill_number) . '.pdf';
+
+        return $pdf->stream($safeFilename);
     }
 
     public function destroyAttachment($slug, $attachmentId)

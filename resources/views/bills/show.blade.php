@@ -37,7 +37,7 @@
                 </a>
             @endif
 
-            {{-- 🔥 TOMBOL CETAK DIPERBARUI: SPLIT DROPDOWN 🔥 --}}
+            {{-- 🔥 TOMBOL CETAK DIPERBARUI: SPLIT DROPDOWN DENGAN BPR 🔥 --}}
             <div class="shadow-sm btn-group">
                 {{-- Tombol Utama (Kiri) --}}
                 <a href="{{ route('bills.print', $bill->bill_number) }}" target="_blank" class="btn btn-dark fw-bold rounded-start-pill">
@@ -47,11 +47,19 @@
                 <button type="button" class="btn btn-dark dropdown-toggle dropdown-toggle-split rounded-end-pill" data-bs-toggle="dropdown" aria-expanded="false">
                     <span class="visually-hidden">Toggle Dropdown</span>
                 </button>
-                {{-- Menu Pilihan --}}
+                {{-- Menu Pilihan (Dropdown) --}}
                 <ul class="mt-2 border-0 shadow dropdown-menu dropdown-menu-end">
                     <li>
                         <a class="py-2 dropdown-item fw-medium" href="{{ route('bills.print_with_attachments', $bill->bill_number) }}" target="_blank">
                             <i class="bi bi-file-earmark-plus text-primary me-2"></i> Cetak + Lampiran
+                        </a>
+                    </li>
+                    <li><hr class="dropdown-divider"></li>
+                    <li>
+                        {{-- 🔥 PENAMBAHAN TOMBOL BPR DI SINI 🔥 --}}
+                        {{-- Catatan: Asumsi route 'prinBpr' ada di dalam prefix 'bills.' di web.php --}}
+                        <a class="py-2 dropdown-item fw-medium" href="{{ route('bills.prinBpr', $bill->bill_number) }}" target="_blank">
+                            <i class="bi bi-bank text-success me-2"></i> Cetak Form BPR
                         </a>
                     </li>
                 </ul>
@@ -612,9 +620,7 @@
 @push('scripts')
     <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
     <script>
-
-
-// FUNGSI VOID BILL DENGAN SWEETALERT INPUT
+        // FUNGSI VOID BILL DENGAN SWEETALERT INPUT
         window.prosesVoidBill = function() {
             Swal.fire({
                 title: 'Void / Batal Tagihan?',
@@ -657,7 +663,6 @@
                 }
             });
         };
-
 
         document.getElementById('btn-approve')?.addEventListener('click', function() {
             Swal.fire({

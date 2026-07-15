@@ -4,57 +4,68 @@ namespace App\Http\Controllers;
 
 use Illuminate\Http\Request;
 use App\Models\ApprovalWorkflow;
+use App\Models\Department;
 use Spatie\Permission\Models\Role;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\Rule;
 
 class ApprovalWorkflowController extends Controller
 {
-    // Tampilkan daftar dokumen yang butuh Approval
     public function index()
     {
-        $workflows = ApprovalWorkflow::withCount('steps')->get();
+        // Panggil juga relasi department agar bisa ditampilkan di tabel
+        $workflows = ApprovalWorkflow::withCount('steps')->with('department')->get();
         return view('workflows.index', compact('workflows'));
     }
 
-
-    // Tampilkan halaman Tambah Matriks Baru
     public function create()
     {
-        $roles = \Spatie\Permission\Models\Role::where('name', '!=', 'Super Admin')->orderBy('name')->get();
+        $roles = Role::where('name', '!=', 'Super Admin')->orderBy('name')->get();
+        $departments = Department::orderBy('name')->get();
+        $supportedModels = \App\Models\DocumentType::where('is_active', true)->pluck('name', 'model_class');
 
-        // 🔥 BACA DARI DATABASE YANG BARU SAJA DIPATENKAN
-        $supportedModels = \App\Models\DocumentType::where('is_active', true)
-                            ->pluck('name', 'model_class');
-
-        return view('workflows.create', compact('roles', 'supportedModels'));
+        return view('workflows.create', compact('roles', 'departments', 'supportedModels'));
     }
 
-    // Simpan Matriks Baru ke Database
     public function store(Request $request)
     {
+        $deptId = $request->department_id ?: null;
+
         $request->validate([
-            'document_type'   => 'required|string|unique:approval_workflows,document_type',
+            // Validasi Kombinasi: Tidak boleh ada jenis dokumen & departemen yang persis sama
+            'document_type' => [
+                'required', 'string',
+                Rule::unique('approval_workflows')->where(function ($query) use ($deptId) {
+                    return $query->where('department_id', $deptId);
+                })
+            ],
+            'department_id'   => 'nullable|exists:departments,id',
             'name'            => 'required|string|max:255',
             'steps'           => 'nullable|array',
             'steps.*.role_id' => 'required|exists:roles,id'
         ]);
 
         try {
-            DB::transaction(function() use ($request) {
-                // 1. Buat Induk Matriks
+            DB::transaction(function() use ($request, $deptId) {
                 $workflow = ApprovalWorkflow::create([
                     'document_type' => $request->document_type,
+                    'department_id' => $deptId,
                     'name'          => $request->name,
                     'is_active'     => true
                 ]);
 
-                // 2. Susun formasi jika ada
                 if($request->has('steps')) {
                     $order = 1;
                     foreach($request->steps as $step) {
+                        $targetDept = $step['target_department_id'] ?? null;
+                        if ($targetDept === 'all') $targetDept = 0;
+                        elseif ($targetDept === '') $targetDept = null;
+
                         $workflow->steps()->create([
-                            'step_order' => $order,
-                            'role_id'    => $step['role_id']
+                            'step_order'           => $order,
+                            'role_id'              => $step['role_id'],
+                            'target_department_id' => $targetDept,
+                            'min_amount'           => $step['min_amount'] ?? 0
                         ]);
                         $order++;
                     }
@@ -67,8 +78,6 @@ class ApprovalWorkflowController extends Controller
         }
     }
 
-
-    // Tampilkan halaman Edit formasi (Matriks)
     public function edit($id)
     {
         $workflow = ApprovalWorkflow::with(['steps' => function($q) {
@@ -76,42 +85,53 @@ class ApprovalWorkflowController extends Controller
         }])->findOrFail($id);
 
         $roles = Role::where('name', '!=', 'Super Admin')->orderBy('name')->get();
+        $departments = Department::orderBy('name')->get();
+        $supportedModels = \App\Models\DocumentType::where('is_active', true)->pluck('name', 'model_class');
 
-        // 🔥 1. TAMBAHKAN BARIS INI UNTUK MENGAMBIL DATA DOKUMEN
-        $supportedModels = \App\Models\DocumentType::where('is_active', true)
-                            ->pluck('name', 'model_class');
-
-        // 🔥 2. PASTIKAN 'supportedModels' IKUT MASUK KE DALAM COMPACT
-        return view('workflows.edit', compact('workflow', 'roles', 'supportedModels'));
+        return view('workflows.edit', compact('workflow', 'roles', 'departments', 'supportedModels'));
     }
 
     public function update(Request $request, $id)
     {
         $workflow = ApprovalWorkflow::findOrFail($id);
+        $deptId = $request->department_id ?: null;
 
         $request->validate([
-            'name' => 'required|string|max:255', // 🔥 VALIDASI NAMA BARU
-            'steps' => 'nullable|array',
+            // Validasi kombinasi unik, abaikan ID matriks ini sendiri
+            'document_type' => [
+                'required', 'string',
+                Rule::unique('approval_workflows')->where(function ($query) use ($deptId) {
+                    return $query->where('department_id', $deptId);
+                })->ignore($workflow->id)
+            ],
+            'department_id'   => 'nullable|exists:departments,id',
+            'name'            => 'required|string|max:255',
+            'steps'           => 'nullable|array',
             'steps.*.role_id' => 'required|exists:roles,id'
         ]);
 
         try {
-            DB::transaction(function() use ($request, $workflow) {
-                // 🔥 1. UPDATE NAMA MATRIKSNYA
+            DB::transaction(function() use ($request, $workflow, $deptId) {
                 $workflow->update([
-                    'name' => $request->name
+                    'document_type' => $request->document_type,
+                    'department_id' => $deptId,
+                    'name'          => $request->name
                 ]);
 
-                // 2. Hapus semua formasi lama
                 $workflow->steps()->delete();
 
-                // 3. Susun ulang formasi baru berdasarkan urutan
                 if($request->has('steps')) {
                     $order = 1;
                     foreach($request->steps as $step) {
+                        $targetDept = $step['target_department_id'] ?? null;
+                        if ($targetDept === 'all') $targetDept = 0;
+                        elseif ($targetDept === '') $targetDept = null;
+
                         $workflow->steps()->create([
-                            'step_order' => $order,
-                            'role_id'    => $step['role_id']
+                            'step_order'           => $order,
+                            'role_id'              => $step['role_id'],
+                            'target_department_id' => $targetDept,
+                            'min_amount'           => $step['min_amount'] ?? 0
                         ]);
                         $order++;
                     }

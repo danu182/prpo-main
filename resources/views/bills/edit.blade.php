@@ -129,9 +129,23 @@
 
                 {{-- CARD 3: RINCIAN ITEM --}}
                 <div class="mb-4 border-0 shadow-sm card rounded-4">
-                    <div class="py-3 bg-white card-header border-bottom-0 rounded-top-4">
+                    {{-- 🔥 HEADER DENGAN FITUR SET PAJAK MASSAL 🔥 --}}
+                    <div class="py-3 bg-white card-header border-bottom-0 rounded-top-4 d-flex justify-content-between align-items-center">
                         <h6 class="mb-0 fw-bold text-warning-emphasis"><i class="bi bi-list-check me-2"></i>Rincian Item Jasa / Opex</h6>
+                        <div class="input-group input-group-sm" style="width: 320px;">
+                            <span class="input-group-text bg-light border-warning-subtle" style="font-size: 0.75rem;">Set Pajak Semua:</span>
+                            <select class="form-select border-warning-subtle" id="global_tax_select" style="font-size: 0.75rem;">
+                                <option value="">Tanpa Pajak</option>
+                                @foreach($taxes as $tax)
+                                    <option value="{{ $tax->id }}">{{ $tax->name }} ({{ $tax->percent }}%)</option>
+                                @endforeach
+                            </select>
+                            <button class="btn btn-warning" type="button" id="btnApplyGlobalTax" style="font-size: 0.75rem;">
+                                <i class="bi bi-check-all me-1"></i>Terapkan
+                            </button>
+                        </div>
                     </div>
+
                     <div class="p-4 pt-0 card-body table-responsive">
                         <table class="table align-middle table-borderless" id="itemTable">
                             <thead class="bg-secondary bg-opacity-10 text-muted small fw-bold text-uppercase rounded-3">
@@ -284,12 +298,10 @@
                                     @foreach($attachments as $file)
                                         <div class="col-md-6">
                                             <div class="p-2 bg-white border border-opacity-25 shadow-sm border-secondary rounded-4 d-flex align-items-center">
-
                                                 {{-- CHECKBOX HAPUS --}}
                                                 <div class="form-check ms-2 me-3">
                                                     <input class="form-check-input border-danger" type="checkbox" name="delete_media[]" value="{{ $file->id }}" id="media_{{ $file->id }}" style="transform: scale(1.3); cursor: pointer;">
                                                 </div>
-
                                                 <label class="align-middle form-check-label w-100" for="media_{{ $file->id }}" style="cursor: pointer;">
                                                     <a href="{{ asset('storage/' . $file->file_path) }}" target="_blank" class="text-decoration-none fw-bold text-dark text-truncate d-block" style="max-width: 200px;">
                                                         @if(Str::endsWith(strtolower($file->file_name), ['.jpg', '.jpeg', '.png']))
@@ -349,10 +361,12 @@
                             <h3 class="mb-0 fw-bold text-dark"><span class="curr-symbol-display">Rp</span> <span id="display_grand_total">0</span></h3>
                         </div>
 
-                        <button type="button" id="btnSubmitForm" class="py-3 shadow-sm btn btn-warning w-100 rounded-pill fw-bold text-dark">
+                        <button type="button" id="btnSubmitForm" class="py-3 shadow-sm btn btn-warning w-100 rounded-pill fw-bold text-dark d-flex align-items-center justify-content-center">
                             <i class="bi bi-save2 fs-5 me-2"></i> Update Tagihan
                         </button>
-                        <a href="{{ route('bills.show', $bill->bill_number) }}" class="mt-2 btn btn-light w-100...
+
+                        {{-- 🔥 TOMBOL BATAL YANG DIPERBAIKI (TIDAK TERPOTONG LAGI) 🔥 --}}
+                        <a href="{{ route('bills.show', $bill->bill_number) }}" class="mt-2 btn btn-light w-100 rounded-pill fw-bold text-muted">Batal</a>
                     </div>
                 </div>
             </div>
@@ -523,14 +537,32 @@ $(document).ready(function() {
 
     $(document).on('input', '.qty, .tax-select', calculate);
 
-    // 10. Submit Konfirmasi (Anti-Silent Crash)
+    // 🔥 10. JAVASCRIPT: TERAPKAN PAJAK MASSAL 🔥
+    $('#btnApplyGlobalTax').click(function() {
+        let selectedTax = $('#global_tax_select').val();
+        let $taxDropdowns = $('.tax-select');
+
+        if($taxDropdowns.length === 0) return;
+
+        // Ubah semua dropdown ke ID pajak yang dipilih lalu paksa hitung ulang
+        $taxDropdowns.val(selectedTax).trigger('input');
+
+        // Memunculkan notifikasi sukses (Toast)
+        Swal.fire({
+            toast: true,
+            position: 'top-end',
+            icon: 'success',
+            title: 'Pajak berhasil diterapkan ke semua baris!',
+            showConfirmButton: false,
+            timer: 2000
+        });
+    });
+
+    // 11. Submit Konfirmasi (Anti-Silent Crash)
     $('#btnSubmitForm').click(function(e) {
         e.preventDefault();
         let btn = $(this);
         const form = document.getElementById('billForm');
-
-        // KITA BYPASS NATIVE HTML5 VALIDATION KARENA BENTROK DENGAN SELECT2
-        // Jika ada data yang kosong, Controller Laravel akan otomatis menolaknya dan memunculkan error merah di atas layar.
 
         Swal.fire({
             title: 'Update Tagihan?',

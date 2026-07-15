@@ -133,9 +133,23 @@
 
                 {{-- CARD 3: RINCIAN ITEM --}}
                 <div class="mb-4 border-0 shadow-sm card rounded-4">
-                    <div class="py-3 bg-white card-header border-bottom-0 rounded-top-4">
+                    {{-- 🔥 HEADER DENGAN FITUR SET PAJAK MASSAL 🔥 --}}
+                    <div class="py-3 bg-white card-header border-bottom-0 rounded-top-4 d-flex justify-content-between align-items-center">
                         <h6 class="mb-0 fw-bold text-primary"><i class="bi bi-list-check me-2"></i>Rincian Barang / Jasa Opex</h6>
+                        <div class="input-group input-group-sm" style="width: 320px;">
+                            <span class="input-group-text bg-light border-primary-subtle" style="font-size: 0.75rem;">Set Pajak Semua:</span>
+                            <select class="form-select border-primary-subtle" id="global_tax_select" style="font-size: 0.75rem;">
+                                <option value="">Tanpa Pajak</option>
+                                @foreach($taxes as $tax)
+                                    <option value="{{ $tax->id }}">{{ $tax->name }} ({{ $tax->percent }}%)</option>
+                                @endforeach
+                            </select>
+                            <button class="btn btn-primary" type="button" id="btnApplyGlobalTax" style="font-size: 0.75rem;">
+                                <i class="bi bi-check-all me-1"></i>Terapkan
+                            </button>
+                        </div>
                     </div>
+
                     <div class="p-4 pt-0 card-body table-responsive">
                         <table class="table align-middle table-borderless" id="itemTable">
                             <thead class="bg-secondary bg-opacity-10 text-muted small fw-bold text-uppercase rounded-3">
@@ -538,7 +552,28 @@ $(document).ready(function() {
 
     $(document).on('input', '.qty, .tax-select', calculate);
 
-    // 10. Submit Konfirmasi
+    // 🔥 10. JAVASCRIPT: TERAPKAN PAJAK MASSAL 🔥
+    $('#btnApplyGlobalTax').click(function() {
+        let selectedTax = $('#global_tax_select').val();
+        let $taxDropdowns = $('.tax-select');
+
+        if($taxDropdowns.length === 0) return;
+
+        // Ubah semua dropdown ke ID pajak yang dipilih lalu paksa hitung ulang
+        $taxDropdowns.val(selectedTax).trigger('input');
+
+        // Memunculkan notifikasi sukses (Toast)
+        Swal.fire({
+            toast: true,
+            position: 'top-end',
+            icon: 'success',
+            title: 'Pajak berhasil diterapkan ke semua baris!',
+            showConfirmButton: false,
+            timer: 2000
+        });
+    });
+
+    // 11. Submit Konfirmasi
     $('#btnSubmitForm').click(function() {
         const form = document.getElementById('billForm');
         if (!form.checkValidity()) { form.reportValidity(); return; }

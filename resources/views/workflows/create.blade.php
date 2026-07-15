@@ -3,27 +3,27 @@
 @section('content')
 <div class="container pb-5">
     <div class="mb-4">
-        <a href="{{ route('workflows.index') }}" class="btn btn-light border rounded-pill fw-bold mb-3"><i class="bi bi-arrow-left me-1"></i> Kembali</a>
+        <a href="{{ route('workflows.index') }}" class="mb-3 border btn btn-light rounded-pill fw-bold"><i class="bi bi-arrow-left me-1"></i> Kembali</a>
         <h4 class="mb-1 fw-bold text-dark"><i class="bi bi-plus-circle me-2 text-primary"></i>Buat Matriks Persetujuan Baru</h4>
         <p class="mb-0 text-muted">Tambahkan aturan persetujuan untuk modul dokumen baru.</p>
     </div>
 
     @if(session('error'))
-        <div class="alert alert-danger shadow-sm border-0 rounded-4"><i class="bi bi-exclamation-triangle-fill me-2"></i>{{ session('error') }}</div>
+        <div class="border-0 shadow-sm alert alert-danger rounded-4"><i class="bi bi-exclamation-triangle-fill me-2"></i>{{ session('error') }}</div>
     @endif
 
     <form action="{{ route('workflows.store') }}" method="POST" id="workflowForm">
         @csrf
         <div class="row g-4">
             <div class="col-lg-4">
-                <div class="card border-0 shadow-sm rounded-4">
-                    <div class="card-header bg-white py-3 border-bottom">
+                <div class="border-0 shadow-sm card rounded-4">
+                    <div class="py-3 bg-white card-header border-bottom">
                         <h6 class="mb-0 fw-bold"><i class="bi bi-info-square me-2"></i>Info Matriks</h6>
                     </div>
-                    <div class="card-body p-4 bg-light">
+                    <div class="p-4 card-body bg-light">
                         <div class="mb-3">
                             <label class="form-label fw-bold small text-muted">Nama Aturan (Matriks)</label>
-                            <input type="text" name="name" class="form-control fw-bold border-primary" placeholder="Cth: Matriks Persetujuan GR" required value="{{ old('name') }}">
+                            <input type="text" name="name" class="form-control fw-bold border-primary" placeholder="Cth: Matriks Opex Umum" required value="{{ old('name') }}">
                         </div>
                         <div class="mb-3">
                             <label class="form-label fw-bold small text-muted">Untuk Jenis Dokumen</label>
@@ -33,28 +33,39 @@
                                     <option value="{{ $namespace }}" {{ old('document_type') == $namespace ? 'selected' : '' }}>{{ $label }}</option>
                                 @endforeach
                             </select>
-                            <small class="text-muted mt-1 d-block">Satu jenis dokumen hanya boleh memiliki 1 Matriks aktif.</small>
+                        </div>
+
+                        {{-- 🔥 FITUR BARU: PILIHAN DEPARTEMEN SPESIFIK / UMUM 🔥 --}}
+                        <div class="mb-3">
+                            <label class="form-label fw-bold small text-muted">Berlaku Untuk</label>
+                            <select name="department_id" class="form-select border-info text-dark fw-bold">
+                                <option value="">[Berlaku UMUM / Default Semua Departemen]</option>
+                                @foreach($departments as $dept)
+                                    <option value="{{ $dept->id }}" {{ old('department_id') == $dept->id ? 'selected' : '' }}>Spesifik: {{ $dept->name }}</option>
+                                @endforeach
+                            </select>
+                            <small class="mt-1 text-muted d-block">Sistem akan mencari aturan Spesifik Departemen terlebih dahulu. Jika tidak ada, sistem akan memakai aturan UMUM.</small>
                         </div>
                     </div>
                 </div>
             </div>
 
             <div class="col-lg-8">
-                <div class="card border-0 border-4 border-start border-primary shadow-sm rounded-4">
-                    <div class="card-header bg-white py-3 border-bottom d-flex justify-content-between align-items-center">
+                <div class="border-0 border-4 shadow-sm card border-start border-primary rounded-4">
+                    <div class="py-3 bg-white card-header border-bottom d-flex justify-content-between align-items-center">
                         <h6 class="mb-0 fw-bold"><i class="bi bi-list-ol me-2"></i>Urutan Tanda Tangan (Dari Bawah ke Atas)</h6>
                     </div>
-                    <div class="card-body p-4 bg-light">
+                    <div class="p-4 card-body bg-light">
                         <div id="step-container">
                             {{-- Container Kosong, akan diisi via JS --}}
                         </div>
 
-                        <button type="button" class="btn btn-outline-primary fw-bold border-dashed w-100 py-3 mt-2 mb-4" id="btn-add-step">
-                            <i class="bi bi-plus-circle fs-5 d-block mb-1"></i> Tambah Lapis Persetujuan (Ke Atas)
+                        <button type="button" class="py-3 mt-2 mb-4 border-dashed btn btn-outline-primary fw-bold w-100" id="btn-add-step">
+                            <i class="mb-1 bi bi-plus-circle fs-5 d-block"></i> Tambah Lapis Persetujuan (Ke Atas)
                         </button>
 
                         <div class="text-end">
-                            <button type="submit" class="btn btn-primary fw-bold px-5 py-2 rounded-pill shadow">
+                            <button type="submit" class="px-5 py-2 shadow btn btn-primary fw-bold rounded-pill">
                                 <i class="bi bi-save me-2"></i> Buat Matriks
                             </button>
                         </div>
@@ -77,24 +88,38 @@
             @endforeach
         `;
 
+        // 🔥 TAMBAHAN HYBRID
+        let deptOptions = `
+            <option value="">[Atasan Langsung / Satu Departemen]</option>
+            <option value="all">[Lintas Batas / Semua Departemen]</option>
+            @foreach($departments as $dept)
+                <option value="{{ $dept->id }}">{{ $dept->name }}</option>
+            @endforeach
+        `;
+
         let stepIndex = 0;
 
         $('#btn-add-step').click(function() {
             let newRow = `
-                <div class="step-row d-flex align-items-center mb-3 p-3 bg-white border shadow-sm rounded-3" style="display:none;">
+                <div class="p-3 mb-3 bg-white border shadow-sm step-row d-flex align-items-center rounded-3" style="display:none;">
                     <div class="me-3">
-                        <span class="badge bg-dark rounded-circle px-2 py-2 step-number">X</span>
+                        <span class="px-2 py-2 badge bg-dark rounded-circle step-number">X</span>
                     </div>
                     <div class="flex-grow-1 me-3">
-                        <label class="small text-muted fw-bold mb-1">Pilih Jabatan (Role)</label>
+                        <label class="mb-1 small text-muted fw-bold">Pilih Jabatan (Role)</label>
                         <select name="steps[${stepIndex}][role_id]" class="form-select border-primary fw-bold" required>
                             ${roleOptions}
                         </select>
                     </div>
                     <div class="flex-grow-1 me-3">
-                        <label class="small text-muted fw-bold mb-1">Minimal Nominal (Rp)</label>
+                        <label class="mb-1 small text-muted fw-bold">Departemen Penyetuju</label>
+                        <select name="steps[${stepIndex}][target_department_id]" class="form-select border-info text-dark fw-bold">
+                            ${deptOptions}
+                        </select>
+                    </div>
+                    <div class="flex-grow-1 me-3">
+                        <label class="mb-1 small text-muted fw-bold">Minimal Nominal (Rp)</label>
                         <input type="number" name="steps[${stepIndex}][min_amount]" class="form-control border-warning fw-bold text-dark" value="0" min="0" required>
-                        <small class="x-small text-muted">Isi 0 jika selalu wajib ACC.</small>
                     </div>
                     <div class="mt-4">
                         <button type="button" class="btn btn-outline-danger btn-remove-step rounded-circle" title="Hapus Lapis Ini"><i class="bi bi-trash"></i></button>
@@ -119,7 +144,8 @@
             $('.step-row').each(function(index) {
                 $(this).find('.step-number').text(index + 1);
                 // Update indeks array agar selalu berurutan
-                $(this).find('select').attr('name', 'steps[' + index + '][role_id]');
+                $(this).find('select').eq(0).attr('name', 'steps[' + index + '][role_id]');
+                $(this).find('select').eq(1).attr('name', 'steps[' + index + '][target_department_id]');
                 $(this).find('input[type="number"]').attr('name', 'steps[' + index + '][min_amount]');
             });
         }
