@@ -78,7 +78,9 @@
                                 <label class="form-label fw-bold small text-muted text-uppercase">Jatuh Tempo <span class="text-danger">*</span></label>
                                 <input type="date" name="due_date" class="form-control" value="{{ date('Y-m-d', strtotime($bill->due_date)) }}" required>
                             </div>
-                            <div class="col-md-12">
+
+                            {{-- 🔥 PERBAIKAN: Layout Kolom Vendor & Invoice Dipecah Jadi 2 🔥 --}}
+                            <div class="col-md-6">
                                 <label class="form-label fw-bold small text-muted text-uppercase">Nama Vendor / Supplier <span class="text-danger">*</span></label>
                                 <select name="vendor_name" class="form-select select2-vendor" required>
                                     <option value="{{ $bill->vendor_name }}" selected>{{ $bill->vendor_name }}</option>
@@ -89,6 +91,11 @@
                                     @endforeach
                                 </select>
                             </div>
+                            <div class="col-md-6">
+                                <label class="form-label fw-bold small text-muted text-uppercase">No. Invoice Vendor <span class="text-muted text-lowercase">(Opsional)</span></label>
+                                <input type="text" name="vendor_invoice_number" class="form-control" value="{{ old('vendor_invoice_number', $bill->vendor_invoice_number) }}" placeholder="Contoh: INV-2026-001">
+                            </div>
+
                             <div class="col-md-12">
                                 <label class="form-label fw-bold small text-muted text-uppercase">Catatan Tagihan</label>
                                 <textarea name="note" class="form-control rounded-3" rows="2">{{ $bill->description }}</textarea>
@@ -365,7 +372,6 @@
                             <i class="bi bi-save2 fs-5 me-2"></i> Update Tagihan
                         </button>
 
-                        {{-- 🔥 TOMBOL BATAL YANG DIPERBAIKI (TIDAK TERPOTONG LAGI) 🔥 --}}
                         <a href="{{ route('bills.show', $bill->bill_number) }}" class="mt-2 btn btn-light w-100 rounded-pill fw-bold text-muted">Batal</a>
                     </div>
                 </div>

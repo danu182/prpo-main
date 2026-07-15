@@ -447,7 +447,7 @@ class ItemController extends Controller
     }
 
 
-    // =========================================================================
+   // =========================================================================
     // 13. WORKFLOW: AJUKAN PERSETUJUAN (SUBMIT APPROVAL)
     // =========================================================================
     public function submitApproval($batch_id)
@@ -462,47 +462,21 @@ class ItemController extends Controller
                 throw new \Exception("Terdapat $errorCount baris data yang belum valid. Harap perbaiki sebelum mengajukan.");
             }
 
-            // 2. Ubah Status Batch (Gunakan kata 'pending' agar muat di database)
-            $batch->update(['status' => 'pending']);
+            // 2. Generate Workflow Menggunakan Service (SUPER BERSIH)
+            $needsApproval = \App\Services\ApprovalService::generateWorkflow($batch);
 
-            // 3. Hapus antrean approval lama (jika sebelumnya pernah ditolak)
-            \App\Models\DocumentApproval::where('document_id', $batch->id)
-                ->where('document_type', get_class($batch))
-                ->delete();
+            if ($needsApproval) {
+                $batch->update(['status' => 'pending']);
+                DB::commit();
+                return redirect()->route('items.import_index')->with('success', 'Draft Master Item berhasil diajukan! Menunggu di-ACC Atasan.');
+            } else {
+                // AUTO APPROVE: Jika tidak ada matriks, langsung eksekusi masuk ke katalog!
+                $this->transferToCatalog($batch);
+                $batch->update(['status' => 'approved']);
 
-            // 4. Cari Workflow yang aktif untuk Import Item
-            $workflow = \DB::table('approval_workflows')
-                ->where('document_type', get_class($batch))
-                ->where('is_active', 1)
-                ->first();
-
-            if (!$workflow) {
-                throw new \Exception("Workflow Persetujuan untuk Import Master Item belum diaktifkan di Master Matriks!");
+                DB::commit();
+                return redirect()->route('items.import_index')->with('success', 'Master Item Auto-Approved dan telah masuk ke Katalog Resmi!');
             }
-
-            // 5. Bangun rantai persetujuan (Berdasarkan step_order)
-            // Karena Master Item tidak punya "Nilai Uang/Amount", kita baca semua step dengan min_amount 0
-            $steps = \DB::table('approval_workflow_steps')
-                ->where('approval_workflow_id', $workflow->id)
-                ->orderBy('step_order', 'asc')
-                ->get();
-
-            if ($steps->isEmpty()) {
-                throw new \Exception('Langkah Persetujuan (Steps) belum diatur untuk modul ini.');
-            }
-
-            foreach ($steps as $step) {
-                \App\Models\DocumentApproval::create([
-                    'document_id'   => $batch->id,
-                    'document_type' => get_class($batch),
-                    'role_id'       => $step->role_id,
-                    'step_order'    => $step->step_order,
-                    'status'        => 'PENDING'
-                ]);
-            }
-
-            DB::commit();
-            return redirect()->route('items.import_index')->with('success', 'Draft Master Item berhasil diajukan! Menunggu di-ACC Atasan.');
         } catch (\Exception $e) {
             DB::rollBack();
             return back()->with('error', 'Gagal mengajukan ke Atasan: ' . $e->getMessage());
@@ -519,7 +493,7 @@ class ItemController extends Controller
         try {
             $batch = ItemImportBatch::findOrFail($batch_id);
             $action = strtoupper($request->input('action', ''));
-            $reason = $request->input('note', 'Tidak ada catatan');
+            $reason = $request->input('note', 'Tidak ada catatan'); // Jika ingin dipakai untuk history
 
             $currentApproval = \App\Models\DocumentApproval::with('role')
                 ->where('document_id', $batch->id)
@@ -533,6 +507,7 @@ class ItemController extends Controller
                 return redirect()->back()->with('error', 'Dokumen ini tidak menunggu persetujuan Anda.');
             }
 
+            // JIKA REJECT
             if ($action === 'REJECT') {
                 if ($currentApproval) $currentApproval->update(['status' => 'REJECTED', 'approved_by' => auth()->id(), 'approved_at' => now()]);
                 $batch->update(['status' => 'draft']); // Kembalikan jadi draft agar bisa diedit staf
@@ -540,7 +515,7 @@ class ItemController extends Controller
                 return redirect()->route('items.import_index')->with('error', 'Pengajuan ditolak dan dikembalikan ke Draft.');
             }
 
-            // Jika APPROVE:
+            // JIKA APPROVE
             $currentApproval->update(['status' => 'APPROVED', 'approved_by' => auth()->id(), 'approved_at' => now()]);
 
             // Cek apakah masih ada antrean bos di atasnya
@@ -558,47 +533,56 @@ class ItemController extends Controller
                 return redirect()->route('items.import_index')->with('success', "Disetujui! Diteruskan ke $nextRoleName.");
             } else {
                 // ====================================================================================
-                // FINAL APPROVAL: PINDAHKAN DARI KARANTINA KE DATABASE UTAMA!
+                // FINAL APPROVAL: PINDAHKAN DARI KARANTINA KE DATABASE UTAMA MENGGUNAKAN HELPER!
                 // ====================================================================================
-                $details = \App\Models\ItemImportDetail::where('item_import_batch_id', $batch->id)->get();
-
-                foreach ($details as $row) {
-                    $item = \App\Models\Item::where('name', $row->name)->first();
-                    if (!$item) {
-                        $lastItem = \App\Models\Item::orderBy('id', 'desc')->first();
-                        $nextId   = $lastItem ? $lastItem->id + 1 : 1;
-                        $newCode  = 'ITM-' . str_pad($nextId, 4, '0', STR_PAD_LEFT);
-                    } else {
-                        $newCode  = $item->code;
-                    }
-
-                    // 🔥 PERBAIKAN: Generate Slug otomatis dari Nama Barang 🔥
-                    $slug = \Illuminate\Support\Str::slug($row->name) . '-' . \Illuminate\Support\Str::random(4);
-
-                    \App\Models\Item::updateOrCreate(
-                        ['name' => $row->name],
-                        [
-                            'code'           => $newCode,
-                            'slug'           => $slug, // 🔥 Masukkan Slug ke database
-                            'category_id'    => \App\Models\Category::where('code', $row->category_code)->value('id'),
-                            'uom_id'         => \App\Models\Uom::where('code', $row->uom_code)->value('id'),
-                            'item_type_code' => $row->item_type_code,
-                            'is_trackable'   => $row->is_trackable,
-                            'min_stock'      => $row->min_stock,
-                            'max_stock'      => $row->max_stock,
-                            'specification'  => $row->specification,
-                            'is_active'      => 1,
-                        ]
-                    );
-                }
-
+                $this->transferToCatalog($batch);
                 $batch->update(['status' => 'approved']);
+
                 DB::commit();
                 return redirect()->route('items.import_index')->with('success', 'Hore! Master Barang disetujui dan telah masuk ke Katalog Resmi!');
             }
         } catch (\Exception $e) {
             DB::rollBack();
             return back()->with('error', 'Terjadi kesalahan sistem: ' . $e->getMessage());
+        }
+    }
+
+    // =========================================================================
+    // HELPER METHOD: EKSEKUSI PEMINDAHAN DATA KE KATALOG
+    // =========================================================================
+    private function transferToCatalog($batch)
+    {
+        $details = \App\Models\ItemImportDetail::where('item_import_batch_id', $batch->id)->get();
+
+        foreach ($details as $row) {
+            $item = \App\Models\Item::where('name', $row->name)->first();
+
+            if (!$item) {
+                $lastItem = \App\Models\Item::orderBy('id', 'desc')->first();
+                $nextId   = $lastItem ? $lastItem->id + 1 : 1;
+                $newCode  = 'ITM-' . str_pad($nextId, 4, '0', STR_PAD_LEFT);
+            } else {
+                $newCode  = $item->code;
+            }
+
+            // Generate Slug otomatis dari Nama Barang
+            $slug = \Illuminate\Support\Str::slug($row->name) . '-' . \Illuminate\Support\Str::random(4);
+
+            \App\Models\Item::updateOrCreate(
+                ['name' => $row->name],
+                [
+                    'code'           => $newCode,
+                    'slug'           => $slug,
+                    'category_id'    => \App\Models\Category::where('code', $row->category_code)->value('id'),
+                    'uom_id'         => \App\Models\Uom::where('code', $row->uom_code)->value('id'),
+                    'item_type_code' => $row->item_type_code,
+                    'is_trackable'   => $row->is_trackable,
+                    'min_stock'      => $row->min_stock,
+                    'max_stock'      => $row->max_stock,
+                    'specification'  => $row->specification,
+                    'is_active'      => 1,
+                ]
+            );
         }
     }
 

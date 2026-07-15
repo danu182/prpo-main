@@ -217,7 +217,6 @@ class PurchaseOrderController extends Controller
 
                 // 2. Kelompokkan berdasarkan Vendor (Bisa pecah PO jika beda vendor)
                 $itemsByVendor = $itemsToProcess->groupBy('vendor_id');
-                $statusPending = \App\Models\Status::where('type', 'PO')->where('slug', 'pending_approval')->first();
                 $paymentTermName = \App\Models\PaymentTerm::find($request->payment_term_id)->name ?? null;
 
                 $prItemIdsToHeal = [];
@@ -264,11 +263,8 @@ class PurchaseOrderController extends Controller
 
                     // B. Hitung Diskon Global (Header PO) dari Array HTML
                     $globalDiscArray = $request->input('global_discounts.0', []); // Ambil index ke-0
-
                     $globalDiscType = strtoupper($globalDiscArray['type'] ?? 'FIXED');
                     $globalDiscVal = (float) ($globalDiscArray['value'] ?? 0);
-
-                    // Hitung nominal diskonnya
                     $poGlobalDiscount = ($globalDiscType === 'PERCENT') ? (($poSubtotalGross - $poTotalItemDiscount) * ($globalDiscVal / 100)) : $globalDiscVal;
 
                     // C. Hitung Diskon Ekstra Terpisah
@@ -288,12 +284,9 @@ class PurchaseOrderController extends Controller
                                 }
 
                                 $poExtraDiscountTotal += $finalDiscountAmount;
-
                                 $extraDiscountData[] = [
-                                    'name' => $disc['discount_type_id'],
-                                    'amount' => $finalDiscountAmount,
-                                    'created_at' => now(),
-                                    'updated_at' => now()
+                                    'name' => $disc['discount_type_id'], 'amount' => $finalDiscountAmount,
+                                    'created_at' => now(), 'updated_at' => now()
                                 ];
                             }
                         }
@@ -309,8 +302,7 @@ class PurchaseOrderController extends Controller
                         'purchase_request_id'   => $prRecord->id,
                         'vendor_id'             => $vendorId,
                         'bill_to_company_id'    => $request->billing_company_id,
-                        'status_id'             => $statusPending ? $statusPending->id : null,
-                        // 'current_approval_level'=> 0,
+                        'status_id'             => null, // Akan diisi oleh Workflow Service nanti
                         'po_date'               => $request->po_date ?? now(),
                         'created_by'            => auth()->id(),
                         'currency'              => $request->currency ?? 'IDR',
@@ -321,7 +313,7 @@ class PurchaseOrderController extends Controller
                         'global_discount_type'  => $globalDiscType,
                         'global_discount_value' => $globalDiscVal,
                         'subtotal'              => $poSubtotalGross,
-                        'discount_total'        => $totalAllDiscounts, // Masuk ke kolom yang benar
+                        'discount_total'        => $totalAllDiscounts,
                         'tax_total'             => $poTotalTax,
                         'charge_total'          => 0,
                         'grand_total'           => $poGrandTotal,
@@ -360,9 +352,7 @@ class PurchaseOrderController extends Controller
                             foreach (is_array($files) ? $files : [$files] as $file) {
                                 $path = $file->storeAs($storagePath, "po_item_{$itemData['item_id']}_" . uniqid() . time() . "." . $file->extension(), 'public');
                                 \App\Models\PurchaseOrderItemAttachment::create([
-                                    'purchase_order_item_id' => $newPoItem->id,
-                                    'file_name' => $file->getClientOriginalName(),
-                                    'file_path' => $path
+                                    'purchase_order_item_id' => $newPoItem->id, 'file_name' => $file->getClientOriginalName(), 'file_path' => $path
                                 ]);
                             }
                         }
@@ -374,43 +364,35 @@ class PurchaseOrderController extends Controller
                         foreach ($request->charges as $charge) {
                             if (!empty($charge['amount'])) {
                                 \Illuminate\Support\Facades\DB::table('purchase_order_charges')->insert([
-                                    'purchase_order_id' => $po->id,
-                                    'name' => $charge['charge_type_id'],
-                                    'amount' => $charge['amount'],
-                                    'created_at' => now(),
-                                    'updated_at' => now()
+                                    'purchase_order_id' => $po->id, 'name' => $charge['charge_type_id'], 'amount' => $charge['amount'],
+                                    'created_at' => now(), 'updated_at' => now()
                                 ]);
                                 $poChargeTotal += $charge['amount'];
                             }
                         }
                     }
 
-                    // Update total karena charge sifatnya menambah tagihan
                     if ($poChargeTotal > 0) {
                         $po->update([
-                            'charge_total' => $poChargeTotal,
-                            'grand_total'  => $po->grand_total + $poChargeTotal
+                            'charge_total' => $poChargeTotal, 'grand_total'  => $po->grand_total + $poChargeTotal
                         ]);
                     }
 
-                    // I. Inisiasi Workflow Approval
-                    $workflow = \Illuminate\Support\Facades\DB::table('approval_workflows')->where('document_type', get_class($po))->where('is_active', 1)->first();
-                    if ($workflow) {
-                        $steps = \Illuminate\Support\Facades\DB::table('approval_workflow_steps')
-                                    ->where('approval_workflow_id', $workflow->id)
-                                    ->where('min_amount', '<=', $po->grand_total)
-                                    ->orderBy('step_order', 'asc')
-                                    ->get();
-                        foreach ($steps as $step) {
-                            \App\Models\DocumentApproval::create([
-                                'document_id' => $po->id,
-                                'document_type' => get_class($po),
-                                'role_id' => $step->role_id,
-                                'step_order' => $step->step_order,
-                                'status' => 'PENDING'
-                            ]);
-                        }
+                    // =====================================================================
+                    // 🔥 I. INISIASI WORKFLOW APPROVAL (VIA SERVICE) 🔥
+                    // =====================================================================
+                    $needsApproval = \App\Services\ApprovalService::generateWorkflow($po);
+
+                    if ($needsApproval) {
+                        $pendingStatusId = \App\Models\Status::where('type', 'PO')->where('slug', 'pending_approval')->first()->id ?? 1;
+                        $po->update(['status_id' => $pendingStatusId]);
+                        $this->logHistory($po->id, 'SYSTEM', 'Rute persetujuan (Workflow) PO berhasil di-generate.');
+                    } else {
+                        $approvedStatusId = \App\Models\Status::where('type', 'PO')->where('slug', 'approved')->first()->id ?? 3;
+                        $po->update(['status_id' => $approvedStatusId]);
+                        $this->logHistory($po->id, 'APPROVED', 'PO Auto-Approved karena tidak ada aturan aktif atau nominal di bawah batas.');
                     }
+                    // =====================================================================
 
                     $this->logHistory($po->id, 'PO Diterbitkan', 'Dokumen PO diterbitkan dari PR #' . $prRecord->pr_number);
                 }
@@ -429,6 +411,7 @@ class PurchaseOrderController extends Controller
             return back()->withInput()->with('error', 'Gagal memproses PO: ' . $e->getMessage());
         }
     }
+
 
     // =========================================================================
     // 4. UPDATE PO (EDIT DATA PO)
@@ -584,7 +567,29 @@ class PurchaseOrderController extends Controller
                     $this->checkAndUpdatePrStatus($po->purchase_request_id);
                 }
 
+                // =====================================================================
+                // 🔥 PEMANGGILAN SERVICE WORKFLOW (RESET ANTREAN SAAT PO DI-EDIT) 🔥
+                // =====================================================================
+                // Pastikan menggunakan variabel $po, bukan $bill
+                $needsApproval = \App\Services\ApprovalService::generateWorkflow($po);
+
+                if ($needsApproval) {
+                    // Jika butuh persetujuan, ubah status PO menjadi PENDING
+                    $pendingStatus = \App\Models\Status::where('slug', 'pending')->first()->id ?? 1;
+                    $po->update(['status_id' => $pendingStatus]);
+
+                    $this->logHistory($po->id, 'SYSTEM', 'Rute persetujuan (Workflow) PO telah di-reset menyesuaikan data revisi.');
+                } else {
+                    // Jika tidak butuh persetujuan, otomatis APPROVED
+                    $approvedStatus = \App\Models\Status::where('slug', 'approved')->first()->id ?? 3;
+                    $po->update(['status_id' => $approvedStatus]);
+
+                    $this->logHistory($po->id, 'APPROVED', 'PO Auto-Approved karena tidak ada aturan aktif atau nominal di bawah batas.');
+                }
+                // =====================================================================
+
                 $this->logHistory($po->id, 'PO Direvisi', 'Perubahan telah disimpan.');
+
             });
 
             return redirect()->route('po.show', $slug)->with('success', 'Perubahan Purchase Order berhasil disimpan!');

@@ -78,7 +78,9 @@
                                 <label class="form-label fw-bold small text-muted text-uppercase">Jatuh Tempo (Due Date) <span class="text-danger">*</span></label>
                                 <input type="date" name="due_date" class="form-control" value="{{ date('Y-m-d', strtotime('+14 days')) }}" required>
                             </div>
-                            <div class="col-md-12">
+
+                            {{-- 🔥 PERBAIKAN: Layout Kolom Vendor & Invoice Dipecah Jadi 2 🔥 --}}
+                            <div class="col-md-6">
                                 <label class="form-label fw-bold small text-muted text-uppercase">Nama Vendor / Supplier <span class="text-danger">*</span></label>
                                 <select name="vendor_name" class="form-select select2-vendor" required>
                                     <option value="">-- Cari Vendor dari Master Data --</option>
@@ -87,9 +89,17 @@
                                     @endforeach
                                 </select>
                                 <div class="mt-1 form-text small text-primary">
-                                    <i class="bi bi-lightbulb me-1"></i>Jika vendor belum ada, <strong>ketik nama baru lalu tekan Enter</strong>.
+                                    <i class="bi bi-lightbulb me-1"></i>Jika belum ada, <strong>ketik lalu tekan Enter</strong>.
                                 </div>
                             </div>
+                            <div class="col-md-6">
+                                <label class="form-label fw-bold small text-muted text-uppercase">No. Invoice Vendor <span class="text-muted text-lowercase">(Opsional)</span></label>
+                                <input type="text" name="vendor_invoice_number" class="form-control" value="{{ old('vendor_invoice_number') }}" placeholder="Contoh: INV-2026-001">
+                                <div class="mt-1 form-text small">
+                                    Akan muncul di kolom Invoices No pada Form BPR PDF.
+                                </div>
+                            </div>
+
                             <div class="col-md-12">
                                 <label class="form-label fw-bold small text-muted text-uppercase">Catatan Tagihan</label>
                                 <textarea name="note" class="form-control rounded-3" rows="2" placeholder="Tuliskan keterangan jika ada..."></textarea>
@@ -133,7 +143,6 @@
 
                 {{-- CARD 3: RINCIAN ITEM --}}
                 <div class="mb-4 border-0 shadow-sm card rounded-4">
-                    {{-- 🔥 HEADER DENGAN FITUR SET PAJAK MASSAL 🔥 --}}
                     <div class="py-3 bg-white card-header border-bottom-0 rounded-top-4 d-flex justify-content-between align-items-center">
                         <h6 class="mb-0 fw-bold text-primary"><i class="bi bi-list-check me-2"></i>Rincian Barang / Jasa Opex</h6>
                         <div class="input-group input-group-sm" style="width: 320px;">
@@ -212,16 +221,14 @@
 
                 {{-- PEMBAGIAN 2 KOLOM UNTUK CHARGE & DISCOUNT --}}
                 <div class="mb-4 row g-4">
-                    {{-- CARD 4A: BIAYA TAMBAHAN (CHARGES) --}}
+                    {{-- CARD 4A: BIAYA TAMBAHAN --}}
                     <div class="col-md-6">
                         <div class="border-0 border-opacity-50 shadow-sm card rounded-4 border-warning h-100">
                             <div class="py-3 bg-white card-header border-bottom-0 rounded-top-4">
                                 <h6 class="mb-0 fw-bold text-warning-emphasis"><i class="bi bi-plus-circle-dotted me-2"></i>Biaya Tambahan</h6>
                             </div>
                             <div class="p-3 pt-0 card-body">
-                                <div id="chargeContainer">
-                                    {{-- Kosong. Akan ditambah via JS --}}
-                                </div>
+                                <div id="chargeContainer"></div>
                                 <button type="button" class="mt-2 btn btn-warning btn-sm rounded-pill fw-bold text-dark w-100" id="addCharge">
                                     <i class="bi bi-plus-lg me-1"></i> Tambah Biaya Ekstra
                                 </button>
@@ -229,16 +236,14 @@
                         </div>
                     </div>
 
-                    {{-- CARD 4B: POTONGAN BIAYA (DISCOUNTS) --}}
+                    {{-- CARD 4B: POTONGAN BIAYA --}}
                     <div class="col-md-6">
                         <div class="border-0 border-opacity-50 shadow-sm card rounded-4 border-danger h-100">
                             <div class="py-3 bg-white card-header border-bottom-0 rounded-top-4">
                                 <h6 class="mb-0 fw-bold text-danger"><i class="bi bi-dash-circle-dotted me-2"></i>Potongan Tambahan</h6>
                             </div>
                             <div class="p-3 pt-0 card-body">
-                                <div id="discountContainer">
-                                    {{-- Kosong. Akan ditambah via JS --}}
-                                </div>
+                                <div id="discountContainer"></div>
                                 <button type="button" class="mt-2 btn btn-outline-danger btn-sm rounded-pill fw-bold w-100" id="addDiscount">
                                     <i class="bi bi-plus-lg me-1"></i> Tambah Potongan
                                 </button>
@@ -312,9 +317,7 @@
     </form>
 </div>
 
-{{-- ================= TEMPLATE CLONING JAVASCRIPT ================= --}}
-
-{{-- Template Item --}}
+{{-- TEMPLATE CLONING --}}
 <div id="hiddenSelectTemplate" style="display: none;">
     <select class="mb-2 form-select select2-item-template" required>
         <option value="">-- Pilih Item Opex --</option>
@@ -323,8 +326,6 @@
         @endforeach
     </select>
 </div>
-
-{{-- Template Charge --}}
 <div id="hiddenChargeTemplate" style="display: none;">
     <select class="mb-2 form-select select2-charge-template" required>
         <option value="">-- Pilih Master Biaya --</option>
@@ -333,8 +334,6 @@
         @endforeach
     </select>
 </div>
-
-{{-- Template Discount --}}
 <div id="hiddenDiscountTemplate" style="display: none;">
     <select class="mb-2 form-select select2-discount-template" required>
         <option value="">-- Pilih Master Potongan --</option>

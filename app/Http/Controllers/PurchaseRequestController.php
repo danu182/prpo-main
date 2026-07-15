@@ -182,7 +182,7 @@ class PurchaseRequestController extends Controller
     }
 
     // ==========================================
-    // STORE PR (SIMPAN DATA BARU)
+    // STORE PR (SIMPAN DATA BARU + SERVICE WORKFLOW)
     // ==========================================
     public function store(Request $request, \App\Services\SystemSettingService $settingService)
     {
@@ -197,9 +197,7 @@ class PurchaseRequestController extends Controller
             'items.*.item_id' => 'required|exists:items,id',
             'items.*.qty'     => 'required|numeric|min:0.01',
             'items.*.uom_id'  => 'required|integer',
-            // 🔥 TAMBAHAN: Validasi kolom spesifikasi agar aman masuk database 🔥
             'items.*.specification' => 'nullable|string',
-            // Validasi file: maksimal 5MB (5120 KB) per file lampiran
             'items.*.vendors.*.files.*' => 'nullable|file|mimes:pdf,jpg,jpeg,png,doc,docx,xls,xlsx|max:5120',
         ], [
             'items.*.vendors.*.files.*.max' => 'Ukuran salah satu file lampiran melebihi batas maksimal 5 MB!'
@@ -209,14 +207,7 @@ class PurchaseRequestController extends Controller
             DB::transaction(function () use ($request, $settingService) {
                 $newPrNumber = $this->generatePrNumber($request->company_id);
 
-                $workflow = \App\Models\ApprovalWorkflow::with(['steps' => function($q) {
-                                $q->orderBy('step_order', 'asc');
-                            }])->where('document_type', PurchaseRequest::class)->where('is_active', true)->first();
-
-                if (!$workflow || $workflow->steps->isEmpty()) {
-                    throw new \Exception('Sistem Gagal: Matriks Persetujuan PR belum dikonfigurasi!');
-                }
-
+                // 1. Hitung Estimasi Total untuk batas limit Approval (diambil dari penawaran termurah)
                 $estimasiGrandTotal = 0;
                 foreach ($request->items as $itemData) {
                     $hargaTermurah = 0;
@@ -227,12 +218,7 @@ class PurchaseRequestController extends Controller
                     $estimasiGrandTotal += ($itemData['qty'] * $hargaTermurah);
                 }
 
-                $validSteps = $workflow->steps->filter(function($step) use ($estimasiGrandTotal) { return $estimasiGrandTotal >= $step->min_amount; });
-                $isAutoApprove = $validSteps->isEmpty();
-                $initialStatusSlug = $isAutoApprove ? 'approved' : 'pending_approval';
-
-                $initialStatus = \App\Models\Status::where('type', 'PR')->where('slug', $initialStatusSlug)->first();
-
+                // 2. Buat Header PR
                 $pr = \App\Models\PurchaseRequest::create([
                     'pr_number'             => $newPrNumber,
                     'user_id'               => $request->user_id,
@@ -240,24 +226,12 @@ class PurchaseRequestController extends Controller
                     'request_date'          => $request->request_date,
                     'need_date'             => $request->need_date,
                     'description'           => $request->description,
-                    'status_id'             => $initialStatus->id,
+                    'status_id'             => null, // Akan diisi oleh Workflow Service
                     'current_approval_level'=> 0,
                     'created_by'            => auth()->id(),
                 ]);
 
-                if (!$isAutoApprove) {
-                    $urutanAktual = 1;
-                    foreach ($validSteps as $step) {
-                        \App\Models\DocumentApproval::create([
-                            'document_id'   => $pr->id,
-                            'document_type' => get_class($pr),
-                            'step_order'    => $urutanAktual++,
-                            'role_id'       => $step->role_id,
-                            'status'        => 'PENDING'
-                        ]);
-                    }
-                }
-
+                // 3. Simpan Item, Vendor, dan Upload Lampiran
                 foreach ($request->items as $itemIndex => $itemData) {
                     $uomName = 'PCS';
                     $masterItem = \App\Models\Item::with('uom', 'itemUoms')->find($itemData['item_id']);
@@ -269,7 +243,6 @@ class PurchaseRequestController extends Controller
                     $prItem = \App\Models\PurchaseRequestItem::create([
                         'purchase_request_id' => $pr->id,
                         'item_id'             => $itemData['item_id'],
-                        // 🔥 TAMBAHAN: MENYIMPAN DATA SPESIFIKASI DARI FORM 🔥
                         'specification'       => $itemData['specification'] ?? null,
                         'qty'                 => $itemData['qty'],
                         'uom_id'              => $itemData['uom_id'],
@@ -283,7 +256,6 @@ class PurchaseRequestController extends Controller
                             if (!empty($quoteData['vendor_id'])) {
                                 $currencyObj = \App\Models\Currency::where('code', $quoteData['currency'] ?? 'IDR')->first();
 
-                                // 1. INSERT KE TABEL PIVOT VENDOR
                                 $quoteId = DB::table('purchase_request_item_vendors')->insertGetId([
                                     'pr_item_id'     => $prItem->id,
                                     'vendor_id'      => $quoteData['vendor_id'],
@@ -295,33 +267,28 @@ class PurchaseRequestController extends Controller
                                     'updated_at'     => now(),
                                 ]);
 
-                                // 2. INSERT MULTI-FILE KE TABEL LAMPIRAN BARU
+                                // Handle Upload Lampiran Vendor
                                 if ($request->hasFile("items.$itemIndex.vendors.$vendorIndex.files")) {
                                     $safePrNumber = str_replace(['/', '\\'], '-', $newPrNumber);
 
-                                    // 🔥 AMBIL PATH DINAMIS DARI TABEL SYSTEM_SETTINGS SESUAI KEY 🔥
                                     $settingPath = \Illuminate\Support\Facades\DB::table('system_settings')
                                                         ->where('setting_key', 'path_pr_attachment')
                                                         ->value('setting_value');
 
-                                    // Gunakan path dari DB, jika kosong/gagal gunakan fallback default
                                     $basePath = $settingPath ? $settingPath : 'attachments/purchase_requests';
                                     $targetFolder = $basePath . '/' . $safePrNumber;
 
-
                                     $attachmentsData = [];
-
                                     foreach ($request->file("items.$itemIndex.vendors.$vendorIndex.files") as $file) {
                                         $originalName = $file->getClientOriginalName();
                                         $fileName = "v_" . $quoteData['vendor_id'] . "_" . uniqid() . "." . $file->getClientOriginalExtension();
 
                                         $path = $file->storeAs($targetFolder, $fileName, 'public');
-                                        $cleanPath = str_replace('\\', '/', $path);
 
                                         $attachmentsData[] = [
                                             'pr_item_vendor_id' => $quoteId,
                                             'file_name'         => $originalName,
-                                            'file_path'         => $cleanPath,
+                                            'file_path'         => str_replace('\\', '/', $path),
                                             'created_at'        => now(),
                                             'updated_at'        => now(),
                                         ];
@@ -333,11 +300,25 @@ class PurchaseRequestController extends Controller
                     }
                 }
 
-                if ($isAutoApprove) {
-                    $this->logHistory($pr->id, 'AUTO-APPROVED', "PR disetujui otomatis.");
+                // =====================================================================
+                // 🔥 4. PEMANGGILAN SERVICE WORKFLOW UNTUK PR 🔥
+                // =====================================================================
+                // Kita "suntikkan" estimasi total ke object $pr agar terbaca oleh Service
+                $pr->amount = $estimasiGrandTotal;
+
+                $needsApproval = \App\Services\ApprovalService::generateWorkflow($pr);
+
+                if ($needsApproval) {
+                    $pendingStatus = \App\Models\Status::where('type', 'PR')->where('slug', 'pending_approval')->first();
+                    $pr->update(['status_id' => $pendingStatus ? $pendingStatus->id : 1]);
+                    $this->logHistory($pr->id, 'CREATED', "PR {$newPrNumber} diajukan dan masuk ke antrean persetujuan.");
                 } else {
-                    $this->logHistory($pr->id, 'CREATED', "PR {$newPrNumber} diajukan.");
+                    $approvedStatus = \App\Models\Status::where('type', 'PR')->where('slug', 'approved')->first();
+                    $pr->update(['status_id' => $approvedStatus ? $approvedStatus->id : 3]);
+                    $this->logHistory($pr->id, 'AUTO-APPROVED', "PR {$newPrNumber} disetujui otomatis karena tidak ada aturan/nominal di bawah batas.");
                 }
+                // =====================================================================
+
             });
 
             return redirect()->route('pr.index')->with('success', 'PR Berhasil Diajukan beserta seluruh data Vendor!');
@@ -346,24 +327,6 @@ class PurchaseRequestController extends Controller
         }
     }
 
-    // public function edit($slug)
-    // {
-    //     $pr = \App\Models\PurchaseRequest::with(['items.vendorQuotes.attachments', 'items.item', 'user', 'company'])
-    //             ->where('pr_number', $slug)->firstOrFail();
-
-    //             // return $pr;
-    //     if (optional($pr->status)->slug !== 'pending_approval' || $pr->current_approval_level > 0) {
-    //         return redirect()->route('pr.index')->with('error', 'Dokumen tidak dapat diedit karena sudah masuk tahap persetujuan.');
-    //     }
-
-    //     $items = \App\Models\Item::with(['uom', 'itemUoms'])->where('is_active', true)->get();
-    //     $vendors = \App\Models\Vendor::where('is_active', true)->get();
-    //     $companies = \App\Models\Company::all();
-    //     $currencies = \App\Models\Currency::where('is_active', true)->get();
-    //     $users = \App\Models\User::with('company')->orderBy('name')->get();
-
-    //     return view('pr.edit', compact('pr', 'items', 'vendors', 'currencies', 'companies', 'users'));
-    // }
 
     // ==========================================
     // 1. HALAMAN EDIT PR (MENGGUNAKAN SLUG)
@@ -386,7 +349,7 @@ class PurchaseRequestController extends Controller
     }
 
     // ==========================================
-    // PROSES UPDATE PR (ANTI-HILANG FILE)
+    // PROSES UPDATE PR (ANTI-HILANG FILE + RESET WORKFLOW)
     // ==========================================
     public function update(Request $request, $slug, \App\Services\SystemSettingService $settingService)
     {
@@ -413,6 +376,17 @@ class PurchaseRequestController extends Controller
                     'need_date'    => $request->need_date,
                     'description'  => $request->description,
                 ]);
+
+                // 🔥 1. HITUNG ULANG ESTIMASI TOTAL UNTUK WORKFLOW 🔥
+                $estimasiGrandTotal = 0;
+                foreach ($request->items as $itemData) {
+                    $hargaTermurah = 0;
+                    if (isset($itemData['vendors']) && is_array($itemData['vendors'])) {
+                        $daftarHarga = array_column($itemData['vendors'], 'price');
+                        $hargaTermurah = !empty($daftarHarga) ? min($daftarHarga) : 0;
+                    }
+                    $estimasiGrandTotal += ($itemData['qty'] * $hargaTermurah);
+                }
 
                 // 🔥 LANGKAH PENYELAMATAN: AMBIL DATA FILE LAMA SEBELUM DIHAPUS 🔥
                 $keptFileIds = [];
@@ -512,14 +486,32 @@ class PurchaseRequestController extends Controller
                 }
 
                 $this->logHistory($pr->id, 'UPDATED', "Data PR diperbarui oleh " . auth()->user()->name);
+
+                // =====================================================================
+                // 🔥 PEMANGGILAN SERVICE WORKFLOW UNTUK RESET ANTREAN PR 🔥
+                // =====================================================================
+                // Suntikkan total estimasi baru ke dalam objek PR
+                $pr->amount = $estimasiGrandTotal;
+
+                $needsApproval = \App\Services\ApprovalService::generateWorkflow($pr);
+
+                if ($needsApproval) {
+                    $pendingStatus = \App\Models\Status::where('type', 'PR')->where('slug', 'pending_approval')->first();
+                    $pr->update(['status_id' => $pendingStatus ? $pendingStatus->id : 1]);
+                    $this->logHistory($pr->id, 'SYSTEM', 'Rute persetujuan (Workflow) PR telah di-reset menyesuaikan data revisi.');
+                } else {
+                    $approvedStatus = \App\Models\Status::where('type', 'PR')->where('slug', 'approved')->first();
+                    $pr->update(['status_id' => $approvedStatus ? $approvedStatus->id : 3]);
+                    $this->logHistory($pr->id, 'APPROVED', 'PR Auto-Approved karena tidak ada aturan aktif atau nominal di bawah batas.');
+                }
+                // =====================================================================
             });
 
-            return redirect()->route('pr.index')->with('success', 'Perubahan PR Berhasil Disimpan & File Aman!');
+            return redirect()->route('pr.index')->with('success', 'Perubahan PR Berhasil Disimpan, File Aman & Rute Persetujuan Diperbarui!');
         } catch (\Exception $e) {
             return back()->withInput()->with('error', 'Gagal Update: ' . $e->getMessage());
         }
     }
-
 
     // ========================================================
     // 1. FUNGSI SHOW

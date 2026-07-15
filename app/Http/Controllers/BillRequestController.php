@@ -332,20 +332,21 @@ class BillRequestController extends Controller
 
 
     // =========================================================================
-    // 3. STORE (SIMPAN DATA BARU + GENERATE WORKFLOW)
+    // 3. STORE (SIMPAN DATA BARU + GENERATE WORKFLOW VIA SERVICE)
     // =========================================================================
     public function store(Request $request)
     {
         $request->validate([
-            'paid_by_company_id' => 'required|exists:companies,id',
-            'currency_id'        => 'required|exists:currencies,id',
-            'bill_date'          => 'required|date',
-            'due_date'           => 'required|date|after_or_equal:bill_date',
-            'vendor_name'        => 'required|string|max:255',
-            'items'              => 'required|array|min:1',
-            'items.*.name'       => 'required|string',
-            'items.*.qty'        => 'required|numeric|min:1',
-            'items.*.price'      => 'required|numeric|min:0',
+            'paid_by_company_id'    => 'required|exists:companies,id',
+            'currency_id'           => 'required|exists:currencies,id',
+            'bill_date'             => 'required|date',
+            'due_date'              => 'required|date|after_or_equal:bill_date',
+            'vendor_name'           => 'required|string|max:255',
+            'vendor_invoice_number' => 'nullable|string|max:255', // 🔥 Validasi Nomor Invoice
+            'items'                 => 'required|array|min:1',
+            'items.*.name'          => 'required|string',
+            'items.*.qty'           => 'required|numeric|min:1',
+            'items.*.price'         => 'required|numeric|min:0',
         ]);
 
         \DB::beginTransaction();
@@ -366,22 +367,23 @@ class BillRequestController extends Controller
             $totalSubtotal = 0; $totalItemDisc = 0; $totalTax = 0; $totalCharge = 0; $totalExtDisc = 0;
 
             $bill = \App\Models\BillRequest::create([
-                'bill_number'        => $billNumber,
-                'title'              => 'Tagihan Opex - ' . $request->vendor_name,
-                'user_id'            => auth()->id(),
-                'company_id'         => $request->paid_by_company_id,
-                'type'               => 'OPEX',
-                'vendor_name'        => $request->vendor_name,
-                'description'        => $request->note,
-                'invoice_date'       => $request->bill_date,
-                'due_date'           => $request->due_date,
-                'currency'           => $currency,
-                'status_id'          => $this->getStatusId('pending'),
-                'subtotal'           => 0, 'total_discount' => 0, 'total_tax' => 0, 'total_charge' => 0, 'amount' => 0,
-                'is_recurring'       => $request->is_recurring == '1',
-                'recurring_interval' => $request->is_recurring == '1' ? (int)$request->recurring_interval : null,
-                'recurring_period'   => $request->is_recurring == '1' ? $request->recurring_period : null,
-                'next_generation_date'=> $request->is_recurring == '1' ? \Carbon\Carbon::parse($request->bill_date)->add((int)$request->recurring_interval, $request->recurring_period) : null,
+                'bill_number'           => $billNumber,
+                'title'                 => 'Tagihan Opex - ' . $request->vendor_name,
+                'user_id'               => auth()->id(),
+                'company_id'            => $request->paid_by_company_id,
+                'type'                  => 'OPEX',
+                'vendor_name'           => $request->vendor_name,
+                'vendor_invoice_number' => $request->vendor_invoice_number, // 🔥 Simpan Nomor Invoice
+                'description'           => $request->note,
+                'invoice_date'          => $request->bill_date,
+                'due_date'              => $request->due_date,
+                'currency'              => $currency,
+                'status_id'             => $this->getStatusId('pending'),
+                'subtotal'              => 0, 'total_discount' => 0, 'total_tax' => 0, 'total_charge' => 0, 'amount' => 0,
+                'is_recurring'          => $request->is_recurring == '1',
+                'recurring_interval'    => $request->is_recurring == '1' ? (int)$request->recurring_interval : null,
+                'recurring_period'      => $request->is_recurring == '1' ? $request->recurring_period : null,
+                'next_generation_date'  => $request->is_recurring == '1' ? \Carbon\Carbon::parse($request->bill_date)->add((int)$request->recurring_interval, $request->recurring_period) : null,
             ]);
 
             foreach ($request->items as $item) {
@@ -423,7 +425,7 @@ class BillRequestController extends Controller
             $grandTotal = max(0, ($totalSubtotal - $totalItemDisc) + $totalTax + $totalCharge - $totalExtDisc);
             $bill->update(['subtotal' => $totalSubtotal, 'total_discount' => $totalItemDisc + $totalExtDisc, 'total_tax' => $totalTax, 'total_charge' => $totalCharge, 'amount' => $grandTotal]);
 
-            // 9. UPLOAD LAMPIRAN (MENGGUNAKAN KONSEP PR/PO)
+            // 9. UPLOAD LAMPIRAN
             if ($request->hasFile('attachments')) {
                 $basePath = \DB::table('system_settings')->where('setting_key', 'path_bills_opex')->value('setting_value') ?: 'attachments/opex';
                 $safeBillNumber = str_replace(['/', '\\'], '-', $bill->bill_number);
@@ -431,68 +433,30 @@ class BillRequestController extends Controller
 
                 foreach ($request->file('attachments') as $file) {
                     $originalName = $file->getClientOriginalName();
-                    // Simpan ke storage/app/public/attachments/...
                     $path = $file->storeAs($storagePath, time() . '_' . uniqid() . '_' . str_replace(' ', '_', $originalName), 'public');
-
-                    // Simpan ke tabel khusus lampiran
                     \DB::table('bill_attachments')->insert([
-                        'bill_request_id' => $bill->id,
-                        'file_name'       => $originalName,
-                        'file_path'       => str_replace('\\', '/', $path),
-                        'created_at'      => now(),
-                        'updated_at'      => now()
+                        'bill_request_id' => $bill->id, 'file_name' => $originalName, 'file_path' => str_replace('\\', '/', $path),
+                        'created_at' => now(), 'updated_at' => now()
                     ]);
                 }
-            } // <-- PERBAIKAN: Kurung kurawal penutup untuk blok if upload lampiran diletakkan di sini
+            }
 
             $this->logHistory($bill, 'CREATED', "Membuat tagihan baru No: {$billNumber}");
 
             // =====================================================================
-            // 🔥 SEEDING WORKFLOW AUTOMATION (HYBRID LOGIC: DEFAULT VS EXCEPTION) 🔥
+            // 🔥 PEMANGGILAN SERVICE WORKFLOW (SUPER BERSIH) 🔥
             // =====================================================================
-            $userDeptId = auth()->user()->department_id;
-            $documentTypeClass = 'App\Models\BillRequest';
+            $needsApproval = \App\Services\ApprovalService::generateWorkflow($bill);
 
-            // 1. Cari Matriks Spesifik (Khusus untuk departemen si Pembuat)
-            $workflow = \App\Models\ApprovalWorkflow::with('steps')
-                ->where('document_type', $documentTypeClass)
-                ->where('department_id', $userDeptId)
-                ->where('is_active', true)
-                ->first();
-
-            // 2. Jika tidak punya aturan khusus, gunakan Matriks Umum (Default)
-            if (!$workflow) {
-                $workflow = \App\Models\ApprovalWorkflow::with('steps')
-                    ->where('document_type', $documentTypeClass)
-                    ->whereNull('department_id') // Mencari yang kosong
-                    ->where('is_active', true)
-                    ->first();
-            }
-
-            // 3. Generate Antrean Approval (Jika Matriks Ditemukan)
-            if ($workflow && $workflow->steps->count() > 0) {
-                foreach ($workflow->steps as $step) {
-
-                    // Pengecekan Minimal Nominal (Jika total tagihan di bawah batas minimal, lewati lapis ini)
-                    if ($step->min_amount > 0 && $bill->amount < $step->min_amount) {
-                        continue; // Skip orang ini karena nominal tidak memenuhi syarat
-                    }
-
-                    \App\Models\DocumentApproval::create([
-                        'document_id'          => $bill->id,
-                        'document_type'        => $documentTypeClass,
-                        'step_order'           => $step->step_order,
-                        'role_id'              => $step->role_id,
-                        'target_department_id' => $step->target_department_id, // Simpan juga target departemennya
-                        'status'               => 'PENDING'
-                    ]);
-                }
+            if ($needsApproval) {
+                // Biarkan status PENDING (sudah diset default saat create)
+                $this->logHistory($bill, 'SYSTEM', "Rute persetujuan (Workflow) berhasil di-generate.");
             } else {
-                // Jika tidak ada matriks sama sekali, otomatis APPROVED (Sesuai cara kerja sistem Anda)
-                $approvedStatusId = $this->getStatusId('approved') ?? 3;
-                $bill->update(['status_id' => $approvedStatusId]);
-                $this->logHistory($bill, 'APPROVED', "Auto-Approved karena tidak ada aturan/matriks persetujuan aktif untuk departemen ini.");
+                // Jika tidak ada matriks, otomatis APPROVED
+                $bill->update(['status_id' => $this->getStatusId('approved') ?? 3]);
+                $this->logHistory($bill, 'APPROVED', "Auto-Approved karena tidak ada aturan/matriks persetujuan aktif.");
             }
+            // =====================================================================
 
             \DB::commit();
             return redirect()->route('bills.index')->with('success', "Tagihan Opex berhasil disimpan! Nomor: {$billNumber}");
@@ -547,20 +511,21 @@ class BillRequestController extends Controller
     }
 
     // =========================================================================
-    // 6. UPDATE (SIMPAN REVISI BERBASIS SLUG)
+    // 6. UPDATE (SIMPAN REVISI BERBASIS SLUG + RESET WORKFLOW VIA SERVICE)
     // =========================================================================
     public function update(Request $request, $slug)
     {
         $request->validate([
-            'paid_by_company_id' => 'required|exists:companies,id',
-            'currency_id'        => 'required|exists:currencies,id',
-            'bill_date'          => 'required|date',
-            'due_date'           => 'required|date|after_or_equal:bill_date',
-            'vendor_name'        => 'required|string|max:255',
-            'items'              => 'required|array|min:1',
+            'paid_by_company_id'    => 'required|exists:companies,id',
+            'currency_id'           => 'required|exists:currencies,id',
+            'bill_date'             => 'required|date',
+            'due_date'              => 'required|date|after_or_equal:bill_date',
+            'vendor_name'           => 'required|string|max:255',
+            'vendor_invoice_number' => 'nullable|string|max:255', // 🔥 Validasi Nomor Invoice
+            'items'                 => 'required|array|min:1',
         ]);
 
-        DB::beginTransaction();
+        \DB::beginTransaction();
         try {
             $bill = \App\Models\BillRequest::where('bill_number', $slug)->firstOrFail();
 
@@ -570,11 +535,16 @@ class BillRequestController extends Controller
 
             $currency = \App\Models\Currency::find($request->currency_id)->code ?? 'IDR';
             $bill->update([
-                'company_id' => $request->paid_by_company_id, 'vendor_name' => $request->vendor_name, 'description' => $request->note,
-                'invoice_date' => $request->bill_date, 'due_date' => $request->due_date, 'currency' => $currency,
-                'is_recurring' => $request->is_recurring == '1',
-                'recurring_interval' => $request->is_recurring == '1' ? (int)$request->recurring_interval : null,
-                'recurring_period' => $request->is_recurring == '1' ? $request->recurring_period : null,
+                'company_id'            => $request->paid_by_company_id,
+                'vendor_name'           => $request->vendor_name,
+                'vendor_invoice_number' => $request->vendor_invoice_number, // 🔥 Update Nomor Invoice
+                'description'           => $request->note,
+                'invoice_date'          => $request->bill_date,
+                'due_date'              => $request->due_date,
+                'currency'              => $currency,
+                'is_recurring'          => $request->is_recurring == '1',
+                'recurring_interval'    => $request->is_recurring == '1' ? (int)$request->recurring_interval : null,
+                'recurring_period'      => $request->is_recurring == '1' ? $request->recurring_period : null,
             ]);
 
             $bill->items()->delete(); $bill->charges()->delete(); $bill->discounts()->delete();
@@ -618,7 +588,7 @@ class BillRequestController extends Controller
             $grandTotal = max(0, ($totalSubtotal - $totalItemDisc) + $totalTax + $totalCharge - $totalExtDisc);
             $bill->update(['subtotal' => $totalSubtotal, 'total_discount' => $totalItemDisc + $totalExtDisc, 'total_tax' => $totalTax, 'total_charge' => $totalCharge, 'amount' => $grandTotal]);
 
-            // 🔥 PERBAIKAN: UPLOAD LAMPIRAN BARU (MENGGUNAKAN KONSEP MANDIRI) 🔥
+            // UPLOAD LAMPIRAN BARU
             if ($request->hasFile('attachments')) {
                 $basePath = \DB::table('system_settings')->where('setting_key', 'path_bills_opex')->value('setting_value') ?: 'attachments/opex';
                 $safeBillNumber = str_replace(['/', '\\'], '-', $bill->bill_number);
@@ -626,32 +596,15 @@ class BillRequestController extends Controller
 
                 foreach ($request->file('attachments') as $file) {
                     $originalName = $file->getClientOriginalName();
-                    // Simpan ke storage/app/public/attachments/opex/...
                     $path = $file->storeAs($storagePath, time() . '_' . uniqid() . '_' . str_replace(' ', '_', $originalName), 'public');
-
-                    // Masukkan data ke tabel bill_attachments
                     \DB::table('bill_attachments')->insert([
-                        'bill_request_id' => $bill->id,
-                        'file_name'       => $originalName,
-                        'file_path'       => str_replace('\\', '/', $path),
-                        'created_at'      => now(),
-                        'updated_at'      => now()
+                        'bill_request_id' => $bill->id, 'file_name' => $originalName, 'file_path' => str_replace('\\', '/', $path),
+                        'created_at' => now(), 'updated_at' => now()
                     ]);
                 }
             }
 
-            // 10. HAPUS LAMPIRAN LAMA (Tetap sama)
-            if ($request->has('delete_media') && is_array($request->delete_media)) {
-                $attachmentsToDelete = \DB::table('bill_attachments')->whereIn('id', $request->delete_media)->get();
-                foreach ($attachmentsToDelete as $att) {
-                    if (\Storage::disk('public')->exists($att->file_path)) {
-                        \Storage::disk('public')->delete($att->file_path);
-                    }
-                    \DB::table('bill_attachments')->where('id', $att->id)->delete();
-                }
-            }
-
-            // 10. HAPUS LAMPIRAN LAMA
+            // HAPUS LAMPIRAN LAMA
             if ($request->has('delete_media') && is_array($request->delete_media)) {
                 $attachmentsToDelete = \DB::table('bill_attachments')->whereIn('id', $request->delete_media)->get();
                 foreach ($attachmentsToDelete as $att) {
@@ -664,23 +617,25 @@ class BillRequestController extends Controller
 
             $this->logHistory($bill, 'UPDATED', "Merevisi dokumen tagihan. Total Baru: {$currency} " . number_format($grandTotal, 0, ',', '.'));
 
-            // Reset Antrean Approval
-            \App\Models\DocumentApproval::where('document_id', $bill->id)->where('document_type', 'App\Models\BillRequest')->delete();
-            $workflow = \DB::table('approval_workflows')->whereIn('document_type', ['OPEX', 'App\Models\BillRequest'])->where('is_active', 1)->first();
-            if ($workflow) {
-                $steps = \DB::table('approval_workflow_steps')->where('approval_workflow_id', $workflow->id)->orderBy('step_order', 'asc')->get();
-                foreach ($steps as $step) {
-                    \App\Models\DocumentApproval::create([
-                        'document_id' => $bill->id, 'document_type' => 'App\Models\BillRequest',
-                        'role_id' => $step->role_id, 'step_order' => $step->step_order, 'status' => 'PENDING'
-                    ]);
-                }
-            }
+            // =====================================================================
+            // 🔥 PEMANGGILAN SERVICE WORKFLOW (RESET ANTREAN SAAT DI-EDIT) 🔥
+            // =====================================================================
+            $needsApproval = \App\Services\ApprovalService::generateWorkflow($bill);
 
-            DB::commit();
+            if ($needsApproval) {
+                // Status kembali ke PENDING karena rute di-reset ulang
+                $bill->update(['status_id' => $this->getStatusId('pending') ?? 1]);
+                $this->logHistory($bill, 'SYSTEM', "Rute persetujuan telah di-reset menyesuaikan data revisi.");
+            } else {
+                $bill->update(['status_id' => $this->getStatusId('approved') ?? 3]);
+                $this->logHistory($bill, 'APPROVED', "Auto-Approved karena tidak ada aturan aktif atau total tagihan di bawah batas.");
+            }
+            // =====================================================================
+
+            \DB::commit();
             return redirect()->route('bills.show', $bill->bill_number)->with('success', "Tagihan Opex berhasil diperbarui!");
         } catch (\Exception $e) {
-            DB::rollback();
+            \DB::rollback();
             return back()->withInput()->with('error', 'Gagal update tagihan: ' . $e->getMessage());
         }
     }

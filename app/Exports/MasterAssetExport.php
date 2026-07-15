@@ -113,7 +113,10 @@ class MasterAssetExport implements FromQuery, WithHeadings, WithMapping, ShouldA
             'Mata Uang',
             'Nilai Perolehan (Harga Beli)',
             'Beban Penyusutan / Bulan',
-            'Nilai Buku Saat Ini (Net Book Value)',
+
+            // 🔥 CUKUP TAMBAHKAN date() DI SINI 🔥
+            'Nilai Buku Saat Ini per ' . date('d M Y'),
+
             'Spesifikasi',
         ];
     }

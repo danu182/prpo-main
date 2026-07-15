@@ -398,38 +398,42 @@ class FixedAssetController extends Controller
     // =========================================================================
     // 3. AJUKAN KE ATASAN (WORKFLOW)
     // =========================================================================
+
+
+    // =========================================================================
+    // 3. WORKFLOW: AJUKAN PERSETUJUAN
+    // =========================================================================
     public function submitApproval($batch_id)
     {
         DB::beginTransaction();
         try {
             $batch = \App\Models\FixedAssetImportBatch::findOrFail($batch_id);
 
+            // 1. Validasi Baris Error
             if ($batch->details->where('is_valid', 0)->count() > 0) {
                 throw new \Exception("Ada baris data yang error. Harap perbaiki form Excel Anda dan upload ulang.");
             }
 
-            $batch->update(['status' => 'waiting_approval']);
-            \App\Models\DocumentApproval::where('document_id', $batch->id)->where('document_type', get_class($batch))->delete();
+            // 2. Generate Workflow Menggunakan Service
+            $needsApproval = \App\Services\ApprovalService::generateWorkflow($batch);
 
-            $workflow = \DB::table('approval_workflows')->where('document_type', get_class($batch))->where('is_active', 1)->first();
-            if (!$workflow) throw new \Exception("Workflow Persetujuan Aset belum diaktifkan di Pengaturan Sistem!");
+            if ($needsApproval) {
+                $batch->update(['status' => 'waiting_approval']);
+                DB::commit();
+                return back()->with('success', 'Draft berhasil diajukan ke Atasan!');
+            } else {
+                // AUTO APPROVE: Langsung pindah ke Buku Aset & Generate Item
+                $this->processAssetImport($batch);
+                $batch->update(['status' => 'approved']);
 
-            $steps = \DB::table('approval_workflow_steps')->where('approval_workflow_id', $workflow->id)->orderBy('step_order', 'asc')->get();
-            foreach ($steps as $step) {
-                \App\Models\DocumentApproval::create([
-                    'document_id' => $batch->id, 'document_type' => get_class($batch),
-                    'role_id' => $step->role_id, 'step_order' => $step->step_order, 'status' => 'PENDING'
-                ]);
+                DB::commit();
+                return redirect()->route('fixed-assets.index')->with('success', 'Buku Aset Resmi disahkan otomatis! Item baru telah digenerate.');
             }
-
-            DB::commit();
-            return back()->with('success', 'Draft berhasil diajukan ke Atasan!');
         } catch (\Exception $e) {
             DB::rollBack();
             return back()->with('error', $e->getMessage());
         }
     }
-
 
     // =========================================================================
     // 4. KEPUTUSAN ATASAN & 🔥 SMART AUTO-CREATE ITEM 🔥
@@ -444,13 +448,16 @@ class FixedAssetController extends Controller
                 ->where('document_type', get_class($batch))->where('status', 'PENDING')->orderBy('step_order', 'asc')->first();
 
             if (!$currentApproval && $action !== 'REJECT') {
-                DB::rollBack(); return back()->with('error', 'Tidak menunggu persetujuan Anda.');
+                DB::rollBack();
+                return back()->with('error', 'Tidak menunggu persetujuan Anda.');
             }
 
+            // JIKA REJECT
             if ($action === 'REJECT') {
                 $currentApproval->update(['status' => 'REJECTED', 'approved_by' => auth()->id(), 'approved_at' => now()]);
                 $batch->update(['status' => 'draft']);
-                DB::commit(); return back()->with('error', 'Pengajuan dikembalikan ke Draft.');
+                DB::commit();
+                return back()->with('error', 'Pengajuan dikembalikan ke Draft.');
             }
 
             // JIKA APPROVE
@@ -459,212 +466,211 @@ class FixedAssetController extends Controller
                 ->where('status', 'PENDING')->orderBy('step_order', 'asc')->first();
 
             if ($nextApproval) {
-                DB::commit(); return back()->with('success', 'Disetujui. Diteruskan ke atasan berikutnya.');
+                DB::commit();
+                return back()->with('success', 'Disetujui. Diteruskan ke atasan berikutnya.');
             } else {
                 // ===========================================================
-                // FINAL APPROVAL: PINDAH DATA KE BUKU ASET & BUAT ITEM OTOMATIS
+                // FINAL APPROVAL: PINDAH DATA KE BUKU ASET MENGGUNAKAN HELPER
                 // ===========================================================
-                $yearMonth = date('Y/m');
-                $details = \App\Models\FixedAssetImportDetail::where('batch_id', $batch->id)->get();
-
-                foreach ($details as $row) {
-                    $item = null;
-
-                    // A. Cari by Kode
-                    if (!empty($row->kode_barang)) {
-                        $item = \App\Models\Item::lockForUpdate()->where('code', $row->kode_barang)->first();
-                    }
-
-                    // B. Jika Item Belum Ada, Eksekusi Smart Auto-Create Item
-                    if (!$item) {
-                        $namaAsetBaru = $row->nama_spesifik_aset;
-                        $item = \App\Models\Item::lockForUpdate()->where('name', $namaAsetBaru)->first();
-
-                        if (!$item) {
-                            $lastItem = \App\Models\Item::orderBy('id', 'desc')->lockForUpdate()->first();
-                            $nextId   = $lastItem ? $lastItem->id + 1 : 1;
-                            $newCode  = 'ITM-' . str_pad($nextId, 4, '0', STR_PAD_LEFT);
-                            $slug     = \Illuminate\Support\Str::slug($namaAsetBaru) . '-' . \Illuminate\Support\Str::random(4);
-
-                            $typeName = !empty($row->tipe_aset) ? $row->tipe_aset : 'Umum';
-
-                            $cat = \App\Models\Category::firstOrCreate(
-                                ['name' => $typeName],
-                                ['code' => strtoupper(substr(preg_replace('/[^A-Za-z]/', '', $typeName), 0, 3))]
-                            );
-
-                            $uom = \App\Models\Uom::firstOrCreate(['code' => 'PCS'], ['name' => 'Pieces']);
-
-                            $item = \App\Models\Item::create([
-                                'code'           => $newCode,
-                                'slug'           => $slug,
-                                'name'           => $namaAsetBaru,
-                                'category_id'    => $cat->id,
-                                'uom_id'         => $uom->id,
-                                'item_type_code' => 'STK',
-                                'is_trackable'   => 1,
-                                'is_active'      => 1,
-                                'current_stock'  => 0,
-                                'specification'  => 'Item dibuat otomatis dari tipe: ' . $typeName
-                            ]);
-                        }
-                    }
-
-                    // C. Tarik Data Relasi
-                    $company = \App\Models\Company::where('name', 'like', "%{$row->nama_pt}%")->first();
-                    $warehouse = \App\Models\Warehouse::where('name', 'like', "%{$row->nama_gudang}%")->first();
-                    $status = \App\Models\Status::where('type', 'AST')->where('name', 'like', "%".explode('(', $row->status_aset)[0]."%")->first();
-
-                    // 🔥 LOGIKA PENCARIAN KATEGORI ASET YANG AMAN (ANTI ERROR) 🔥
-                    $assetCategory = \App\Models\AssetCategory::where('name', 'like', "%{$row->kategori_aset}%")->first();
-                    $defaultCategory = \App\Models\AssetCategory::first(); // Cari kategori apa saja yang ada
-
-                    // Jika ketemu pakai ID-nya. Jika tidak, pakai ID kategori default. Jika database kosong sama sekali, jadikan NULL.
-                    $assetCategoryId = $assetCategory ? $assetCategory->id : ($defaultCategory ? $defaultCategory->id : null);
-
-
-                    $departmentId = null;
-                    if (!empty($row->departemen)) {
-                        $deptCode = strtoupper(substr(preg_replace('/[^A-Za-z]/', '', $row->departemen), 0, 3));
-                        $dept = \App\Models\Department::firstOrCreate(
-                            ['name' => $row->departemen],
-                            ['code' => $deptCode]
-                        );
-                        $departmentId = $dept->id;
-                    }
-
-                    $assignedTo = null;
-                    $extraNotes = "";
-
-                    if (!empty($row->nama_peminjam)) {
-                        $user = \App\Models\User::where('name', 'like', "%{$row->nama_peminjam}%")->first();
-                        if ($user) {
-                            $assignedTo = $user->id;
-                            if (!$status || $status->slug !== 'in_use') {
-                                $status = \App\Models\Status::where('type', 'AST')->where('slug', 'in_use')->first();
-                            }
-                        } else {
-                            $extraNotes .= "\n• User (Excel): " . $row->nama_peminjam;
-                        }
-                    }
-
-                    if (!empty($row->condition) && $row->condition !== '-') { $extraNotes .= "\n• Kondisi: " . $row->condition; }
-                    if (!empty($row->po_number) && $row->po_number !== '-') { $extraNotes .= "\n• PO Lama: " . $row->po_number; }
-                    if (!empty($row->supplier) && $row->supplier !== '-') { $extraNotes .= "\n• Vendor Asal: " . $row->supplier; }
-
-                    $currency = \App\Models\Currency::where('code', strtoupper($row->mata_uang))->first();
-
-                    // D. Bikin Nomor Aset
-                    $lastAsset = \App\Models\FixedAsset::where('asset_number', 'like', "AST/{$yearMonth}/%")->orderBy('id', 'desc')->lockForUpdate()->first();
-                    $nextSeq = $lastAsset ? ((int) substr($lastAsset->asset_number, -4)) + 1 : 1;
-                    $assetNumber = "AST/{$yearMonth}/" . str_pad($nextSeq, 4, '0', STR_PAD_LEFT);
-
-                    // 🔥 PERBAIKAN FORMAT TANGGAL: Translator Bulan Indonesia ke Format MySQL 🔥
-                    $rawDate = $row->tanggal_perolehan;
-                    $formattedDate = null;
-
-                    if (!empty($rawDate)) {
-                        // Jika format sudah YYYY-MM-DD
-                        if (preg_match("/^[0-9]{4}-(0[1-9]|1[0-2])-(0[1-9]|[1-2][0-9]|3[0-1])$/", $rawDate)) {
-                            $formattedDate = $rawDate;
-                        }
-                        // Jika formatnya teks campur sari Indonesia (Misal: 26 Febuari 2019)
-                        else {
-                            $indonesianMonths = [
-                                'Januari' => '01', 'Jan' => '01', 'Februari' => '02', 'Febuari' => '02', 'Feb' => '02',
-                                'Maret' => '03', 'Mar' => '03', 'April' => '04', 'Apr' => '04', 'Mei' => '05', 'May' => '05',
-                                'Juni' => '06', 'Jun' => '06', 'Juli' => '07', 'Jul' => '07', 'Agustus' => '08', 'Agu' => '08', 'Aug' => '08',
-                                'September' => '09', 'Sep' => '09', 'Oktober' => '10', 'Okt' => '10', 'Oct' => '10',
-                                'November' => '11', 'Nov' => '11', 'Desember' => '12', 'Des' => '12', 'Dec' => '12'
-                            ];
-
-                            $dateStr = str_ireplace(array_keys($indonesianMonths), array_values($indonesianMonths), $rawDate);
-                            try {
-                                // Coba parsing string yang sudah ditranslate
-                                $formattedDate = \Carbon\Carbon::parse($dateStr)->format('Y-m-d');
-                            } catch (\Exception $e) {
-                                // Jika gagal parah, gunakan hari ini
-                                $formattedDate = date('Y-m-d');
-                            }
-                        }
-                    } else {
-                        // Jika di Excel kosong
-                        $formattedDate = date('Y-m-d');
-                    }
-
-                    // E. Simpan ke Buku Besar Aset
-                    $asset = \App\Models\FixedAsset::create([
-                        'asset_number'            => $assetNumber,
-                        'item_id'                 => $item->id,
-                        'asset_category_id'       => $assetCategoryId, // 🔥 Gunakan variabel yang aman ini
-                        'name'                    => $row->nama_spesifik_aset ?: $item->name,
-                        'warehouse_id'            => $warehouse ? $warehouse->id : 1,
-                        'company_id'              => $company ? $company->id : 1,
-                        'department_id'           => $departmentId,
-                        'serial_number'           => $row->serial_number,
-                        'accounting_asset_number' => $row->label_akuntansi,
-                        'status_id'               => $status ? $status->id : 1,
-                        'assigned_to'             => $assignedTo,
-                        'spesifikasi_detail'      => $row->spesifikasi,
-                        'notes'                   => trim($row->catatan . $extraNotes),
-                        'acquisition_date'        => $formattedDate, // <-- Tanggal yang sudah aman
-                        'purchase_price'          => $row->harga_beli ?: 0,
-                        'currency_id'             => $currency ? $currency->id : 1,
-                        'supporting_document'     => $batch->support_doc,
-                        'batch_id'                => $batch->batch_number,
-                    ]);
-
-                    \App\Models\FixedAssetHistory::create([
-                        'fixed_asset_id' => $asset->id,
-                        'status'         => $status ? $status->name : 'Unknown',
-                        'assigned_to'    => $assignedTo,
-                        'notes'          => trim('Di-import via Karantina (Batch: '.$batch->batch_number.')' . $extraNotes),
-                        'created_by'     => auth()->id()
-                    ]);
-
-                    // F. Mutasi Stok yang Benar (Tanpa InventoryStock)
-                    $currStock = (float) $item->current_stock;
-                    $balanceAfter = $currStock + 1;
-
-                    \App\Models\StockMutation::create([
-                        'item_id' => $item->id,
-                        'warehouse_id' => $warehouse ? $warehouse->id : 1,
-                        'type' => 'IN',
-                        'qty' => 1,
-                        'balance_before' => $currStock,
-                        'balance_after' => $balanceAfter,
-                        'reference_number' => $assetNumber,
-                        'notes' => "Penerimaan Aset Import",
-                        'created_by' => auth()->id()
-                    ]);
-
-                    if ($status && $status->slug === 'in_use') {
-                        \App\Models\StockMutation::create([
-                            'item_id' => $item->id,
-                            'warehouse_id' => $warehouse ? $warehouse->id : 1,
-                            'type' => 'OUT',
-                            'qty' => 1,
-                            'balance_before' => $balanceAfter,
-                            'balance_after' => $balanceAfter - 1,
-                            'reference_number' => 'GI-' . $assetNumber,
-                            'notes' => "Aset langsung diserahkan ke pengguna (Import)",
-                            'created_by' => auth()->id()
-                        ]);
-                        $item->update(['current_stock' => $balanceAfter - 1]);
-                    } else {
-                        $item->update(['current_stock' => $balanceAfter]);
-                    }
-                }
-
+                $this->processAssetImport($batch);
                 $batch->update(['status' => 'approved']);
+
                 DB::commit();
                 return redirect()->route('fixed-assets.index')->with('success', 'Buku Aset Resmi disahkan! Item baru telah digenerate otomatis.');
             }
         } catch (\Exception $e) {
-            DB::rollBack(); return back()->with('error', 'Terjadi kesalahan sistem: ' . $e->getMessage());
+            DB::rollBack();
+            return back()->with('error', 'Terjadi kesalahan sistem: ' . $e->getMessage());
         }
     }
 
+    // =========================================================================
+    // HELPER METHOD: PINDAH DATA KE BUKU ASET & BUAT ITEM OTOMATIS
+    // =========================================================================
+    private function processAssetImport($batch)
+    {
+        $yearMonth = date('Y/m');
+        $details = \App\Models\FixedAssetImportDetail::where('batch_id', $batch->id)->get();
+
+        foreach ($details as $row) {
+            $item = null;
+
+            // A. Cari by Kode
+            if (!empty($row->kode_barang)) {
+                $item = \App\Models\Item::lockForUpdate()->where('code', $row->kode_barang)->first();
+            }
+
+            // B. Jika Item Belum Ada, Eksekusi Smart Auto-Create Item
+            if (!$item) {
+                $namaAsetBaru = $row->nama_spesifik_aset;
+                $item = \App\Models\Item::lockForUpdate()->where('name', $namaAsetBaru)->first();
+
+                if (!$item) {
+                    $lastItem = \App\Models\Item::orderBy('id', 'desc')->lockForUpdate()->first();
+                    $nextId   = $lastItem ? $lastItem->id + 1 : 1;
+                    $newCode  = 'ITM-' . str_pad($nextId, 4, '0', STR_PAD_LEFT);
+                    $slug     = \Illuminate\Support\Str::slug($namaAsetBaru) . '-' . \Illuminate\Support\Str::random(4);
+
+                    $typeName = !empty($row->tipe_aset) ? $row->tipe_aset : 'Umum';
+
+                    $cat = \App\Models\Category::firstOrCreate(
+                        ['name' => $typeName],
+                        ['code' => strtoupper(substr(preg_replace('/[^A-Za-z]/', '', $typeName), 0, 3))]
+                    );
+
+                    $uom = \App\Models\Uom::firstOrCreate(['code' => 'PCS'], ['name' => 'Pieces']);
+
+                    $item = \App\Models\Item::create([
+                        'code'           => $newCode,
+                        'slug'           => $slug,
+                        'name'           => $namaAsetBaru,
+                        'category_id'    => $cat->id,
+                        'uom_id'         => $uom->id,
+                        'item_type_code' => 'STK',
+                        'is_trackable'   => 1,
+                        'is_active'      => 1,
+                        'current_stock'  => 0,
+                        'specification'  => 'Item dibuat otomatis dari tipe: ' . $typeName
+                    ]);
+                }
+            }
+
+            // C. Tarik Data Relasi
+            $company = \App\Models\Company::where('name', 'like', "%{$row->nama_pt}%")->first();
+            $warehouse = \App\Models\Warehouse::where('name', 'like', "%{$row->nama_gudang}%")->first();
+            $status = \App\Models\Status::where('type', 'AST')->where('name', 'like', "%".explode('(', $row->status_aset)[0]."%")->first();
+
+            // PENCARIAN KATEGORI ASET YANG AMAN
+            $assetCategory = \App\Models\AssetCategory::where('name', 'like', "%{$row->kategori_aset}%")->first();
+            $defaultCategory = \App\Models\AssetCategory::first();
+            $assetCategoryId = $assetCategory ? $assetCategory->id : ($defaultCategory ? $defaultCategory->id : null);
+
+            $departmentId = null;
+            if (!empty($row->departemen)) {
+                $deptCode = strtoupper(substr(preg_replace('/[^A-Za-z]/', '', $row->departemen), 0, 3));
+                $dept = \App\Models\Department::firstOrCreate(
+                    ['name' => $row->departemen],
+                    ['code' => $deptCode]
+                );
+                $departmentId = $dept->id;
+            }
+
+            $assignedTo = null;
+            $extraNotes = "";
+
+            if (!empty($row->nama_peminjam)) {
+                $user = \App\Models\User::where('name', 'like', "%{$row->nama_peminjam}%")->first();
+                if ($user) {
+                    $assignedTo = $user->id;
+                    if (!$status || $status->slug !== 'in_use') {
+                        $status = \App\Models\Status::where('type', 'AST')->where('slug', 'in_use')->first();
+                    }
+                } else {
+                    $extraNotes .= "\n• User (Excel): " . $row->nama_peminjam;
+                }
+            }
+
+            if (!empty($row->condition) && $row->condition !== '-') { $extraNotes .= "\n• Kondisi: " . $row->condition; }
+            if (!empty($row->po_number) && $row->po_number !== '-') { $extraNotes .= "\n• PO Lama: " . $row->po_number; }
+            if (!empty($row->supplier) && $row->supplier !== '-') { $extraNotes .= "\n• Vendor Asal: " . $row->supplier; }
+
+            $currency = \App\Models\Currency::where('code', strtoupper($row->mata_uang))->first();
+
+            // D. Bikin Nomor Aset
+            $lastAsset = \App\Models\FixedAsset::where('asset_number', 'like', "AST/{$yearMonth}/%")->orderBy('id', 'desc')->lockForUpdate()->first();
+            $nextSeq = $lastAsset ? ((int) substr($lastAsset->asset_number, -4)) + 1 : 1;
+            $assetNumber = "AST/{$yearMonth}/" . str_pad($nextSeq, 4, '0', STR_PAD_LEFT);
+
+            // FORMAT TANGGAL
+            $rawDate = $row->tanggal_perolehan;
+            $formattedDate = null;
+
+            if (!empty($rawDate)) {
+                if (preg_match("/^[0-9]{4}-(0[1-9]|1[0-2])-(0[1-9]|[1-2][0-9]|3[0-1])$/", $rawDate)) {
+                    $formattedDate = $rawDate;
+                } else {
+                    $indonesianMonths = [
+                        'Januari' => '01', 'Jan' => '01', 'Februari' => '02', 'Febuari' => '02', 'Feb' => '02',
+                        'Maret' => '03', 'Mar' => '03', 'April' => '04', 'Apr' => '04', 'Mei' => '05', 'May' => '05',
+                        'Juni' => '06', 'Jun' => '06', 'Juli' => '07', 'Jul' => '07', 'Agustus' => '08', 'Agu' => '08', 'Aug' => '08',
+                        'September' => '09', 'Sep' => '09', 'Oktober' => '10', 'Okt' => '10', 'Oct' => '10',
+                        'November' => '11', 'Nov' => '11', 'Desember' => '12', 'Des' => '12', 'Dec' => '12'
+                    ];
+                    $dateStr = str_ireplace(array_keys($indonesianMonths), array_values($indonesianMonths), $rawDate);
+                    try {
+                        $formattedDate = \Carbon\Carbon::parse($dateStr)->format('Y-m-d');
+                    } catch (\Exception $e) {
+                        $formattedDate = date('Y-m-d');
+                    }
+                }
+            } else {
+                $formattedDate = date('Y-m-d');
+            }
+
+            // E. Simpan ke Buku Besar Aset
+            $asset = \App\Models\FixedAsset::create([
+                'asset_number'            => $assetNumber,
+                'item_id'                 => $item->id,
+                'asset_category_id'       => $assetCategoryId,
+                'name'                    => $row->nama_spesifik_aset ?: $item->name,
+                'warehouse_id'            => $warehouse ? $warehouse->id : 1,
+                'company_id'              => $company ? $company->id : 1,
+                'department_id'           => $departmentId,
+                'serial_number'           => $row->serial_number,
+                'accounting_asset_number' => $row->label_akuntansi,
+                'status_id'               => $status ? $status->id : 1,
+                'assigned_to'             => $assignedTo,
+                'spesifikasi_detail'      => $row->spesifikasi,
+                'notes'                   => trim($row->catatan . $extraNotes),
+                'acquisition_date'        => $formattedDate,
+                'purchase_price'          => $row->harga_beli ?: 0,
+                'currency_id'             => $currency ? $currency->id : 1,
+                'supporting_document'     => $batch->support_doc,
+                'batch_id'                => $batch->batch_number,
+            ]);
+
+            \App\Models\FixedAssetHistory::create([
+                'fixed_asset_id' => $asset->id,
+                'status'         => $status ? $status->name : 'Unknown',
+                'assigned_to'    => $assignedTo,
+                'notes'          => trim('Di-import via Karantina (Batch: '.$batch->batch_number.')' . $extraNotes),
+                'created_by'     => auth()->id()
+            ]);
+
+            // F. Mutasi Stok
+            $currStock = (float) $item->current_stock;
+            $balanceAfter = $currStock + 1;
+
+            \App\Models\StockMutation::create([
+                'item_id' => $item->id,
+                'warehouse_id' => $warehouse ? $warehouse->id : 1,
+                'type' => 'IN',
+                'qty' => 1,
+                'balance_before' => $currStock,
+                'balance_after' => $balanceAfter,
+                'reference_number' => $assetNumber,
+                'notes' => "Penerimaan Aset Import",
+                'created_by' => auth()->id()
+            ]);
+
+            if ($status && $status->slug === 'in_use') {
+                \App\Models\StockMutation::create([
+                    'item_id' => $item->id,
+                    'warehouse_id' => $warehouse ? $warehouse->id : 1,
+                    'type' => 'OUT',
+                    'qty' => 1,
+                    'balance_before' => $balanceAfter,
+                    'balance_after' => $balanceAfter - 1,
+                    'reference_number' => 'GI-' . $assetNumber,
+                    'notes' => "Aset langsung diserahkan ke pengguna (Import)",
+                    'created_by' => auth()->id()
+                ]);
+                $item->update(['current_stock' => $balanceAfter - 1]);
+            } else {
+                $item->update(['current_stock' => $balanceAfter]);
+            }
+        }
+    }
 
 
     public function cancelImport($batch_id)

@@ -20,7 +20,7 @@
             margin-bottom: 5px;
         }
 
-        /* 1. KOTAK HEADER (ATAS) */
+        /* 1. KOTAK HEADER */
         table.header-section {
             width: 100%;
             border-collapse: collapse;
@@ -44,7 +44,7 @@
             border: none !important;
         }
 
-        /* 2. KOTAK ITEM (TENGAH) */
+        /* 2. KOTAK TABEL INVOICE */
         table.bpr-table {
             width: 100%;
             border-collapse: collapse;
@@ -55,14 +55,14 @@
             padding: 6px;
         }
 
-        /* 3. KOTAK TANDA TANGAN (BAWAH) - 🔥 SUDAH DIPERBAIKI 🔥 */
+        /* 3. KOTAK TANDA TANGAN */
         table.sig-table {
             width: 100%;
             border-collapse: collapse;
         }
         table.sig-table td {
-            border: 1px solid #000; /* Kembalikan garis penuh */
-            border-top: none; /* Kecuali garis atas agar menyatu dengan Total Amount */
+            border: 1px solid #000;
+            border-top: none;
             padding: 8px 10px;
             vertical-align: top;
         }
@@ -71,12 +71,12 @@
             font-size: 11px;
         }
         .sig-name {
-            text-align: center; /* Posisi nama persis di tengah */
+            text-align: center;
             font-size: 11px;
-            margin-top: 70px; /* Memaksa jarak tanda tangan seragam semua */
+            margin-top: 70px;
         }
 
-        /* Trik Mata Uang */
+        /* Trik Mata Uang Rata Kiri Kanan */
         .currency-table {
             width: 100%;
             border-collapse: collapse;
@@ -118,9 +118,10 @@
                         <td style="width: 30%;">Title</td>
                         <td style="width: 70%;">: {{ $bill->title ?? '-' }}</td>
                     </tr>
+                    <!-- 🔥 PERBAIKAN: Nomor Internal Sistem Dipindah Ke Sini 🔥 -->
                     <tr>
-                        <td>&nbsp;</td>
-                        <td></td>
+                        <td>Bill Ref.</td>
+                        <td>: {{ $bill->bill_number }}</td>
                     </tr>
                     <tr>
                         <td>Payment Due Date</td>
@@ -144,17 +145,20 @@
             </tr>
         </thead>
         <tbody>
-            @foreach($bill->items as $index => $item)
+            <!-- 🔥 PERBAIKAN: Tabel diubah menjadi 1 Baris Rangkuman Grand Total 🔥 -->
             <tr>
-                <td style="text-align: center;">{{ $index + 1 }}</td>
-                <td style="text-align: center;">{{ $bill->vendor_invoice_number ?? $bill->bill_number }}</td>
-                <td>{!! nl2br(e($item->description ?? $item->name)) !!}</td>
+                <td style="text-align: center;">1</td>
+                <!-- Mengambil nomor invoice dari vendor (dari form inputan Anda) -->
+                <td style="text-align: center;">{{ $bill->vendor_invoice_number ?? '-' }}</td>
+                <!-- Deskripsi singkat tagihan -->
+                <td>{{ $bill->title ?? 'Pembayaran Tagihan ' . $bill->vendor_name }}</td>
                 <td></td>
                 <td>
+                    <!-- Langsung menampilkan Grand Total -->
                     <table class="currency-table">
                         <tr>
                             <td style="text-align: left;">Rp</td>
-                            <td style="text-align: right;">{{ number_format($item->amount, 0, ',', '.') }}</td>
+                            <td style="text-align: right;">{{ number_format($bill->amount, 0, ',', '.') }}</td>
                         </tr>
                     </table>
                 </td>
@@ -162,7 +166,6 @@
                     {{ $bill->account_number ?? $bill->vendor_account ?? $bill->vendor_bank_account ?? '' }}
                 </td>
             </tr>
-            @endforeach
 
             <!-- BARIS TOTAL AMOUNT -->
             <tr>
