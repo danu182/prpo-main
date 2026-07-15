@@ -145,29 +145,54 @@
             </tr>
         </thead>
         <tbody>
-            <!-- 🔥 PERBAIKAN: Tabel diubah menjadi 1 Baris Rangkuman Grand Total 🔥 -->
+            <!-- 🔥 PERBAIKAN: Looping Berdasarkan Jumlah Item 🔥 -->
+            @foreach($bill->items as $index => $item)
             <tr>
-                <td style="text-align: center;">1</td>
-                <!-- Mengambil nomor invoice dari vendor (dari form inputan Anda) -->
+                <td style="text-align: center;">{{ $index + 1 }}</td>
+
+                <!-- Nomor Invoice dicetak di setiap baris atau bisa juga di baris pertama saja -->
                 <td style="text-align: center;">{{ $bill->vendor_invoice_number ?? '-' }}</td>
-                <!-- Deskripsi singkat tagihan -->
-                <td>{{ $bill->title ?? 'Pembayaran Tagihan ' . $bill->vendor_name }}</td>
+
+                <!-- Ambil deskripsi, jika kosong ambil nama -->
+                <td>{{ !empty($item->description) ? $item->description : $item->name }}</td>
+
                 <td></td>
+
                 <td>
-                    <!-- Langsung menampilkan Grand Total -->
+                    <!-- Harga masing-masing item -->
                     <table class="currency-table">
                         <tr>
                             <td style="text-align: left;">Rp</td>
-                            <td style="text-align: right;">{{ number_format($bill->amount, 0, ',', '.') }}</td>
+                            <td style="text-align: right;">{{ number_format($item->amount, 0, ',', '.') }}</td>
                         </tr>
                     </table>
                 </td>
+
+                <!-- Nomor rekening dimunculkan di baris pertama saja agar tabel tetap rapi -->
                 <td style="text-align: center;">
-                    {{ $bill->account_number ?? $bill->vendor_account ?? $bill->vendor_bank_account ?? '' }}
+                    {{ $index === 0 ? ($bill->account_number ?? $bill->vendor_account ?? $bill->vendor_bank_account ?? '') : '' }}
                 </td>
             </tr>
+            @endforeach
 
-            <!-- BARIS TOTAL AMOUNT -->
+            <!-- BARIS TAMBAHAN: Muncul otomatis JIKA ada biaya ekstra,
+                 agar Total Amount di bawahnya tetap masuk akal perhitungannya -->
+            @if($bill->total_charge > 0)
+            <tr>
+                <td colspan="4" style="text-align: right; font-size: 10px; color: #555;">Biaya Tambahan</td>
+                <td style="font-size: 10px; color: #555;">
+                    <table class="currency-table">
+                        <tr>
+                            <td style="text-align: left;">Rp</td>
+                            <td style="text-align: right;">{{ number_format($bill->total_charge, 0, ',', '.') }}</td>
+                        </tr>
+                    </table>
+                </td>
+                <td></td>
+            </tr>
+            @endif
+
+            <!-- BARIS TOTAL AMOUNT (GRAND TOTAL) -->
             <tr>
                 <td colspan="4" style="text-align: center; font-weight: bold;">Total Amount</td>
                 <td style="font-weight: bold;">
