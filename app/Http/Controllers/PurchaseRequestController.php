@@ -895,4 +895,76 @@ class PurchaseRequestController extends Controller
             'note'    => $note
         ]);
     }
+
+
+    // =========================================================================
+    // CETAK PR LENGKAP DENGAN LAMPIRAN & REFERENSI VENDOR (PDF MERGER)
+    // =========================================================================
+    public function printCompleteWithAttachments($slug)
+    {
+        $pr = \App\Models\PurchaseRequest::with([
+            'items.item.uom',
+            'items.item.itemUoms',
+            'items.vendorQuotes.vendor',
+            'items.vendorQuotes.currency',
+            'items.vendorQuotes.attachments',
+            'user.department',
+            'company',
+            'status'
+        ])->where('pr_number', $slug)->firstOrFail();
+
+        $approvals = \App\Models\DocumentApproval::with(['role', 'approver'])
+            ->where('document_id', $pr->id)
+            ->where('document_type', get_class($pr))
+            ->orderBy('step_order', 'asc')
+            ->get();
+
+        // 1. RENDER DOMPDF MENGGUNAKAN TEMPLATE CETAK LENGKAP
+        $pdf = \Barryvdh\DomPDF\Facade\Pdf::loadView('pr.print_complete', compact('pr', 'approvals'))
+                ->setPaper('A4', 'portrait');
+
+        // 2. SIMPAN HASIL DOMPDF SEMENTARA DI FOLDER STORAGE
+        $tempMainPdfPath = storage_path('app/temp_pr_complete_' . uniqid() . '.pdf');
+        $pdf->save($tempMainPdfPath);
+
+        // 3. INISIASI MESIN PENGGABUNG PDF (MERGER)
+        $merger = new \iio\libmergepdf\Merger();
+        $merger->addFile($tempMainPdfPath);
+
+        // 4. CARI LAMPIRAN PDF DARI SETIAP PENAWARAN VENDOR & MASUKKAN KE MERGER
+        if ($pr->items) {
+            foreach ($pr->items as $item) {
+                if ($item->vendorQuotes) {
+                    foreach ($item->vendorQuotes as $quote) {
+                        if ($quote->attachments) {
+                            foreach ($quote->attachments as $attachment) {
+                                $ext = strtolower(pathinfo($attachment->file_path, PATHINFO_EXTENSION));
+                                if ($ext === 'pdf') {
+                                    $pdfAttachmentPath = public_path('storage/' . $attachment->file_path);
+                                    if (file_exists($pdfAttachmentPath)) {
+                                        $merger->addFile($pdfAttachmentPath);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // 5. JAHIT/GABUNGKAN SEMUA PDF MENJADI SATU KESATUAN
+        $mergedPdfData = $merger->merge();
+
+        if (file_exists($tempMainPdfPath)) {
+            unlink($tempMainPdfPath);
+        }
+
+        $filename = 'PR_Dokumen_Lengkap_' . str_replace('/', '_', $pr->pr_number) . '.pdf';
+
+        return response($mergedPdfData)
+                ->header('Content-Type', 'application/pdf')
+                ->header('Content-Disposition', 'inline; filename="' . $filename . '"');
+    }
+
+
 }

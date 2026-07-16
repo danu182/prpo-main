@@ -66,6 +66,9 @@ Route::middleware('auth')->group(function () {
         Route::post('/{id}/reject-all', [PurchaseRequestController::class, 'rejectAll'])->name('rejectAll');
         Route::post('/item/{id}/force-close', [PurchaseRequestController::class, 'forceCloseItem'])->name('item.forceClose');
 
+        // Tambahkan ini di bawah route print PR yang sudah ada
+        Route::get('/{slug}/print-complete', [\App\Http\Controllers\PurchaseRequestController::class, 'printCompleteWithAttachments'])->name('print_complete')->where('slug', '.*');
+
 
         // Rute untuk AJAX Search (Harus di atas rute pr/{id} jika ada)
         Route::get('/pr/search-items', [App\Http\Controllers\PurchaseRequestController::class, 'searchItems'])->name('pr.search-items');
