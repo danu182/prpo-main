@@ -510,6 +510,7 @@ Route::middleware('auth')->group(function () {
 
         // 🔥 RUTE BARU: Cetak PDF beserta Lampirannya
         Route::get('/print-with-attachments/{slug}', [\App\Http\Controllers\BillRequestController::class, 'printWithAttachments'])->name('print_with_attachments')->where('slug', '.*');
+        Route::get('/{slug}/print-bpr-attachments', [\App\Http\Controllers\BillRequestController::class, 'printBprWithAttachments'])->name('bills.print_bpr_attachments')->where('slug', '.*');
 
         // 🔥 PERBAIKAN: Masukkan ke sini! (Di atas rute show, di dalam grup vendor-invoices)
         // Dengan begini, namanya otomatis kembali menjadi vendor-invoices.final-receipt sesuai file Blade Anda

@@ -79,7 +79,6 @@
                                 <input type="date" name="due_date" class="form-control" value="{{ date('Y-m-d', strtotime($bill->due_date)) }}" required>
                             </div>
 
-                            {{-- 🔥 PERBAIKAN: Layout Kolom Vendor & Invoice Dipecah Jadi 2 🔥 --}}
                             <div class="col-md-6">
                                 <label class="form-label fw-bold small text-muted text-uppercase">Nama Vendor / Supplier <span class="text-danger">*</span></label>
                                 <select name="vendor_name" class="form-select select2-vendor" required>
@@ -136,19 +135,18 @@
 
                 {{-- CARD 3: RINCIAN ITEM --}}
                 <div class="mb-4 border-0 shadow-sm card rounded-4">
-                    {{-- 🔥 HEADER DENGAN FITUR SET PAJAK MASSAL 🔥 --}}
+                    {{-- 🔥 HEADER DENGAN FITUR SET PAJAK MASSAL (BARU) 🔥 --}}
                     <div class="py-3 bg-white card-header border-bottom-0 rounded-top-4 d-flex justify-content-between align-items-center">
                         <h6 class="mb-0 fw-bold text-warning-emphasis"><i class="bi bi-list-check me-2"></i>Rincian Item Jasa / Opex</h6>
                         <div class="input-group input-group-sm" style="width: 320px;">
-                            <span class="input-group-text bg-light border-warning-subtle" style="font-size: 0.75rem;">Set Pajak Semua:</span>
-                            <select class="form-select border-warning-subtle" id="global_tax_select" style="font-size: 0.75rem;">
-                                <option value="">Tanpa Pajak</option>
-                                @foreach($taxes as $tax)
-                                    <option value="{{ $tax->id }}">{{ $tax->name }} ({{ $tax->percent }}%)</option>
-                                @endforeach
+                            <span class="input-group-text bg-light border-warning-subtle" style="font-size: 0.75rem;">Pajak Semua:</span>
+                            <input type="text" id="global_tax_val" class="form-control price-display border-warning-subtle" value="0">
+                            <select id="global_tax_type" class="form-select border-warning-subtle" style="max-width: 60px;">
+                                <option value="fixed">Rp</option>
+                                <option value="percent" selected>%</option>
                             </select>
                             <button class="btn btn-warning" type="button" id="btnApplyGlobalTax" style="font-size: 0.75rem;">
-                                <i class="bi bi-check-all me-1"></i>Terapkan
+                                <i class="bi bi-check-all"></i>
                             </button>
                         </div>
                     </div>
@@ -189,15 +187,20 @@
                                         </div>
                                     </td>
                                     <td class="pt-3">
-                                        <select name="items[{{ $index }}][tax_id]" class="mb-1 form-select form-select-sm tax-select">
-                                            <option value="" data-percent="0">Tanpa Pajak</option>
-                                            @foreach($taxes as $tax)
-                                                <option value="{{ $tax->id }}" data-percent="{{ $tax->percent }}" {{ $item->tax_id == $tax->id ? 'selected' : '' }}>
-                                                    {{ $tax->name }} ({{ $tax->percent }}%)
-                                                </option>
-                                            @endforeach
-                                        </select>
+                                        {{-- 🔥 INPUT PAJAK BARU (Bisa Nominal/Persen) 🔥 --}}
+                                        <div class="mb-1 input-group input-group-sm">
+                                            <span class="input-group-text bg-info bg-opacity-10 text-info fw-bold" style="font-size: 0.7rem;">+Pajak</span>
+                                            <input type="text" class="form-control tax-val-display" value="{{ number_format($item->tax_value ?? 0,0,'','') }}">
+                                            <input type="hidden" name="items[{{ $index }}][tax_value]" class="tax-val-real" value="{{ (int)($item->tax_value ?? 0) }}">
+                                            <select name="items[{{ $index }}][tax_type]" class="form-select tax-type" style="max-width: 60px;">
+                                                <option value="fixed" {{ ($item->tax_type ?? 'percent') == 'fixed' ? 'selected' : '' }}>Rp</option>
+                                                <option value="percent" {{ ($item->tax_type ?? 'percent') == 'percent' ? 'selected' : '' }}>%</option>
+                                            </select>
+                                        </div>
+
+                                        {{-- Input Diskon --}}
                                         <div class="input-group input-group-sm">
+                                            <span class="input-group-text bg-danger bg-opacity-10 text-danger fw-bold" style="font-size: 0.7rem;">-Disc&nbsp;&nbsp;</span>
                                             <input type="text" class="form-control disc-val-display" value="{{ number_format($item->discount_value,0,'','') }}">
                                             <input type="hidden" name="items[{{ $index }}][discount_value]" class="disc-val-real" value="{{ (int)$item->discount_value }}">
                                             <select name="items[{{ $index }}][discount_type]" class="form-select disc-type" style="max-width: 60px;">
@@ -290,22 +293,19 @@
                     </div>
                 </div>
 
-                {{-- CARD LAMPIRAN (FITUR HAPUS FILE LAMA TERSEDIA) --}}
+                {{-- CARD LAMPIRAN --}}
                 <div class="mb-4 border-0 shadow-sm card rounded-4">
                     <div class="py-3 bg-white card-header border-bottom-0 rounded-top-4">
                         <h6 class="mb-0 fw-bold text-primary"><i class="bi bi-paperclip me-2"></i>Lampiran Dokumen</h6>
                     </div>
                     <div class="p-4 pt-0 card-body">
-
-                        {{-- List File Lama --}}
                         @if($attachments->count() > 0)
                             <div class="p-3 mb-4 border alert alert-light rounded-4">
-                                <label class="mb-3 small text-muted fw-bold d-block"><i class="bi bi-info-circle me-1"></i>File Saat Ini (Centang kotak merah untuk menghapus dan akan terhapus pada saat klik Update Tagihan):</label>
+                                <label class="mb-3 small text-muted fw-bold d-block"><i class="bi bi-info-circle me-1"></i>File Saat Ini (Centang kotak merah untuk menghapus):</label>
                                 <div class="row g-3">
                                     @foreach($attachments as $file)
                                         <div class="col-md-6">
                                             <div class="p-2 bg-white border border-opacity-25 shadow-sm border-secondary rounded-4 d-flex align-items-center">
-                                                {{-- CHECKBOX HAPUS --}}
                                                 <div class="form-check ms-2 me-3">
                                                     <input class="form-check-input border-danger" type="checkbox" name="delete_media[]" value="{{ $file->id }}" id="media_{{ $file->id }}" style="transform: scale(1.3); cursor: pointer;">
                                                 </div>
@@ -329,7 +329,6 @@
                             </div>
                         @endif
 
-                        {{-- Input File Baru --}}
                         <div id="attachmentContainer"></div>
                         <button type="button" class="mt-2 btn btn-outline-primary btn-sm rounded-pill fw-bold" id="addFile">
                             <i class="bi bi-plus-lg me-1"></i> Upload File Baru
@@ -371,7 +370,6 @@
                         <button type="button" id="btnSubmitForm" class="py-3 shadow-sm btn btn-warning w-100 rounded-pill fw-bold text-dark d-flex align-items-center justify-content-center">
                             <i class="bi bi-save2 fs-5 me-2"></i> Update Tagihan
                         </button>
-
                         <a href="{{ route('bills.show', $bill->bill_number) }}" class="mt-2 btn btn-light w-100 rounded-pill fw-bold text-muted">Batal</a>
                     </div>
                 </div>
@@ -410,28 +408,31 @@
 <script>
 $(document).ready(function() {
 
-    // 1. Inisialisasi Select2
     function initSelect2() {
         $('.select2-single, .select2-item, .select2-charge, .select2-discount').select2({ theme: 'bootstrap-5', width: '100%' });
         $('.select2-vendor').select2({ theme: 'bootstrap-5', width: '100%', tags: true });
     }
     initSelect2();
 
-    // 2. Format Rupiah
     function formatNumber(num) { return num.toString().replace(/\B(?=(\d{3})+(?!\d))/g, "."); }
     function unformatNumber(str) { return parseInt(str.toString().replace(/[^0-9]/g, '')) || 0; }
 
-    // Init Format Tampilan Awal (Jalankan keyup palsu agar ada titiknya)
-    $('.price-display, .disc-val-display, .charge-display, .ext-disc-display').each(function() {
+    $('.price-display, .disc-val-display, .tax-val-display, .charge-display, .ext-disc-display').each(function() {
         let val = unformatNumber($(this).val());
         $(this).val(formatNumber(val));
     });
 
-    $(document).on('keyup', '.price-display, .disc-val-display, .charge-display, .ext-disc-display', function() {
+    // 🔥 Update pemicu KeyUp untuk memproses Pajak & Diskon 🔥
+    $(document).on('keyup', '.price-display, .disc-val-display, .tax-val-display, .charge-display, .ext-disc-display', function() {
         let isPercent = false;
         if($(this).hasClass('disc-val-display')) {
             isPercent = $(this).closest('.input-group').find('.disc-type').val() === 'percent';
+        } else if($(this).hasClass('tax-val-display')) {
+            isPercent = $(this).closest('.input-group').find('.tax-type').val() === 'percent';
+        } else if($(this).attr('id') === 'global_tax_val') {
+            isPercent = $('#global_tax_type').val() === 'percent';
         }
+
         let val = unformatNumber($(this).val());
         if(isPercent && val > 100) val = 100;
 
@@ -440,23 +441,46 @@ $(document).ready(function() {
         calculate();
     });
 
-    $(document).on('change', '.disc-type', function() {
+    $(document).on('change', '.disc-type, .tax-type, #global_tax_type', function() {
         let displayInput = $(this).closest('.input-group').find('input[type="text"]');
         let hiddenInput = $(this).closest('.input-group').find('input[type="hidden"]');
         displayInput.val(0); hiddenInput.val(0); calculate();
     });
 
-    // 3. Script Tambah Baris Dinamis sama persis seperti Create
     $('#addItem').click(function() {
         const container = document.getElementById('itemContainer');
-        const index = new Date().getTime(); // Gunakan timestamp agar index selalu unik saat edit
+        const index = new Date().getTime();
         const templateSelect = $('#hiddenSelectTemplate').html();
         const tr = document.createElement('tr');
         tr.className = 'item-row border-bottom';
-        tr.innerHTML = `<td class="pt-3">${templateSelect}<textarea name="items[${index}][description]" class="mt-2 form-control form-control-sm" rows="1"></textarea></td>
+        tr.innerHTML = `
+            <td class="pt-3">${templateSelect}<textarea name="items[${index}][description]" class="mt-2 form-control form-control-sm" rows="1"></textarea></td>
             <td class="pt-3"><input type="number" name="items[${index}][qty]" class="text-center form-control form-control-sm qty" value="1" min="1"></td>
-            <td class="pt-3"><div class="input-group input-group-sm"><span class="input-group-text curr-symbol">Rp</span><input type="text" class="form-control price-display text-end" value="0"><input type="hidden" name="items[${index}][price]" class="price-real" value="0"></div></td>
-            <td class="pt-3"><select name="items[${index}][tax_id]" class="mb-1 form-select form-select-sm tax-select"><option value="" data-percent="0">Tanpa Pajak</option>@foreach($taxes as $tax)<option value="{{ $tax->id }}" data-percent="{{ $tax->percent }}">{{ $tax->name }} ({{ $tax->percent }}%)</option>@endforeach</select><div class="input-group input-group-sm"><input type="text" class="form-control disc-val-display" value="0"><input type="hidden" name="items[${index}][discount_value]" class="disc-val-real" value="0"><select name="items[${index}][discount_type]" class="form-select disc-type" style="max-width: 60px;"><option value="fixed">Rp</option><option value="percent">%</option></select></div></td>
+            <td class="pt-3">
+                <div class="input-group input-group-sm">
+                    <span class="input-group-text curr-symbol">Rp</span>
+                    <input type="text" class="form-control price-display text-end" value="0">
+                    <input type="hidden" name="items[${index}][price]" class="price-real" value="0">
+                </div>
+            </td>
+            <td class="pt-3">
+                <div class="mb-1 input-group input-group-sm">
+                    <span class="input-group-text bg-info bg-opacity-10 text-info fw-bold" style="font-size: 0.7rem;">+Pajak</span>
+                    <input type="text" class="form-control tax-val-display" value="0">
+                    <input type="hidden" name="items[${index}][tax_value]" class="tax-val-real" value="0">
+                    <select name="items[${index}][tax_type]" class="form-select tax-type" style="max-width: 60px;">
+                        <option value="fixed">Rp</option><option value="percent" selected>%</option>
+                    </select>
+                </div>
+                <div class="input-group input-group-sm">
+                    <span class="input-group-text bg-danger bg-opacity-10 text-danger fw-bold" style="font-size: 0.7rem;">-Disc&nbsp;&nbsp;</span>
+                    <input type="text" class="form-control disc-val-display" value="0">
+                    <input type="hidden" name="items[${index}][discount_value]" class="disc-val-real" value="0">
+                    <select name="items[${index}][discount_type]" class="form-select disc-type" style="max-width: 60px;">
+                        <option value="fixed">Rp</option><option value="percent" selected>%</option>
+                    </select>
+                </div>
+            </td>
             <td class="pt-3 text-end"><button type="button" class="btn btn-outline-danger btn-sm remove-item rounded-circle"><i class="bi bi-trash"></i></button></td>`;
         container.appendChild(tr);
         $(tr).find('.select2-item-template').removeClass('select2-item-template').addClass('select2-item').attr('name', `items[${index}][name]`);
@@ -504,7 +528,7 @@ $(document).ready(function() {
     function updateSymbols() {
         const symbol = $('#currency_select option:selected').data('symbol');
         $('.curr-symbol').text(symbol); $('.curr-symbol-display').text(symbol);
-        $('.disc-type option[value="fixed"]').text(symbol);
+        $('.disc-type option[value="fixed"], .tax-type option[value="fixed"], #global_tax_type option[value="fixed"]').text(symbol);
     }
 
     $('#is_recurring').change(function() {
@@ -512,25 +536,34 @@ $(document).ready(function() {
         else $('#recurring_setup').addClass('d-none');
     });
 
-    // 4. Kalkulator (Langsung dihitungkan saat load)
+    // 🔥 9. KALKULATOR UTAMA DIPERBARUI 🔥
     function calculate() {
         let totalGross = 0, totalItemDisc = 0, totalTax = 0, totalCharge = 0, totalExtDiscount = 0;
+
         $('.item-row').each(function() {
             const qty = parseFloat($(this).find('.qty').val()) || 0;
             const price = parseFloat($(this).find('.price-real').val()) || 0;
-            const tax = parseFloat($(this).find('.tax-select option:selected').data('percent')) || 0;
+            const gross = qty * price;
+
+            // Diskon
             const discVal = parseFloat($(this).find('.disc-val-real').val()) || 0;
             const discType = $(this).find('.disc-type').val();
-            const gross = qty * price;
             const itemDisc = (discType === 'fixed') ? discVal : (gross * discVal / 100);
             const dpp = gross - itemDisc;
-            const taxVal = dpp * tax / 100;
-            totalGross += gross; totalItemDisc += itemDisc; totalTax += taxVal;
+
+            // Pajak (Baru) -> Pajak biasanya dihitung dari DPP (setelah diskon)
+            const taxVal = parseFloat($(this).find('.tax-val-real').val()) || 0;
+            const taxType = $(this).find('.tax-type').val();
+            const itemTax = (taxType === 'fixed') ? taxVal : (dpp * taxVal / 100);
+
+            totalGross += gross; totalItemDisc += itemDisc; totalTax += itemTax;
         });
+
         $('.charge-row').each(function() { totalCharge += parseFloat($(this).find('.charge-real').val()) || 0; });
         $('.discount-row').each(function() { totalExtDiscount += parseFloat($(this).find('.ext-disc-real').val()) || 0; });
 
-        let grandTotal = (totalGross - totalItemDisc + totalTax) + totalCharge - totalExtDiscount;
+        const subtotal = totalGross - totalItemDisc + totalTax;
+        let grandTotal = subtotal + totalCharge - totalExtDiscount;
         if(grandTotal < 0) grandTotal = 0;
 
         $('#display_subtotal').text(formatNumber(totalGross));
@@ -541,44 +574,38 @@ $(document).ready(function() {
         $('#display_grand_total').text(formatNumber(grandTotal));
     }
 
-    $(document).on('input', '.qty, .tax-select', calculate);
+    $(document).on('input', '.qty', calculate);
 
-    // 🔥 10. JAVASCRIPT: TERAPKAN PAJAK MASSAL 🔥
+    // 🔥 10. TERAPKAN PAJAK MASSAL (BARU) 🔥
     $('#btnApplyGlobalTax').click(function() {
-        let selectedTax = $('#global_tax_select').val();
-        let $taxDropdowns = $('.tax-select');
+        let globalVal = $('#global_tax_val').val();
+        let globalRealVal = unformatNumber(globalVal);
+        let globalType = $('#global_tax_type').val();
 
-        if($taxDropdowns.length === 0) return;
+        if($('.item-row').length === 0) return;
 
-        // Ubah semua dropdown ke ID pajak yang dipilih lalu paksa hitung ulang
-        $taxDropdowns.val(selectedTax).trigger('input');
+        $('.tax-val-display').val(globalVal);
+        $('.tax-val-real').val(globalRealVal);
+        $('.tax-type').val(globalType);
 
-        // Memunculkan notifikasi sukses (Toast)
+        calculate();
+
         Swal.fire({
-            toast: true,
-            position: 'top-end',
-            icon: 'success',
+            toast: true, position: 'top-end', icon: 'success',
             title: 'Pajak berhasil diterapkan ke semua baris!',
-            showConfirmButton: false,
-            timer: 2000
+            showConfirmButton: false, timer: 2000
         });
     });
 
-    // 11. Submit Konfirmasi (Anti-Silent Crash)
     $('#btnSubmitForm').click(function(e) {
         e.preventDefault();
         let btn = $(this);
         const form = document.getElementById('billForm');
 
         Swal.fire({
-            title: 'Update Tagihan?',
-            text: "Data lama akan ditimpa dengan rincian yang baru.",
-            icon: 'warning',
-            showCancelButton: true,
-            confirmButtonColor: '#ffc107',
-            cancelButtonColor: '#6c757d',
-            confirmButtonText: '<span class="text-dark fw-bold">Ya, Update Data!</span>',
-            reverseButtons: true
+            title: 'Update Tagihan?', text: "Data lama akan ditimpa dengan rincian yang baru.", icon: 'warning',
+            showCancelButton: true, confirmButtonColor: '#ffc107', cancelButtonColor: '#6c757d',
+            confirmButtonText: '<span class="text-dark fw-bold">Ya, Update Data!</span>', reverseButtons: true
         }).then((result) => {
             if (result.isConfirmed) {
                 btn.prop('disabled', true).html('<span class="spinner-border spinner-border-sm me-2"></span> Menyimpan...');
@@ -589,7 +616,7 @@ $(document).ready(function() {
     });
 
     updateSymbols();
-    calculate(); // Panggil saat pertama kali load agar ringkasan terisi
+    calculate();
 });
 </script>
 @endpush

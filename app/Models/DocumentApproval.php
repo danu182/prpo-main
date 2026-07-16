@@ -7,10 +7,7 @@ use Spatie\Permission\Models\Role;
 
 class DocumentApproval extends Model
 {
-    protected $fillable = [
-        'document_id', 'document_type', 'step_order',
-        'role_id', 'status', 'approved_by', 'approved_at', 'note'
-    ];
+    protected $guarded = [];
 
     // Relasi ke dokumen asli (PurchaseRequest atau PurchaseOrder)
     public function document()

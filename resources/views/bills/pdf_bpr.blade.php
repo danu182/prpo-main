@@ -259,5 +259,28 @@
         </tr>
     </table>
 
+
+    {{-- 🔥 LAMPIRAN GAMBAR (MUNCUL DI HALAMAN BARU) 🔥 --}}
+    @if(isset($bill->attachments) && $bill->attachments->count() > 0)
+        @php
+            $imageAttachments = $bill->attachments->filter(function($att) {
+                $ext = strtolower(pathinfo($att->file_name, PATHINFO_EXTENSION));
+                return in_array($ext, ['jpg', 'jpeg', 'png']);
+            });
+        @endphp
+
+        @if($imageAttachments->count() > 0)
+            <div style="page-break-before: always;"></div>
+            <h3 style="margin-bottom: 20px; font-family: Arial, sans-serif;">Lampiran Dokumen Pendukung</h3>
+
+            @foreach($imageAttachments as $img)
+                <div style="margin-bottom: 20px; text-align: center; font-family: Arial, sans-serif;">
+                    <p style="font-size: 10pt; text-align: left;"><strong>Nama File:</strong> {{ $img->file_name }}</p>
+                    <img src="{{ public_path('storage/' . $img->file_path) }}" style="max-width: 100%; max-height: 800px; border: 1px solid #000; padding: 5px;">
+                </div>
+            @endforeach
+        @endif
+    @endif
+
 </body>
 </html>

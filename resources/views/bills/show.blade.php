@@ -62,6 +62,11 @@
                             <i class="bi bi-bank text-success me-2"></i> Cetak Form BPR
                         </a>
                     </li>
+                    <li>
+                        <a class="py-2 dropdown-item fw-medium" href="{{ route('bills.bills.print_bpr_attachments', $bill->bill_number) }}" target="_blank">
+                            <i class="bi bi-bank text-success me-2"></i> Cetak Form BPR + Lampiran
+                        </a>
+                    </li>
                 </ul>
             </div>
         </div>

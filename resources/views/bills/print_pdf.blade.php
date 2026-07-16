@@ -46,8 +46,16 @@
         .summary-table .total td { font-weight: bold; font-size: 12pt; border-top: 2px solid #0056b3; border-bottom: 2px solid #0056b3; color: #0056b3; background-color: #f4f8ff; }
 
         .signature-table { width: 100%; margin-top: 80px; text-align: center; table-layout: fixed; }
-        .signature-table td { vertical-align: bottom; padding: 0 10px; }
-        .sign-line { border-top: 1px solid #000; width: 90%; margin: 0 auto; margin-top: 60px; padding-top: 5px; font-weight: bold; font-size: 9pt; }
+        .signature-table { width: 100%; margin-top: 40px; text-align: center; table-layout: fixed; }
+
+        /* 🔥 UBAH vertical-align MENJADI top 🔥 */
+        .signature-table td { vertical-align: top; padding: 0 10px; }
+
+        /* 🔥 TAMBAHKAN KELAS BARU INI UNTUK RUANG KOSONG TANDA TANGAN 🔥 */
+        .sig-title { height: 70px; margin-bottom: 5px; }
+
+        /* 🔥 HAPUS margin-top: 60px DI SINI 🔥 */
+        .sign-line { border-top: 1px solid #000; width: 90%; margin: 0 auto; padding-top: 5px; font-weight: bold; font-size: 9pt; }
 
         .clearfix { clear: both; }
         .status-stamp { display: inline-block; padding: 5px 15px; font-weight: bold; font-size: 14pt; transform: rotate(-10deg); margin-bottom: 10px; border: 3px solid; }
@@ -205,7 +213,7 @@
 
     <div class="clearfix"></div>
 
-    {{-- 🔥 LOGIKA TANDA TANGAN DINAMIS (Berdasarkan Matriks Workflow) 🔥 --}}
+    {{-- 🔥 LOGIKA TANDA TANGAN DINAMIS DENGAN NAMA DEPARTEMEN 🔥 --}}
     @php
         // 1. Tarik Data Antrean Approval dari Database
         $approvals = \App\Models\DocumentApproval::with('role')
@@ -225,26 +233,38 @@
         <tr>
             {{-- Kolom 1 Pasti Pembuat (Requestor) --}}
             <td style="width: {{ $colWidth }};">
-                <p style="margin-bottom: 50px;">Dibuat Oleh,</p>
+                {{-- Gunakan div sig-title agar tinggi ruang tanda tangannya mutlak sama --}}
+                <div class="sig-title">Dibuat Oleh,</div>
+
                 <div class="sign-line">{{ $bill->user->name ?? 'Admin System' }}</div>
                 <p style="font-size: 8pt; color: #666; margin-top: 2px;">Pemohon / Requestor</p>
-                <p style="font-size: 7pt; color: #999;">(Tersubmit di Sistem)</p>
             </td>
 
             {{-- Kolom Berikutnya Dilooping dari Workflow --}}
             @foreach($approvals as $approval)
             <td style="width: {{ $colWidth }};">
-                <p style="margin-bottom: 50px;">
+                <div class="sig-title">
                     @if($loop->last) Disetujui Oleh, @else Diperiksa Oleh, @endif
-                </p>
+                </div>
 
                 <div class="sign-line">
                     @if($approval->status == 'APPROVED')
-                        {{-- Ambil Nama Orang yang Meng-ACC --}}
                         {{ \App\Models\User::find($approval->approved_by)->name ?? optional($approval->role)->name }}
                     @else
-                        {{-- Jika belum di-ACC, tampilkan Jabatannya --}}
-                        {{ optional($approval->role)->name ?? 'Atasan' }}
+                        @php
+                            $roleName = optional($approval->role)->name ?? 'Atasan';
+                            $deptName = '';
+                            if (is_null($approval->target_department_id)) {
+                                $deptName = optional($bill->user->department)->name ?? '';
+                            } elseif ($approval->target_department_id !== 'all' && $approval->target_department_id != 0) {
+                                $deptObj = \App\Models\Department::find($approval->target_department_id);
+                                $deptName = $deptObj ? $deptObj->name : '';
+                            } else {
+                                $deptName = 'All Dept';
+                            }
+                        @endphp
+
+                        ({{ $roleName }}{{ $deptName ? ' - ' . $deptName : '' }})
                     @endif
                 </div>
 
@@ -258,7 +278,6 @@
                     @endif
                 </p>
 
-                {{-- Timestamp jika sudah diproses --}}
                 @if($approval->approved_at)
                     <p style="font-size: 7pt; color: #999; margin: 0;">{{ date('d/m/Y H:i', strtotime($approval->approved_at)) }}</p>
                 @endif
