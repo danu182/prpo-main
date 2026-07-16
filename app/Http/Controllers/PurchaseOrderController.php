@@ -1315,4 +1315,65 @@ class PurchaseOrderController extends Controller
             'note' => $note
         ]);
     }
+
+
+
+
+    // =========================================================================
+    // CETAK BPR LENGKAP DENGAN LAMPIRAN (PDF MERGER) UNTUK PO
+    // =========================================================================
+    public function printBprWithAttachments($slug)
+    {
+        // 🔥 PERBAIKAN: Hapus .chargeType dan .discountType dari sini 🔥
+        $po = \App\Models\PurchaseOrder::with([
+            'items.item', 'company', 'user', 'vendor', 'attachments'
+        ])->where('po_number', $slug)->firstOrFail();
+
+        // 1. RENDER DOMPDF MENGGUNAKAN TEMPLATE BPR PO
+        $pdf = \Barryvdh\DomPDF\Facade\Pdf::loadView('po.pdf_bpr', compact('po'))
+                ->setPaper('A4', 'portrait');
+
+        // 2. SIMPAN HASIL DOMPDF SEMENTARA DI FOLDER STORAGE
+        $tempMainPdfPath = storage_path('app/temp_po_bpr_' . uniqid() . '.pdf');
+        $pdf->save($tempMainPdfPath);
+
+        // 3. INISIASI MESIN PENGGABUNG PDF (MERGER)
+        $merger = new \iio\libmergepdf\Merger();
+
+        // Masukkan file utama (Halaman BPR) ke halaman paling depan
+        $merger->addFile($tempMainPdfPath);
+
+        // 4. CARI LAMPIRAN BERFORMAT PDF & MASUKKAN KE MERGER
+        if ($po->attachments) {
+            foreach ($po->attachments as $attachment) {
+                $ext = strtolower(pathinfo($attachment->file_path, PATHINFO_EXTENSION));
+
+                // Jika file adalah PDF asli
+                if ($ext === 'pdf') {
+                    $pdfAttachmentPath = public_path('storage/' . $attachment->file_path);
+
+                    if (file_exists($pdfAttachmentPath)) {
+                        $merger->addFile($pdfAttachmentPath);
+                    }
+                }
+            }
+        }
+
+        // 5. JAHIT/GABUNGKAN SEMUA PDF MENJADI SATU KESATUAN
+        $mergedPdfData = $merger->merge();
+
+        // 6. BERSIHKAN FILE SEMENTARA
+        if (file_exists($tempMainPdfPath)) {
+            unlink($tempMainPdfPath);
+        }
+
+        // 7. TAMPILKAN HASILNYA KE BROWSER USER
+        $filename = 'BPR_PO_' . str_replace('/', '_', $po->po_number) . '.pdf';
+
+        return response($mergedPdfData)
+                ->header('Content-Type', 'application/pdf')
+                ->header('Content-Disposition', 'inline; filename="' . $filename . '"');
+    }
+
+
 }

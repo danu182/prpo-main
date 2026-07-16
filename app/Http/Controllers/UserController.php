@@ -3,7 +3,8 @@
 namespace App\Http\Controllers;
 
 use App\Models\Company;
-use App\Models\Department; // <-- Import Model Department
+use App\Models\Department;
+use App\Models\Warehouse; // 🔥 Import Model Warehouse
 use App\Models\User;
 use Illuminate\Http\Request;
 use Spatie\Permission\Models\Role;
@@ -16,8 +17,8 @@ class UserController extends Controller
     {
         $search = $request->input('search');
 
-        // 🔥 Tambahkan 'department' di dalam with()
-        $users = User::with(['company', 'department', 'roles'])
+        // 🔥 Tambahkan 'warehouses' di dalam with() agar query efisien
+        $users = User::with(['company', 'department', 'roles', 'warehouses'])
             ->when($search, function ($query) use ($search) {
                 $query->where('name', 'like', "%{$search}%")
                       ->orWhere('email', 'like', "%{$search}%")
@@ -28,10 +29,11 @@ class UserController extends Controller
             ->withQueryString();
 
         $companies = Company::orderBy('name', 'asc')->get();
-        $departments = Department::orderBy('name', 'asc')->get(); // 🔥 Panggil Data Departemen
+        $departments = Department::orderBy('name', 'asc')->get();
         $roles = Role::orderBy('name', 'asc')->get();
+        $warehouses = Warehouse::orderBy('name', 'asc')->get(); // 🔥 Tarik master data Gudang
 
-        return view('users.index', compact('users', 'search', 'companies', 'departments', 'roles'));
+        return view('users.index', compact('users', 'search', 'companies', 'departments', 'roles', 'warehouses'));
     }
 
     // 2. SIMPAN PENGGUNA BARU
@@ -42,9 +44,10 @@ class UserController extends Controller
             'email'         => 'required|string|email|max:255|unique:users',
             'password'      => 'required|string|min:6|confirmed',
             'company_id'    => 'nullable|exists:companies,id',
-            'department_id' => 'nullable|exists:departments,id', // 🔥 Validasi Departemen
+            'department_id' => 'nullable|exists:departments,id',
             'job_title'     => 'nullable|string|max:255',
-            'roles'         => 'nullable|array'
+            'roles'         => 'nullable|array',
+            'warehouse_ids' => 'nullable|array' // 🔥 Validasi Array Gudang
         ]);
 
         try {
@@ -53,13 +56,18 @@ class UserController extends Controller
                 'email'         => $request->email,
                 'password'      => Hash::make($request->password),
                 'company_id'    => $request->company_id,
-                'department_id' => $request->department_id, // 🔥 Simpan Departemen
+                'department_id' => $request->department_id,
                 'job_title'     => $request->job_title,
                 'is_active'     => 1,
             ]);
 
             if ($request->has('roles')) {
                 $user->syncRoles($request->roles);
+            }
+
+            // 🔥 Terapkan Akses Gudang (Untuk Andi/Joko/Budi) 🔥
+            if ($request->has('warehouse_ids')) {
+                $user->warehouses()->sync($request->warehouse_ids);
             }
 
             return back()->with('success', 'Pengguna baru ('.$user->name.') berhasil ditambahkan!');
@@ -77,17 +85,18 @@ class UserController extends Controller
             'name'          => 'required|string|max:255',
             'email'         => 'required|string|email|max:255|unique:users,email,' . $id,
             'company_id'    => 'nullable|exists:companies,id',
-            'department_id' => 'nullable|exists:departments,id', // 🔥 Validasi Departemen
+            'department_id' => 'nullable|exists:departments,id',
             'job_title'     => 'nullable|string|max:255',
             'is_active'     => 'required|boolean',
-            'roles'         => 'nullable|array'
+            'roles'         => 'nullable|array',
+            'warehouse_ids' => 'nullable|array' // 🔥 Validasi Array Gudang
         ]);
 
         try {
             $user->name          = $request->name;
             $user->email         = $request->email;
             $user->company_id    = $request->company_id;
-            $user->department_id = $request->department_id; // 🔥 Update Departemen
+            $user->department_id = $request->department_id;
             $user->job_title     = $request->job_title;
             $user->is_active     = $request->is_active;
 
@@ -98,6 +107,9 @@ class UserController extends Controller
 
             $user->save();
             $user->syncRoles($request->roles ?? []);
+
+            // 🔥 Update Akses Gudang 🔥
+            $user->warehouses()->sync($request->warehouse_ids ?? []);
 
             return back()->with('success', 'Data & Hak Akses ('.$user->name.') berhasil diperbarui!');
         } catch (\Exception $e) {

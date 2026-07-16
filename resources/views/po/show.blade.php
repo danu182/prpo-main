@@ -59,9 +59,9 @@
                 <a href="{{ route('po.print', $po->po_number) }}" target="_blank" class="px-4 shadow-sm btn btn-dark rounded-pill fw-bold">
                     <i class="bi bi-printer-fill me-1"></i> Cetak PO
                 </a>
-                {{-- TOMBOL 2: CETAK PO LENGKAP + LAMPIRAN BERKAS --}}
-                <a href="{{ route('po.po.print_complete', $po->po_number) }}" target="_blank" class="shadow-sm btn btn-success rounded-pill fw-bold">
-                    <i class="bi bi-file-earmark-pdf-fill me-1"></i> Cetak Dokumen Lengkap (+ Lampiran)
+                {{-- TOMBOL 2: CETAK BPR PO LENGKAP + LAMPIRAN GAMBAR/PDF --}}
+                <a href="{{ route('po.print_bpr_attachments', $po->po_number) }}" target="_blank" class="shadow-sm btn btn-success rounded-pill fw-bold">
+                    <i class="bi bi-bank me-1"></i> Cetak Form BPR + Lampiran
                 </a>
             @endif
 
@@ -189,11 +189,11 @@
                 <div class="col-sm-5">
                     <h6 class="mb-3 fw-bold text-muted text-uppercase"><i class="bi bi-building me-1"></i> Vendor (Kepada):</h6>
                     <div class="p-3 border bg-light rounded-3">
-                        <h6 class="mb-1 fw-bold">{{ $po->vendor->name ?? 'N/A' }}</h6>
+                        <h6 class="mb-1 fw-bold">{{ optional($po->vendor)->name ?? $po->vendor_name ?? 'N/A' }}</h6>
                         <div class="small text-muted">
-                            {!! nl2br(e($po->vendor->address ?? '-')) !!}<br>
-                            PIC: {{ $po->vendor->pic_name ?? '-' }} ({{ $po->vendor->pic_phone ?? '-' }})<br>
-                            Email: {{ $po->vendor->email ?? '-' }}
+                            {!! nl2br(e(optional($po->vendor)->address ?? '-')) !!}<br>
+                            PIC: {{ optional($po->vendor)->pic_name ?? '-' }} ({{ optional($po->vendor)->pic_phone ?? '-' }})<br>
+                            Email: {{ optional($po->vendor)->email ?? '-' }}
                         </div>
                     </div>
                 </div>
@@ -262,32 +262,15 @@
 
                                 {{-- KOLOM 3: QTY & UOM --}}
                                 <td class="text-center">
-                                    <div class="fw-bolder text-dark fs-6">{{ (float) $item->qty_ordered }}</div>
-
-                                    @php
-                                        $uomDisplay = $item->uom;
-                                        if (empty($uomDisplay) || is_numeric($uomDisplay)) {
-                                            if (!empty($item->uom_id)) {
-                                                $uomMaster = \App\Models\ItemUom::find($item->uom_id);
-                                                if ($uomMaster) {
-                                                    $baseUnit = optional($item->item)->unit ?? 'Pcs';
-                                                    $uomDisplay = $uomMaster->uom_name . ' (Isi: ' . (float)$uomMaster->conversion_qty . ' ' . $baseUnit . ')';
-                                                }
-                                            }
-                                        }
-                                        if (empty($uomDisplay) || is_numeric($uomDisplay)) {
-                                            $uomDisplay = optional($item->item)->unit ?? 'PCS';
-                                        }
-                                    @endphp
-
+                                    <div class="fw-bolder text-dark fs-6">{{ (float) $item->qty }}</div>
                                     <span class="mt-1 badge bg-primary-subtle text-primary" style="font-size: 0.75rem;">
-                                        {{ $uomDisplay }}
+                                        {{ $item->uom }}
                                     </span>
                                 </td>
 
                                 {{-- KOLOM 4: HARGA --}}
                                 <td class="text-end fw-bold text-secondary">
-                                    {{ number_format($item->unit_price, 2, '.', ',') }}
+                                    {{ number_format($item->price, 2, '.', ',') }}
                                 </td>
 
                                 {{-- KOLOM 5: DISKON & PAJAK --}}
@@ -298,7 +281,7 @@
 
                                 {{-- KOLOM 6: SUBTOTAL --}}
                                 <td class="text-end fw-bolder text-dark pe-3" style="font-size: 1rem;">
-                                    {{ number_format($item->subtotal + $item->tax_amount, 2, '.', ',') }}
+                                    {{ number_format(($item->qty * $item->price) - $item->discount_amount + $item->tax_amount, 2, '.', ',') }}
                                 </td>
                             </tr>
                         @empty
@@ -315,7 +298,7 @@
                 <div class="col-sm-7">
                     <h6 class="mb-2 fw-bold text-muted text-uppercase">Catatan PO:</h6>
                     <div class="p-3 border bg-light rounded-3 small text-muted min-vh-25">
-                        {!! nl2br(e($po->notes ?? 'Tidak ada catatan khusus.')) !!}
+                        {!! nl2br(e($po->description ?? 'Tidak ada catatan khusus.')) !!}
                     </div>
                 </div>
 
@@ -329,26 +312,26 @@
                                 </tr>
                                 <tr>
                                     <td class="text-danger">Diskon Komersial</td>
-                                    <td class="text-end fw-bold text-danger">- {{ $po->currency }} {{ number_format($po->discount_total, 2) }}</td>
+                                    <td class="text-end fw-bold text-danger">- {{ $po->currency }} {{ number_format($po->total_discount, 2) }}</td>
                                 </tr>
                                 <tr>
                                     <td class="text-primary">Total Pajak (VAT/Ppn)</td>
-                                    <td class="text-end fw-bold text-primary">+ {{ $po->currency }} {{ number_format($po->tax_total, 2) }}</td>
+                                    <td class="text-end fw-bold text-primary">+ {{ $po->currency }} {{ number_format($po->total_tax, 2) }}</td>
                                 </tr>
 
-                                @if($charges->count() > 0)
-                                    @foreach($charges as $charge)
+                                @if($po->charges && $po->charges->count() > 0)
+                                    @foreach($po->charges as $charge)
                                     <tr>
-                                        <td class="text-secondary small ps-3">↳ Biaya: {{ $charge->name }}</td>
+                                        <td class="text-secondary small ps-3">↳ Biaya: {{ optional($charge->chargeType)->name ?? 'Biaya Lainnya' }}</td>
                                         <td class="text-end small text-secondary">+ {{ $po->currency }} {{ number_format($charge->amount, 2) }}</td>
                                     </tr>
                                     @endforeach
                                 @endif
 
-                                @if(isset($extraDiscounts) && $extraDiscounts->count() > 0)
-                                    @foreach($extraDiscounts as $disc)
+                                @if($po->discounts && $po->discounts->count() > 0)
+                                    @foreach($po->discounts as $disc)
                                     <tr>
-                                        <td class="text-danger small ps-3">↳ Potongan: {{ $disc->name }}</td>
+                                        <td class="text-danger small ps-3">↳ Potongan: {{ optional($disc->discountType)->name ?? 'Diskon Tambahan' }}</td>
                                         <td class="text-end small text-danger">- {{ $po->currency }} {{ number_format($disc->amount, 2) }}</td>
                                     </tr>
                                     @endforeach
@@ -356,7 +339,7 @@
 
                                 <tr class="border-2 border-top">
                                     <td class="pt-2 fs-5 fw-bold text-dark">GRAND TOTAL</td>
-                                    <td class="pt-2 text-end fs-5 fw-bold text-success">{{ $po->currency }} {{ number_format($po->grand_total, 2) }}</td>
+                                    <td class="pt-2 text-end fs-5 fw-bold text-success">{{ $po->currency }} {{ number_format($po->amount, 2) }}</td>
                                 </tr>
                             </tbody>
                         </table>
@@ -510,14 +493,14 @@
             <div class="p-2 me-3 d-flex align-items-center justify-content-center rounded-circle bg-info bg-opacity-10 text-info" style="width: 35px; height: 35px;">
                 <i class="bi bi-paperclip fs-5"></i>
             </div>
-            <h6 class="mb-0 fw-bold text-dark">Lampiran Penawaran & Dokumen Pendukung (Header PO)</h6>
+            <h6 class="mb-0 fw-bold text-dark">Lampiran Dokumen Pendukung (Header PO)</h6>
         </div>
         <div class="p-4 card-body">
-            @if(isset($item->raw_attachments) && count($item->raw_attachments) > 0)
-                <div class="flex-wrap gap-2 pt-2 mt-2 border-top border-light d-flex">
-                    @foreach($item->raw_attachments as $idx => $vFile)
-                        <a href="{{ asset('storage/' . $vFile->file_path) }}" target="_blank" class="px-2 py-1 border badge bg-info-subtle text-info-emphasis text-decoration-none border-info-subtle" title="{{ $vFile->file_name }}">
-                            <i class="bi bi-paperclip"></i> Lampiran {{ $idx + 1 }}
+            @if(isset($po->attachments) && count($po->attachments) > 0)
+                <div class="flex-wrap gap-2 d-flex">
+                    @foreach($po->attachments as $idx => $vFile)
+                        <a href="{{ asset('storage/' . $vFile->file_path) }}" target="_blank" class="px-3 py-2 border badge bg-info-subtle text-info-emphasis text-decoration-none border-info-subtle fs-6" title="{{ $vFile->file_name }}">
+                            <i class="bi bi-paperclip"></i> {{ $vFile->file_name }}
                         </a>
                     @endforeach
                 </div>

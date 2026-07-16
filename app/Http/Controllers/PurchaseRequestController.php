@@ -308,6 +308,9 @@ class PurchaseRequestController extends Controller
 
                 $needsApproval = \App\Services\ApprovalService::generateWorkflow($pr);
 
+                // 🔥 TAMBAHKAN BARIS INI: Hapus atribut sementara agar Laravel tidak menyimpannya ke Database 🔥
+                unset($pr->amount);
+
                 if ($needsApproval) {
                     $pendingStatus = \App\Models\Status::where('type', 'PR')->where('slug', 'pending_approval')->first();
                     $pr->update(['status_id' => $pendingStatus ? $pendingStatus->id : 1]);
@@ -494,6 +497,9 @@ class PurchaseRequestController extends Controller
                 $pr->amount = $estimasiGrandTotal;
 
                 $needsApproval = \App\Services\ApprovalService::generateWorkflow($pr);
+
+                // 🔥 TAMBAHKAN BARIS INI: Hapus atribut sementara agar Laravel tidak menyimpannya ke Database 🔥
+                unset($pr->amount);
 
                 if ($needsApproval) {
                     $pendingStatus = \App\Models\Status::where('type', 'PR')->where('slug', 'pending_approval')->first();

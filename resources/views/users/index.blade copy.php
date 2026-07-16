@@ -1,5 +1,14 @@
 @extends('layouts.app')
 
+@push('css')
+    <link href="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css" rel="stylesheet" />
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/select2-bootstrap-5-theme@1.3.0/dist/select2-bootstrap-5-theme.min.css" />
+    <style>
+        /* Memastikan select2 di dalam modal tidak berantakan */
+        .select2-container { width: 100% !important; }
+    </style>
+@endpush
+
 @section('content')
 <div class="container pb-5 text-dark">
 
@@ -33,6 +42,12 @@
             <button type="button" class="btn-close float-end" data-bs-dismiss="alert"></button>
         </div>
     @endif
+    @if(session('success'))
+        <div class="border-0 shadow-sm alert alert-success rounded-3 fw-bold">
+            <i class="bi bi-check-circle-fill me-2"></i> {{ session('success') }}
+            <button type="button" class="btn-close float-end" data-bs-dismiss="alert"></button>
+        </div>
+    @endif
     @if($errors->any())
         <div class="border-0 shadow-sm alert alert-danger rounded-3 small">
             <ul class="mb-0">
@@ -50,8 +65,8 @@
                 <thead class="bg-light fw-bold text-muted border-bottom">
                     <tr>
                         <th class="py-3 ps-4" width="25%">Profil Karyawan</th>
-                        <th class="py-3" width="20%">Perusahaan & Jabatan</th>
-                        <th class="py-3" width="25%">Hak Akses (Roles)</th>
+                        <th class="py-3" width="25%">PT & Departemen</th>
+                        <th class="py-3" width="20%">Hak Akses (Roles)</th>
                         <th class="py-3 text-center" width="10%">Status</th>
                         <th class="py-3 pe-4 text-end" width="20%">Aksi</th>
                     </tr>
@@ -76,16 +91,23 @@
                         </td>
                         <td class="py-3">
                             <div class="fw-bold text-primary"><i class="bi bi-building me-1"></i> {{ optional($user->company)->name ?? 'Pusat (Tanpa PT)' }}</div>
-                            <div class="mt-1 small text-muted">{{ $user->job_title ?? 'Staf' }}</div>
+                            <div class="mt-1 small text-dark"><i class="bi bi-diagram-3 me-1"></i> {{ optional($user->department)->name ?? 'Belum ada Dept' }}</div>
+                            <div class="mt-1 small text-muted"><i class="bi bi-person-badge me-1"></i> {{ $user->job_title ?? 'Staf' }}</div>
                         </td>
                         <td class="py-3">
-                            <div class="flex-wrap gap-1 d-flex">
+                            <div class="flex-wrap gap-1 mb-1 d-flex">
                                 @forelse($user->roles as $role)
                                     <span class="badge {{ $role->name == 'Super Admin' ? 'bg-danger' : 'bg-dark' }} rounded-pill shadow-sm"><i class="bi bi-shield-lock me-1"></i> {{ $role->name }}</span>
                                 @empty
                                     <span class="border badge bg-light text-muted fst-italic">Belum ada role</span>
                                 @endforelse
                             </div>
+                            @if($user->warehouses->count() > 0)
+                                <div class="mt-1" style="font-size: 0.7rem;">
+                                    <span class="text-info fw-bold">Gudang:</span>
+                                    {{ $user->warehouses->pluck('name')->implode(', ') }}
+                                </div>
+                            @endif
                         </td>
                         <td class="py-3 text-center">
                             @if($user->is_active)
@@ -134,33 +156,45 @@
 
                                         <div class="mb-3 row g-3">
                                             <div class="col-md-6">
-                                                <label class="form-label fw-bold small text-muted">Password Baru <span class="fw-normal text-danger" style="font-size:0.7rem;">(Kosongkan jika tidak ingin mengubah)</span></label>
+                                                <label class="form-label fw-bold small text-muted">Password Baru <span class="fw-normal text-danger" style="font-size:0.7rem;">(Kosongkan jika tidak diubah)</span></label>
                                                 <input type="password" name="password" class="shadow-sm form-control" placeholder="Minimal 6 karakter">
                                             </div>
                                             <div class="col-md-6">
-                                                <label class="form-label fw-bold small text-muted">Konfirmasi Password Baru</label>
+                                                <label class="form-label fw-bold small text-muted">Konfirmasi Password</label>
                                                 <input type="password" name="password_confirmation" class="shadow-sm form-control" placeholder="Ketik ulang password">
                                             </div>
                                         </div>
 
                                         <hr class="border-dashed text-muted">
 
-                                        <div class="mb-4 row g-3">
-                                            <div class="col-md-4">
-                                                <label class="form-label fw-bold small text-muted">Perusahaan</label>
+                                        <div class="mb-3 row g-3">
+                                            <div class="col-md-6">
+                                                <label class="form-label fw-bold small text-muted">Perusahaan (PT)</label>
                                                 <select name="company_id" class="shadow-sm form-select">
-                                                    <option value="">-- Pusat --</option>
+                                                    <option value="">-- Pusat (Tanpa PT) --</option>
                                                     @foreach($companies as $cmp)
                                                         <option value="{{ $cmp->id }}" {{ $user->company_id == $cmp->id ? 'selected' : '' }}>{{ $cmp->name }}</option>
                                                     @endforeach
                                                 </select>
                                             </div>
-                                            <div class="col-md-4">
+                                            <div class="col-md-6">
+                                                <label class="form-label fw-bold small text-muted">Departemen</label>
+                                                <select name="department_id" class="shadow-sm form-select">
+                                                    <option value="">-- Pilih Departemen --</option>
+                                                    @foreach($departments as $dept)
+                                                        <option value="{{ $dept->id }}" {{ $user->department_id == $dept->id ? 'selected' : '' }}>{{ $dept->name }}</option>
+                                                    @endforeach
+                                                </select>
+                                            </div>
+                                        </div>
+
+                                        <div class="mb-4 row g-3">
+                                            <div class="col-md-6">
                                                 <label class="form-label fw-bold small text-muted">Jabatan</label>
                                                 <input type="text" name="job_title" class="shadow-sm form-control" value="{{ $user->job_title }}">
                                             </div>
-                                            <div class="col-md-4">
-                                                <label class="form-label fw-bold small text-muted">Status</label>
+                                            <div class="col-md-6">
+                                                <label class="form-label fw-bold small text-muted">Status Akun</label>
                                                 <select name="is_active" class="shadow-sm form-select">
                                                     <option value="1" {{ $user->is_active ? 'selected' : '' }}>🟢 Aktif</option>
                                                     <option value="0" {{ !$user->is_active ? 'selected' : '' }}>🔴 Nonaktif</option>
@@ -168,15 +202,34 @@
                                             </div>
                                         </div>
 
-                                        <div class="p-3 mb-2 bg-white border rounded shadow-sm">
-                                            <label class="mb-1 form-label fw-bold small text-dark"><i class="bi bi-shield-lock-fill text-warning me-1"></i> Otoritas Hak Akses (Role)</label>
+                                        {{-- 🔥 FILTER GUDANG 🔥 --}}
+                                        <div class="p-3 mb-4 bg-white border border-info-subtle rounded-3 shadow-sm">
+                                            <label class="mb-1 form-label fw-bold small text-info-emphasis">
+                                                <i class="bi bi-box-seam text-info me-1"></i> Isolasi Akses Gudang <span class="fw-normal text-muted">(Opsional)</span>
+                                            </label>
+                                            <select name="warehouse_ids[]" class="form-select select2-multiple" multiple="multiple">
+                                                @php $userWhs = $user->warehouses->pluck('id')->toArray(); @endphp
+                                                @foreach($warehouses as $wh)
+                                                    <option value="{{ $wh->id }}" {{ in_array($wh->id, $userWhs) ? 'selected' : '' }}>{{ $wh->name }}</option>
+                                                @endforeach
+                                            </select>
+                                            <div class="mt-2 form-text" style="font-size: 0.75rem;">
+                                                Biarkan kosong jika user ini adalah <strong>Super Admin/Manager/Finance</strong> (sistem otomatis memberikan akses penuh).
+                                            </div>
+                                        </div>
+
+                                        {{-- 🔥 OTORITAS ROLE 🔥 --}}
+                                        <div class="p-3 bg-white border rounded shadow-sm">
+                                            <label class="mb-1 form-label fw-bold small text-dark">
+                                                <i class="bi bi-shield-lock-fill text-warning me-1"></i> Otoritas Hak Akses (Role)
+                                            </label>
                                             <div class="mt-0 mb-3 form-text" style="font-size: 0.75rem;">Centang departemen/sistem yang boleh diakses.</div>
                                             <div class="row g-2">
                                                 @foreach($roles as $role)
                                                 <div class="col-md-4 col-sm-6">
                                                     <div class="form-check">
                                                         <input class="form-check-input" type="checkbox" name="roles[]" value="{{ $role->name }}" id="role_{{ $user->id }}_{{ $role->id }}" {{ $user->hasRole($role->name) ? 'checked' : '' }}>
-                                                        <label class="mt-1 form-check-label small fw-bold" for="role_{{ $user->id }}_{{ $role->id }}">
+                                                        <label class="mt-1 form-check-label small fw-bold text-secondary" for="role_{{ $user->id }}_{{ $role->id }}">
                                                             {{ $role->name }}
                                                         </label>
                                                     </div>
@@ -244,9 +297,9 @@
 
                     <hr class="border-dashed text-muted">
 
-                    <div class="mb-4 row g-3">
+                    <div class="mb-3 row g-3">
                         <div class="col-md-6">
-                            <label class="form-label fw-bold small text-muted">Perusahaan</label>
+                            <label class="form-label fw-bold small text-muted">Perusahaan (PT)</label>
                             <select name="company_id" class="shadow-sm form-select">
                                 <option value="">-- Pusat (Tanpa PT) --</option>
                                 @foreach($companies as $cmp)
@@ -255,19 +308,49 @@
                             </select>
                         </div>
                         <div class="col-md-6">
+                            <label class="form-label fw-bold small text-muted">Departemen</label>
+                            <select name="department_id" class="shadow-sm form-select">
+                                <option value="">-- Pilih Departemen --</option>
+                                @foreach($departments as $dept)
+                                    <option value="{{ $dept->id }}">{{ $dept->name }}</option>
+                                @endforeach
+                            </select>
+                        </div>
+                    </div>
+
+                    <div class="mb-4 row g-3">
+                        <div class="col-md-12">
                             <label class="form-label fw-bold small text-muted">Jabatan</label>
                             <input type="text" name="job_title" class="shadow-sm form-control" placeholder="Cth: Staf Gudang">
                         </div>
                     </div>
 
-                    <div class="p-3 mb-2 bg-white border rounded shadow-sm">
-                        <label class="mb-1 form-label fw-bold small text-dark"><i class="bi bi-shield-lock-fill text-warning me-1"></i> Otoritas Awal (Role)</label>
+                    {{-- 🔥 FILTER GUDANG 🔥 --}}
+                    <div class="p-3 mb-4 bg-white border border-info-subtle rounded-3 shadow-sm">
+                        <label class="mb-1 form-label fw-bold small text-info-emphasis">
+                            <i class="bi bi-box-seam text-info me-1"></i> Isolasi Akses Gudang <span class="fw-normal text-muted">(Opsional)</span>
+                        </label>
+                        <select name="warehouse_ids[]" class="form-select select2-multiple" multiple="multiple">
+                            @foreach($warehouses as $wh)
+                                <option value="{{ $wh->id }}">{{ $wh->name }}</option>
+                            @endforeach
+                        </select>
+                        <div class="mt-2 form-text" style="font-size: 0.75rem;">
+                            Bisa pilih > 1 gudang. Biarkan kosong jika user ini adalah <strong>Super Admin/Manager/Finance</strong>.
+                        </div>
+                    </div>
+
+                    {{-- 🔥 OTORITAS ROLE 🔥 --}}
+                    <div class="p-3 bg-white border rounded shadow-sm">
+                        <label class="mb-1 form-label fw-bold small text-dark">
+                            <i class="bi bi-shield-lock-fill text-danger me-1"></i> Otoritas Awal (Role)
+                        </label>
                         <div class="mt-2 row g-2">
                             @foreach($roles as $role)
                             <div class="col-md-4 col-sm-6">
                                 <div class="form-check">
-                                    <input class="form-check-input" type="checkbox" name="roles[]" value="{{ $role->name }}" id="role_new_{{ $role->id }}">
-                                    <label class="mt-1 form-check-label small fw-bold" for="role_new_{{ $role->id }}">
+                                    <input class="cursor-pointer form-check-input" type="checkbox" name="roles[]" value="{{ $role->name }}" id="role_new_{{ $role->id }}">
+                                    <label class="mt-1 form-check-label small fw-bold text-secondary" for="role_new_{{ $role->id }}">
                                         {{ $role->name }}
                                     </label>
                                 </div>
@@ -287,3 +370,21 @@
 </div>
 
 @endsection
+
+@push('scripts')
+<script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
+<script>
+    $(document).ready(function() {
+        // Trik Bootstrap 5 Modal x Select2
+        $('.modal').on('shown.bs.modal', function () {
+            $(this).find('.select2-multiple').select2({
+                theme: 'bootstrap-5',
+                placeholder: "-- Cari & Pilih Gudang --",
+                width: '100%',
+                dropdownParent: $(this)
+            });
+        });
+    });
+</script>
+@endpush

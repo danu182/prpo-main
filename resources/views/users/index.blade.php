@@ -1,5 +1,14 @@
 @extends('layouts.app')
 
+@push('css')
+    <link href="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css" rel="stylesheet" />
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/select2-bootstrap-5-theme@1.3.0/dist/select2-bootstrap-5-theme.min.css" />
+    <style>
+        /* Memastikan select2 di dalam modal tidak berantakan */
+        .select2-container { width: 100% !important; }
+    </style>
+@endpush
+
 @section('content')
 <div class="container pb-5 text-dark">
 
@@ -30,6 +39,12 @@
     @if(session('error'))
         <div class="border-0 shadow-sm alert alert-danger rounded-3 fw-bold">
             <i class="bi bi-exclamation-triangle-fill me-2"></i> {{ session('error') }}
+            <button type="button" class="btn-close float-end" data-bs-dismiss="alert"></button>
+        </div>
+    @endif
+    @if(session('success'))
+        <div class="border-0 shadow-sm alert alert-success rounded-3 fw-bold">
+            <i class="bi bi-check-circle-fill me-2"></i> {{ session('success') }}
             <button type="button" class="btn-close float-end" data-bs-dismiss="alert"></button>
         </div>
     @endif
@@ -80,13 +95,19 @@
                             <div class="mt-1 small text-muted"><i class="bi bi-person-badge me-1"></i> {{ $user->job_title ?? 'Staf' }}</div>
                         </td>
                         <td class="py-3">
-                            <div class="flex-wrap gap-1 d-flex">
+                            <div class="flex-wrap gap-1 mb-1 d-flex">
                                 @forelse($user->roles as $role)
                                     <span class="badge {{ $role->name == 'Super Admin' ? 'bg-danger' : 'bg-dark' }} rounded-pill shadow-sm"><i class="bi bi-shield-lock me-1"></i> {{ $role->name }}</span>
                                 @empty
                                     <span class="border badge bg-light text-muted fst-italic">Belum ada role</span>
                                 @endforelse
                             </div>
+                            @if($user->warehouses->count() > 0)
+                                <div class="mt-1" style="font-size: 0.7rem;">
+                                    <span class="text-info fw-bold">Gudang:</span>
+                                    {{ $user->warehouses->pluck('name')->implode(', ') }}
+                                </div>
+                            @endif
                         </td>
                         <td class="py-3 text-center">
                             @if($user->is_active)
@@ -135,7 +156,7 @@
 
                                         <div class="mb-3 row g-3">
                                             <div class="col-md-6">
-                                                <label class="form-label fw-bold small text-muted">Password Baru <span class="fw-normal text-danger" style="font-size:0.7rem;">(Kosongkan jika tidak ubah)</span></label>
+                                                <label class="form-label fw-bold small text-muted">Password Baru <span class="fw-normal text-danger" style="font-size:0.7rem;">(Kosongkan jika tidak diubah)</span></label>
                                                 <input type="password" name="password" class="shadow-sm form-control" placeholder="Minimal 6 karakter">
                                             </div>
                                             <div class="col-md-6">
@@ -181,15 +202,34 @@
                                             </div>
                                         </div>
 
-                                        <div class="p-3 mb-2 bg-white border rounded shadow-sm">
-                                            <label class="mb-1 form-label fw-bold small text-dark"><i class="bi bi-shield-lock-fill text-warning me-1"></i> Otoritas Hak Akses (Role)</label>
+                                        {{-- 🔥 FILTER GUDANG 🔥 --}}
+                                        <div class="p-3 mb-4 bg-white border border-info-subtle rounded-3 shadow-sm">
+                                            <label class="mb-1 form-label fw-bold small text-info-emphasis">
+                                                <i class="bi bi-box-seam text-info me-1"></i> Isolasi Akses Gudang <span class="fw-normal text-muted">(Opsional)</span>
+                                            </label>
+                                            <select name="warehouse_ids[]" class="form-select select2-multiple" multiple="multiple">
+                                                @php $userWhs = $user->warehouses->pluck('id')->toArray(); @endphp
+                                                @foreach($warehouses as $wh)
+                                                    <option value="{{ $wh->id }}" {{ in_array($wh->id, $userWhs) ? 'selected' : '' }}>{{ $wh->name }}</option>
+                                                @endforeach
+                                            </select>
+                                            <div class="mt-2 form-text" style="font-size: 0.75rem;">
+                                                Biarkan kosong jika user ini adalah <strong>Super Admin/Manager/Finance</strong> (sistem otomatis memberikan akses penuh).
+                                            </div>
+                                        </div>
+
+                                        {{-- 🔥 OTORITAS ROLE 🔥 --}}
+                                        <div class="p-3 bg-white border rounded shadow-sm">
+                                            <label class="mb-1 form-label fw-bold small text-dark">
+                                                <i class="bi bi-shield-lock-fill text-warning me-1"></i> Otoritas Hak Akses (Role)
+                                            </label>
                                             <div class="mt-0 mb-3 form-text" style="font-size: 0.75rem;">Centang departemen/sistem yang boleh diakses.</div>
                                             <div class="row g-2">
                                                 @foreach($roles as $role)
                                                 <div class="col-md-4 col-sm-6">
                                                     <div class="form-check">
                                                         <input class="form-check-input" type="checkbox" name="roles[]" value="{{ $role->name }}" id="role_{{ $user->id }}_{{ $role->id }}" {{ $user->hasRole($role->name) ? 'checked' : '' }}>
-                                                        <label class="mt-1 form-check-label small fw-bold" for="role_{{ $user->id }}_{{ $role->id }}">
+                                                        <label class="mt-1 form-check-label small fw-bold text-secondary" for="role_{{ $user->id }}_{{ $role->id }}">
                                                             {{ $role->name }}
                                                         </label>
                                                     </div>
@@ -285,14 +325,32 @@
                         </div>
                     </div>
 
-                    <div class="p-3 mb-2 bg-white border rounded shadow-sm">
-                        <label class="mb-1 form-label fw-bold small text-dark"><i class="bi bi-shield-lock-fill text-warning me-1"></i> Otoritas Awal (Role)</label>
+                    {{-- 🔥 FILTER GUDANG 🔥 --}}
+                    <div class="p-3 mb-4 bg-white border border-info-subtle rounded-3 shadow-sm">
+                        <label class="mb-1 form-label fw-bold small text-info-emphasis">
+                            <i class="bi bi-box-seam text-info me-1"></i> Isolasi Akses Gudang <span class="fw-normal text-muted">(Opsional)</span>
+                        </label>
+                        <select name="warehouse_ids[]" class="form-select select2-multiple" multiple="multiple">
+                            @foreach($warehouses as $wh)
+                                <option value="{{ $wh->id }}">{{ $wh->name }}</option>
+                            @endforeach
+                        </select>
+                        <div class="mt-2 form-text" style="font-size: 0.75rem;">
+                            Bisa pilih > 1 gudang. Biarkan kosong jika user ini adalah <strong>Super Admin/Manager/Finance</strong>.
+                        </div>
+                    </div>
+
+                    {{-- 🔥 OTORITAS ROLE 🔥 --}}
+                    <div class="p-3 bg-white border rounded shadow-sm">
+                        <label class="mb-1 form-label fw-bold small text-dark">
+                            <i class="bi bi-shield-lock-fill text-danger me-1"></i> Otoritas Awal (Role)
+                        </label>
                         <div class="mt-2 row g-2">
                             @foreach($roles as $role)
                             <div class="col-md-4 col-sm-6">
                                 <div class="form-check">
-                                    <input class="form-check-input" type="checkbox" name="roles[]" value="{{ $role->name }}" id="role_new_{{ $role->id }}">
-                                    <label class="mt-1 form-check-label small fw-bold" for="role_new_{{ $role->id }}">
+                                    <input class="cursor-pointer form-check-input" type="checkbox" name="roles[]" value="{{ $role->name }}" id="role_new_{{ $role->id }}">
+                                    <label class="mt-1 form-check-label small fw-bold text-secondary" for="role_new_{{ $role->id }}">
                                         {{ $role->name }}
                                     </label>
                                 </div>
@@ -312,3 +370,21 @@
 </div>
 
 @endsection
+
+@push('scripts')
+<script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
+<script>
+    $(document).ready(function() {
+        // Trik Bootstrap 5 Modal x Select2
+        $('.modal').on('shown.bs.modal', function () {
+            $(this).find('.select2-multiple').select2({
+                theme: 'bootstrap-5',
+                placeholder: "-- Cari & Pilih Gudang --",
+                width: '100%',
+                dropdownParent: $(this)
+            });
+        });
+    });
+</script>
+@endpush

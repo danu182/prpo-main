@@ -55,4 +55,28 @@ class User extends Authenticatable
     {
         return $this->belongsTo(Department::class, 'department_id');
     }
+
+
+    // 1. Relasi ke Gudang
+    public function warehouses()
+    {
+        return $this->belongsToMany(\App\Models\Warehouse::class, 'user_warehouse');
+    }
+
+    // 2. Fungsi Filter Akses Gudang (SUPER HELPER)
+    public function getAccessibleWarehouseIds()
+    {
+        // Daftar Role "Dewa" yang boleh akses SEMUA gudang (Bisa Anda sesuaikan)
+        $superRoles = ['Super Admin', 'Finance', 'Manager', 'Direktur', 'Supervisor'];
+
+        if ($this->hasAnyRole($superRoles)) {
+            // Jika dia Bos/Finance, berikan SEMUA ID Gudang yang ada di database
+            return \App\Models\Warehouse::pluck('id')->toArray();
+        }
+
+        // Jika dia Staff biasa / Orang Gudang, berikan HANYA ID Gudang yang di-assign kepadanya
+        return $this->warehouses()->pluck('warehouses.id')->toArray();
+    }
+
+
 }

@@ -92,6 +92,10 @@ Route::middleware('auth')->group(function () {
         Route::get('/print/{slug}', [PurchaseOrderController::class, 'printPdf'])->name('print')->middleware('can:view_po');
         Route::get('/po/{slug}/print-complete', [PurchaseOrderController::class, 'printCompletePdf'])->name('po.print_complete');
 
+        // Route::get('/{slug}/print-bpr-attachments', [\App\Http\Controllers\PurchaseOrderController::class, 'printBprWithAttachments'])->name('po.print_bpr_attachments')->where('slug', '.*'); // <-- Pakai regex .* agar bisa membaca garis miring di nomor PO
+
+        Route::get('/{slug}/print-bpr-attachments', [\App\Http\Controllers\PurchaseOrderController::class, 'printBprWithAttachments'])->name('print_bpr_attachments')->where('slug', '.*');
+
         // Approval Khusus
         Route::post('/decide/{slug}', [PurchaseOrderController::class, 'decide'])->name('decide');
 
