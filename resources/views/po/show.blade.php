@@ -38,31 +38,34 @@
 <div class="container pb-5 text-dark">
 
     {{-- HEADER HALAMAN & TOMBOL AKSI --}}
-    <div class="flex-wrap gap-3 mb-4 d-flex justify-content-between align-items-center border-bottom pb-3">
+    <div class="flex-wrap gap-3 mb-4 d-flex justify-content-between align-items-center">
         <div>
             <h4 class="mb-0 fw-bold text-dark">
                 <i class="bi bi-file-earmark-text-fill me-2 text-primary"></i> Detail Purchase Order
             </h4>
-            <div class="mt-2">
-                <a href="{{ route('po.index') }}" class="text-decoration-none text-muted fw-bold"><i class="bi bi-arrow-left me-1"></i> Kembali ke Daftar PO</a>
+            <div class="mt-1 text-muted small">
+                <a href="{{ route('po.index') }}" class="text-decoration-none text-muted"><i class="bi bi-arrow-left"></i> Kembali ke Daftar PO</a>
             </div>
         </div>
 
-        {{-- LOGIKA TOMBOL BERDASARKAN STATUS --}}
+        {{-- LOGIKA TOMBOL BERDASARKAN STATUS & APPROVAL --}}
         @php
             $statusSlug = strtolower(optional($po->status)->slug ?? 'draft');
         @endphp
 
-        <div class="flex-wrap gap-2 d-flex mt-3 mt-md-0">
+        <div class="flex-wrap gap-2 d-flex">
+            {{-- 🔥 1. TOMBOL CETAK PO 🔥 --}}
             @if(in_array($statusSlug, ['approved', 'issued', 'partial_receipt', 'fully_received', 'completed']))
                 <a href="{{ route('po.print', $po->po_number) }}" target="_blank" class="px-4 shadow-sm btn btn-dark rounded-pill fw-bold">
                     <i class="bi bi-printer-fill me-1"></i> Cetak PO
                 </a>
+                {{-- TOMBOL 2: CETAK BPR PO LENGKAP + LAMPIRAN GAMBAR/PDF --}}
                 <a href="{{ route('po.print_bpr_attachments', $po->po_number) }}" target="_blank" class="shadow-sm btn btn-success rounded-pill fw-bold">
                     <i class="bi bi-bank me-1"></i> Cetak Form BPR + Lampiran
                 </a>
             @endif
 
+            {{-- 2. TOMBOL EDIT PO (Terkunci Otomatis Jika Sudah Ada Approval) --}}
             @if(in_array($statusSlug, ['draft', '', 'pending_approval', 'rejected']))
                 @if(!$hasBeenPartiallyApproved)
                     <a href="{{ route('po.edit', $po->po_number) }}" class="px-4 shadow-sm btn btn-warning text-dark rounded-pill fw-bold">
@@ -77,6 +80,7 @@
                 @endif
             @endif
 
+            {{-- 3. TOMBOL AJUKAN APPROVAL --}}
             @if(in_array($statusSlug, ['draft', '', 'rejected']))
                 <form action="{{ route('po.submit_approval', $po->po_number) }}" method="POST" class="d-inline" id="formSubmitApproval">
                     @csrf
@@ -86,6 +90,7 @@
                 </form>
             @endif
 
+            {{-- 4. LOGIKA SMART APPROVAL --}}
             @if($statusSlug == 'pending_approval')
                 @php
                     $currentApproval = \App\Models\DocumentApproval::with('role')
@@ -100,25 +105,29 @@
 
                 @if($canApprove)
                     <form action="{{ route('po.decide', $po->po_number) }}" method="POST" class="d-inline" id="formApprove">
-                        @csrf <input type="hidden" name="action" value="APPROVE">
+                        @csrf
+                        <input type="hidden" name="action" value="APPROVE">
                         <button type="button" onclick="confirmApprove()" class="px-4 shadow-sm btn btn-success rounded-pill fw-bold">
                             <i class="bi bi-check-circle-fill me-1"></i> Setujui PO
                         </button>
                     </form>
 
                     <form action="{{ route('po.decide', $po->po_number) }}" method="POST" class="d-inline" id="formReject">
-                        @csrf <input type="hidden" name="action" value="REJECT"> <input type="hidden" name="note" id="rejectNoteInput">
+                        @csrf
+                        <input type="hidden" name="action" value="REJECT">
+                        <input type="hidden" name="note" id="rejectNoteInput">
                         <button type="button" onclick="confirmRejectWithNote()" class="px-4 shadow-sm btn btn-danger rounded-pill fw-bold">
                             <i class="bi bi-x-circle-fill me-1"></i> Tolak PO
                         </button>
                     </form>
                 @else
                     <div class="px-4 py-2 border shadow-sm rounded-pill bg-light text-muted fw-bold d-inline-block">
-                        <i class="bi bi-hourglass-split me-1"></i> Menunggu: {{ $currentApproval ? $currentApproval->role->name : 'Atasan' }}
+                        <i class="bi bi-hourglass-split me-1"></i> Menunggu Persetujuan: {{ $currentApproval ? $currentApproval->role->name : 'Atasan' }}
                     </div>
                 @endif
             @endif
 
+            {{-- 5. TOMBOL TERIMA BARANG (GOODS RECEIPT) --}}
             @if(in_array($statusSlug, ['issued', 'approved', 'partial_receipt']))
                 @can('create_gr')
                 <a href="{{ route('gr.create', $po->id) }}" class="px-4 shadow-sm btn btn-success rounded-pill fw-bold">
@@ -127,9 +136,11 @@
                 @endcan
             @endif
 
+            {{-- 6. TOMBOL BATALKAN PO --}}
             @if(in_array($statusSlug, ['draft', 'pending_approval', 'issued', 'approved', '']))
                 <form action="{{ route('po.cancel', $po->po_number) }}" method="POST" class="d-inline" id="formCancel">
-                    @csrf <input type="hidden" name="cancel_reason" id="cancelReasonInput">
+                    @csrf
+                    <input type="hidden" name="cancel_reason" id="cancelReasonInput">
                     <button type="button" onclick="confirmCancelWithReason()" class="px-4 shadow-sm btn btn-outline-danger rounded-pill fw-bold">
                         <i class="bi bi-slash-circle me-1"></i> Batalkan PO
                     </button>
@@ -138,21 +149,25 @@
         </div>
     </div>
 
+    {{-- ========================================================================= --}}
     {{-- KERTAS DOKUMEN PO --}}
+    {{-- ========================================================================= --}}
     <div class="overflow-hidden border-0 shadow card rounded-4" id="printable-area">
         <div class="p-2 bg-primary"></div>
 
-        <div class="p-4 p-md-5 card-body">
+        <div class="p-5 card-body">
             {{-- KOP SURAT PO --}}
             <div class="pb-4 mb-5 row border-bottom">
-                <div class="col-sm-6 mb-3 mb-sm-0">
+                <div class="col-sm-6">
                     <h2 class="mb-1 fw-bold text-primary">PURCHASE ORDER</h2>
                     @if($po->status)
                         <span class="badge bg-{{ $po->status->color }}-subtle text-{{ $po->status->color }} border border-{{ $po->status->color }}-subtle rounded-pill px-3 py-2 mb-3 shadow-sm">
                             <i class="bi bi-circle-fill me-1" style="font-size: 0.5rem;"></i> Status: {{ $po->status->name }}
                         </span>
                     @else
-                        <span class="px-3 py-2 border shadow-sm badge bg-secondary-subtle text-secondary border-secondary-subtle rounded-pill">Status: DRAFT</span>
+                        <span class="px-3 py-2 mb-3 border shadow-sm badge bg-secondary-subtle text-secondary border-secondary-subtle rounded-pill">
+                            Status: DRAFT
+                        </span>
                     @endif
                     <div class="mt-2 text-muted">
                         <strong>No. PO:</strong> <span class="text-dark fw-bold">{{ $po->po_number }}</span><br>
@@ -161,15 +176,16 @@
                     </div>
                 </div>
 
+                {{-- INFO COMPANY --}}
                 @php
                     $companyName = optional($po->company)->name ?? optional(optional($po->purchaseRequest)->company)->name ?? 'PT. Kantor Pusat Internal';
                     $companyAddr = optional($po->company)->address ?? optional(optional($po->purchaseRequest)->company)->address ?? 'Alamat belum diatur dalam sistem master data.';
                     $companyEmail = optional($po->company)->email ?? optional(optional($po->purchaseRequest)->company)->email ?? 'info@perusahaan.com';
                     $companyPhone = optional($po->company)->phone ?? optional(optional($po->purchaseRequest)->company)->phone ?? '-';
                 @endphp
-                <div class="col-sm-6 text-sm-end">
+                <div class="col-sm-6 text-end">
                     <h3 class="mb-1 fw-bold text-dark">{{ $companyName }}</h3>
-                    <div class="text-muted small lh-lg">
+                    <div class="text-muted small">
                         {!! nl2br(e($companyAddr)) !!}<br>
                         Email: {{ $companyEmail }} | Telp: {{ $companyPhone }}
                     </div>
@@ -177,12 +193,12 @@
             </div>
 
             {{-- INFORMASI VENDOR & PENGIRIMAN --}}
-            <div class="mb-5 row g-4">
+            <div class="mb-5 row">
                 <div class="col-sm-5">
-                    <h6 class="mb-2 fw-bold text-muted text-uppercase" style="font-size: 0.8rem;"><i class="bi bi-building me-1"></i> Vendor (Kepada):</h6>
-                    <div class="p-3 border bg-light rounded-3 h-100 shadow-sm border-light">
+                    <h6 class="mb-3 fw-bold text-muted text-uppercase"><i class="bi bi-building me-1"></i> Vendor (Kepada):</h6>
+                    <div class="p-3 border bg-light rounded-3">
                         <h6 class="mb-1 fw-bold">{{ optional($po->vendor)->name ?? $po->vendor_name ?? 'N/A' }}</h6>
-                        <div class="small text-muted lh-lg mt-2">
+                        <div class="small text-muted">
                             {!! nl2br(e(optional($po->vendor)->address ?? '-')) !!}<br>
                             PIC: {{ optional($po->vendor)->pic_name ?? '-' }} ({{ optional($po->vendor)->pic_phone ?? '-' }})<br>
                             Email: {{ optional($po->vendor)->email ?? '-' }}
@@ -190,22 +206,22 @@
                     </div>
                 </div>
                 <div class="col-sm-4">
-                    <h6 class="mb-2 fw-bold text-muted text-uppercase" style="font-size: 0.8rem;"><i class="bi bi-truck me-1"></i> Kirim Ke (Ship To):</h6>
-                    <div class="p-3 border small text-muted rounded-3 h-100 lh-lg shadow-sm border-light">
+                    <h6 class="mb-3 fw-bold text-muted text-uppercase"><i class="bi bi-truck me-1"></i> Kirim Ke (Ship To):</h6>
+                    <div class="p-3 border small text-muted rounded-3 h-100">
                         {!! nl2br(e($po->shipping_address ?? 'Sesuai alamat perusahaan')) !!}
                     </div>
                 </div>
                 <div class="col-sm-3">
-                    <h6 class="mb-2 fw-bold text-muted text-uppercase" style="font-size: 0.8rem;"><i class="bi bi-info-circle me-1"></i> Detail Pembayaran:</h6>
-                    <div class="p-3 border small text-muted rounded-3 h-100 bg-light lh-lg shadow-sm border-light">
-                        <strong>Mata Uang:</strong> <span class="badge bg-secondary-subtle text-secondary">{{ $po->currency ?? 'IDR' }}</span><br>
-                        <strong>Termin:</strong> <span class="text-dark">{{ $po->payment_terms ?? '-' }}</span><br>
-                        <strong>Est. Tiba:</strong> <span class="text-dark fw-bold">{{ $po->delivery_date ? \Carbon\Carbon::parse($po->delivery_date)->format('d M Y') : 'TBD' }}</span>
+                    <h6 class="mb-3 fw-bold text-muted text-uppercase"><i class="bi bi-info-circle me-1"></i> Detail Pembayaran:</h6>
+                    <div class="p-3 border small text-muted rounded-3 h-100 bg-light">
+                        <strong>Mata Uang:</strong> {{ $po->currency ?? 'IDR' }}<br>
+                        <strong>Termin:</strong> {{ $po->payment_terms ?? '-' }}<br>
+                        <strong>Estimasi Tiba:</strong> {{ $po->delivery_date ? \Carbon\Carbon::parse($po->delivery_date)->format('d M Y') : 'TBD' }}
                     </div>
                 </div>
             </div>
 
-            {{-- Failsafe Accumulators untuk Grand Total --}}
+            {{-- Failsafe Accumulators --}}
             @php
                 $calcSubtotalGross = 0;
                 $calcTotalDiscount = 0;
@@ -220,7 +236,7 @@
                             <th width="5%" class="py-3 text-center">NO</th>
                             <th width="15%" class="py-3">KODE ITEM</th>
                             <th width="35%" class="py-3">NAMA BARANG & SPESIFIKASI</th>
-                            <th width="10%" class="py-3 text-center">QTY</th>
+                            <th width="10%" class="py-3 text-center">QTY & UOM</th>
                             <th width="15%" class="py-3 text-end">HARGA SATUAN</th>
                             <th width="10%" class="py-3 text-center">DISKON/PAJAK</th>
                             <th width="10%" class="py-3 text-end pe-3">SUBTOTAL</th>
@@ -228,6 +244,7 @@
                     </thead>
                     <tbody>
                         @forelse($po->items as $index => $item)
+                            {{-- 🔥 LOGIKA CERDAS ANTI-NOL & UOM MASTER 🔥 --}}
                             @php
                                 $qty = (float) ($item->qty ?? $item->qty_ordered ?? 0);
                                 if ($qty <= 0) $qty = 1;
@@ -251,24 +268,55 @@
                                 $calcSubtotalGross += ($qty * $hargaSatuan);
                                 $calcTotalDiscount += $diskon;
                                 $calcTotalTax += $pajak;
+
+                                // 🔥 LOGIKA UOM DARI DATABASE MASTER 🔥
+                                $masterItem = $item->item;
+                                $baseUomName = optional(optional($masterItem)->uom)->name ?? 'UNIT';
+
+                                $uomStr = $item->uom ?? $baseUomName;
+                                if (is_string($uomStr) && str_starts_with(trim($uomStr), '{')) {
+                                    $uomObj = json_decode($uomStr);
+                                    $uomStr = $uomObj->code ?? $uomObj->name ?? $baseUomName;
+                                } elseif (is_object($uomStr) || is_array($uomStr)) {
+                                    $uomStr = is_object($uomStr) ? ($uomStr->code ?? $uomStr->name ?? $baseUomName) : ($uomStr['code'] ?? $uomStr['name'] ?? $baseUomName);
+                                }
+
+                                $tampilanSatuanLengkap = strtoupper(trim($uomStr));
+                                if (empty($tampilanSatuanLengkap)) $tampilanSatuanLengkap = strtoupper($baseUomName);
+
+                                $convQty = 1;
+                                $savedUomId = $item->uom_id ?? $item->item_uom_id ?? null;
+
+                                if (!empty($savedUomId) && optional($masterItem)->itemUoms) {
+                                    $altUom = collect($masterItem->itemUoms)->where('id', $savedUomId)->first();
+                                    if ($altUom) {
+                                        $convQty = (float) $altUom->conversion_qty;
+                                        $tampilanSatuanLengkap = strtoupper($altUom->uom_name) . ' (Isi: ' . $convQty . ' ' . $baseUomName . ')';
+                                    }
+                                }
+                                $totalBaseQty = $qty * $convQty;
                             @endphp
 
                             <tr>
                                 <td class="text-center fw-bold text-muted">{{ $index + 1 }}</td>
+
+                                {{-- KOLOM 1: KODE BARANG --}}
                                 <td>
                                     <span class="p-2 border badge bg-secondary-subtle text-secondary border-secondary-subtle">
                                         {{ optional($item->item)->code ?? 'SKU-UNKNOWN' }}
                                     </span>
                                 </td>
+
+                                {{-- KOLOM 2: NAMA BARANG + SPESIFIKASI + LAMPIRAN ITEM --}}
                                 <td>
                                     <div class="mb-2 fw-bolder text-dark" style="font-size: 0.95rem;">
                                         {{ optional($item->item)->name ?? 'Item Terhapus / Tidak Ditemukan' }}
                                     </div>
+
                                     <div class="p-2 border rounded text-muted bg-light border-light" style="font-size: 0.85rem;">
                                         {!! $item->description ?? '-' !!}
                                     </div>
 
-                                    {{-- 🔥 PERBAIKAN LAMPIRAN ITEM (MEMAKAI RAW_ATTACHMENTS DARI CONTROLLER) 🔥 --}}
                                     @if(isset($item->raw_attachments) && count($item->raw_attachments) > 0)
                                         <div class="flex-wrap gap-2 pt-2 mt-2 border-top border-light d-flex d-print-none">
                                             @foreach($item->raw_attachments as $idx => $vFile)
@@ -279,19 +327,32 @@
                                         </div>
                                     @endif
                                 </td>
+
+                                {{-- KOLOM 3: QTY & UOM --}}
                                 <td class="text-center">
                                     <div class="fw-bolder text-dark fs-6">{{ $qty }}</div>
-                                    <span class="mt-1 badge bg-primary-subtle text-primary" style="font-size: 0.75rem;">
-                                        {{ $item->uom }}
-                                    </span>
+                                    <div class="mt-1 badge bg-primary-subtle text-primary text-wrap lh-sm" style="font-size: 0.70rem; max-width: 100px;">
+                                        {{ $tampilanSatuanLengkap }}
+                                    </div>
+                                    @if($convQty > 1)
+                                        <div class="mt-1 text-danger fw-bold" style="font-size: 0.65rem;">
+                                            <i class="bi bi-info-circle"></i> Setara {{ $totalBaseQty }} {{ strtoupper($baseUomName) }}
+                                        </div>
+                                    @endif
                                 </td>
+
+                                {{-- KOLOM 4: HARGA --}}
                                 <td class="text-end fw-bold text-secondary">
                                     {{ number_format($hargaSatuan, 2, '.', ',') }}
                                 </td>
+
+                                {{-- KOLOM 5: DISKON & PAJAK --}}
                                 <td class="text-center" style="font-size: 0.75rem;">
                                     <div class="mb-1 text-danger fw-bold">Disc: {{ number_format($diskon, 2, '.', ',') }}</div>
                                     <div class="text-info fw-bold">Tax: {{ number_format($pajak, 2, '.', ',') }}</div>
                                 </td>
+
+                                {{-- KOLOM 6: SUBTOTAL --}}
                                 <td class="text-end fw-bolder text-dark pe-3" style="font-size: 1rem;">
                                     {{ number_format($subtotalItem, 2, '.', ',') }}
                                 </td>
@@ -315,7 +376,6 @@
                 </div>
 
                 <div class="col-sm-5">
-                    {{-- 🔥 PERBAIKAN VARIABEL DARI CONTROLLER UNTUK TOTAL ANTI-NOL 🔥 --}}
                     @php
                         $sumSubtotal = (float)($po->subtotal ?? 0) > 0 ? (float)$po->subtotal : $calcSubtotalGross;
                         $sumDiscount = (float)($po->total_discount ?? $po->discount_amount ?? 0) > 0 ? (float)($po->total_discount ?? $po->discount_amount) : $calcTotalDiscount;
@@ -323,7 +383,6 @@
                         $sumTax = (float)($po->total_tax ?? $po->tax_amount ?? 0);
                         if ($sumTax >= $sumSubtotal && $sumSubtotal > 0) { $sumTax = $calcTotalTax; }
 
-                        // Memanggil $charges langsung sesuai data Controller asli Anda
                         $sumCharges = 0;
                         if(isset($charges) && count($charges) > 0) {
                             foreach($charges as $c) { $sumCharges += (float)$c->amount; }
@@ -331,7 +390,6 @@
 
                         $sumGrandTotal = $sumSubtotal - $sumDiscount + $sumTax + $sumCharges;
 
-                        // Memanggil $extraDiscounts langsung sesuai data Controller asli Anda
                         if(isset($extraDiscounts) && count($extraDiscounts) > 0) {
                             foreach($extraDiscounts as $d) { $sumGrandTotal -= (float)$d->amount; }
                         }
@@ -454,7 +512,6 @@
     {{-- 🔥 RIWAYAT PENERIMAAN BARANG GUDANG (GOODS RECEIPT) 🔥 --}}
     {{-- ========================================================================= --}}
     @php
-        // Tarik data Goods Receipt yang menginduk ke PO ini
         $receipts = [];
         if(class_exists('\App\Models\GoodsReceipt')) {
             $receipts = \App\Models\GoodsReceipt::with(['user', 'status'])
@@ -523,10 +580,8 @@
     {{-- SECTION LAMPIRAN DOKUMEN --}}
     {{-- ========================================================================= --}}
     @php
-        // 🔥 LOGIKA CERDAS: MENGGABUNGKAN LAMPIRAN DARI HEADER DAN DARI RAW_ATTACHMENTS ITEM 🔥
         $allAttachments = collect();
 
-        // 1. Ambil dari Header PO (Jika Ada)
         if(isset($po->attachments) && count($po->attachments) > 0) {
             foreach($po->attachments as $att) {
                 $allAttachments->push((object)[
@@ -537,7 +592,6 @@
             }
         }
 
-        // 2. Ambil dari Semua Item (Menyedot dari $item->raw_attachments hasil Query Controller)
         if(isset($po->items)) {
             foreach($po->items as $idx => $itm) {
                 if(isset($itm->raw_attachments) && count($itm->raw_attachments) > 0) {

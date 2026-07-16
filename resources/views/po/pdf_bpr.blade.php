@@ -4,41 +4,23 @@
     <meta charset="UTF-8">
     <title>Bank Payment Request - {{ $po->po_number }}</title>
     <style>
-        /* Pengaturan Dasar */
         body { font-family: Arial, Helvetica, sans-serif; font-size: 10pt; color: #000; margin: 0; padding: 15px; }
-
-        /* Header Dokumen */
         .company-name { font-size: 16pt; font-weight: bold; margin: 0; text-transform: uppercase; }
         .doc-title { font-size: 12pt; margin: 5px 0 15px 0; }
-
-        /* Tabel Utama dengan Border Hitam Pejat */
         table.bordered { width: 100%; border-collapse: collapse; margin-bottom: -1px; }
         table.bordered th, table.bordered td { border: 1px solid #000; padding: 6px 8px; vertical-align: top; }
-
-        /* Tabel Informasi Header (Tanpa Border Dalam) */
         table.info-table { width: 100%; border-collapse: collapse; }
         table.info-table td { border: none; padding: 2px 0; vertical-align: top; }
-
-        /* Tabel Item */
         table.main th { text-align: center; font-weight: bold; background-color: #fff; }
         table.main td { vertical-align: middle; }
-
-        /* Penataan HTML Editor (Mencegah Jarak Berlebih) */
         .desc-cell p { margin: 0; padding: 0; line-height: 1.2; }
-        .desc-cell ul, .desc-cell ol { margin: 2px 0; padding-left: 20px; }
-
-        /* Trik Memisahkan Simbol Mata Uang dan Angka di Kolom Amount */
         table.currency { width: 100%; border-collapse: collapse; border: none; margin: 0; padding: 0; }
         table.currency td { border: none; padding: 0; margin: 0; background: transparent !important; }
-
-        /* Tabel Tanda Tangan */
         table.signature { margin-top: -1px; }
         table.signature td { height: 110px; position: relative; }
         .sign-title { position: absolute; top: 8px; left: 8px; font-size: 9.5pt; }
         .sign-name { position: absolute; bottom: 10px; left: 0; right: 0; text-align: center; font-weight: bold; font-size: 10pt; }
         .sign-status { position: absolute; top: 40px; left: 0; right: 0; text-align: center; font-size: 8pt; font-weight: bold; }
-
-        /* Watermark Background */
         .watermark { position: fixed; top: 30%; left: 5%; width: 90%; text-align: center; font-size: 80pt; font-weight: bold; text-transform: uppercase; color: rgba(255, 0, 0, 0.15); transform: rotate(-45deg); z-index: -1000; }
         .watermark-paid { color: rgba(0, 128, 0, 0.15); }
     </style>
@@ -49,14 +31,17 @@
         $statusSlug = strtolower(optional($po->status)->slug ?? $po->status);
     @endphp
 
-    @if(in_array($statusSlug, ['rejected', 'canceled']))
-        <div class="watermark">REJECTED</div>
+    @if(in_array($statusSlug, ['rejected', 'canceled', 'cancelled']))
+        <div class="watermark">DIBATALKAN</div>
     @elseif(in_array($statusSlug, ['paid', 'completed']))
         <div class="watermark watermark-paid">LUNAS / PAID</div>
     @endif
 
     {{-- KOP SURAT --}}
-    <div class="company-name">{{ $po->company->name ?? 'DAMA' }}</div>
+    @php
+        $companyName = optional($po->company)->name ?? optional(optional($po->purchaseRequest)->company)->name ?? 'PT. Kantor Pusat Internal';
+    @endphp
+    <div class="company-name">{{ $companyName }}</div>
     <div class="doc-title">Bank Payment Request Form</div>
 
     {{-- KOTAK INFORMASI ATAS --}}
@@ -64,38 +49,27 @@
         <tr>
             <td width="50%">
                 <table class="info-table">
-                    <tr>
-                        <td style="width: 100px;">Requester</td>
-                        <td>: {{ $po->user->name ?? 'Super Administrator' }}</td>
-                    </tr>
-                    <tr>
-                        <td>Department</td>
-                        <td>: {{ optional($po->user->department)->name ?? 'Purchasing' }}</td>
-                    </tr>
-                    <tr>
-                        <td>Request Date</td>
-                        <td>: {{ date('d-M-y', strtotime($po->po_date ?? $po->created_at)) }}</td>
-                    </tr>
+                    <tr><td style="width: 100px;">Requester</td><td>: {{ $po->user->name ?? 'Sistem' }}</td></tr>
+                    <tr><td>Department</td><td>: {{ optional($po->user->department)->name ?? 'Purchasing' }}</td></tr>
+                    <tr><td>Request Date</td><td>: {{ date('d-M-y', strtotime($po->po_date ?? $po->created_at)) }}</td></tr>
                 </table>
             </td>
             <td width="50%">
                 <table class="info-table">
-                    <tr>
-                        <td style="width: 130px;">Title</td>
-                        <td>: Pembayaran PO - {{ optional($po->vendor)->name ?? $po->vendor_name }}</td>
-                    </tr>
-                    <tr>
-                        <td>Bill Ref.</td>
-                        <td>: {{ $po->po_number }}</td>
-                    </tr>
-                    <tr>
-                        <td>Payment Due Date</td>
-                        <td>: {{ $po->delivery_date ? date('d-M-y', strtotime($po->delivery_date)) : '-' }}</td>
-                    </tr>
+                    <tr><td style="width: 130px;">Title</td><td>: Pembayaran PO - {{ optional($po->vendor)->name ?? $po->vendor_name }}</td></tr>
+                    <tr><td>Bill Ref.</td><td>: {{ $po->po_number }}</td></tr>
+                    <tr><td>Payment Due Date</td><td>: {{ $po->delivery_date ? date('d-M-y', strtotime($po->delivery_date)) : '-' }}</td></tr>
                 </table>
             </td>
         </tr>
     </table>
+
+    {{-- Failsafe Accumulators untuk Grand Total PDF --}}
+    @php
+        $calcSubtotalGross = 0;
+        $calcTotalDiscount = 0;
+        $calcTotalTax = 0;
+    @endphp
 
     {{-- TABEL ITEM (TENGAH) --}}
     <table class="bordered main">
@@ -105,27 +79,48 @@
                 <th width="15%">Invoices No.</th>
                 <th width="35%">Description</th>
                 <th width="15%">Reference</th>
-                <th width="20%">Total Amount ({{ $po->currency ?? 'Rp' }})</th>
+                <th width="20%">Total Amount ({{ $po->currency ?? 'IDR' }})</th>
                 <th width="10%">Account No</th>
             </tr>
         </thead>
         <tbody>
             @foreach($po->items as $index => $item)
+                @php
+                    // 🔥 LOGIKA CERDAS ANTI-NOL & ANTI-ERROR TAX 🔥
+                    $qty = (float) ($item->qty ?? $item->qty_ordered ?? 0);
+                    if ($qty <= 0) $qty = 1;
+
+                    $hargaSatuan = (float) ($item->unit_price ?? $item->price ?? 0);
+                    $subtotalDB = (float) ($item->subtotal ?? $item->total_price ?? 0);
+
+                    if ($hargaSatuan == 0 && $subtotalDB > 0) {
+                        $hargaSatuan = $subtotalDB / $qty;
+                    }
+
+                    $diskon = (float) ($item->discount_amount ?? $item->discount ?? 0);
+                    $pajak = (float) ($item->tax_amount ?? $item->tax ?? 0);
+
+                    if ($pajak >= ($qty * $hargaSatuan) && ($qty * $hargaSatuan) > 0) {
+                        $pajak = 0;
+                    }
+
+                    $subtotalItem = ($qty * $hargaSatuan) - $diskon + $pajak;
+
+                    $calcSubtotalGross += ($qty * $hargaSatuan);
+                    $calcTotalDiscount += $diskon;
+                    $calcTotalTax += $pajak;
+                @endphp
+
             <tr>
                 <td style="text-align: center;">{{ $index + 1 }}</td>
                 <td style="text-align: center;">{{ $po->vendor_invoice_number ?? '-' }}</td>
-
-                {{-- 🔥 SOLUSI RENDER HTML: Menggunakan {!! !!} agar tag <p> ter-render dengan baik 🔥 --}}
-                <td class="desc-cell">
-                    {!! !empty($item->description) ? $item->description : (optional($item->item)->name ?? 'Item Belanja') !!}
-                </td>
-
+                <td class="desc-cell">{!! !empty($item->description) ? $item->description : (optional($item->item)->name ?? 'Item Belanja') !!}</td>
                 <td></td>
                 <td>
                     <table class="currency">
                         <tr>
                             <td style="text-align: left; width: 30%;">{{ $po->currency === 'IDR' ? 'Rp' : $po->currency }}</td>
-                            <td style="text-align: right; width: 70%;">{{ number_format($item->amount ?? ($item->qty * $item->price), 0, ',', '.') }}</td>
+                            <td style="text-align: right; width: 70%;">{{ number_format($subtotalItem, 0, ',', '.') }}</td>
                         </tr>
                     </table>
                 </td>
@@ -133,48 +128,56 @@
             </tr>
             @endforeach
 
-            {{-- BIAYA TAMBAHAN --}}
-            @if(isset($po->total_charge) && $po->total_charge > 0)
+            {{-- KALKULASI FINAL --}}
+            @php
+                $sumSubtotal = (float)($po->subtotal ?? 0) > 0 ? (float)$po->subtotal : $calcSubtotalGross;
+                $sumDiscount = (float)($po->total_discount ?? $po->discount_amount ?? 0) > 0 ? (float)($po->total_discount ?? $po->discount_amount) : $calcTotalDiscount;
+
+                $sumTax = (float)($po->total_tax ?? $po->tax_amount ?? 0);
+                if ($sumTax >= $sumSubtotal && $sumSubtotal > 0) { $sumTax = $calcTotalTax; }
+
+                $sumCharges = 0;
+                if($po->charges && $po->charges->count() > 0) {
+                    $sumCharges = $po->charges->sum('amount');
+                }
+
+                $sumGrandTotal = $sumSubtotal - $sumDiscount + $sumTax + $sumCharges;
+
+                if(isset($po->discounts) && count($po->discounts) > 0) {
+                    foreach($po->discounts as $d) { $sumGrandTotal -= (float)$d->amount; }
+                }
+            @endphp
+
+            @if($sumCharges > 0)
             <tr>
                 <td colspan="4" style="text-align: right;">Biaya Tambahan</td>
                 <td>
                     <table class="currency">
-                        <tr>
-                            <td style="text-align: left; width: 30%;">{{ $po->currency === 'IDR' ? 'Rp' : $po->currency }}</td>
-                            <td style="text-align: right; width: 70%;">{{ number_format($po->total_charge, 0, ',', '.') }}</td>
-                        </tr>
+                        <tr><td style="text-align: left; width: 30%;">{{ $po->currency === 'IDR' ? 'Rp' : $po->currency }}</td><td style="text-align: right; width: 70%;">{{ number_format($sumCharges, 0, ',', '.') }}</td></tr>
                     </table>
                 </td>
                 <td></td>
             </tr>
             @endif
 
-            {{-- DISKON --}}
-            @if(isset($po->total_discount) && $po->total_discount > 0)
+            @if($sumDiscount > 0)
             <tr>
-                <td colspan="4" style="text-align: right;">Diskon</td>
+                <td colspan="4" style="text-align: right;">Diskon Komersial</td>
                 <td>
                     <table class="currency">
-                        <tr>
-                            <td style="text-align: left; width: 30%;">{{ $po->currency === 'IDR' ? 'Rp' : $po->currency }}</td>
-                            <td style="text-align: right; width: 70%;">({{ number_format($po->total_discount, 0, ',', '.') }})</td>
-                        </tr>
+                        <tr><td style="text-align: left; width: 30%;">{{ $po->currency === 'IDR' ? 'Rp' : $po->currency }}</td><td style="text-align: right; width: 70%;">({{ number_format($sumDiscount, 0, ',', '.') }})</td></tr>
                     </table>
                 </td>
                 <td></td>
             </tr>
             @endif
 
-            {{-- PAJAK --}}
-            @if(isset($po->total_tax) && $po->total_tax > 0)
+            @if($sumTax > 0)
             <tr>
                 <td colspan="4" style="text-align: right;">Pajak (VAT/Ppn)</td>
                 <td>
                     <table class="currency">
-                        <tr>
-                            <td style="text-align: left; width: 30%;">{{ $po->currency === 'IDR' ? 'Rp' : $po->currency }}</td>
-                            <td style="text-align: right; width: 70%;">{{ number_format($po->total_tax, 0, ',', '.') }}</td>
-                        </tr>
+                        <tr><td style="text-align: left; width: 30%;">{{ $po->currency === 'IDR' ? 'Rp' : $po->currency }}</td><td style="text-align: right; width: 70%;">{{ number_format($sumTax, 0, ',', '.') }}</td></tr>
                     </table>
                 </td>
                 <td></td>
@@ -188,7 +191,7 @@
                     <table class="currency">
                         <tr>
                             <td style="text-align: left; width: 30%;">{{ $po->currency === 'IDR' ? 'Rp' : $po->currency }}</td>
-                            <td style="text-align: right; width: 70%;">{{ number_format($po->amount ?? $po->grand_total, 0, ',', '.') }}</td>
+                            <td style="text-align: right; width: 70%;">{{ number_format($sumGrandTotal, 0, ',', '.') }}</td>
                         </tr>
                     </table>
                 </td>
@@ -251,26 +254,46 @@
         </tr>
     </table>
 
+    {{-- 🔥 TIMESTAMP WAKTU CETAK DOKUMEN 🔥 --}}
+    <div style="margin-top: 15px; font-size: 8pt; color: #555; text-align: left; font-style: italic;">
+        * Dokumen ini dicetak otomatis oleh sistem pada {{ \Carbon\Carbon::now()->translatedFormat('d F Y H:i:s') }} WIB
+    </div>
+
     {{-- 🔥 LAMPIRAN GAMBAR (MUNCUL DI HALAMAN BARU) 🔥 --}}
-    @if(isset($po->attachments) && $po->attachments->count() > 0)
-        @php
-            $imageAttachments = $po->attachments->filter(function($att) {
-                $ext = strtolower(pathinfo($att->file_name, PATHINFO_EXTENSION));
-                return in_array($ext, ['jpg', 'jpeg', 'png']);
-            });
-        @endphp
+    @php
+        $imageAttachments = collect();
 
-        @if($imageAttachments->count() > 0)
-            <div style="page-break-before: always;"></div>
-            <h3 style="margin-bottom: 20px; font-family: Arial, sans-serif; color: #000;">Lampiran Dokumen Pendukung</h3>
+        // Ambil dari Header
+        if(isset($po->attachments)) {
+            foreach($po->attachments as $att) {
+                $ext = strtolower(pathinfo($att->file_name ?? $att->file_path, PATHINFO_EXTENSION));
+                if(in_array($ext, ['jpg', 'jpeg', 'png'])) $imageAttachments->push($att);
+            }
+        }
 
-            @foreach($imageAttachments as $img)
-                <div style="margin-bottom: 20px; text-align: center; font-family: Arial, sans-serif;">
-                    <p style="font-size: 10pt; text-align: left;"><strong>Nama File:</strong> {{ $img->file_name }}</p>
-                    <img src="{{ public_path('storage/' . $img->file_path) }}" style="max-width: 100%; max-height: 800px; border: 1px solid #000; padding: 5px;">
-                </div>
-            @endforeach
-        @endif
+        // Ambil dari Item
+        if(isset($po->items)) {
+            foreach($po->items as $item) {
+                if(isset($item->raw_attachments)) {
+                    foreach($item->raw_attachments as $att) {
+                        $ext = strtolower(pathinfo($att->file_name ?? $att->file_path, PATHINFO_EXTENSION));
+                        if(in_array($ext, ['jpg', 'jpeg', 'png'])) $imageAttachments->push($att);
+                    }
+                }
+            }
+        }
+    @endphp
+
+    @if($imageAttachments->count() > 0)
+        <div style="page-break-before: always;"></div>
+        <h3 style="margin-bottom: 20px; font-family: Arial, sans-serif; color: #000;">Lampiran Dokumen Pendukung</h3>
+
+        @foreach($imageAttachments as $img)
+            <div style="margin-bottom: 20px; text-align: center; font-family: Arial, sans-serif;">
+                <p style="font-size: 10pt; text-align: left;"><strong>Nama File:</strong> {{ $img->file_name ?? 'File' }}</p>
+                <img src="{{ public_path('storage/' . $img->file_path) }}" style="max-width: 100%; max-height: 800px; border: 1px solid #000; padding: 5px;">
+            </div>
+        @endforeach
     @endif
 
 </body>

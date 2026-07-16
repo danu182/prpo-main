@@ -1324,10 +1324,19 @@ class PurchaseOrderController extends Controller
     // =========================================================================
     public function printBprWithAttachments($slug)
     {
-        // 🔥 PERBAIKAN: Hapus .chargeType dan .discountType dari sini 🔥
         $po = \App\Models\PurchaseOrder::with([
-            'items.item', 'company', 'user', 'vendor', 'attachments'
+            'items.item', 'company', 'user', 'vendor', 'attachments', 'purchaseRequest'
         ])->where('po_number', $slug)->firstOrFail();
+
+        // 🔥 WAJIB: Tarik manual lampiran item (Sama seperti di fungsi show)
+        $poItemIds = $po->items->pluck('id')->toArray();
+        $itemAttachments = \DB::table('purchase_order_item_attachments')
+                            ->whereIn('purchase_order_item_id', $poItemIds)
+                            ->get();
+
+        foreach ($po->items as $item) {
+            $item->raw_attachments = $itemAttachments->where('purchase_order_item_id', $item->id)->values();
+        }
 
         // 1. RENDER DOMPDF MENGGUNAKAN TEMPLATE BPR PO
         $pdf = \Barryvdh\DomPDF\Facade\Pdf::loadView('po.pdf_bpr', compact('po'))
@@ -1339,21 +1348,29 @@ class PurchaseOrderController extends Controller
 
         // 3. INISIASI MESIN PENGGABUNG PDF (MERGER)
         $merger = new \iio\libmergepdf\Merger();
-
-        // Masukkan file utama (Halaman BPR) ke halaman paling depan
         $merger->addFile($tempMainPdfPath);
 
-        // 4. CARI LAMPIRAN BERFORMAT PDF & MASUKKAN KE MERGER
+        // 4. CARI SEMUA LAMPIRAN BERFORMAT PDF & MASUKKAN KE MERGER
+        // A. Dari Header
         if ($po->attachments) {
             foreach ($po->attachments as $attachment) {
                 $ext = strtolower(pathinfo($attachment->file_path, PATHINFO_EXTENSION));
-
-                // Jika file adalah PDF asli
                 if ($ext === 'pdf') {
-                    $pdfAttachmentPath = public_path('storage/' . $attachment->file_path);
+                    $pdfPath = public_path('storage/' . $attachment->file_path);
+                    if (file_exists($pdfPath)) $merger->addFile($pdfPath);
+                }
+            }
+        }
 
-                    if (file_exists($pdfAttachmentPath)) {
-                        $merger->addFile($pdfAttachmentPath);
+        // B. Dari Item (Berdasarkan raw_attachments yang baru ditarik)
+        foreach ($po->items as $item) {
+            if (isset($item->raw_attachments) && count($item->raw_attachments) > 0) {
+                foreach ($item->raw_attachments as $attachment) {
+                    // Cek ekstensi file (asumsi kolom file_name atau file_path tersedia)
+                    $ext = strtolower(pathinfo($attachment->file_name ?? $attachment->file_path, PATHINFO_EXTENSION));
+                    if ($ext === 'pdf') {
+                        $pdfPath = public_path('storage/' . $attachment->file_path);
+                        if (file_exists($pdfPath)) $merger->addFile($pdfPath);
                     }
                 }
             }
@@ -1367,7 +1384,6 @@ class PurchaseOrderController extends Controller
             unlink($tempMainPdfPath);
         }
 
-        // 7. TAMPILKAN HASILNYA KE BROWSER USER
         $filename = 'BPR_PO_' . str_replace('/', '_', $po->po_number) . '.pdf';
 
         return response($mergedPdfData)

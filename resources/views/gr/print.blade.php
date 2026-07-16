@@ -73,8 +73,6 @@
         </tr>
         <tr>
             <td class="label">Tanggal Terima</td><td class="colon">:</td><td class="val">{{ \Carbon\Carbon::parse($gr->received_date)->translatedFormat('d F Y') }}</td>
-
-            {{-- 🔥 INI TAMBAHAN GUDANG PENERIMA 🔥 --}}
             <td class="label">Gudang Penerima</td><td class="colon">:</td><td class="val">{{ $warehouseName ?? 'Gudang Utama / Default' }}</td>
         </tr>
         <tr>
@@ -102,14 +100,42 @@
                 $isAsset = optional($item->item)->is_asset;
                 $qtyReturned = (float) ($item->qty_returned ?? 0);
 
-                // Ambil Satuan
-                $rawPoUom = $item->purchaseOrderItem?->uom;
-                $poUomName = is_string($rawPoUom) ? $rawPoUom : (optional($rawPoUom)->name ?? optional($item->item->uom)->name ?? 'PCS');
+                // 🔥 LOGIKA CERDAS UOM 🔥
+                $poItem = $item->purchaseOrderItem;
+                $masterItem = $item->item;
+                $baseUomName = optional($masterItem->uom)->name ?? 'PCS';
+
+                // 1. Mencari Satuan yang dipesan di PO
+                $poUomName = $baseUomName;
+                $poUomId = $poItem?->uom_id ?? $poItem?->item_uom_id ?? null;
+
+                // Jika PO pakai ID Konversi Kemasan (Box, Pack, dll)
+                if (!empty($poUomId) && optional($masterItem)->itemUoms) {
+                    $altUom = collect($masterItem->itemUoms)->where('id', $poUomId)->first();
+                    if ($altUom) {
+                        $poUomName = $altUom->uom_name ?? $altUom->name ?? $poUomName;
+                    }
+                } else {
+                    // Jika tidak pakai ID, coba baca teks manualnya (atau JSON-nya)
+                    $rawPoUom = $poItem?->uom;
+                    if (is_string($rawPoUom) && str_starts_with(trim($rawPoUom), '{')) {
+                        $parsed = json_decode($rawPoUom);
+                        $poUomName = $parsed->name ?? $parsed->code ?? $baseUomName;
+                    } elseif (is_string($rawPoUom) && !is_numeric($rawPoUom) && trim($rawPoUom) !== '') {
+                        $poUomName = $rawPoUom;
+                    }
+                }
+
+                // 2. Mencari Satuan Kedatangan (GR)
                 $uomDatang = $item->uom ?? $poUomName;
+                if (is_string($uomDatang) && str_starts_with(trim($uomDatang), '{')) {
+                    $parsedGr = json_decode($uomDatang);
+                    $uomDatang = $parsedGr->name ?? $parsedGr->code ?? $poUomName;
+                }
 
                 // Bersihkan Deskripsi
-                $itemName = $item->item?->name ?? '-';
-                $rawDesc = $item->purchaseOrderItem?->description ?? '';
+                $itemName = $masterItem?->name ?? '-';
+                $rawDesc = $poItem?->description ?? '';
                 $cleanDesc = strip_tags(str_replace(['</li>', '</p>', '<br>', '<br/>'], [', ', ' ', ' ', ' '], $rawDesc));
                 $cleanDesc = str_replace('&nbsp;', ' ', $cleanDesc);
                 $cleanDesc = rtrim(trim($cleanDesc), ',');
@@ -126,11 +152,11 @@
                 </td>
                 <td style="text-align: center;">
                     <strong>{{ (float)($item->purchaseOrderItem?->qty_ordered ?? 0) }}</strong><br>
-                    <span style="font-size: 7pt; color: #555;">{{ $poUomName }}</span>
+                    <span style="font-size: 7pt; color: #555;">{{ strtoupper($poUomName) }}</span>
                 </td>
                 <td style="text-align: center;">
                     <strong>{{ (float)$item->qty_received }}</strong><br>
-                    <span style="font-size: 7pt; color: #555;">{{ $uomDatang }}</span>
+                    <span style="font-size: 7pt; color: #555;">{{ strtoupper($uomDatang) }}</span>
                 </td>
                 <td style="text-align: center;">
                     @if($qtyReturned > 0)
