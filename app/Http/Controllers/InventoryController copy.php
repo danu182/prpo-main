@@ -82,32 +82,14 @@ class InventoryController extends Controller
             ->whereColumn('current_stock', '<=', 'min_stock')
             ->get();
 
-        // 🔥 QUERY DAFTAR INVENTORY (SMART TOTAL STOCK CALCULATION)
+        // 🔥 QUERY DAFTAR INVENTORY (DIBERSIHKAN AGAR LEBIH CEPAT & AKURAT)
         $stocks = \App\Models\Item::query()
             ->select('items.*')
             ->with('uom')
             ->where(function($q) {
                 $q->whereNotIn('item_type_code', ['JSA', 'NST'])
-                  ->orWhereNull('item_type_code');
+                  ->orWhereNull('item_type_code'); // Mengatasi masalah data lama / null
             })
-            ->addSelect([
-                // 1. Hitung Stok Curah (Bulk) dari inventory_stocks
-                'bulk_stock' => \App\Models\InventoryStock::selectRaw('COALESCE(SUM(stock_qty), 0)')
-                    ->whereColumn('item_id', 'items.id')
-                    ->when($warehouseId, function($q) use ($warehouseId) {
-                        $q->where('warehouse_id', $warehouseId);
-                    }),
-
-                // 2. Hitung Stok Aset yang "Available" (Nganggur di Gudang) dari tabel fixed_assets
-                'asset_stock' => \App\Models\FixedAsset::selectRaw('COUNT(id)')
-                    ->whereColumn('item_id', 'items.id')
-                    ->whereHas('status', function($q) {
-                        $q->where('slug', 'available'); // Hanya hitung aset yang siap dipakai/dikeluarkan
-                    })
-                    ->when($warehouseId, function($q) use ($warehouseId) {
-                        $q->where('warehouse_id', $warehouseId);
-                    })
-            ])
             ->when($search, function ($q) use ($search) {
                 $q->where(function ($sub) use ($search) {
                     $sub->where('name', 'like', "%{$search}%")
@@ -118,11 +100,39 @@ class InventoryController extends Controller
             ->paginate(15)
             ->withQueryString();
 
-        // Menyuntikkan perhitungan "Total Stock" gabungan ke masing-masing item
-        $stocks->getCollection()->transform(function ($item) {
-            $item->total_stock = $item->bulk_stock + $item->asset_stock;
+        // ========================================================================
+        // 🔥 LOGIKA FAILSAFE: PAKSA ANGKA TAMPILAN SESUAI FILTER GUDANG 🔥
+        // ========================================================================
+        $stocks->getCollection()->transform(function ($item) use ($warehouseId) {
+            // 1. Hitung Stok Fisik Murni
+            $bulkQuery = \App\Models\InventoryStock::where('item_id', $item->id);
+            if (!empty($warehouseId)) {
+                $bulkQuery->where('warehouse_id', $warehouseId);
+            }
+            $bulkStock = $bulkQuery->sum('stock_qty');
+
+            // 2. Hitung Stok Aset (Penting agar tidak hilang saat jadi aset!)
+            $assetStock = 0;
+            if (class_exists(\App\Models\FixedAsset::class)) {
+                $assetQuery = \App\Models\FixedAsset::where('item_id', $item->id)
+                    ->whereHas('status', function($q) {
+                        $q->where('slug', 'available');
+                    });
+                if (!empty($warehouseId)) {
+                    $assetQuery->where('warehouse_id', $warehouseId);
+                }
+                $assetStock = $assetQuery->count();
+            }
+
+            // 3. Timpa nilai 'current_stock' secara magis!
+            // Meskipun HTML Blade mencoba menampilkan stok global, sistem akan memaksanya
+            // menampilkan hasil filter (Biasa + Aset) khusus untuk gudang yang dipilih.
+            $item->current_stock = $bulkStock + $assetStock;
+            $item->total_stock = $item->current_stock;
+
             return $item;
         });
+        // ========================================================================
 
         return view('inventory.index', compact('stocks', 'warehouses', 'search', 'warehouseId', 'allItems', 'criticalStocks'));
     }

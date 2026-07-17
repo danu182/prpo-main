@@ -134,6 +134,30 @@
                 </thead>
                 <tbody>
                     @forelse($stocks as $item)
+                        @php
+                            // =========================================================================
+                            // 🔥 LOGIKA RADAR GUDANG (FAILSAFE ANTI-BOHONG) 🔥
+                            // Hitung murni dari tabel transaksi berdasarkan filter Gudang yang dipilih
+                            // =========================================================================
+                            $qBulk = \App\Models\InventoryStock::where('item_id', $item->id);
+                            if (!empty($warehouseId)) {
+                                $qBulk->where('warehouse_id', $warehouseId);
+                            }
+                            $realBulk = (float) $qBulk->sum('stock_qty');
+
+                            $realAsset = 0;
+                            if (class_exists('\App\Models\FixedAsset')) {
+                                $qAsset = \App\Models\FixedAsset::where('item_id', $item->id)
+                                    ->whereHas('status', function($q) { $q->where('slug', 'available'); });
+                                if (!empty($warehouseId)) {
+                                    $qAsset->where('warehouse_id', $warehouseId);
+                                }
+                                $realAsset = (float) $qAsset->count();
+                            }
+
+                            $realTotalStock = $realBulk + $realAsset;
+                        @endphp
+
                         <tr>
                             <td class="py-3 ps-4">
                                 <span class="border badge bg-secondary-subtle text-secondary border-secondary-subtle rounded-pill">
@@ -144,34 +168,34 @@
                             <td class="py-3 text-muted" style="font-family: monospace;">{{ $item->code }}</td>
                             <td class="py-3 fw-bold text-dark">{{ $item->name }}</td>
 
-                            {{-- 🔥 TAMPILAN STOK GABUNGAN & RINCIANNYA 🔥 --}}
+                            {{-- 🔥 TAMPILAN STOK GABUNGAN & RINCIANNYA YANG SUDAH KEBAL ERROR 🔥 --}}
                             <td class="py-3 text-center">
-                                <div class="fw-bold fs-6 {{ (float)$item->current_stock > 0 ? 'text-success' : 'text-danger' }}">
-                                    {{ (float)$item->current_stock }}
+                                <div class="fw-bold fs-6 {{ $realTotalStock > 0 ? 'text-success' : 'text-danger' }}">
+                                    {{ $realTotalStock }}
                                     <span class="fw-normal text-muted ms-1" style="font-size: 0.75rem;">{{ optional($item->uom)->name ?? 'PCS' }}</span>
                                 </div>
 
                                 {{-- Rincian jika stok lebih dari 0 --}}
-                                @if((float)$item->current_stock > 0)
+                                @if($realTotalStock > 0)
                                     <div class="mt-1" style="font-size: 0.65rem;">
-                                        @if((float)$item->bulk_stock > 0)
-                                            <span class="px-2 py-1 border rounded bg-light text-secondary me-1">Biasa: {{ (float)$item->bulk_stock }}</span>
+                                        @if($realBulk > 0)
+                                            <span class="px-2 py-1 border rounded bg-light text-secondary me-1">Biasa: {{ $realBulk }}</span>
                                         @endif
-                                        @if((float)$item->asset_stock > 0)
-                                            <span class="px-2 py-1 border rounded bg-info-subtle text-info-emphasis border-info-subtle">Aset: {{ (float)$item->asset_stock }}</span>
+                                        @if($realAsset > 0)
+                                            <span class="px-2 py-1 border rounded bg-info-subtle text-info-emphasis border-info-subtle">Aset: {{ $realAsset }}</span>
                                         @endif
                                     </div>
                                 @endif
                             </td>
 
-                            <td class="text-center align-middle">
-                                <div class="gap-2 d-flex justify-content-center">
-                                    {{-- Tombol Kartu Stok (Selalu Muncul) --}}
-                                    <a href="{{ route('inventory.show', $item->id) }}" class="px-3 btn btn-sm btn-outline-info rounded-pill fw-bold">
+                            <td class="text-center align-middle pe-4">
+                                <div class="gap-2 d-flex justify-content-end">
+                                    {{-- Tombol Kartu Stok --}}
+                                    <a href="{{ route('inventory.show', $item->id) . ($warehouseId ? '?warehouse_id='.$warehouseId : '') }}" class="px-3 btn btn-sm btn-outline-info rounded-pill fw-bold">
                                         <i class="bi bi-clock-history me-1"></i> Kartu Stok
                                     </a>
 
-                                    {{-- Tombol Kapitalisasi (Hanya muncul untuk Stok Biasa yang BUKAN Jasa & BUKAN Aset Master) --}}
+                                    {{-- Tombol Kapitalisasi --}}
                                     @if($item->is_stockable && !$item->is_asset)
                                     <a href="{{ route('inventory.capitalize.form', $item->code) }}" class="px-3 btn btn-sm btn-outline-warning rounded-pill fw-bold" title="Sulap Stok Biasa Menjadi Aset">
                                         <i class="bi bi-magic me-1"></i> Jadikan Aset
