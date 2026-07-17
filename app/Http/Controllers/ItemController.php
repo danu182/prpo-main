@@ -420,12 +420,35 @@ class ItemController extends Controller
 
     public function cancelImport($batch_id)
     {
-        $batch = ItemImportBatch::findOrFail($batch_id);
-        Storage::disk('public')->deleteDirectory("master_item_import/{$batch->batch_number}");
-        $batch->delete();
-        return redirect()->route('items.import_index')->with('success', 'Draft dihapus bersih.');
-    }
+        $batch = \App\Models\ItemImportBatch::where('id', $batch_id)
+                    ->orWhere('batch_number', $batch_id)
+                    ->firstOrFail();
 
+        // 1. Bersihkan File Fisik (PDF / Excel) di Server
+        if (!empty($batch->support_doc) && \Illuminate\Support\Facades\Storage::disk('public')->exists($batch->support_doc)) {
+            \Illuminate\Support\Facades\Storage::disk('public')->delete($batch->support_doc);
+        }
+        if (!empty($batch->file_path) && \Illuminate\Support\Facades\Storage::disk('local')->exists($batch->file_path)) {
+            \Illuminate\Support\Facades\Storage::disk('local')->delete($batch->file_path);
+        }
+
+        // 2. Hapus Paksa dari Database (Bypass Soft Deletes jika ada)
+        if (method_exists($batch->details(), 'forceDelete')) {
+            $batch->details()->forceDelete();
+        } else {
+            $batch->details()->delete();
+        }
+
+        if (method_exists($batch, 'forceDelete')) {
+            $batch->forceDelete();
+        } else {
+            $batch->delete();
+        }
+
+        // 3. Arahkan kembali ke Halaman Riwayat Import Barang
+        return redirect()->route('items.import_index')
+                         ->with('success', 'Draft Import Barang berhasil dibatalkan dan dihapus secara permanen.');
+    }
 
 
     // =========================================================================

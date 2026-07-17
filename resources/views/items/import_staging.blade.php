@@ -15,10 +15,11 @@
     {{-- HEADER --}}
     <div class="mb-4 d-flex justify-content-between align-items-end">
         <div>
-            <a href="{{ route('fixed-assets.index') }}" class="mb-2 text-decoration-none text-muted small fw-bold d-inline-block">
-                <i class="bi bi-arrow-left me-1"></i> Kembali ke Master Aset
+            {{-- 🔥 RUTE DIPERBAIKI: Kembali ke items.import_index 🔥 --}}
+            <a href="{{ route('items.import_index') }}" class="mb-2 text-decoration-none text-muted small fw-bold d-inline-block">
+                <i class="bi bi-arrow-left me-1"></i> Kembali ke Riwayat Import
             </a>
-            <h3 class="mb-0 fw-bold"><i class="bi bi-shield-check text-warning me-2"></i> Ruang Karantina Aset Tetap</h3>
+            <h3 class="mb-0 fw-bold"><i class="bi bi-shield-check text-warning me-2"></i> Ruang Karantina Master Barang</h3>
         </div>
     </div>
 
@@ -40,7 +41,7 @@
         {{-- KOLOM NOMOR BATCH --}}
         <div class="col-md-5">
             <div class="flex-row p-3 border-0 shadow-sm card rounded-4 h-100 d-flex align-items-center">
-                <div class="p-3 bg-primary bg-opacity-10 rounded-3 me-3 text-primary"><i class="bi bi-pc-display fs-3"></i></div>
+                <div class="p-3 bg-primary bg-opacity-10 rounded-3 me-3 text-primary"><i class="bi bi-box-seam fs-3"></i></div>
                 <div>
                     <div class="small text-muted fw-bold">Nomor Batch Import</div>
                     <h5 class="mb-0 fw-bold">{{ $batch->batch_number }}</h5>
@@ -59,7 +60,7 @@
         {{-- KOLOM LAMPIRAN --}}
         <div class="col-md-4">
             <div class="p-3 border-0 shadow-sm card rounded-4 h-100 d-flex flex-column justify-content-center">
-                <div class="mb-2 small text-muted fw-bold">Dokumen Pendukung (BAST / PO)</div>
+                <div class="mb-2 small text-muted fw-bold">Dokumen Pendukung</div>
                 @if($batch->support_doc)
                     <div>
                         <a href="{{ asset('storage/' . $batch->support_doc) }}" target="_blank" class="p-2 border shadow-sm badge bg-light text-dark text-decoration-none">
@@ -100,19 +101,20 @@
                 {{-- KONDISI 1: DRAFT / REJECTED --}}
                 @if(in_array(strtolower($batch->status), ['draft', 'rejected']))
 
-                    <form id="formSubmitApproval" action="{{ route('fixed-assets.submit_approval', $batch->id) }}" method="POST" class="w-100">
+                    {{-- 🔥 RUTE DIPERBAIKI: items.import.submit_approval 🔥 --}}
+                    <form id="formSubmitApproval" action="{{ route('items.import.submit_approval', $batch->id) }}" method="POST" class="w-100">
                         @csrf
                         <button type="button" id="btnSubmitApproval" class="mb-2 shadow-sm btn btn-warning w-100 fw-bold rounded-pill" {{ $errCount > 0 ? 'disabled' : '' }}>
                             Ajukan Approval <i class="bi bi-send-check ms-1"></i>
                         </button>
                     </form>
 
-                    <form action="{{ route('fixed-assets.cancel_import', $batch->id) }}" method="POST" class="w-100">
+                    {{-- 🔥 RUTE DIPERBAIKI: items.import_staging.cancel 🔥 --}}
+                    <form id="formCancelDraft" action="{{ route('items.import_staging.cancel', $batch->id) }}" method="POST" class="w-100">
                         @csrf
                         @method('DELETE')
-                        {{-- Kita ubah type menjadi "submit" dan pakai bawaan browser --}}
-                        <button type="submit" class="border-2 btn btn-outline-danger w-100 fw-bold rounded-pill small" onclick="return confirm('YAKIN INGIN MENGHAPUS DRAFT INI SECARA PERMANEN?')">
-                            Batalkan Draft
+                        <button type="button" id="btnCancelDraft" class="border-2 btn btn-outline-danger w-100 fw-bold rounded-pill small">
+                            <i class="bi bi-trash3-fill me-1"></i> Batalkan Draft
                         </button>
                     </form>
 
@@ -121,7 +123,8 @@
 
                     <div class="mb-2 small text-warning fw-bold"><i class="bi bi-exclamation-circle-fill me-1"></i> Menunggu Keputusan Anda</div>
 
-                    <form action="{{ route('fixed-assets.decide', $batch->id) }}" method="POST" class="mb-2 w-100">
+                    {{-- 🔥 RUTE DIPERBAIKI: items.import.decide 🔥 --}}
+                    <form action="{{ route('items.import.decide', $batch->id) }}" method="POST" class="mb-2 w-100">
                         @csrf
                         <input type="hidden" name="action" value="APPROVE">
                         <button type="button" class="shadow-sm btn btn-success w-100 fw-bold rounded-pill btn-approve-final">
@@ -129,7 +132,8 @@
                         </button>
                     </form>
 
-                    <form action="{{ route('fixed-assets.decide', $batch->id) }}" method="POST" class="w-100">
+                    {{-- 🔥 RUTE DIPERBAIKI: items.import.decide 🔥 --}}
+                    <form action="{{ route('items.import.decide', $batch->id) }}" method="POST" class="w-100">
                         @csrf
                         <input type="hidden" name="action" value="REJECT">
                         <button type="button" class="border-2 btn btn-outline-danger w-100 fw-bold rounded-pill small btn-reject-final">
@@ -149,7 +153,7 @@
 
                     <div class="mb-2 display-4 text-success"><i class="bi bi-check-circle-fill"></i></div>
                     <h6 class="mb-0 fw-bold text-success">TELAH DISETUJUI</h6>
-                    <div class="text-white-50" style="font-size: 0.75rem;">Aset telah masuk ke Buku Utama</div>
+                    <div class="text-white-50" style="font-size: 0.75rem;">Barang telah masuk ke Katalog Utama</div>
 
                 @endif
 
@@ -160,7 +164,7 @@
     {{-- TABEL DATA --}}
     <div class="border-0 border-4 shadow-sm card rounded-4 border-top border-warning">
         <div class="py-3 bg-white card-header d-flex justify-content-between align-items-center">
-            <h6 class="mb-0 fw-bold">Data Aset dari Excel ({{ $batch->details->count() }} Baris)</h6>
+            <h6 class="mb-0 fw-bold">Data Barang dari Excel ({{ $batch->details->count() }} Baris)</h6>
             <span class="badge bg-{{ $errCount > 0 ? 'danger' : 'success' }} rounded-pill px-3 py-2">
                 <i class="bi bi-{{ $errCount > 0 ? 'exclamation-triangle' : 'check-circle' }}-fill me-1"></i>
                 {{ $errCount > 0 ? $errCount . ' Error Ditemukan (Hapus Baris Error)' : 'Semua Data Valid' }}
@@ -235,32 +239,6 @@
 @push('scripts')
 <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
 <script>
-
-    window.prosesBatalDraft = function() {
-        Swal.fire({
-            title: 'Batalkan Pengajuan?',
-            text: 'Semua baris data & lampiran karantina ini akan dihapus permanen.',
-            icon: 'warning',
-            showCancelButton: true,
-            confirmButtonColor: '#dc3545',
-            cancelButtonColor: '#6c757d',
-            cancelButtonText: 'Tutup',
-            confirmButtonText: 'Ya, Hapus Draft!'
-        }).then((result) => {
-            if(result.isConfirmed) {
-                Swal.fire({
-                    title: 'Menghapus...',
-                    text: 'Membersihkan data karantina.',
-                    icon: 'info',
-                    showConfirmButton: false,
-                    allowOutsideClick: false
-                });
-                document.getElementById('formCancelDraft').submit();
-            }
-        });
-    };
-
-
     document.addEventListener("DOMContentLoaded", function() {
 
         // SWEETALERT AJUKAN APPROVAL
@@ -290,19 +268,19 @@
             btn.addEventListener('click', function() {
                 const form = this.closest('form');
                 Swal.fire({
-                    title: 'Mengesahkan Import Aset?',
-                    text: "Aset akan dipindahkan ke Buku Utama, dan sistem akan meng-Generate Item Baru (jika kode dikosongkan).",
+                    title: 'Mengesahkan Import?',
+                    text: "Barang akan dipindahkan ke Katalog Utama.",
                     icon: 'success',
                     showCancelButton: true,
                     confirmButtonColor: '#198754',
                     cancelButtonColor: '#6c757d',
-                    confirmButtonText: 'Ya, Sahkan Aset!',
+                    confirmButtonText: 'Ya, Sahkan!',
                     cancelButtonText: 'Batal'
                 }).then((result) => {
                     if (result.isConfirmed) {
                         Swal.fire({
                             title: 'Mengesahkan...',
-                            text: 'Sistem sedang bekerja memindahkan aset dan membuat item baru.',
+                            text: 'Sistem sedang bekerja menyimpan katalog master.',
                             icon: 'info',
                             showConfirmButton: false,
                             allowOutsideClick: false
@@ -344,7 +322,7 @@
         const btnCancel = document.getElementById('btnCancelDraft');
         if (btnCancel) {
             btnCancel.addEventListener('click', function(e) {
-                e.preventDefault(); // Mencegah form langsung tersubmit
+                e.preventDefault();
                 Swal.fire({
                     title: 'Batalkan Pengajuan?',
                     text: 'Semua baris data & lampiran karantina ini akan dihapus permanen.',
@@ -372,7 +350,4 @@
     });
 </script>
 @endpush
-
-
-
 @endsection

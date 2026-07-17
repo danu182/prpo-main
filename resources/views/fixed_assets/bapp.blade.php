@@ -5,6 +5,7 @@
     <title>Berita Acara Penghapusan Aset (BAPP)</title>
     <style>
         body { font-family: 'Helvetica', 'Arial', sans-serif; font-size: 11pt; line-height: 1.5; color: #000; }
+        @page { margin: 40px 50px 70px 50px; }
         .header { text-align: center; border-bottom: 3px double #000; padding-bottom: 10px; margin-bottom: 20px; }
         .header h2 { margin: 0; font-size: 16pt; text-transform: uppercase; text-decoration: underline; color: #b30000; }
         .header p { margin: 5px 0 0 0; font-size: 10pt; font-weight: bold; }
@@ -19,19 +20,51 @@
         .signature-box { width: 100%; margin-top: 50px; table-layout: fixed; }
         .signature-box td { text-align: center; vertical-align: bottom; width: 33.33%; }
         .signature-name { font-weight: bold; text-decoration: underline; margin-top: 80px; }
+
+        /* Cap Disposed */
+        .stamp-disposed {
+            position: absolute; top: 150px; right: 20px; color: rgba(220, 53, 69, 0.2);
+            font-size: 60pt; font-weight: bold; text-transform: uppercase;
+            transform: rotate(-15deg); z-index: -1; border: 5px solid rgba(220, 53, 69, 0.2);
+            padding: 10px 20px; border-radius: 10px;
+        }
+
+        /* Footer Abadi */
+        footer {
+            position: fixed; bottom: -40px; left: 0px; right: 0px; height: 30px;
+            border-top: 1px solid #888; text-align: right; font-size: 8.5pt; color: #555;
+            padding-top: 5px; font-style: italic;
+        }
+        .pagenum:before { content: "Halaman " counter(page); }
     </style>
 </head>
 <body>
 
+    {{-- 🔥 LOGIKA MENGUNCI TANGGAL PERMANEN DARI RIWAYAT PENGHAPUSAN 🔥 --}}
+    @php
+        $disposeLog = $asset->histories->sortByDesc('created_at')->first(function($log) {
+            return str_contains(strtoupper($log->notes), 'DISPOSED') || str_contains(strtoupper($log->notes), 'PENGHAPUSAN');
+        });
+
+        $tanggalPenghapusan = $disposeLog ? $disposeLog->created_at : $asset->updated_at;
+        $adminPembuat = $disposeLog ? optional($disposeLog->creator)->name : auth()->user()->name;
+        $jabatanAdmin = $disposeLog ? optional($disposeLog->creator)->job_title : (auth()->user()->job_title ?? 'Admin Aset');
+    @endphp
+
+    <div class="stamp-disposed">DISPOSED</div>
+
+    <footer>
+        Dokumen BAPP Aset: {{ $asset->asset_number }} &nbsp; | &nbsp; <span class="pagenum"></span>
+    </footer>
+
     <div class="header">
         <h2>BERITA ACARA PENGHAPUSAN / PEMUSNAHAN ASET</h2>
-        <p>Nomor: BAPP/{{ date('Y/m/d') }}/{{ substr($asset->asset_number, -4) }}</p>
+        <p>Nomor: BAPP/{{ \Carbon\Carbon::parse($tanggalPenghapusan)->format('Y/m/d') }}/{{ substr($asset->asset_number, -4) }}</p>
     </div>
 
     <div class="content">
-        <p>Pada hari ini, tanggal <strong>{{ \Carbon\Carbon::now()->translatedFormat('d F Y') }}</strong>, menerangkan bahwa Perusahaan telah melakukan PENGHAPUSAN / PEMUSNAHAN / PENJUALAN RONGSOKAN terhadap Barang Inventaris / Aset Tetap Perusahaan dengan rincian sebagai berikut:</p>
+        <p>Pada hari ini, tanggal <strong>{{ \Carbon\Carbon::parse($tanggalPenghapusan)->translatedFormat('d F Y') }}</strong>, menerangkan bahwa Perusahaan telah melakukan PENGHAPUSAN / PEMUSNAHAN / PENJUALAN RONGSOKAN terhadap Barang Inventaris / Aset Tetap Perusahaan dengan rincian sebagai berikut:</p>
 
-        {{-- 🔥 TAMBAHAN: INFO ENTITAS PEMILIK ASET 🔥 --}}
         <table class="table-info">
             <tr>
                 <td>Entitas Pemilik Aset (PT)</td>
@@ -55,9 +88,8 @@
                         <small style="color: #555;">{{ $asset->accounting_asset_number ? 'Tag: '.$asset->accounting_asset_number : '' }}</small>
                     </td>
                     <td>
-                        {{-- 🔥 PERBAIKAN: Tampilkan nama spesifik aset jika ada 🔥 --}}
                         <strong>{{ $asset->name ?? optional($asset->item)->name }}</strong><br>
-                        <small>{{ $asset->spesifikasi_detail ?? optional($asset->item)->specification }}</small>
+                        <small>{!! strip_tags($asset->spesifikasi_detail ?? optional($asset->item)->specification) !!}</small>
                     </td>
                     <td>{{ $asset->serial_number ?? 'N/A' }}</td>
                 </tr>
@@ -67,7 +99,7 @@
         <p>Penghapusan / Pemusnahan aset tersebut di atas dilakukan berdasarkan hasil evaluasi dan pemeriksaan dengan alasan / keterangan sebagai berikut:</p>
 
         <div style="border: 2px dashed #b30000; background-color: #fff0f0; padding: 15px; font-weight: bold; color: #b30000; text-align: center; margin: 15px 0;">
-            "{{ $asset->notes ?? 'Aset rusak berat / sudah tidak memiliki nilai ekonomis / hilang.' }}"
+            "{{ $disposeLog ? str_replace('🔴 ASET DIHAPUSBUKUKAN (DISPOSED): ', '', $disposeLog->notes) : ($asset->notes ?? 'Aset rusak berat / sudah tidak memiliki nilai ekonomis / hilang.') }}"
         </div>
 
         <p>Dengan ditandatanganinya Berita Acara ini, maka aset tersebut secara resmi <strong>DIHAPUSBUKUKAN</strong> dari daftar inventaris kekayaan Perusahaan, dan segala nilai buku yang terkait dengan aset ini akan disesuaikan oleh Departemen Keuangan / Akuntansi.</p>
@@ -80,8 +112,8 @@
                     <strong>Dibuat & Dieksekusi Oleh,</strong><br>
                     Dept. IT / General Affair
                     <br><br><br><br>
-                    <div class="signature-name">{{ auth()->user()->name }}</div>
-                    <div style="font-size: 9pt;">{{ auth()->user()->job_title ?? 'Admin Aset' }}</div>
+                    <div class="signature-name">{{ $adminPembuat }}</div>
+                    <div style="font-size: 9pt;">{{ $jabatanAdmin }}</div>
                 </td>
                 <td>
                     <strong>Mengetahui / Saksi,</strong><br>
@@ -99,6 +131,11 @@
                 </td>
             </tr>
         </table>
+
+        {{-- 🔥 TIMESTAMP WAKTU CETAK DOKUMEN 🔥 --}}
+        <div style="margin-top: 40px; font-size: 8pt; color: #555; text-align: left; font-style: italic;">
+            * Dokumen ini dicetak otomatis oleh sistem pada {{ \Carbon\Carbon::now()->translatedFormat('d F Y H:i:s') }} WIB
+        </div>
     </div>
 
 </body>

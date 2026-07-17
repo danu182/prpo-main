@@ -19,17 +19,44 @@
         .signature-box { width: 100%; margin-top: 40px; table-layout: fixed; }
         .signature-box td { text-align: center; vertical-align: bottom; width: 50%; }
         .signature-name { font-weight: bold; text-decoration: underline; margin-top: 70px; }
+
+        /* CSS Footer Abadi */
+        footer {
+            position: fixed;
+            bottom: -40px;
+            left: 0px;
+            right: 0px;
+            height: 30px;
+            border-top: 1px solid #888;
+            text-align: right;
+            font-size: 8.5pt;
+            color: #555;
+            padding-top: 5px;
+            font-style: italic;
+        }
+        .pagenum:before { content: "Halaman " counter(page); }
     </style>
 </head>
 <body>
 
+    {{-- 🔥 LOGIKA MENGUNCI TANGGAL PERMANEN DARI RIWAYAT PENGEMBALIAN 🔥 --}}
+    @php
+        $returnLog = $asset->histories->where('status', 'RETURNED')->first();
+        $tanggalPengembalian = $returnLog ? $returnLog->created_at : $asset->updated_at;
+    @endphp
+
+    <footer>
+        Dokumen BAPA Aset: {{ $asset->asset_number }} &nbsp; | &nbsp; <span class="pagenum"></span>
+    </footer>
+
     <div class="header">
         <h2>BERITA ACARA PENGEMBALIAN ASET</h2>
-        <p>Nomor: BAPA/{{ date('Y/m/d') }}/{{ substr($asset->asset_number, -4) }}</p>
+        {{-- Nomor surat juga dikunci ke tanggal pengembalian --}}
+        <p>Nomor: BAPA/{{ \Carbon\Carbon::parse($tanggalPengembalian)->format('Y/m/d') }}/{{ substr($asset->asset_number, -4) }}</p>
     </div>
 
     <div class="content">
-        <p>Pada hari ini, tanggal <strong>{{ \Carbon\Carbon::now()->translatedFormat('d F Y') }}</strong>, telah dilakukan pengembalian barang/aset perusahaan dengan rincian pihak sebagai berikut:</p>
+        <p>Pada hari ini, tanggal <strong>{{ \Carbon\Carbon::parse($tanggalPengembalian)->translatedFormat('d F Y') }}</strong>, telah dilakukan pengembalian barang/aset perusahaan dengan rincian pihak sebagai berikut:</p>
 
         <table class="table-info">
             <tr>
@@ -42,7 +69,6 @@
                 <td>:</td>
                 <td>{{ optional($lastAssignee)->job_title ?? '-' }}</td>
             </tr>
-            {{-- 🔥 TAMBAHAN: INFO PT ASAL KARYAWAN 🔥 --}}
             <tr>
                 <td>Entitas / PT</td>
                 <td>:</td>
@@ -81,23 +107,22 @@
             </thead>
             <tbody>
                 <tr>
-                    <td>
+                    <td style="vertical-align: top;">
                         {{ $asset->asset_number }}<br>
                         <small style="color: #555;">{{ $asset->accounting_asset_number ? 'Tag: '.$asset->accounting_asset_number : '' }}</small>
                     </td>
-                    <td>
-                        {{-- 🔥 PERBAIKAN: Tampilkan nama spesifik aset jika ada 🔥 --}}
+                    <td style="vertical-align: top;">
                         <strong>{{ $asset->name ?? optional($asset->item)->name }}</strong><br>
-                        <small>{{ $asset->spesifikasi_detail ?? optional($asset->item)->specification }}</small>
+                        <small>{!! strip_tags($asset->spesifikasi_detail ?? optional($asset->item)->specification) !!}</small>
                     </td>
-                    <td>{{ $asset->serial_number ?? 'N/A' }}</td>
+                    <td style="vertical-align: top;">{{ $asset->serial_number ?? 'N/A' }}</td>
                 </tr>
             </tbody>
         </table>
 
         <p><strong>Keterangan Pengembalian:</strong></p>
         <p style="border: 1px dashed #000; padding: 10px; font-style: italic; background-color: #f9f9f9;">
-            {{ $asset->notes ?? 'Dikembalikan ke gudang/IT dalam kondisi baik dan lengkap.' }}
+            {{ $returnLog ? str_replace('Dikembalikan ke gudang (ID: '.$asset->warehouse_id.') oleh User ID: '.$lastAssignee->id.'. Catatan: ', '', $returnLog->notes) : ($asset->notes ?? 'Dikembalikan ke gudang dalam kondisi baik.') }}
         </p>
 
         <p>Dengan ditandatanganinya Berita Acara Pengembalian Aset ini, maka tanggung jawab <strong>PIHAK PERTAMA</strong> terhadap pemeliharaan aset tersebut dinyatakan telah <strong>selesai/gugur</strong>.</p>
@@ -120,6 +145,11 @@
                 </td>
             </tr>
         </table>
+
+        {{-- 🔥 TIMESTAMP WAKTU CETAK DOKUMEN 🔥 --}}
+        <div style="margin-top: 40px; font-size: 8pt; color: #555; text-align: left; font-style: italic;">
+            * Dokumen ini dicetak otomatis oleh sistem pada {{ \Carbon\Carbon::now()->translatedFormat('d F Y H:i:s') }} WIB
+        </div>
     </div>
 
 </body>

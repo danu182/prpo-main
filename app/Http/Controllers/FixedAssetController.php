@@ -675,17 +675,25 @@ class FixedAssetController extends Controller
 
     public function cancelImport($batch_id)
     {
-        $batch = \App\Models\FixedAssetImportBatch::findOrFail($batch_id);
+        // 🔥 JURUS ANTI-404: Cari berdasarkan ID urut ATAU berdasarkan Nomor Batch 🔥
+        $batch = \App\Models\FixedAssetImportBatch::where('id', $batch_id)
+                    ->orWhere('batch_number', $batch_id)
+                    ->firstOrFail();
 
-        // 🔥 PERBAIKAN: Pastikan support_doc tidak kosong/null sebelum dicek keberadaannya
+        // Bersihkan file PDF/Bukti
         if (!empty($batch->support_doc) && \Illuminate\Support\Facades\Storage::disk('public')->exists($batch->support_doc)) {
             \Illuminate\Support\Facades\Storage::disk('public')->delete($batch->support_doc);
+        }
+
+        // Bersihkan file Excel sisa
+        if (!empty($batch->file_path) && \Illuminate\Support\Facades\Storage::disk('local')->exists($batch->file_path)) {
+            \Illuminate\Support\Facades\Storage::disk('local')->delete($batch->file_path);
         }
 
         $batch->details()->delete();
         $batch->delete();
 
-        return redirect()->route('fixed-assets.index')->with('success', 'Draft Import Aset dibatalkan.');
+        return redirect()->route('fixed-assets.index')->with('success', 'Draft Import Aset berhasil dibatalkan dan file dibersihkan.');
     }
 
 

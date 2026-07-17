@@ -56,30 +56,39 @@
 </head>
 <body>
 
-    {{-- 🔥 FOOTER OTOMATIS (Akan berulang di setiap halaman) 🔥 --}}
+    {{-- 🔥 LOGIKA MENGUNCI TANGGAL PERMANEN DARI RIWAYAT PENYERAHAN (HANDOVER) 🔥 --}}
+    @php
+        // Sistem melacak histori dengan status HANDOVER (saat diserahkan ke user)
+        $handoverLog = $asset->histories->where('status', 'HANDOVER')->sortByDesc('created_at')->first();
+        $tanggalPenyerahan = $handoverLog ? $handoverLog->created_at : $asset->updated_at;
+    @endphp
+
+    {{-- 🔥 FOOTER OTOMATIS 🔥 --}}
     <footer>
         Dokumen BAST Aset: {{ $asset->asset_number }} &nbsp; | &nbsp; <span class="pagenum"></span>
     </footer>
 
     <div class="header">
         <h2>BERITA ACARA SERAH TERIMA ASET</h2>
-        <p>Nomor: {{ $asset->bast_number }}</p>
+        {{-- Tanggal di nomor BAST akan dikunci --}}
+        <p>Nomor: BAST/{{ \Carbon\Carbon::parse($tanggalPenyerahan)->format('Y/m/d') }}/{{ substr($asset->asset_number, -4) }}</p>
     </div>
 
     <div class="content">
-        {{-- 🔥 PERBAIKAN TANGGAL BAST: Memakai updated_at agar sesuai dengan tanggal real penyerahan aset 🔥 --}}
-        <p>Pada hari ini, tanggal <strong>{{ \Carbon\Carbon::parse($asset->updated_at)->translatedFormat('d F Y') }}</strong>, telah dilakukan serah terima barang/aset perusahaan dengan rincian pihak sebagai berikut:</p>
+        {{-- Tanggal narasi surat BAST akan dikunci --}}
+        <p>Pada hari ini, tanggal <strong>{{ \Carbon\Carbon::parse($tanggalPenyerahan)->translatedFormat('d F Y') }}</strong>, telah dilakukan serah terima barang/aset perusahaan dengan rincian pihak sebagai berikut:</p>
 
         <table class="table-info">
             <tr>
                 <td>Nama Penyerah (Admin)</td>
                 <td>:</td>
-                <td><strong>{{ auth()->user()->name }}</strong></td>
+                {{-- Jika ada log, ambil nama Admin yang dulu menekan tombol serahkan --}}
+                <td><strong>{{ $handoverLog ? optional($handoverLog->creator)->name : auth()->user()->name }}</strong></td>
             </tr>
             <tr>
                 <td>Jabatan / Departemen</td>
                 <td>:</td>
-                <td>{{ auth()->user()->job_title ?? 'General Affair / IT' }}</td>
+                <td>{{ $handoverLog ? optional($handoverLog->creator)->job_title : (auth()->user()->job_title ?? 'General Affair / IT') }}</td>
             </tr>
             <tr>
                 <td colspan="3"><br><i>Selanjutnya disebut sebagai <strong>PIHAK PERTAMA (Yang Menyerahkan)</strong>.</i></td>
@@ -171,8 +180,8 @@
                     <strong>YANG MENYERAHKAN,</strong><br>
                     PIHAK PERTAMA
                     <br><br><br><br>
-                    <div class="signature-name">{{ auth()->user()->name }}</div>
-                    <div style="font-size: 9pt;">{{ auth()->user()->job_title ?? 'GA / IT Dept' }}</div>
+                    <div class="signature-name">{{ $handoverLog ? optional($handoverLog->creator)->name : auth()->user()->name }}</div>
+                    <div style="font-size: 9pt;">{{ $handoverLog ? optional($handoverLog->creator)->job_title : (auth()->user()->job_title ?? 'GA / IT Dept') }}</div>
                 </td>
             </tr>
         </table>

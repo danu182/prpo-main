@@ -236,8 +236,9 @@
                                                 <li><a class="dropdown-item text-info" href="{{ route('fixed-assets.bast', $ast->id) }}" target="_blank"><i class="bi bi-file-earmark-check me-2"></i> Cetak BAST</a></li>
                                             @endif
 
-                                            @if(optional($ast->status)->slug === 'available' && $ast->histories->whereNotNull('assigned_to')->count() > 0)
-                                                <li><a class="dropdown-item text-warning" href="{{ route('fixed-assets.bapa', $ast->id) }}" target="_blank"><i class="bi bi-file-earmark-arrow-down me-2"></i> Cetak BAPA</a></li>
+                                            {{-- 🔥 TOMBOL CETAK BAPP (MUNCUL OTOMATIS JIKA STATUS DISPOSED) 🔥 --}}
+                                            @if(optional($ast->status)->slug === 'disposed')
+                                                <li><a class="dropdown-item text-danger fw-bold" href="{{ route('fixed-assets.bapp', $ast->id) }}" target="_blank"><i class="bi bi-file-earmark-x-fill me-2"></i> Cetak BAPP</a></li>
                                             @endif
                                         </ul>
                                     </div>
@@ -342,7 +343,7 @@
 
                                                 {{-- 🔥 FAILSAFE LOKASI ASET (PERBAIKAN UTAMA) 🔥 --}}
                                                 @if($ast->assigned_to)
-                                                    <span class="badge bg-success text-white"><i class="bi bi-person-check-fill me-1"></i>Dipegang: {{ optional($ast->assignee)->name }}</span>
+                                                    <span class="text-white badge bg-success"><i class="bi bi-person-check-fill me-1"></i>Dipegang: {{ optional($ast->assignee)->name }}</span>
                                                 @else
                                                     <span class="badge bg-info text-dark"><i class="bi bi-geo-alt-fill me-1"></i>{{ optional($ast->warehouse)->name ?? 'Lokasi Belum Diset' }}</span>
                                                 @endif
