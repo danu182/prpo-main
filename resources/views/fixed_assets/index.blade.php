@@ -339,7 +339,13 @@
                                             <h5 class="mb-1 fw-bold text-dark">{{ $ast->name ?? optional($ast->item)->name }}</h5>
                                             <div class="gap-2 mt-2 d-flex justify-content-center">
                                                 <span class="badge bg-primary"><i class="bi bi-tag-fill me-1"></i>{{ $ast->asset_number }}</span>
-                                                <span class="badge bg-info text-dark"><i class="bi bi-geo-alt-fill me-1"></i>{{ optional($ast->warehouse)->name ?? 'Gudang Pusat' }}</span>
+
+                                                {{-- 🔥 FAILSAFE LOKASI ASET (PERBAIKAN UTAMA) 🔥 --}}
+                                                @if($ast->assigned_to)
+                                                    <span class="badge bg-success text-white"><i class="bi bi-person-check-fill me-1"></i>Dipegang: {{ optional($ast->assignee)->name }}</span>
+                                                @else
+                                                    <span class="badge bg-info text-dark"><i class="bi bi-geo-alt-fill me-1"></i>{{ optional($ast->warehouse)->name ?? 'Lokasi Belum Diset' }}</span>
+                                                @endif
                                             </div>
                                         </div>
                                         <div class="p-4">
@@ -360,11 +366,14 @@
                                                                 <h6 class="mb-0 fw-bold text-dark">Status: <span class="text-primary">{{ $log->status }}</span></h6>
                                                                 <small class="px-2 py-1 rounded text-muted fw-bold bg-light">{{ \Carbon\Carbon::parse($log->created_at)->format('d M Y, H:i') }}</small>
                                                             </div>
+
+                                                            {{-- 🔥 FAILSAFE LOKASI LOG (PERBAIKAN KEDUA) 🔥 --}}
                                                             @if($log->assigned_to)
                                                                 <div class="mb-2 small fw-bold text-primary"><i class="bi bi-arrow-right-short"></i> Diserahkan ke: {{ optional($log->assignee)->name }}</div>
                                                             @elseif(in_array(strtolower($log->status), ['available', 'maintenance', 'returned']))
-                                                                <div class="mb-2 small fw-bold text-success"><i class="bi bi-arrow-left-short"></i> Gudang: {{ optional($ast->warehouse)->name ?? 'Pusat' }}</div>
+                                                                <div class="mb-2 small fw-bold text-success"><i class="bi bi-arrow-left-short"></i> Gudang: {{ optional($ast->warehouse)->name ?? 'Gudang Terdaftar' }}</div>
                                                             @endif
+
                                                             <div class="p-3 mt-2 rounded border-start border-3 border-info text-dark bg-info-subtle small" style="line-height: 1.4;">
                                                                 <em>{!! nl2br(e($log->notes ?? 'Tidak ada catatan.')) !!}</em>
                                                             </div>
@@ -677,7 +686,7 @@
                     </div>
 
                     <div class="mb-3">
-                        <label class="form-label fw-bold small text-muted">Pilih File Excel (.xlsx / .csv) <span class="text-danger">*</span></label>
+                        <label class="form-label fw-bold small">Pilih File (.xlsx / .csv) <span class="text-danger">*</span></label>
                         <input type="file" name="import_file" class="shadow-sm form-control border-success" accept=".xlsx, .xls, .csv" required>
                     </div>
 

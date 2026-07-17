@@ -67,8 +67,8 @@
     </div>
 
     <div class="content">
-        {{-- Gunakan created_at agar tanggal surat terkunci secara permanen dan tidak berubah saat dicetak ulang --}}
-        <p>Pada hari ini, tanggal <strong>{{ \Carbon\Carbon::parse($asset->created_at)->translatedFormat('d F Y') }}</strong>, telah dilakukan serah terima barang/aset perusahaan dengan rincian pihak sebagai berikut:</p>
+        {{-- 🔥 PERBAIKAN TANGGAL BAST: Memakai updated_at agar sesuai dengan tanggal real penyerahan aset 🔥 --}}
+        <p>Pada hari ini, tanggal <strong>{{ \Carbon\Carbon::parse($asset->updated_at)->translatedFormat('d F Y') }}</strong>, telah dilakukan serah terima barang/aset perusahaan dengan rincian pihak sebagai berikut:</p>
 
         <table class="table-info">
             <tr>
@@ -176,6 +176,11 @@
                 </td>
             </tr>
         </table>
+
+        {{-- 🔥 TIMESTAMP WAKTU CETAK DOKUMEN 🔥 --}}
+        <div style="margin-top: 40px; font-size: 8pt; color: #555; text-align: left; font-style: italic;">
+            * Dokumen ini dicetak otomatis oleh sistem pada {{ \Carbon\Carbon::now()->translatedFormat('d F Y H:i:s') }} WIB
+        </div>
     </div>
 
 </body>
