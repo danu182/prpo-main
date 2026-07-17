@@ -371,27 +371,35 @@
                 <div class="col-sm-7">
                     <h6 class="mb-2 fw-bold text-muted text-uppercase">Catatan PO:</h6>
                     <div class="p-3 border bg-light rounded-3 small text-muted min-vh-25">
-                        {!! nl2br(e($po->description ?? 'Tidak ada catatan khusus.')) !!}
+                        {!! nl2br(e($po->description ?? $po->notes ?? 'Tidak ada catatan khusus.')) !!}
                     </div>
                 </div>
 
                 <div class="col-sm-5">
                     @php
+                        // 🔥 PERBAIKAN: SESUAIKAN DENGAN NAMA KOLOM DI DATABASE ANDA 🔥
                         $sumSubtotal = (float)($po->subtotal ?? 0) > 0 ? (float)$po->subtotal : $calcSubtotalGross;
-                        $sumDiscount = (float)($po->total_discount ?? $po->discount_amount ?? 0) > 0 ? (float)($po->total_discount ?? $po->discount_amount) : $calcTotalDiscount;
 
-                        $sumTax = (float)($po->total_tax ?? $po->tax_amount ?? 0);
-                        if ($sumTax >= $sumSubtotal && $sumSubtotal > 0) { $sumTax = $calcTotalTax; }
+                        // Perbaiki pemanggilan nama variabel diskon
+                        $dbDiscount = (float)($po->discount_total ?? $po->discount_amount ?? 0);
+                        $sumDiscount = $dbDiscount > 0 ? $dbDiscount : $calcTotalDiscount;
+
+                        // Perbaiki pemanggilan nama variabel pajak
+                        $dbTax = (float)($po->tax_total ?? $po->tax_amount ?? 0);
+                        $sumTax = $dbTax > 0 ? $dbTax : $calcTotalTax;
 
                         $sumCharges = 0;
                         if(isset($charges) && count($charges) > 0) {
                             foreach($charges as $c) { $sumCharges += (float)$c->amount; }
                         }
 
-                        $sumGrandTotal = $sumSubtotal - $sumDiscount + $sumTax + $sumCharges;
-
-                        if(isset($extraDiscounts) && count($extraDiscounts) > 0) {
-                            foreach($extraDiscounts as $d) { $sumGrandTotal -= (float)$d->amount; }
+                        // Menggunakan grand_total asli jika sudah tersimpan, atau dikalkulasi manual jika gagal
+                        $sumGrandTotal = (float)($po->grand_total ?? 0);
+                        if ($sumGrandTotal <= 0) {
+                            $sumGrandTotal = $sumSubtotal - $sumDiscount + $sumTax + $sumCharges;
+                            if(isset($extraDiscounts) && count($extraDiscounts) > 0) {
+                                foreach($extraDiscounts as $d) { $sumGrandTotal -= (float)$d->amount; }
+                            }
                         }
                     @endphp
 

@@ -429,7 +429,7 @@ class PurchaseOrderController extends Controller
             DB::transaction(function () use ($request, $slug, $settingService) {
                 $po = \App\Models\PurchaseOrder::with('items')->where('po_number', $slug)->firstOrFail();
 
-                if (!in_array(strtolower(optional($po->status)->slug ?? ''), ['draft', 'pending_approval', 'rejected', ''])) {
+                if (!in_array(strtolower(optional($po->status)->slug ?? ''), ['draft', 'pending_approval', 'pending', 'rejected', ''])) {
                     throw new \Exception('Gagal: PO ini sudah tidak dapat diedit karena statusnya ' . optional($po->status)->name);
                 }
 
@@ -450,11 +450,9 @@ class PurchaseOrderController extends Controller
                     $discAmt = ($discType === 'PERCENT') ? ($gross * ($discVal / 100)) : $discVal;
                     $dpp = $gross - $discAmt;
 
-                    $taxAmt = 0;
-                    $taxId = $itemData['tax_id'] ?? null;
-                    if ($taxId && $tax = \App\Models\Tax::find($taxId)) {
-                        $taxAmt = $dpp * ($tax->percent / 100);
-                    }
+                    $taxVal = (float) ($itemData['tax_value'] ?? 0);
+                    $taxType = strtoupper($itemData['tax_type'] ?? 'FIXED');
+                    $taxAmt = ($taxType === 'PERCENT') ? ($dpp * ($taxVal / 100)) : $taxVal;
 
                     $fileInputName = "item_attachments_{$itemId}";
                     if ($request->hasFile($fileInputName)) {
@@ -479,7 +477,8 @@ class PurchaseOrderController extends Controller
                         'uom'             => $itemData['uom'] ?? $poItem->uom,
                         'description'     => $itemData['notes'] ?? $poItem->description,
                         'vendor_id'       => $itemData['vendor_id'] ?? $poItem->vendor_id,
-                        'tax_id'          => $taxId ?: null,
+                        'tax_type'        => $taxType,
+                        'tax_value'       => $taxVal,
                         'qty_ordered'     => $newQty,
                         'unit_price'      => $price,
                         'discount_type'   => $discType,
@@ -503,9 +502,16 @@ class PurchaseOrderController extends Controller
                     }
                 }
 
+                // 🔥 PERBAIKAN 1: TANGKAP DAN HITUNG PAJAK GLOBAL 🔥
                 $globalDiscType = strtoupper($request->global_discount_type ?? 'FIXED');
                 $globalDiscVal = (float) ($request->global_discount_value ?? 0);
                 $poGlobalDiscount = ($globalDiscType === 'PERCENT') ? (($poSubtotalGross - $poTotalItemDiscount) * ($globalDiscVal / 100)) : $globalDiscVal;
+
+                $dppAfterGlobalDisc = ($poSubtotalGross - $poTotalItemDiscount) - $poGlobalDiscount;
+
+                $globalTaxType = strtoupper($request->global_tax_type ?? 'FIXED');
+                $globalTaxVal = (float) ($request->global_tax_value ?? 0);
+                $poGlobalTax = ($globalTaxType === 'PERCENT') ? ($dppAfterGlobalDisc * ($globalTaxVal / 100)) : $globalTaxVal;
 
                 \DB::table('purchase_order_charges')->where('purchase_order_id', $po->id)->delete();
                 $poChargeTotal = 0;
@@ -551,11 +557,13 @@ class PurchaseOrderController extends Controller
                     'currency'              => $request->currency,
                     'global_discount_type'  => $globalDiscType,
                     'global_discount_value' => $globalDiscVal,
+                    'global_tax_type'       => $globalTaxType,  // 🔥 SIMPAN JENIS PAJAK
+                    'global_tax_value'      => $globalTaxVal,   // 🔥 SIMPAN NOMINAL PAJAK
                     'subtotal'              => $poSubtotalGross,
                     'discount_total'        => $poTotalItemDiscount + $poGlobalDiscount,
-                    'tax_total'             => $poTotalTax,
+                    'tax_total'             => $poTotalTax + $poGlobalTax, // 🔥 JUMLAHKAN PAJAK GLOBAL
                     'charge_total'          => $poChargeTotal,
-                    'grand_total'           => ($poSubtotalGross - ($poTotalItemDiscount + $poGlobalDiscount)) + $poTotalTax + $poChargeTotal - $poExtraDiscountTotal,
+                    'grand_total'           => $dppAfterGlobalDisc + $poTotalTax + $poGlobalTax + $poChargeTotal - $poExtraDiscountTotal,
                 ]);
 
                 // 🔥 EKSEKUSI SELF-HEALING PR 🔥
@@ -567,26 +575,20 @@ class PurchaseOrderController extends Controller
                     $this->checkAndUpdatePrStatus($po->purchase_request_id);
                 }
 
-                // =====================================================================
-                // 🔥 PEMANGGILAN SERVICE WORKFLOW (RESET ANTREAN SAAT PO DI-EDIT) 🔥
-                // =====================================================================
-                // Pastikan menggunakan variabel $po, bukan $bill
                 $needsApproval = \App\Services\ApprovalService::generateWorkflow($po);
 
                 if ($needsApproval) {
-                    // Jika butuh persetujuan, ubah status PO menjadi PENDING
-                    $pendingStatus = \App\Models\Status::where('slug', 'pending')->first()->id ?? 1;
+                    // 🔥 PERBAIKAN 2: AMBIL SLUG YANG BENAR (BISA PENDING ATAU PENDING_APPROVAL) 🔥
+                    $pendingStatus = \App\Models\Status::whereIn('slug', ['pending_approval', 'pending'])->first()->id ?? 1;
                     $po->update(['status_id' => $pendingStatus]);
 
                     $this->logHistory($po->id, 'SYSTEM', 'Rute persetujuan (Workflow) PO telah di-reset menyesuaikan data revisi.');
                 } else {
-                    // Jika tidak butuh persetujuan, otomatis APPROVED
                     $approvedStatus = \App\Models\Status::where('slug', 'approved')->first()->id ?? 3;
                     $po->update(['status_id' => $approvedStatus]);
 
                     $this->logHistory($po->id, 'APPROVED', 'PO Auto-Approved karena tidak ada aturan aktif atau nominal di bawah batas.');
                 }
-                // =====================================================================
 
                 $this->logHistory($po->id, 'PO Direvisi', 'Perubahan telah disimpan.');
 

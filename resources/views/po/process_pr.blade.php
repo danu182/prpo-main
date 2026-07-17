@@ -6,67 +6,28 @@
 
 <style>
     /* Styling Select2 */
-    .select2-container--bootstrap-5 .select2-selection {
-        border-radius: 8px;
-        min-height: 40px;
-        font-size: 0.85rem;
-        border-color: #dee2e6;
-    }
-    .select2-container--bootstrap-5.select2-container--focus .select2-selection {
-        border-color: #0d6efd;
-        box-shadow: 0 0 0 0.25rem rgba(13, 110, 253, 0.15);
-    }
+    .select2-container--bootstrap-5 .select2-selection { border-radius: 8px; min-height: 40px; font-size: 0.85rem; border-color: #dee2e6; }
+    .select2-container--bootstrap-5.select2-container--focus .select2-selection { border-color: #0d6efd; box-shadow: 0 0 0 0.25rem rgba(13, 110, 253, 0.15); }
 
     /* Modern Input Styling */
-    .form-input-custom {
-        border: 1px solid #dee2e6;
-        border-radius: 8px;
-        font-size: 0.85rem;
-        min-height: 40px;
-        transition: all 0.2s;
-    }
+    .form-input-custom { border: 1px solid #dee2e6; border-radius: 8px; font-size: 0.85rem; min-height: 40px; transition: all 0.2s; }
+    .form-input-custom:focus { border-color: #0d6efd; box-shadow: 0 0 0 0.25rem rgba(13, 110, 253, 0.15); background-color: #fff; }
 
     /* Input Group Modern */
-    .input-group-modern {
-        border-radius: 8px;
-        overflow: hidden;
-        border: 1px solid #dee2e6;
-        display: flex;
-    }
-    .input-group-modern:focus-within {
-        border-color: #0d6efd;
-        box-shadow: 0 0 0 0.25rem rgba(13, 110, 253, 0.15);
-    }
-    .input-group-modern input, .input-group-modern select, .input-group-modern .input-group-text {
-        border: none !important;
-        background: transparent;
-    }
-    .input-group-modern .input-group-text {
-        background-color: #f8f9fa;
-        color: #6c757d;
-        font-weight: 600;
-        border-right: 1px solid #dee2e6 !important;
-    }
+    .input-group-modern { border-radius: 8px; overflow: hidden; border: 1px solid #dee2e6; display: flex; }
+    .input-group-modern:focus-within { border-color: #0d6efd; box-shadow: 0 0 0 0.25rem rgba(13, 110, 253, 0.15); }
+    .input-group-modern input, .input-group-modern select, .input-group-modern .input-group-text { border: none !important; background: transparent; }
+    .input-group-modern .input-group-text { background-color: #f8f9fa; color: #6c757d; font-weight: 600; border-right: 1px solid #dee2e6 !important; }
 
     /* Fixed Sidebar Summary */
-    .summary-card {
-        position: sticky;
-        top: 20px;
-        border-radius: 16px;
-        border: 1px solid #e9ecef;
-    }
+    .summary-card { position: sticky; top: 20px; border-radius: 16px; border: 1px solid #e9ecef; }
 
     /* CSS VALIDASI ERROR */
-    .is-invalid {
-        border-color: #dc3545 !important;
-        background-color: #fff8f8 !important;
-    }
+    .is-invalid { border-color: #dc3545 !important; background-color: #fff8f8 !important; }
+    .input-group-modern:has(.is-invalid) { border-color: #dc3545 !important; box-shadow: 0 0 0 0.25rem rgba(220, 53, 69, 0.25) !important; }
 
     /* 🔥 STYLING KHUSUS CKEDITOR 🔥 */
-    .ck-editor__editable_inline {
-        min-height: 120px;
-        font-size: 0.85rem;
-    }
+    .ck-editor__editable_inline { min-height: 120px; font-size: 0.85rem; }
 
     input[type=number]::-webkit-inner-spin-button,
     input[type=number]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
@@ -144,8 +105,6 @@
                                             @foreach($oldPo->items as $pItem)
                                                 @php
                                                     $uomDisplayHistory = $pItem->uom;
-
-                                                    // Jika UOM kosong atau cuma isi angka ID gara-gara bug masa lalu
                                                     if (empty($uomDisplayHistory) || is_numeric($uomDisplayHistory)) {
                                                         if (!empty($pItem->uom_id)) {
                                                             $uomMaster = \App\Models\ItemUom::find($pItem->uom_id);
@@ -155,8 +114,6 @@
                                                             }
                                                         }
                                                     }
-
-                                                    // Fallback ke satuan dasar pabrik jika masih kosong
                                                     if (empty($uomDisplayHistory) || is_numeric($uomDisplayHistory)) {
                                                         $uomDisplayHistory = optional($pItem->item)->unit ?? 'PCS';
                                                     }
@@ -255,7 +212,6 @@
                                 $safePrUom = $cleanPrUom . ' (Isi: ' . $prConvRate . ' ' . $baseUomName . ')';
                             }
                         }
-                        // Fallback jika PR zaman dulu tidak pakai ID
                         else {
                             $rawUom = $item->getRawOriginal('uom') ?? $item->uom;
                             if (is_string($rawUom) && !str_starts_with(trim($rawUom), '{')) {
@@ -268,7 +224,7 @@
                                     if ($altMatch) {
                                         $prConvRate = (float) $altMatch->conversion_qty;
                                         $safePrUom = $cleanPrUom . ' (Isi: ' . $prConvRate . ' ' . $baseUomName . ')';
-                                        $prUomId = $altMatch->id; // Tarik ID-nya
+                                        $prUomId = $altMatch->id;
                                     }
                                 }
                             }
@@ -276,27 +232,18 @@
 
                         // 🔥 3. KALKULASI SISA DALAM SATUAN DASAR (ECERAN) 🔥
                         $targetBaseQty = $item->qty * $prConvRate;
-                        $orderedBaseQty = (float)($item->ordered_qty ?? 0) * $prConvRate; // Ubah ordered_qty ke base qty
+                        $orderedBaseQty = (float)($item->ordered_qty ?? 0) * $prConvRate;
                         $sisaBaseQty = max(0, $targetBaseQty - $orderedBaseQty);
-
                         $remainingNominal = $prConvRate > 0 ? ($sisaBaseQty / $prConvRate) : 0;
                         $remainingNominal = round($remainingNominal, 2);
 
                         // 4. FILTER PENAMPILAN
                         $itemStatus = strtoupper(trim($item->status ?? ''));
-                        if($sisaBaseQty <= 0 || !in_array($itemStatus, ['APPROVED', 'PARTIAL', 'PARTIAL_PO'])) {
-                            continue;
-                        }
+                        if($sisaBaseQty <= 0 || !in_array($itemStatus, ['APPROVED', 'PARTIAL', 'PARTIAL_PO'])) { continue; }
 
                         $suggestedVendorId = $item->suggested_vendor_id;
                         $quote = $suggestedVendorId ? $item->vendorQuotes->where('vendor_id', $suggestedVendorId)->first() : optional($item->vendorQuotes)->first();
                         $price = $quote ? ($quote->quoted_price ?? $quote->price ?? 0) : 0;
-
-                        $quoteCurrency = 'IDR';
-                        if($quote && $quote->currency_id) {
-                            $currObj = \App\Models\Currency::find($quote->currency_id);
-                            if($currObj) $quoteCurrency = $currObj->code;
-                        }
                     @endphp
 
                     <div class="mb-4 border-0 shadow-sm card item-card item-row" data-original-idx="{{ $index }}">
@@ -350,9 +297,7 @@
                                             <label class="form-label small fw-bold text-dark"><i class="bi bi-paperclip text-primary"></i> Dokumen Pendukung Item</label>
                                             <div class="p-3 border rounded shadow-sm bg-light border-secondary-subtle">
 
-                                                <div class="mb-2">
-                                                    <span class="small fw-bold text-muted">File Lampiran PO:</span>
-                                                </div>
+                                                <div class="mb-2"><span class="small fw-bold text-muted">File Lampiran PO:</span></div>
 
                                                 <div id="fileListContainer_{{ $index }}" class="gap-1 mb-2 d-flex flex-column"></div>
                                                 <div id="hiddenFileInputs_{{ $index }}" style="display: none;"></div>
@@ -393,14 +338,6 @@
                                                                             <a href="{{ $vq->reference_link }}" target="_blank" onclick="event.stopPropagation();" class="mb-1 text-decoration-none fw-bold me-2 d-inline-block"><i class="bi bi-link-45deg"></i> Link Toko</a>
                                                                         @endif
                                                                         <span class="mb-1 text-muted fst-italic d-block">{{ $vq->notes ?? 'Tidak ada catatan.' }}</span>
-
-                                                                        @if($vq->attachments && $vq->attachments->count() > 0)
-                                                                            <div class="flex-wrap gap-1 pt-1 mt-2 border-top border-light d-flex">
-                                                                                @foreach($vq->attachments as $idx => $vFile)
-                                                                                    <a href="{{ asset('storage/' . $vFile->file_path) }}" target="_blank" class="border badge bg-info-subtle text-info-emphasis text-decoration-none border-info-subtle"><i class="bi bi-file-earmark-pdf-fill"></i> File {{ $idx + 1 }}</a>
-                                                                                @endforeach
-                                                                            </div>
-                                                                        @endif
                                                                     </div>
                                                                 </div>
                                                             @endforeach
@@ -408,7 +345,6 @@
                                                     </div>
                                                 </div>
                                                 @endif
-
                                             </div>
                                         </div>
                                     </div>
@@ -424,7 +360,6 @@
                                         <input type="number" name="po_items[{{ $index }}][qty]" id="qty-input-{{ $index }}" class="text-center form-control fw-bolder qty-input text-primary" value="{{ $remainingNominal }}" max="{{ $remainingNominal }}" min="0.01" step="0.01" data-base-remaining="{{ $sisaBaseQty }}" oninput="calculateRow(this)" required>
                                     </div>
 
-                                    {{-- 🔥 PERBAIKAN: MENGGUNAKAN UOM_ID DAN MENYIMPAN NAMA TEXT UOM 🔥 --}}
                                     <select name="po_items[{{ $index }}][uom_id]" class="shadow-sm form-select border-primary text-primary fw-bold uom-selector" data-current-conv="{{ $prConvRate }}" onchange="updateRowUom(this, {{ $index }})">
                                         <option value="{{ $prUomId }}" data-name="{{ $safePrUom }}" data-conv="{{ $prConvRate }}">{{ $cleanPrUom }} @if($prConvRate>1) (Isi: {{(float)$prConvRate}}) @endif [PR]</option>
 
@@ -442,7 +377,6 @@
                                             @endforeach
                                         @endif
                                     </select>
-                                    {{-- Hidden input ini wajib agar nama text (Pack Isi 20) tetap terekam di Controller dan tampil cantik di Show.blade.php --}}
                                     <input type="hidden" name="po_items[{{ $index }}][uom]" id="uom-name-{{ $index }}" value="{{ $safePrUom }}">
 
                                     <div class="mt-1 text-muted" style="font-size: 0.7rem;" id="max-help-{{ $index }}">
@@ -472,17 +406,19 @@
                                     <input type="hidden" name="po_items[{{ $index }}][discount_amount]" class="disc-amt-hidden" value="0">
                                 </div>
 
-                                {{-- PAJAK --}}
+                                {{-- 🔥 PAJAK ITEM MANUAL 🔥 --}}
                                 <div class="col-md-3">
                                     <label class="form-label small fw-bold text-dark">Pajak (VAT/PPN)</label>
-                                    <select name="po_items[{{ $index }}][tax_id]" class="shadow-sm form-select form-input-custom tax-select fw-bold text-muted" onchange="calculateRow(this)">
-                                        <option value="" data-percent="0">- Tanpa Pajak -</option>
-                                        @foreach($taxes as $tax)
-                                            <option value="{{ $tax->id }}" data-percent="{{ $tax->percent }}">+ {{ $tax->name }} ({{ $tax->percent }}%)</option>
-                                        @endforeach
-                                    </select>
+                                    <div class="shadow-sm input-group-modern">
+                                        <select name="po_items[{{ $index }}][tax_type]" class="text-center form-select fw-bold text-secondary tax-type" style="max-width: 65px;" onchange="calculateRow(this)">
+                                            <option value="PERCENT">%</option>
+                                            <option value="FIXED">Rp</option>
+                                        </select>
+                                        <input type="number" name="po_items[{{ $index }}][tax_value]" class="form-control text-end fw-bold text-info tax-val" value="0" min="0" step="any" oninput="calculateRow(this)">
+                                    </div>
                                     <input type="hidden" name="po_items[{{ $index }}][tax_amount]" class="tax-amt-hidden" value="0">
                                 </div>
+
                             </div>
 
                         </div>
@@ -543,19 +479,16 @@
 
                 <div class="p-4 card-body">
 
-                    {{-- Set Diskon & Pajak Massal --}}
+                    {{-- Set Diskon Massal --}}
                     <div class="p-3 mb-4 border bg-light rounded-3 border-warning-subtle">
                         <label class="mb-2 form-label small fw-bold text-dark">
                             <i class="bi bi-tags-fill me-1 text-danger"></i> Diskon Global (Header PO)
                         </label>
                         <div id="globalDiscContainer">
-                            <div class="pb-2 mb-2 border-white global-disc-row border-bottom">
+                            <div class="pb-2 mb-2 border-white global-disc-row border-bottom position-relative">
                                 <div class="mb-1 overflow-hidden border shadow-sm input-group input-group-sm rounded-2">
-                                    <select name="global_discounts[0][vendor_id]" class="bg-white border-0 form-select text-dark small fw-bold" style="max-width: 120px;">
-                                        <option value="ALL">Semua Vendor</option>
-                                        @foreach($vendors as $v)
-                                            <option value="{{ $v->id }}">{{ $v->name }}</option>
-                                        @endforeach
+                                    <select name="global_discounts[0][vendor_id]" class="bg-white border-0 form-select text-dark small fw-bold dynamic-vendor-select" style="max-width: 120px;">
+                                        <option value="ALL">- Semua Vendor Terpilih -</option>
                                     </select>
                                     <select name="global_discounts[0][type]" class="px-1 text-center border-0 form-select bg-light fw-bold" style="max-width: 60px;">
                                         <option value="PERCENT">%</option>
@@ -568,16 +501,26 @@
                         <button type="button" class="p-0 btn btn-sm btn-link text-decoration-none small" onclick="addGlobalDiscRow()"><i class="bi bi-plus-circle"></i> Tambah Diskon Vendor Lain</button>
                     </div>
 
+                    {{-- 🔥 PAJAK GLOBAL (DIUBAH MENJADI MANUAL SEPERTI DISKON) 🔥 --}}
                     <div class="p-3 mb-4 border bg-light rounded-3 border-primary-subtle">
-                        <label class="mb-2 form-label small fw-bold text-dark"><i class="bi bi-magic me-1 text-primary"></i> Terapkan Pajak ke Semua Item</label>
-                        <select id="globalTaxSelect" class="border-0 shadow-sm form-select form-select-sm fw-bold text-muted" onchange="applyGlobalTax(this)">
-                            <option value="">-- Pilih Pajak --</option>
-                            <option value="RESET">Hapus Semua Pajak</option>
-                            @foreach($taxes as $tax)
-                                <option value="{{ $tax->id }}">{{ $tax->name }} ({{ $tax->percent }}%)</option>
-                            @endforeach
-                        </select>
-                        <div class="form-text" style="font-size: 0.6rem;">Tips: Centang item milik Vendor A saja, lalu klik ini untuk set pajak Vendor A.</div>
+                        <label class="mb-2 form-label small fw-bold text-dark">
+                            <i class="bi bi-bank me-1 text-primary"></i> Pajak Global (Header PO)
+                        </label>
+                        <div id="globalTaxContainer">
+                            <div class="pb-2 mb-2 border-white global-tax-row border-bottom position-relative">
+                                <div class="mb-1 overflow-hidden border shadow-sm input-group input-group-sm rounded-2">
+                                    <select name="global_taxes[0][vendor_id]" class="bg-white border-0 form-select text-dark small fw-bold dynamic-vendor-select" style="max-width: 120px;">
+                                        <option value="ALL">- Semua Vendor Terpilih -</option>
+                                    </select>
+                                    <select name="global_taxes[0][type]" class="px-1 text-center border-0 form-select bg-light fw-bold" style="max-width: 60px;">
+                                        <option value="PERCENT">%</option>
+                                        <option value="FIXED">Nom</option>
+                                    </select>
+                                    <input type="number" name="global_taxes[0][value]" class="px-2 border-0 form-control text-end fw-bold text-primary global-tax-val" value="0" min="0" step="any" oninput="calculateGrandTotal()">
+                                </div>
+                            </div>
+                        </div>
+                        <button type="button" class="p-0 btn btn-sm btn-link text-decoration-none small" onclick="addGlobalTaxRow()"><i class="bi bi-plus-circle"></i> Tambah Pajak Vendor Lain</button>
                     </div>
 
                     {{-- Rincian Hitungan --}}
@@ -651,18 +594,15 @@
     @foreach($discountTypes as $type) <option value="{{ $type->name }}"></option> @endforeach
 </datalist>
 
-{{-- TEMPLATE BIAYA TAMBAHAN --}}
+{{-- 🔥 TEMPLATE BIAYA TAMBAHAN (HANYA VENDOR YG DIPILIH) 🔥 --}}
 <template id="chargeRowTemplate">
     <tr class="charge-row border-bottom">
         <td width="35%" class="p-1 pb-2">
             <input type="text" name="charges[INDEX][charge_type_id]" class="form-control form-input-custom" list="chargeTypeList" placeholder="Ketik Biaya..." required>
         </td>
         <td width="30%" class="p-1 pb-2">
-            <select name="charges[INDEX][vendor_id]" class="form-select form-input-custom text-secondary" style="font-size: 0.75rem;" required>
-                <option value="ALL">Semua Vendor</option>
-                @foreach($vendors as $v)
-                    <option value="{{ $v->id }}">{{ $v->name }}</option>
-                @endforeach
+            <select name="charges[INDEX][vendor_id]" class="form-select form-input-custom text-secondary dynamic-vendor-select" style="font-size: 0.75rem;" required>
+                <option value="ALL">- Semua Vendor Terpilih -</option>
             </select>
         </td>
         <td width="25%" class="p-1 pb-2">
@@ -674,18 +614,15 @@
     </tr>
 </template>
 
-{{-- TEMPLATE POTONGAN TAMBAHAN --}}
+{{-- 🔥 TEMPLATE POTONGAN TAMBAHAN (HANYA VENDOR YG DIPILIH) 🔥 --}}
 <template id="extraDiscRowTemplate">
     <tr class="extradisc-row border-bottom">
         <td width="35%" class="p-1 pb-2">
             <input type="text" name="extra_discounts[INDEX][discount_type_id]" class="form-control form-input-custom" list="discountTypeList" placeholder="Ketik Voucher..." required>
         </td>
         <td width="30%" class="p-1 pb-2">
-            <select name="extra_discounts[INDEX][vendor_id]" class="form-select form-input-custom text-secondary" style="font-size: 0.75rem;" required>
-                <option value="ALL">Semua Vendor</option>
-                @foreach($vendors as $v)
-                    <option value="{{ $v->id }}">{{ $v->name }}</option>
-                @endforeach
+            <select name="extra_discounts[INDEX][vendor_id]" class="form-select form-input-custom text-secondary dynamic-vendor-select" style="font-size: 0.75rem;" required>
+                <option value="ALL">- Semua Vendor Terpilih -</option>
             </select>
         </td>
         <td width="25%" class="p-1 pb-2">
@@ -710,6 +647,7 @@
     let discIdx = 100;
     let splitIdx = 5000;
     let gDiscIdx = 0;
+    let gTaxIdx = 0;
     let myEditors = {};
 
     function initSelect2() {
@@ -734,10 +672,63 @@
         if(!currencySelect) return;
 
         let currency = currencySelect.value;
-
         document.querySelectorAll('.currency-label').forEach(el => { el.innerText = currency; });
         document.querySelectorAll('option[value="FIXED"]').forEach(opt => { opt.innerText = currency; });
     }
+
+    // =========================================================================
+    // 🔥 JAVASCRIPT RADAR VENDOR (SENSOR PINTAR) 🔥
+    // =========================================================================
+    function syncVendorDropdowns() {
+        let selectedVendors = new Map();
+
+        document.querySelectorAll('.item-row').forEach(row => {
+            let checkbox = row.querySelector('.row-checkbox');
+            if(checkbox && checkbox.checked) {
+                let vendorSelect = row.querySelector('.vendor-select');
+                if(vendorSelect) {
+                    let vId = vendorSelect.value;
+                    let vName = vendorSelect.options[vendorSelect.selectedIndex]?.text;
+                    if(vId && vName && vId !== '') {
+                        selectedVendors.set(vId, vName);
+                    }
+                }
+            }
+        });
+
+        let optionsHtml = '<option value="ALL">- Semua Vendor Terpilih -</option>';
+        selectedVendors.forEach((name, id) => {
+            optionsHtml += `<option value="${id}">${name}</option>`;
+        });
+
+        document.querySelectorAll('.dynamic-vendor-select').forEach(dropdown => {
+            let currentVal = dropdown.value;
+            dropdown.innerHTML = optionsHtml;
+            if(dropdown.querySelector(`option[value="${currentVal}"]`)) {
+                dropdown.value = currentVal;
+            } else {
+                dropdown.value = "ALL";
+            }
+        });
+
+        updateTemplateSelect('chargeRowTemplate', optionsHtml);
+        updateTemplateSelect('extraDiscRowTemplate', optionsHtml);
+    }
+
+    function updateTemplateSelect(templateId, optionsHtml) {
+        let tmpl = document.getElementById(templateId);
+        if(tmpl) {
+            let tempDiv = document.createElement('div');
+            tempDiv.innerHTML = tmpl.innerHTML;
+            let sel = tempDiv.querySelector('.dynamic-vendor-select');
+            if(sel) sel.innerHTML = optionsHtml;
+            tmpl.innerHTML = tempDiv.innerHTML;
+        }
+    }
+
+    $(document).on('change', '.vendor-select', function() {
+        syncVendorDropdowns();
+    });
 
     $(document).ready(function() {
         initSelect2();
@@ -753,6 +744,8 @@
         document.querySelectorAll('.item-row').forEach(row => calculateRow(row.querySelector('.qty-input')));
         updateCurrencySymbol();
         calculateDueDate();
+
+        syncVendorDropdowns();
     });
 
     function updateShippingAddress(forceReset = false) {
@@ -791,15 +784,13 @@
 
     function addGlobalDiscRow() {
         gDiscIdx++;
-        let vendorsHtml = `<option value="ALL">Semua Vendor</option>`;
-        @foreach($vendors as $v) vendorsHtml += `<option value="{{ $v->id }}">{{ $v->name }}</option>`; @endforeach
-
+        let vendorsHtml = document.querySelector('.dynamic-vendor-select').innerHTML;
         let currentCurrency = document.getElementById('currencySelect').value || 'IDR';
 
         let template = `
             <div class="pb-2 mb-2 border-white global-disc-row border-bottom position-relative">
                 <div class="mb-1 overflow-hidden border shadow-sm input-group input-group-sm rounded-2">
-                    <select name="global_discounts[${gDiscIdx}][vendor_id]" class="bg-white border-0 form-select text-dark small fw-bold" style="max-width: 120px;">
+                    <select name="global_discounts[${gDiscIdx}][vendor_id]" class="bg-white border-0 form-select text-dark small fw-bold dynamic-vendor-select" style="max-width: 120px;">
                         ${vendorsHtml}
                     </select>
                     <select name="global_discounts[${gDiscIdx}][type]" class="px-1 text-center border-0 form-select bg-light fw-bold" style="max-width: 70px;">
@@ -814,19 +805,41 @@
         document.getElementById('globalDiscContainer').insertAdjacentHTML('beforeend', template);
     }
 
+    // 🔥 FUNGSI BARU UNTUK PAJAK GLOBAL MANUAL 🔥
+    function addGlobalTaxRow() {
+        gTaxIdx++;
+        let vendorsHtml = document.querySelector('.dynamic-vendor-select').innerHTML;
+        let currentCurrency = document.getElementById('currencySelect').value || 'IDR';
+
+        let template = `
+            <div class="pb-2 mb-2 border-white global-tax-row border-bottom position-relative">
+                <div class="mb-1 overflow-hidden border shadow-sm input-group input-group-sm rounded-2">
+                    <select name="global_taxes[${gTaxIdx}][vendor_id]" class="bg-white border-0 form-select text-dark small fw-bold dynamic-vendor-select" style="max-width: 120px;">
+                        ${vendorsHtml}
+                    </select>
+                    <select name="global_taxes[${gTaxIdx}][type]" class="px-1 text-center border-0 form-select bg-light fw-bold" style="max-width: 70px;">
+                        <option value="PERCENT">%</option>
+                        <option value="FIXED">${currentCurrency}</option>
+                    </select>
+                    <input type="number" name="global_taxes[${gTaxIdx}][value]" class="px-2 border-0 form-control text-end fw-bold text-primary global-tax-val" value="0" min="0" step="any" oninput="calculateGrandTotal()">
+                </div>
+                <button type="button" class="top-0 p-0 btn btn-sm text-danger position-absolute end-0" onclick="this.closest('.global-tax-row').remove(); calculateGrandTotal();" style="margin-top:-10px; margin-right:-5px;"><i class="bi bi-x-circle-fill"></i></button>
+            </div>
+        `;
+        document.getElementById('globalTaxContainer').insertAdjacentHTML('beforeend', template);
+    }
+
     function removeRow(btn) {
         btn.closest('tr').remove();
         calculateGrandTotal();
     }
 
-    // 🔥 PERBAIKAN LOGIKA JS UPDATE UOM AGAR MENYIMPAN NAMA TEXT JUGA 🔥
     function updateRowUom(selectEl, index) {
         let selectedOption = selectEl.options[selectEl.selectedIndex];
         let newConvRate = parseFloat(selectedOption.getAttribute('data-conv')) || 1;
         let oldConvRate = parseFloat(selectEl.getAttribute('data-current-conv')) || 1;
         let newUomName = selectedOption.getAttribute('data-name') || '';
 
-        // Tembak nama teks uom-nya ke input hidden agar bisa dibaca Controller
         let uomNameInput = document.getElementById(`uom-name-${index}`);
         if(uomNameInput) uomNameInput.value = newUomName;
 
@@ -896,8 +909,6 @@
 
         clonedCard.find('.qty-input').attr('id', `qty-input-${splitIdx}`);
         clonedCard.find('.uom-selector').attr('onchange', `updateRowUom(this, ${splitIdx})`);
-
-        // Pastikan input hidden uom-name ikut berganti ID
         clonedCard.find('input[id^="uom-name-"]').attr('id', `uom-name-${splitIdx}`);
 
         let helpMaxText = clonedCard.find('[id^="max-help-"]');
@@ -920,6 +931,8 @@
 
         calculateRow(origQtyInput[0]);
         calculateRow(clonedCard.find('.qty-input')[0]);
+
+        syncVendorDropdowns();
     }
 
     function removeSplitItem(btn, editorId) {
@@ -931,12 +944,10 @@
             let deletedQtyInput = cardToDelete.find('.qty-input');
             let deletedQty = parseFloat(deletedQtyInput.val()) || 0;
             let deletedConv = parseFloat(cardToDelete.find('.uom-selector').attr('data-current-conv')) || 1;
-
             let returningBaseQty = deletedQty * deletedConv;
 
             let parentQtyInput = parentCard.find('.qty-input');
             let parentConv = parseFloat(parentCard.find('.uom-selector').attr('data-current-conv')) || 1;
-
             let qtyToAddBack = returningBaseQty / parentConv;
             let currentParentQty = parseFloat(parentQtyInput.val()) || 0;
 
@@ -951,6 +962,7 @@
 
         cardToDelete.remove();
         calculateGrandTotal();
+        syncVendorDropdowns();
     }
 
     function toggleRow(checkbox) {
@@ -964,6 +976,7 @@
             inputs.forEach(i => i.disabled = true);
         }
         calculateGrandTotal();
+        syncVendorDropdowns();
     }
 
     function triggerFilePicker(index) {
@@ -984,7 +997,6 @@
 
                 Array.from(this.files).forEach((file, fileIndex) => {
                     let pillId = 'pill_' + inputId + '_' + fileIndex;
-
                     let pillHTML = `
                         <div id="${pillId}" class="p-1 mt-1 bg-white border shadow-sm file-pill d-flex align-items-center justify-content-between rounded-3">
                             <div class="overflow-hidden d-flex align-items-center">
@@ -1023,6 +1035,7 @@
         setTimeout(() => pill.remove(), 200);
     }
 
+    // 🔥 PERHITUNGAN BARIS (DENGAN PAJAK MANUAL) 🔥
     function calculateRow(el) {
         let row = el.closest('.item-row');
         if(row.querySelector('.row-checkbox') && !row.querySelector('.row-checkbox').checked) return;
@@ -1038,9 +1051,9 @@
 
         let dpp = gross - discAmt;
 
-        let taxSelect = row.querySelector('.tax-select');
-        let taxPercent = parseFloat(taxSelect.options[taxSelect.selectedIndex].getAttribute('data-percent')) || 0;
-        let taxAmt = dpp * (taxPercent / 100);
+        let taxType = row.querySelector('.tax-type').value;
+        let taxVal = parseFloat(row.querySelector('.tax-val').value) || 0;
+        let taxAmt = (taxType === 'PERCENT') ? (dpp * taxVal / 100) : taxVal;
         row.querySelector('.tax-amt-hidden').value = taxAmt;
 
         let subtotal = dpp + taxAmt;
@@ -1050,18 +1063,30 @@
         calculateGrandTotal();
     }
 
+    // 🔥 PERHITUNGAN GRAND TOTAL (DENGAN PAJAK GLOBAL MANUAL) 🔥
     function calculateGrandTotal() {
         let totalGross = 0;
         let totalItemDisc = 0;
-        let totalTax = 0;
+        let totalTaxItem = 0;
+        let vendorDpp = {};
 
         document.querySelectorAll('.item-row').forEach(row => {
             if(row.querySelector('.row-checkbox').checked) {
+                let vId = row.querySelector('.vendor-select').value || 'UNKNOWN';
                 let qty = parseFloat(row.querySelector('.qty-input').value) || 0;
                 let price = parseFloat(row.querySelector('.price-input').value) || 0;
-                totalGross += (qty * price);
-                totalItemDisc += parseFloat(row.querySelector('.disc-amt-hidden').value) || 0;
-                totalTax += parseFloat(row.querySelector('.tax-amt-hidden').value) || 0;
+                let gross = qty * price;
+
+                let discAmt = parseFloat(row.querySelector('.disc-amt-hidden').value) || 0;
+                let taxAmt = parseFloat(row.querySelector('.tax-amt-hidden').value) || 0;
+                let dppRow = gross - discAmt;
+
+                totalGross += gross;
+                totalItemDisc += discAmt;
+                totalTaxItem += taxAmt;
+
+                if (!vendorDpp[vId]) vendorDpp[vId] = 0;
+                vendorDpp[vId] += dppRow;
             }
         });
 
@@ -1071,37 +1096,41 @@
         let totalExtraDisc = 0;
         document.querySelectorAll('.extradisc-input').forEach(i => totalExtraDisc += parseFloat(i.value) || 0);
 
-        let dpp = totalGross - totalItemDisc;
+        let totalDpp = totalGross - totalItemDisc;
 
         let globalDiscAmt = 0;
         document.querySelectorAll('.global-disc-row').forEach(row => {
+            let vId = row.querySelector('select[name$="[vendor_id]"]').value;
             let type = row.querySelector('select[name$="[type]"]').value;
             let val = parseFloat(row.querySelector('.global-disc-val').value) || 0;
-            globalDiscAmt += (type === 'PERCENT') ? (dpp * val / 100) : val;
+
+            let targetDpp = (vId === 'ALL') ? totalDpp : (vendorDpp[vId] || 0);
+            globalDiscAmt += (type === 'PERCENT') ? (targetDpp * val / 100) : val;
         });
 
-        let grandTotal = dpp - globalDiscAmt + totalTax + totalCharges - totalExtraDisc;
+        let dppAfterGlobalDisc = totalDpp - globalDiscAmt;
+
+        // Pajak Global Manual (Disesuaikan dengan pilihan Vendor)
+        let globalTaxAmt = 0;
+        document.querySelectorAll('.global-tax-row').forEach(row => {
+            let vId = row.querySelector('select[name$="[vendor_id]"]').value;
+            let type = row.querySelector('select[name$="[type]"]').value;
+            let val = parseFloat(row.querySelector('.global-tax-val').value) || 0;
+
+            let targetDpp = (vId === 'ALL') ? dppAfterGlobalDisc : ((vendorDpp[vId] || 0) * (1 - (globalDiscAmt/totalDpp || 0)));
+            globalTaxAmt += (type === 'PERCENT') ? (targetDpp * val / 100) : val;
+        });
+
+        let grandTotal = dppAfterGlobalDisc + totalTaxItem + globalTaxAmt + totalCharges - totalExtraDisc;
 
         document.getElementById('lblSubtotal').innerText = formatCurrency(totalGross);
         document.getElementById('lblTotalItemDisc').innerText = "-" + formatCurrency(totalItemDisc);
-        document.getElementById('lblDpp').innerText = formatCurrency(dpp);
+        document.getElementById('lblDpp').innerText = formatCurrency(totalDpp);
         document.getElementById('lblGlobalDisc').innerText = "-" + formatCurrency(globalDiscAmt);
-        document.getElementById('lblTax').innerText = "+" + formatCurrency(totalTax);
+        document.getElementById('lblTax').innerText = "+" + formatCurrency(totalTaxItem + globalTaxAmt);
         document.getElementById('lblCharges').innerText = "+" + formatCurrency(totalCharges);
         document.getElementById('lblExtraDisc').innerText = "-" + formatCurrency(totalExtraDisc);
         document.getElementById('lblGrandTotal').innerText = formatCurrency(grandTotal);
-    }
-
-    function applyGlobalTax(selectElement) {
-        let selectedTaxId = selectElement.value;
-        document.querySelectorAll('.item-row').forEach(row => {
-            if(row.querySelector('.row-checkbox').checked) {
-                let itemTaxSelect = row.querySelector('.tax-select');
-                if(selectedTaxId === 'RESET') { itemTaxSelect.value = ""; }
-                else if (selectedTaxId !== "") { itemTaxSelect.value = selectedTaxId; }
-                calculateRow(itemTaxSelect);
-            }
-        });
     }
 
     function formatCurrency(amount) {
