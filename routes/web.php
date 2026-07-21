@@ -630,6 +630,22 @@ Route::middleware('auth')->group(function () {
     });
 
 
+    // ====================================================
+    // MODUL STOCK OPNAME (AUDIT PERSEDIAAN)
+    // ====================================================
+    Route::prefix('stock-opnames')->name('stock-opnames.')->group(function () {
+        Route::get('/', [App\Http\Controllers\StockOpnameController::class, 'index'])->name('index');
+        Route::get('/create', [App\Http\Controllers\StockOpnameController::class, 'create'])->name('create');
+        Route::post('/', [App\Http\Controllers\StockOpnameController::class, 'store'])->name('store');
+
+        Route::get('/{id}/edit', [App\Http\Controllers\StockOpnameController::class, 'edit'])->name('edit');
+        Route::put('/{id}', [App\Http\Controllers\StockOpnameController::class, 'update'])->name('update');
+
+        Route::get('/{id}', [App\Http\Controllers\StockOpnameController::class, 'show'])->name('show');
+        // Nanti kita tambahkan route untuk Cetak Blind Count & Submit Approval di sini
+    });
+
+
     /// ====================================================
     // MASTER KATEGORI ASET
     // ====================================================
@@ -651,6 +667,8 @@ Route::middleware('auth')->group(function () {
 
     // MASTER KATEGORI ASET
     // Route::resource('asset-categories', \App\Http\Controllers\AssetCategoryController::class)->except(['create', 'edit', 'show']);
+
+
 
 
 

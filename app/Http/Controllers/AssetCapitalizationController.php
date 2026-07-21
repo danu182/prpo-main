@@ -40,10 +40,67 @@ class AssetCapitalizationController extends Controller
 
     public function create()
     {
-        $grs = GoodsReceipt::orderBy('received_date', 'desc')->limit(50)->get();
+        // 1. Ambil 100 GR terbaru beserta relasinya
+        $rawGrs = \App\Models\GoodsReceipt::with(['items.item', 'po.vendor'])
+                    ->orderBy('received_date', 'desc')
+                    ->limit(100)
+                    ->get();
+
+        $grIds = $rawGrs->pluck('id')->toArray();
+
+        // 2. Hitung jumlah aset yang SUDAH dikapitalisasi per GR dan per Item (Cepat & Anti-Lemot)
+        $capitalizedData = \App\Models\FixedAsset::whereIn('goods_receipt_id', $grIds)
+            ->select('goods_receipt_id', 'item_id', \Illuminate\Support\Facades\DB::raw('count(*) as total_capitalized'))
+            ->groupBy('goods_receipt_id', 'item_id')
+            ->get();
+
+        $validGrs = collect();
+
+        // 3. Filter: Hanya simpan GR yang MASIH PUNYA sisa barang ke dalam $validGrs
+        foreach ($rawGrs as $gr) {
+            $hasSisa = false;
+
+            foreach ($gr->items as $grItem) {
+                // Hitung Qty Base (Eceran)
+                $grConvRate = 1;
+                $rawUom = $grItem->getRawOriginal('uom') ?: '';
+                if (preg_match('/Isi\s*[:=]?\s*([0-9.]+)/i', $rawUom, $matches)) {
+                    $grConvRate = (float) $matches[1];
+                } elseif ($grItem->uom_id) {
+                    $uomDb = \App\Models\ItemUom::find($grItem->uom_id);
+                    if ($uomDb) $grConvRate = (float) $uomDb->conversion_qty;
+                }
+
+                // Total barang yang diterima dari Gudang
+                $baseQtyReceived = ($grItem->qty_received - ($grItem->qty_returned ?? 0)) * $grConvRate;
+
+                // Cari total yang sudah dikapitalisasi untuk item ini di GR ini
+                $cap = $capitalizedData->where('goods_receipt_id', $gr->id)
+                                       ->where('item_id', $grItem->item_id)
+                                       ->first();
+
+                $alreadyCapitalized = $cap ? $cap->total_capitalized : 0;
+
+                // Jika masih ada sisa barang yang belum diakui jadi aset
+                if (($baseQtyReceived - $alreadyCapitalized) > 0) {
+                    $hasSisa = true;
+                    break; // Cukup temukan 1 item yang punya sisa, GR ini layak tampil di Dropdown
+                }
+            }
+
+            // Jika GR ini punya sisa barang, masukkan ke daftar dropdown
+            if ($hasSisa) {
+                $validGrs->push($gr);
+            }
+        }
+
         $assetCategories = \App\Models\AssetCategory::where('is_active', true)->get();
-        // Jangan lupa masukkan $assetCategories ke dalam fungsi compact() ke view.
-        return view('asset_capitalizations.create', compact('grs','assetCategories'));
+
+        // PENTING: Gunakan $validGrs (GR yang sudah disaring) dan ganti variabel $grs
+        return view('asset_capitalizations.create', [
+            'grs' => $validGrs,
+            'assetCategories' => $assetCategories
+        ]);
     }
 
     public function getGrItems($gr_id)

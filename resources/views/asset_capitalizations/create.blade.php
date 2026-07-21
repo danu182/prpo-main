@@ -37,9 +37,21 @@
             <div class="p-4 card-body">
                 <label class="form-label fw-bold text-muted small">Pilih Dokumen Penerimaan (GR) <span class="text-danger">*</span></label>
                 <select name="goods_receipt_id" id="gr_select" class="form-select select2-gr" required>
-                    <option value="">-- Ketik Nomor GR... --</option>
+                    <option value="">-- Ketik Nomor GR, Vendor, Kode atau Nama Barang... --</option>
                     @foreach($grs as $gr)
-                        <option value="{{ $gr->id }}">{{ $gr->gr_number }} (Tgl: {{ date('d-m-Y', strtotime($gr->received_date)) }})</option>
+                        @php
+                            // 🔥 RAKIT KATA KUNCI PENCARIAN UNTUK SELECT2 🔥
+                            $vendorName = optional(optional($gr->po)->vendor)->name ?? 'Vendor Internal';
+
+                            // Kumpulkan semua kode & nama barang di dalam GR ini
+                            $itemDetails = $gr->items->map(function($i) {
+                                return optional($i->item)->code . ' ' . optional($i->item)->name;
+                            })->filter()->implode(', ');
+                        @endphp
+
+                        <option value="{{ $gr->id }}">
+                            {{ $gr->gr_number }} | Tgl: {{ date('d-m-Y', strtotime($gr->received_date)) }} | Vendor: {{ $vendorName }} | Item: {{ \Illuminate\Support\Str::limit($itemDetails, 80) }}
+                        </option>
                     @endforeach
                 </select>
                 <div class="mt-2 text-muted small" id="wh-info"></div>

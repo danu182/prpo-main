@@ -75,6 +75,10 @@ class GoodsReceiptController extends Controller
                             ->orWhereHas('vendor', function ($q2) use ($search) {
                                 $q2->where('name', 'like', "%{$search}%");
                             });
+                      })
+                      // 🔥 TAMBAHAN: Pencarian berdasarkan Nama Barang di tabel riwayat GR 🔥
+                      ->orWhereHas('items.item', function ($q3) use ($search) {
+                          $q3->where('name', 'like', "%{$search}%");
                       });
             })
             ->latest()
@@ -84,7 +88,8 @@ class GoodsReceiptController extends Controller
                         ->whereIn('slug', ['issued', 'partial_receipt'])
                         ->pluck('id');
 
-        $readyPOs = \App\Models\PurchaseOrder::with(['vendor', 'company'])
+        // 🔥 TAMBAHAN: Panggil relasi 'items.item' agar nama barang bisa dilempar ke Modal HTML 🔥
+        $readyPOs = \App\Models\PurchaseOrder::with(['vendor', 'company', 'items.item'])
                         ->whereIn('status_id', $statusIds)
                         ->orderBy('updated_at', 'desc')
                         ->get();
