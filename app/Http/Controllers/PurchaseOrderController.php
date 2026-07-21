@@ -206,22 +206,22 @@ class PurchaseOrderController extends Controller
             \Illuminate\Support\Facades\DB::transaction(function () use ($request, $slug, $settingService) {
                 $prRecord = \App\Models\PurchaseRequest::with('items')->where('pr_number', $slug)->firstOrFail();
 
-                // 1. Filter item yang dipilih (ada vendor dan Qty > 0)
-                $itemsToProcess = collect($request->po_items)->filter(function ($item) {
-                    return isset($item['is_selected']) && trim($item['vendor_id'] ?? '') !== '' && (float) ($item['qty'] ?? 0) > 0;
-                });
+                // 1. FILTER DAN KELOMPOKKAN VENDOR SECARA MANUAL (AGAR INDEX/URUTAN HTML TIDAK HILANG!)
+                $itemsByVendor = [];
+                foreach ($request->po_items as $originalIndex => $itemData) {
+                    if (isset($itemData['is_selected']) && trim($itemData['vendor_id'] ?? '') !== '' && (float)($itemData['qty'] ?? 0) > 0) {
+                        $itemsByVendor[$itemData['vendor_id']][$originalIndex] = $itemData;
+                    }
+                }
 
-                if ($itemsToProcess->isEmpty()) {
+                if (empty($itemsByVendor)) {
                     throw new \Exception('Anda harus memilih Vendor Aktual minimal untuk 1 barang!');
                 }
 
-                // 2. Kelompokkan berdasarkan Vendor (Memicu Auto-Split PO)
-                $itemsByVendor = $itemsToProcess->groupBy('vendor_id');
                 $paymentTermName = \App\Models\PaymentTerm::find($request->payment_term_id)->name ?? null;
-
                 $prItemIdsToHeal = [];
 
-                // 3. LOOPING PEMBUATAN PO PER VENDOR
+                // 2. LOOPING PEMBUATAN PO PER VENDOR
                 foreach ($itemsByVendor as $vendorId => $items) {
                     // A. Setup Nomor PO & Storage
                     $newPoNumber = $this->generatePoNumber($request->billing_company_id);
@@ -232,8 +232,8 @@ class PurchaseOrderController extends Controller
                     $poTotalTaxItem = 0;
                     $processedLineItems = [];
 
-                    // B. HITUNG RINCIAN PER ITEM (DENGAN PAJAK MANUAL)
-                    foreach ($items as $itemIndex => $itemData) {
+                    // B. HITUNG RINCIAN PER ITEM
+                    foreach ($items as $originalIndex => $itemData) {
                         $qty = (float) ($itemData['qty'] ?? 0);
                         $price = (float) ($itemData['unit_price'] ?? 0);
                         $gross = $qty * $price;
@@ -249,7 +249,7 @@ class PurchaseOrderController extends Controller
 
                         $dpp = $gross - $discAmt;
 
-                        // 🔥 Pajak Item Manual Baru 🔥
+                        // Pajak Item Manual
                         $taxVal = (float) ($itemData['tax_value'] ?? 0);
                         $taxType = strtoupper($itemData['tax_type'] ?? 'FIXED');
                         $taxAmt = ($taxType === 'PERCENT') ? ($dpp * $taxVal / 100) : $taxVal;
@@ -259,8 +259,9 @@ class PurchaseOrderController extends Controller
                         $poTotalTaxItem += $taxAmt;
 
                         $processedLineItems[] = [
-                            'itemIndex' => $itemIndex, 'itemData' => $itemData, 'discAmt' => $discAmt, 'dpp' => $dpp,
-                            'taxAmt' => $taxAmt, 'qty' => $qty, 'price' => $price,
+                            'originalIndex' => $originalIndex, // 🔥 KUNCI UTAMA PENYELAMAT FILE 🔥
+                            'itemData' => $itemData, 'discAmt' => $discAmt, 'dpp' => $dpp,
+                            'taxType' => $taxType, 'taxVal' => $taxVal, 'taxAmt' => $taxAmt, 'qty' => $qty, 'price' => $price,
                             'discType' => $discType, 'discVal' => $discVal
                         ];
                     }
@@ -283,14 +284,16 @@ class PurchaseOrderController extends Controller
                     $dppAfterGlobalDisc = ($poSubtotalGross - $poTotalItemDiscount) - $poGlobalDiscount;
 
                     // D. HITUNG PAJAK GLOBAL MANUAL KHUSUS VENDOR INI
+                    $globalTaxType = 'FIXED';
+                    $globalTaxVal = 0;
                     $poGlobalTax = 0;
 
                     if ($request->has('global_taxes')) {
                         foreach ($request->global_taxes as $gTax) {
                             if ($gTax['vendor_id'] == 'ALL' || $gTax['vendor_id'] == $vendorId) {
-                                $gTaxType = strtoupper($gTax['type']);
-                                $gTaxVal = (float)$gTax['value'];
-                                $poGlobalTax += ($gTaxType === 'PERCENT') ? ($dppAfterGlobalDisc * ($gTaxVal / 100)) : $gTaxVal;
+                                $globalTaxType = strtoupper($gTax['type']);
+                                $globalTaxVal = (float)$gTax['value'];
+                                $poGlobalTax += ($globalTaxType === 'PERCENT') ? ($dppAfterGlobalDisc * ($globalTaxVal / 100)) : $globalTaxVal;
                             }
                         }
                     }
@@ -325,13 +328,13 @@ class PurchaseOrderController extends Controller
                     $poGrandTotal = $dppAfterGlobalDisc + $totalAllTaxes + $poChargeTotal - $poExtraDiscountTotal;
 
                     // H. SIMPAN HEADER PO
-                    // 🔥 PERBAIKAN ERROR SQL 1054: Menghapus company_id & global_tax yang tidak ada di DB 🔥
                     $po = \App\Models\PurchaseOrder::create([
                         'po_number'             => $newPoNumber,
                         'purchase_request_id'   => $prRecord->id,
                         'vendor_id'             => $vendorId,
+                        // 'company_id'            => $prRecord->company_id, // Identitas dari PR
                         'bill_to_company_id'    => $request->billing_company_id,
-                        'status_id'             => 1, // Akan di-replace oleh Workflow nanti
+                        'status_id'             => 1,
                         'po_date'               => $request->po_date ?? now(),
                         'created_by'            => auth()->id(),
                         'currency'              => $request->currency ?? 'IDR',
@@ -342,6 +345,8 @@ class PurchaseOrderController extends Controller
 
                         'global_discount_type'  => $globalDiscType,
                         'global_discount_value' => $globalDiscVal,
+                        'global_tax_type'       => $globalTaxType,
+                        'global_tax_value'      => $globalTaxVal,
 
                         'subtotal'              => $poSubtotalGross,
                         'discount_total'        => $totalAllDiscounts,
@@ -353,40 +358,34 @@ class PurchaseOrderController extends Controller
                     // I. SIMPAN RINCIAN EXTRA KE DATABASE
                     foreach ($appliedCharges as $charge) {
                         \Illuminate\Support\Facades\DB::table('purchase_order_charges')->insert([
-                            'purchase_order_id' => $po->id,
-                            'name'              => $charge['charge_type_id'],
-                            'amount'            => $charge['amount'],
-                            'created_at'        => now(), 'updated_at' => now()
+                            'purchase_order_id' => $po->id, 'name' => $charge['charge_type_id'], 'amount' => $charge['amount'], 'created_at' => now(), 'updated_at' => now()
                         ]);
                     }
 
                     foreach ($appliedExtraDiscs as $disc) {
                         \Illuminate\Support\Facades\DB::table('purchase_order_discounts')->insert([
-                            'purchase_order_id' => $po->id,
-                            'name'              => $disc['discount_type_id'],
-                            'amount'            => $disc['amount'],
-                            'created_at'        => now(), 'updated_at' => now()
+                            'purchase_order_id' => $po->id, 'name' => $disc['discount_type_id'], 'amount' => $disc['amount'], 'created_at' => now(), 'updated_at' => now()
                         ]);
                     }
 
                     // J. SIMPAN LAMPIRAN HEADER
                     if ($request->hasFile('header_attachments')) {
                         foreach ($request->file('header_attachments') as $file) {
-                            $path = $file->storeAs($storagePath, time() . '_' . uniqid() . '_' . str_replace(' ', '_', $file->getClientOriginalName()), 'public');
-                            \Illuminate\Support\Facades\DB::table('purchase_order_attachments')->insert([
-                                'purchase_order_id' => $po->id,
-                                'file_name'         => $file->getClientOriginalName(),
-                                'file_path'         => str_replace('\\', '/', $path),
-                                'created_at'        => now(), 'updated_at' => now()
-                            ]);
+                            if ($file instanceof \Illuminate\Http\UploadedFile) {
+                                $path = $file->storeAs($storagePath, time() . '_' . uniqid() . '_' . str_replace(' ', '_', $file->getClientOriginalName()), 'public');
+                                \Illuminate\Support\Facades\DB::table('purchase_order_attachments')->insert([
+                                    'purchase_order_id' => $po->id,
+                                    'file_name'         => $file->getClientOriginalName(),
+                                    'file_path'         => str_replace('\\', '/', $path),
+                                    'created_at'        => now(), 'updated_at' => now()
+                                ]);
+                            }
                         }
                     }
 
                     // K. SIMPAN BARIS ITEM & LAMPIRAN ITEM
                     foreach ($processedLineItems as $line) {
                         $itemData = $line['itemData'];
-
-                        // 🔥 PERBAIKAN ERROR SQL 1452: Mengosongkan tax_id dan hapus tax_type 🔥
                         $newPoItem = \App\Models\PurchaseOrderItem::create([
                             'purchase_order_id'        => $po->id,
                             'item_id'                  => $itemData['item_id'],
@@ -394,26 +393,31 @@ class PurchaseOrderController extends Controller
                             'uom_id'                   => $itemData['uom_id'] ?? null,
                             'uom'                      => $itemData['uom'] ?? (\App\Models\PurchaseRequestItem::find($itemData['pr_item_id'])->uom_short ?? 'PCS'),
                             'description'              => $itemData['notes'] ?? (\App\Models\Item::find($itemData['item_id'])->name ?? '-'),
-                            'tax_id'                   => null, // Sengaja di-null-kan karena kita pakai manual amount
+                            'tax_id'                   => null,
                             'qty_ordered'              => $line['qty'],
                             'unit_price'               => $line['price'],
                             'discount_type'            => $line['discType'],
                             'discount_value'           => $line['discVal'],
                             'discount_amount'          => $line['discAmt'],
-                            'subtotal'                 => $line['dpp'],
+                            'tax_type'                 => $line['taxType'],
+                            'tax_value'                => $line['taxVal'],
                             'tax_amount'               => $line['taxAmt'],
+                            'subtotal'                 => $line['dpp'],
                         ]);
 
-                        $fileInputName = "po_items_{$line['itemIndex']}_attachments";
-                        if ($request->hasFile($fileInputName)) {
-                            foreach ($request->file($fileInputName) as $file) {
-                                $path = $file->storeAs($storagePath, "item_{$itemData['item_id']}_" . uniqid() . time() . "." . $file->extension(), 'public');
-                                \Illuminate\Support\Facades\DB::table('purchase_order_item_attachments')->insert([
-                                    'purchase_order_item_id' => $newPoItem->id,
-                                    'file_name' => $file->getClientOriginalName(),
-                                    'file_path' => str_replace('\\', '/', $path),
-                                    'created_at' => now(), 'updated_at' => now()
-                                ]);
+                        // 🔥 PERBAIKAN: GUNAKAN originalIndex YANG SUDAH DISELAMATKAN 🔥
+                        $files = $request->file("po_items.{$line['originalIndex']}.attachments");
+                        if (!empty($files)) {
+                            foreach (is_array($files) ? $files : [$files] as $file) {
+                                if ($file instanceof \Illuminate\Http\UploadedFile) {
+                                    $path = $file->storeAs($storagePath, "item_{$itemData['item_id']}_" . uniqid() . time() . "." . $file->extension(), 'public');
+                                    \Illuminate\Support\Facades\DB::table('purchase_order_item_attachments')->insert([
+                                        'purchase_order_item_id' => $newPoItem->id,
+                                        'file_name'              => $file->getClientOriginalName(),
+                                        'file_path'              => str_replace('\\', '/', $path),
+                                        'created_at'             => now(), 'updated_at' => now()
+                                    ]);
+                                }
                             }
                         }
                     }
@@ -439,11 +443,12 @@ class PurchaseOrderController extends Controller
                     }
                     $this->checkAndUpdatePrStatus($prRecord->id);
                 }
+
             });
 
             return redirect()->route('po.index')->with('success', 'Purchase Order berhasil diterbitkan!');
         } catch (\Exception $e) {
-            return back()->withInput()->with('error', 'Gagal memproses PO: ' . $e->getMessage());
+            return back()->withInput()->with('error', 'Gagal memproses pembuatan PO: ' . $e->getMessage());
         }
     }
 
@@ -461,7 +466,7 @@ class PurchaseOrderController extends Controller
         ]);
 
         try {
-            DB::transaction(function () use ($request, $slug, $settingService) {
+            \Illuminate\Support\Facades\DB::transaction(function () use ($request, $slug, $settingService) {
                 $po = \App\Models\PurchaseOrder::with('items')->where('po_number', $slug)->firstOrFail();
 
                 if (!in_array(strtolower(optional($po->status)->slug ?? ''), ['draft', 'pending_approval', 'pending', 'rejected', ''])) {
@@ -472,7 +477,7 @@ class PurchaseOrderController extends Controller
                 $poTotalItemDiscount = 0;
                 $poTotalTax = 0;
                 $safePoNumber = str_replace('/', '-', $po->po_number);
-                $storagePath = (\DB::table('system_settings')->where('setting_key', 'path_po_attachment')->value('setting_value') ?: 'attachments/purchase_orders') . '/' . $safePoNumber;
+                $storagePath = (\Illuminate\Support\Facades\DB::table('system_settings')->where('setting_key', 'path_po_attachment')->value('setting_value') ?: 'attachments/purchase_orders') . '/' . $safePoNumber;
 
                 foreach ($request->po_items as $itemId => $itemData) {
                     if (!$poItem = \App\Models\PurchaseOrderItem::find($itemId)) continue;
@@ -480,26 +485,30 @@ class PurchaseOrderController extends Controller
                     $newQty = (float) ($itemData['qty'] ?? 0);
                     $price = (float) ($itemData['unit_price'] ?? 0);
                     $gross = $newQty * $price;
+
                     $discVal = (float) ($itemData['discount_value'] ?? 0);
                     $discType = strtoupper($itemData['discount_type'] ?? 'FIXED');
                     $discAmt = ($discType === 'PERCENT') ? ($gross * ($discVal / 100)) : $discVal;
+
                     $dpp = $gross - $discAmt;
 
                     $taxVal = (float) ($itemData['tax_value'] ?? 0);
                     $taxType = strtoupper($itemData['tax_type'] ?? 'FIXED');
                     $taxAmt = ($taxType === 'PERCENT') ? ($dpp * ($taxVal / 100)) : $taxVal;
 
-                    $fileInputName = "item_attachments_{$itemId}";
-                    if ($request->hasFile($fileInputName)) {
-                        foreach ($request->file($fileInputName) as $file) {
-                            $path = $file->storeAs($storagePath, time() . '_' . uniqid() . '_' . str_replace(' ', '_', $file->getClientOriginalName()), 'public');
-                            \DB::table('purchase_order_item_attachments')->insert([
-                                'purchase_order_item_id' => $poItem->id,
-                                'file_name' => $file->getClientOriginalName(),
-                                'file_path' => str_replace('\\', '/', $path),
-                                'created_at' => now(),
-                                'updated_at' => now()
-                            ]);
+                    // 🔥 PERBAIKAN: MENANGKAP ARRAY FILE ITEM SESUAI STRUKTUR HTML DI EDIT 🔥
+                    $files = $request->file("po_items.{$itemId}.attachments");
+                    if (!empty($files)) {
+                        foreach (is_array($files) ? $files : [$files] as $file) {
+                            if ($file instanceof \Illuminate\Http\UploadedFile) {
+                                $path = $file->storeAs($storagePath, "item_{$poItem->item_id}_" . uniqid() . time() . "." . $file->extension(), 'public');
+                                \Illuminate\Support\Facades\DB::table('purchase_order_item_attachments')->insert([
+                                    'purchase_order_item_id' => $poItem->id,
+                                    'file_name'              => $file->getClientOriginalName(),
+                                    'file_path'              => str_replace('\\', '/', $path),
+                                    'created_at'             => now(), 'updated_at' => now()
+                                ]);
+                            }
                         }
                     }
 
@@ -512,8 +521,7 @@ class PurchaseOrderController extends Controller
                         'uom'             => $itemData['uom'] ?? $poItem->uom,
                         'description'     => $itemData['notes'] ?? $poItem->description,
                         'vendor_id'       => $itemData['vendor_id'] ?? $poItem->vendor_id,
-                        'tax_type'        => $taxType,
-                        'tax_value'       => $taxVal,
+                        'tax_id'          => null,
                         'qty_ordered'     => $newQty,
                         'unit_price'      => $price,
                         'discount_type'   => $discType,
@@ -524,20 +532,21 @@ class PurchaseOrderController extends Controller
                     ]);
                 }
 
+                // 🔥 PERBAIKAN: SIMPAN LAMPIRAN HEADER DENGAN AMAN 🔥
                 if ($request->hasFile('header_attachments')) {
                     foreach ($request->file('header_attachments') as $file) {
-                        $path = $file->storeAs($storagePath, time() . '_' . uniqid() . '_' . str_replace(' ', '_', $file->getClientOriginalName()), 'public');
-                        \DB::table('purchase_order_attachments')->insert([
-                            'purchase_order_id' => $po->id,
-                            'file_name' => $file->getClientOriginalName(),
-                            'file_path' => str_replace('\\', '/', $path),
-                            'created_at' => now(),
-                            'updated_at' => now()
-                        ]);
+                        if ($file instanceof \Illuminate\Http\UploadedFile) {
+                            $path = $file->storeAs($storagePath, time() . '_' . uniqid() . '_' . str_replace(' ', '_', $file->getClientOriginalName()), 'public');
+                            \Illuminate\Support\Facades\DB::table('purchase_order_attachments')->insert([
+                                'purchase_order_id' => $po->id,
+                                'file_name'         => $file->getClientOriginalName(),
+                                'file_path'         => str_replace('\\', '/', $path),
+                                'created_at'        => now(), 'updated_at' => now()
+                            ]);
+                        }
                     }
                 }
 
-                // 🔥 PERBAIKAN 1: TANGKAP DAN HITUNG PAJAK GLOBAL 🔥
                 $globalDiscType = strtoupper($request->global_discount_type ?? 'FIXED');
                 $globalDiscVal = (float) ($request->global_discount_value ?? 0);
                 $poGlobalDiscount = ($globalDiscType === 'PERCENT') ? (($poSubtotalGross - $poTotalItemDiscount) * ($globalDiscVal / 100)) : $globalDiscVal;
@@ -548,34 +557,26 @@ class PurchaseOrderController extends Controller
                 $globalTaxVal = (float) ($request->global_tax_value ?? 0);
                 $poGlobalTax = ($globalTaxType === 'PERCENT') ? ($dppAfterGlobalDisc * ($globalTaxVal / 100)) : $globalTaxVal;
 
-                \DB::table('purchase_order_charges')->where('purchase_order_id', $po->id)->delete();
+                \Illuminate\Support\Facades\DB::table('purchase_order_charges')->where('purchase_order_id', $po->id)->delete();
                 $poChargeTotal = 0;
                 if ($request->has('charges')) {
                     foreach ($request->charges as $charge) {
                         if (!empty($charge['amount'])) {
-                            \DB::table('purchase_order_charges')->insert([
-                                'purchase_order_id' => $po->id,
-                                'name' => $charge['charge_type_id'],
-                                'amount' => $charge['amount'],
-                                'created_at' => now(),
-                                'updated_at' => now()
+                            \Illuminate\Support\Facades\DB::table('purchase_order_charges')->insert([
+                                'purchase_order_id' => $po->id, 'name' => $charge['charge_type_id'], 'amount' => $charge['amount'], 'created_at' => now(), 'updated_at' => now()
                             ]);
                             $poChargeTotal += $charge['amount'];
                         }
                     }
                 }
 
-                \DB::table('purchase_order_discounts')->where('purchase_order_id', $po->id)->delete();
+                \Illuminate\Support\Facades\DB::table('purchase_order_discounts')->where('purchase_order_id', $po->id)->delete();
                 $poExtraDiscountTotal = 0;
                 if ($request->has('extra_discounts')) {
                     foreach ($request->extra_discounts as $disc) {
                         if (!empty($disc['amount'])) {
-                            \DB::table('purchase_order_discounts')->insert([
-                                'purchase_order_id' => $po->id,
-                                'name' => $disc['discount_type_id'],
-                                'amount' => $disc['amount'],
-                                'created_at' => now(),
-                                'updated_at' => now()
+                            \Illuminate\Support\Facades\DB::table('purchase_order_discounts')->insert([
+                                'purchase_order_id' => $po->id, 'name' => $disc['discount_type_id'], 'amount' => $disc['amount'], 'created_at' => now(), 'updated_at' => now()
                             ]);
                             $poExtraDiscountTotal += $disc['amount'];
                         }
@@ -592,16 +593,13 @@ class PurchaseOrderController extends Controller
                     'currency'              => $request->currency,
                     'global_discount_type'  => $globalDiscType,
                     'global_discount_value' => $globalDiscVal,
-                    'global_tax_type'       => $globalTaxType,  // 🔥 SIMPAN JENIS PAJAK
-                    'global_tax_value'      => $globalTaxVal,   // 🔥 SIMPAN NOMINAL PAJAK
                     'subtotal'              => $poSubtotalGross,
                     'discount_total'        => $poTotalItemDiscount + $poGlobalDiscount,
-                    'tax_total'             => $poTotalTax + $poGlobalTax, // 🔥 JUMLAHKAN PAJAK GLOBAL
+                    'tax_total'             => $poTotalTax + $poGlobalTax,
                     'charge_total'          => $poChargeTotal,
                     'grand_total'           => $dppAfterGlobalDisc + $poTotalTax + $poGlobalTax + $poChargeTotal - $poExtraDiscountTotal,
                 ]);
 
-                // 🔥 EKSEKUSI SELF-HEALING PR 🔥
                 $prItemIds = $po->items->pluck('purchase_request_item_id')->filter()->unique()->toArray();
                 if (!empty($prItemIds)) {
                     foreach($prItemIds as $pid) {
@@ -613,15 +611,12 @@ class PurchaseOrderController extends Controller
                 $needsApproval = \App\Services\ApprovalService::generateWorkflow($po);
 
                 if ($needsApproval) {
-                    // 🔥 PERBAIKAN 2: AMBIL SLUG YANG BENAR (BISA PENDING ATAU PENDING_APPROVAL) 🔥
                     $pendingStatus = \App\Models\Status::whereIn('slug', ['pending_approval', 'pending'])->first()->id ?? 1;
                     $po->update(['status_id' => $pendingStatus]);
-
                     $this->logHistory($po->id, 'SYSTEM', 'Rute persetujuan (Workflow) PO telah di-reset menyesuaikan data revisi.');
                 } else {
                     $approvedStatus = \App\Models\Status::where('slug', 'approved')->first()->id ?? 3;
                     $po->update(['status_id' => $approvedStatus]);
-
                     $this->logHistory($po->id, 'APPROVED', 'PO Auto-Approved karena tidak ada aturan aktif atau nominal di bawah batas.');
                 }
 
@@ -814,25 +809,23 @@ class PurchaseOrderController extends Controller
     // =========================================================================
     public function edit($slug)
     {
-        $po = \App\Models\PurchaseOrder::with(['items.item.itemUoms', 'vendor', 'status', 'attachments'])->where('po_number', $slug)->firstOrFail();
-        if (!in_array(strtolower(optional($po->status)->slug ?? ''), ['draft', 'pending_approval', 'rejected', ''])) {
-            return redirect()->route('po.index')->with('error', 'Gagal: PO ini sudah tidak dapat diedit.');
+        $po = \App\Models\PurchaseOrder::with(['items.item.itemUoms', 'vendor', 'status', 'attachments'])->where('po_number',$slug)->firstOrFail();
+
+        // 🔥 Tambahkan 'pending' ke dalam array agar tidak terkunci saat direvisi 🔥
+        if (!in_array(strtolower(optional($po->status)->slug ?? ''), ['draft', 'pending_approval', 'pending', 'rejected', ''])) {
+            return redirect()->route('po.index')->with('error', 'Gagal: PO ini sudah tidak dapat diedit karena statusnya ' . optional($po->status)->name);
         }
 
         $vendors = \App\Models\Vendor::all();
-        $companies = \App\Models\Company::all();
-        $paymentTerms = \App\Models\PaymentTerm::all();
-        $taxes = \App\Models\Tax::all();
-        $chargeTypes = \App\Models\ChargeType::where('is_active', 1)->get();
-        $currencies = \App\Models\Currency::all();
-        $discountTypes = \App\Models\DiscountType::where('is_active', 1)->get();
-        $charges = DB::table('purchase_order_charges')->where('purchase_order_id', $po->id)->get();
-        $extraDiscounts = DB::table('purchase_order_discounts')->where('purchase_order_id', $po->id)->get();
+        $companies = \App\Models\Company::all();$paymentTerms = \App\Models\PaymentTerm::all();
+        $taxes = \App\Models\Tax::all();$chargeTypes = \App\Models\ChargeType::where('is_active', 1)->get();
+        $currencies = \App\Models\Currency::all();$discountTypes = \App\Models\DiscountType::where('is_active', 1)->get();
+        $charges = \Illuminate\Support\Facades\DB::table('purchase_order_charges')->where('purchase_order_id',$po->id)->get();
+        $extraDiscounts = \Illuminate\Support\Facades\DB::table('purchase_order_discounts')->where('purchase_order_id',$po->id)->get();
 
-        $poItemIds = $po->items->pluck('id')->toArray();
-        $itemAttachments = \DB::table('purchase_order_item_attachments')->whereIn('purchase_order_item_id', $poItemIds)->get();
-        foreach ($po->items as $item) {
-            $item->raw_attachments = $itemAttachments->where('purchase_order_item_id', $item->id)->values();
+        $poItemIds =$po->items->pluck('id')->toArray();
+        $itemAttachments = \Illuminate\Support\Facades\DB::table('purchase_order_item_attachments')->whereIn('purchase_order_item_id',$poItemIds)->get();
+        foreach ($po->items as $item) {$item->raw_attachments = $itemAttachments->where('purchase_order_item_id',$item->id)->values();
         }
 
         return view('po.edit', compact('po', 'vendors', 'companies', 'paymentTerms', 'taxes', 'chargeTypes', 'currencies', 'charges', 'discountTypes', 'extraDiscounts'));
@@ -1308,37 +1301,37 @@ class PurchaseOrderController extends Controller
         }
     }
 
-    public function deleteItemAttachment($id)
-    {
-        try {
-            $attachment = \DB::table('purchase_order_item_attachments')->where('id', $id)->first();
-            if ($attachment) {
-                if (\Storage::disk('public')->exists($attachment->file_path)) {
-                    \Storage::disk('public')->delete($attachment->file_path);
-                }
-                \DB::table('purchase_order_item_attachments')->where('id', $id)->delete();
-            }
-            return back()->with('success', 'Lampiran Barang berhasil dihapus secara permanen!');
-        } catch (\Exception $e) {
-            return back()->with('error', 'Gagal menghapus lampiran: ' . $e->getMessage());
-        }
-    }
+    // public function deleteItemAttachment($id)
+    // {
+    //     try {
+    //         $attachment = \DB::table('purchase_order_item_attachments')->where('id', $id)->first();
+    //         if ($attachment) {
+    //             if (\Storage::disk('public')->exists($attachment->file_path)) {
+    //                 \Storage::disk('public')->delete($attachment->file_path);
+    //             }
+    //             \DB::table('purchase_order_item_attachments')->where('id', $id)->delete();
+    //         }
+    //         return back()->with('success', 'Lampiran Barang berhasil dihapus secara permanen!');
+    //     } catch (\Exception $e) {
+    //         return back()->with('error', 'Gagal menghapus lampiran: ' . $e->getMessage());
+    //     }
+    // }
 
-    public function deleteHeaderAttachment($id)
-    {
-        try {
-            $attachment = \DB::table('purchase_order_attachments')->where('id', $id)->first();
-            if ($attachment) {
-                if (\Storage::disk('public')->exists($attachment->file_path)) {
-                    \Storage::disk('public')->delete($attachment->file_path);
-                }
-                \DB::table('purchase_order_attachments')->where('id', $id)->delete();
-            }
-            return back()->with('success', 'Lampiran Header PO berhasil dihapus secara permanen!');
-        } catch (\Exception $e) {
-            return back()->with('error', 'Gagal menghapus lampiran: ' . $e->getMessage());
-        }
-    }
+    // public function deleteHeaderAttachment($id)
+    // {
+    //     try {
+    //         $attachment = \DB::table('purchase_order_attachments')->where('id', $id)->first();
+    //         if ($attachment) {
+    //             if (\Storage::disk('public')->exists($attachment->file_path)) {
+    //                 \Storage::disk('public')->delete($attachment->file_path);
+    //             }
+    //             \DB::table('purchase_order_attachments')->where('id', $id)->delete();
+    //         }
+    //         return back()->with('success', 'Lampiran Header PO berhasil dihapus secara permanen!');
+    //     } catch (\Exception $e) {
+    //         return back()->with('error', 'Gagal menghapus lampiran: ' . $e->getMessage());
+    //     }
+    // }
 
     // =========================================================================
     // HELPER 5: LOG HISTORY
@@ -1426,6 +1419,42 @@ class PurchaseOrderController extends Controller
         return response($mergedPdfData)
                 ->header('Content-Type', 'application/pdf')
                 ->header('Content-Disposition', 'inline; filename="' . $filename . '"');
+    }
+
+
+
+    // =========================================================================
+    // 🔥 FUNGSI HAPUS LAMPIRAN HEADER PO 🔥
+    // =========================================================================
+    public function deleteHeaderAttachment($id)
+    {
+        $attachment = \Illuminate\Support\Facades\DB::table('purchase_order_attachments')->where('id', $id)->first();
+        if ($attachment) {
+            // Hapus file fisik dari folder storage
+            if (\Illuminate\Support\Facades\Storage::disk('public')->exists($attachment->file_path)) {
+                \Illuminate\Support\Facades\Storage::disk('public')->delete($attachment->file_path);
+            }
+            // Hapus data dari database
+            \Illuminate\Support\Facades\DB::table('purchase_order_attachments')->where('id', $id)->delete();
+        }
+        return back()->with('success', 'File Lampiran Header berhasil dihapus.');
+    }
+
+    // =========================================================================
+    // 🔥 FUNGSI HAPUS LAMPIRAN ITEM PO 🔥
+    // =========================================================================
+    public function deleteItemAttachment($id)
+    {
+        $attachment = \Illuminate\Support\Facades\DB::table('purchase_order_item_attachments')->where('id', $id)->first();
+        if ($attachment) {
+            // Hapus file fisik dari folder storage
+            if (\Illuminate\Support\Facades\Storage::disk('public')->exists($attachment->file_path)) {
+                \Illuminate\Support\Facades\Storage::disk('public')->delete($attachment->file_path);
+            }
+            // Hapus data dari database
+            \Illuminate\Support\Facades\DB::table('purchase_order_item_attachments')->where('id', $id)->delete();
+        }
+        return back()->with('success', 'File Lampiran Item berhasil dihapus.');
     }
 
 

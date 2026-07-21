@@ -348,8 +348,14 @@
 
                                 {{-- KOLOM 5: DISKON & PAJAK --}}
                                 <td class="text-center" style="font-size: 0.75rem;">
-                                    <div class="mb-1 text-danger fw-bold">Disc: {{ number_format($diskon, 2, '.', ',') }}</div>
-                                    <div class="text-info fw-bold">Tax: {{ number_format($pajak, 2, '.', ',') }}</div>
+                                    <div class="mb-1 text-danger fw-bold">
+                                        Disc: {{ number_format($diskon, 2, '.', ',') }}
+                                        <span class="small text-muted">{{ ($item->discount_type == 'PERCENT' && $item->discount_value > 0) ? '('.(float)$item->discount_value.'%)' : '' }}</span>
+                                    </div>
+                                    <div class="text-info fw-bold">
+                                        Tax: {{ number_format($pajak, 2, '.', ',') }}
+                                        <span class="small text-muted">{{ ($item->tax_type == 'PERCENT' && $item->tax_value > 0) ? '('.(float)$item->tax_value.'%)' : '' }}</span>
+                                    </div>
                                 </td>
 
                                 {{-- KOLOM 6: SUBTOTAL --}}
@@ -411,11 +417,11 @@
                                     <td class="text-end fw-bold">{{ $po->currency }} {{ number_format($sumSubtotal, 2) }}</td>
                                 </tr>
                                 <tr>
-                                    <td class="text-danger">Diskon Komersial</td>
+                                    <td class="text-danger">Diskon Komersial {{ ($po->global_discount_type == 'PERCENT' && $po->global_discount_value > 0) ? '('.(float)$po->global_discount_value.'%)' : '' }}</td>
                                     <td class="text-end fw-bold text-danger">- {{ $po->currency }} {{ number_format($sumDiscount, 2) }}</td>
                                 </tr>
                                 <tr>
-                                    <td class="text-primary">Total Pajak (VAT/Ppn)</td>
+                                    <td class="text-primary">Total Pajak (VAT/Ppn) {{ ($po->global_tax_type == 'PERCENT' && $po->global_tax_value > 0) ? '('.(float)$po->global_tax_value.'%)' : '' }}</td>
                                     <td class="text-end fw-bold text-primary">+ {{ $po->currency }} {{ number_format($sumTax, 2) }}</td>
                                 </tr>
 

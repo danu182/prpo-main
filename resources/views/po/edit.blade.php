@@ -8,35 +8,27 @@
     /* Styling Select2 */
     .select2-container--bootstrap-5 .select2-selection { border-radius: 8px; min-height: 40px; font-size: 0.85rem; border-color: #dee2e6; }
     .select2-container--bootstrap-5.select2-container--focus .select2-selection { border-color: #0d6efd; box-shadow: 0 0 0 0.25rem rgba(13, 110, 253, 0.15); }
-
     /* Modern Input Styling */
     .form-input-custom { border: 1px solid #dee2e6; border-radius: 8px; font-size: 0.85rem; min-height: 40px; transition: all 0.2s; }
     .form-input-custom:focus { border-color: #0d6efd; box-shadow: 0 0 0 0.25rem rgba(13, 110, 253, 0.15); background-color: #fff; }
-
     /* Input Group Modern */
     .input-group-modern { border-radius: 8px; overflow: hidden; border: 1px solid #dee2e6; display: flex; }
     .input-group-modern:focus-within { border-color: #0d6efd; box-shadow: 0 0 0 0.25rem rgba(13, 110, 253, 0.15); }
     .input-group-modern input, .input-group-modern select, .input-group-modern .input-group-text { border: none !important; background: transparent; }
     .input-group-modern .input-group-text { background-color: #f8f9fa; color: #6c757d; font-weight: 600; border-right: 1px solid #dee2e6 !important; }
-
     /* Fixed Sidebar Summary */
     .summary-card { position: sticky; top: 20px; border-radius: 16px; border: 1px solid #e9ecef; }
-
     /* CSS VALIDASI ERROR */
     .is-invalid { border-color: #dc3545 !important; background-color: #fff8f8 !important; }
     .input-group-modern:has(.is-invalid) { border-color: #dc3545 !important; box-shadow: 0 0 0 0.25rem rgba(220, 53, 69, 0.25) !important; }
-
     /* 🔥 STYLING KHUSUS CKEDITOR 🔥 */
     .ck-editor__editable_inline { min-height: 120px; font-size: 0.85rem; }
-
-    input[type=number]::-webkit-inner-spin-button,
-    input[type=number]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
+    input[type=number]::-webkit-inner-spin-button, input[type=number]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
 </style>
 @endpush
 
 @section('content')
 
-{{-- Jika di web.php menggunakan PUT, hapus komentar @method('PUT') --}}
 <form action="{{ route('po.update', $po->po_number) }}" method="POST" id="poForm" enctype="multipart/form-data" novalidate>
     @csrf
 
@@ -113,15 +105,8 @@
             <div id="itemsContainer">
                 @foreach($po->items as $item)
                     @php
-                        $prItem = \App\Models\PurchaseRequestItem::with('item.itemUoms')->find($item->purchase_request_item_id);
                         $masterItem = $item->item;
                         $baseUomName = optional(optional($masterItem)->uom)->name ?? 'PCS';
-
-                        $prConvRate = 1;
-                        if ($prItem && !empty($prItem->uom_id)) {
-                            $prUomDb = collect(optional($masterItem)->itemUoms)->where('id', $prItem->uom_id)->first();
-                            if ($prUomDb) $prConvRate = (float) $prUomDb->conversion_qty;
-                        }
 
                         $currentConvRate = 1;
                         $savedUomId = $item->uom_id ?? $item->item_uom_id ?? null;
@@ -131,30 +116,6 @@
                             if ($poUomDb) {
                                 $currentConvRate = (float) $poUomDb->conversion_qty;
                             }
-                        }
-
-                        $targetBaseQty = $prItem ? ((float)$prItem->qty * $prConvRate) : ((float)$item->qty_ordered * $currentConvRate);
-                        $orderedBaseQty = $prItem ? (float)($prItem->ordered_qty ?? 0) * $prConvRate : ((float)$item->qty_ordered * $currentConvRate);
-                        $currentPoBaseQty = (float)$item->qty_ordered * $currentConvRate;
-
-                        $sisaBaseQty = max(0, $targetBaseQty - $orderedBaseQty) + $currentPoBaseQty;
-                        $remainingNominal = $currentConvRate > 0 ? ($sisaBaseQty / $currentConvRate) : 0;
-                        $remainingNominal = round($remainingNominal, 2);
-
-                        // 🔥 LOGIKA FAILSAFE DISKON ITEM 🔥
-                        $itemDiscType = $item->discount_type ?? 'FIXED';
-                        $itemDiscVal = $item->discount_value ?? $item->discount_amount ?? 0;
-                        if (empty($item->discount_type) && (float)($item->discount_amount ?? 0) > 0 && empty($item->discount_value)) {
-                            $itemDiscType = 'FIXED';
-                            $itemDiscVal = (float)$item->discount_amount;
-                        }
-
-                        // 🔥 LOGIKA FAILSAFE PAJAK ITEM 🔥
-                        $itemTaxType = $item->tax_type ?? 'FIXED';
-                        $itemTaxVal = $item->tax_value ?? $item->tax_amount ?? 0;
-                        if (empty($item->tax_type) && (float)($item->tax_amount ?? 0) > 0 && empty($item->tax_value)) {
-                            $itemTaxType = 'FIXED';
-                            $itemTaxVal = (float)$item->tax_amount;
                         }
                     @endphp
 
@@ -217,15 +178,13 @@
                                 <div class="col-md-3">
                                     <label class="form-label small fw-bold text-dark">Qty & Satuan <span class="text-danger">*</span></label>
                                     <div class="mb-1 shadow-sm input-group-modern">
-                                        <input type="number" name="po_items[{{ $item->id }}][qty]" id="qty-input-{{ $item->id }}" class="text-center form-control fw-bolder qty-input text-primary" value="{{ (float)$item->qty_ordered }}" max="{{ $remainingNominal }}" min="0.01" step="0.01" data-base-remaining="{{ $sisaBaseQty }}" oninput="calculateRow(this)" required>
+                                        <input type="number" name="po_items[{{ $item->id }}][qty]" id="qty-input-{{ $item->id }}" class="text-center form-control fw-bolder qty-input text-primary" value="{{ (float)$item->qty_ordered }}" min="0.01" step="0.01" oninput="calculateRow(this)" required>
                                     </div>
 
                                     <select name="po_items[{{ $item->id }}][uom_id]" class="shadow-sm form-select border-primary text-primary fw-bold uom-selector" data-current-conv="{{ $currentConvRate }}" onchange="updateRowUom(this, {{ $item->id }})">
-
                                         <option value="" data-name="{{ $baseUomName }}" data-conv="1" {{ empty($savedUomId) ? 'selected' : '' }}>
                                             {{ $baseUomName }} (Dasar)
                                         </option>
-
                                         @if(optional($masterItem)->itemUoms)
                                             @foreach($masterItem->itemUoms as $altUom)
                                                 <option value="{{ $altUom->id }}"
@@ -236,13 +195,8 @@
                                                 </option>
                                             @endforeach
                                         @endif
-
                                     </select>
                                     <input type="hidden" name="po_items[{{ $item->id }}][uom]" id="uom-name-{{ $item->id }}" value="{{ $item->uom }}">
-
-                                    <div class="mt-1 text-muted" style="font-size: 0.7rem;" id="max-help-{{ $item->id }}">
-                                        Batas Max PR: <strong class="text-danger" id="max-val-{{ $item->id }}">{{ $remainingNominal }}</strong>
-                                    </div>
                                 </div>
 
                                 {{-- HARGA --}}
@@ -259,12 +213,12 @@
                                     <label class="form-label small fw-bold text-dark">Diskon per Item</label>
                                     <div class="shadow-sm input-group-modern">
                                         <select name="po_items[{{ $item->id }}][discount_type]" class="text-center form-select fw-bold text-secondary disc-type" style="max-width: 65px;" onchange="calculateRow(this)">
-                                            <option value="PERCENT" {{ $itemDiscType == 'PERCENT' ? 'selected' : '' }}>%</option>
-                                            <option value="FIXED" {{ $itemDiscType == 'FIXED' ? 'selected' : '' }}>Nom</option>
+                                            <option value="PERCENT" {{ $item->discount_type == 'PERCENT' ? 'selected' : '' }}>%</option>
+                                            <option value="FIXED" {{ $item->discount_type == 'FIXED' ? 'selected' : '' }}>Nom</option>
                                         </select>
-                                        <input type="number" name="po_items[{{ $item->id }}][discount_value]" class="form-control text-end fw-bold text-danger disc-val" value="{{ (float)$itemDiscVal }}" min="0" step="any" oninput="calculateRow(this)">
+                                        <input type="number" name="po_items[{{ $item->id }}][discount_value]" class="form-control text-end fw-bold text-danger disc-val" value="{{ (float)$item->discount_value }}" min="0" step="any" oninput="calculateRow(this)">
                                     </div>
-                                    <input type="hidden" name="po_items[{{ $item->id }}][discount_amount]" class="disc-amt-hidden" value="{{ (float)($item->discount_amount ?? 0) }}">
+                                    <input type="hidden" name="po_items[{{ $item->id }}][discount_amount]" class="disc-amt-hidden" value="{{ (float)$item->discount_amount }}">
                                 </div>
 
                                 {{-- PAJAK ITEM MANUAL --}}
@@ -272,12 +226,12 @@
                                     <label class="form-label small fw-bold text-dark">Pajak (VAT/PPN)</label>
                                     <div class="shadow-sm input-group-modern">
                                         <select name="po_items[{{ $item->id }}][tax_type]" class="text-center form-select fw-bold text-secondary tax-type" style="max-width: 65px;" onchange="calculateRow(this)">
-                                            <option value="PERCENT" {{ $itemTaxType == 'PERCENT' ? 'selected' : '' }}>%</option>
-                                            <option value="FIXED" {{ $itemTaxType == 'FIXED' ? 'selected' : '' }}>Nom</option>
+                                            <option value="PERCENT" {{ $item->tax_type == 'PERCENT' ? 'selected' : '' }}>%</option>
+                                            <option value="FIXED" {{ $item->tax_type == 'FIXED' ? 'selected' : '' }}>Nom</option>
                                         </select>
-                                        <input type="number" name="po_items[{{ $item->id }}][tax_value]" class="form-control text-end fw-bold text-info tax-val" value="{{ (float)$itemTaxVal }}" min="0" step="any" oninput="calculateRow(this)">
+                                        <input type="number" name="po_items[{{ $item->id }}][tax_value]" class="form-control text-end fw-bold text-info tax-val" value="{{ (float)$item->tax_value }}" min="0" step="any" oninput="calculateRow(this)">
                                     </div>
-                                    <input type="hidden" name="po_items[{{ $item->id }}][tax_amount]" class="tax-amt-hidden" value="{{ (float)($item->tax_amount ?? 0) }}">
+                                    <input type="hidden" name="po_items[{{ $item->id }}][tax_amount]" class="tax-amt-hidden" value="{{ (float)$item->tax_amount }}">
                                 </div>
 
                             </div>
@@ -360,7 +314,7 @@
                                     @foreach($po->attachments as $file)
                                         <div class="p-2 mb-1 border rounded d-flex justify-content-between bg-light">
                                             <a href="{{ asset('storage/' . $file->file_path) }}" target="_blank" class="small text-decoration-none fw-bold"><i class="bi bi-search text-success me-1"></i> {{ $file->file_name }}</a>
-                                            <a href="{{ route('po.delete_header_attachment', $file->id) }}" class="text-danger small" onclick="return confirm('Hapus file master ini secara permanen?')"><i class="bi bi-trash"></i></a>
+                                            <a href="{{ route('po.po.delete_header_attachment', $file->id) }}" class="text-danger small" onclick="return confirm('Hapus file master ini secara permanen?')"><i class="bi bi-trash"></i></a>
                                         </div>
                                     @endforeach
                                 </div>
@@ -390,40 +344,19 @@
 
                 <div class="p-4 card-body">
 
-                    {{-- 🔥 LOGIKA FAILSAFE DISKON GLOBAL 🔥 --}}
-                    @php
-                        $gDiscType = $po->global_discount_type ?? 'FIXED';
-                        $gDiscVal = $po->global_discount_value ?? $po->discount_total ?? $po->total_discount ?? 0;
-                        if (empty($po->global_discount_type) && (float)($po->discount_total ?? $po->total_discount ?? 0) > 0 && empty($po->global_discount_value)) {
-                            $gDiscType = 'FIXED';
-                            $gDiscVal = (float)($po->discount_total ?? $po->total_discount);
-                        }
-                    @endphp
-
                     <div class="p-3 mb-4 border bg-light rounded-3 border-warning-subtle">
                         <label class="mb-2 form-label small fw-bold text-dark">
                             <i class="bi bi-tags-fill me-1 text-danger"></i> Diskon Global (Header PO)
                         </label>
                         <div class="mb-1 overflow-hidden border shadow-sm input-group input-group-sm rounded-2">
                             <select name="global_discount_type" id="globalDiscType" class="px-1 text-center bg-white border-0 form-select fw-bold" style="max-width: 60px;" onchange="calculateGrandTotal()">
-                                <option value="PERCENT" {{ $gDiscType == 'PERCENT' ? 'selected' : '' }}>%</option>
-                                <option value="FIXED" {{ $gDiscType == 'FIXED' ? 'selected' : '' }}>Nom</option>
+                                <option value="PERCENT" {{ $po->global_discount_type == 'PERCENT' ? 'selected' : '' }}>%</option>
+                                <option value="FIXED" {{ $po->global_discount_type == 'FIXED' ? 'selected' : '' }}>Nom</option>
                             </select>
-                            <input type="number" name="global_discount_value" id="globalDiscValue" class="px-2 border-0 form-control text-end fw-bold text-danger" value="{{ (float)$gDiscVal }}" min="0" step="any" oninput="calculateGrandTotal()">
+                            <input type="number" name="global_discount_value" id="globalDiscValue" class="px-2 border-0 form-control text-end fw-bold text-danger" value="{{ (float)$po->global_discount_value }}" min="0" step="any" oninput="calculateGrandTotal()">
                         </div>
-                        {{-- Hidden Input untuk Controller --}}
-                        <input type="hidden" name="discount_total" id="globalDiscAmountHidden" value="0">
+                        <input type="hidden" name="discount_total" id="globalDiscAmountHidden" value="{{ (float)$po->discount_total }}">
                     </div>
-
-                    {{-- 🔥 LOGIKA FAILSAFE PAJAK GLOBAL 🔥 --}}
-                    @php
-                        $gTaxType = $po->global_tax_type ?? 'FIXED';
-                        $gTaxVal = $po->global_tax_value ?? $po->tax_total ?? $po->total_tax ?? 0;
-                        if (empty($po->global_tax_type) && (float)($po->tax_total ?? $po->total_tax ?? 0) > 0 && empty($po->global_tax_value)) {
-                            $gTaxType = 'FIXED';
-                            $gTaxVal = (float)($po->tax_total ?? $po->total_tax);
-                        }
-                    @endphp
 
                     <div class="p-3 mb-4 border bg-light rounded-3 border-primary-subtle">
                         <label class="mb-2 form-label small fw-bold text-dark">
@@ -431,13 +364,12 @@
                         </label>
                         <div class="mb-1 overflow-hidden border shadow-sm input-group input-group-sm rounded-2">
                             <select name="global_tax_type" id="globalTaxType" class="px-1 text-center bg-white border-0 form-select fw-bold" style="max-width: 60px;" onchange="calculateGrandTotal()">
-                                <option value="PERCENT" {{ $gTaxType == 'PERCENT' ? 'selected' : '' }}>%</option>
-                                <option value="FIXED" {{ $gTaxType == 'FIXED' ? 'selected' : '' }}>Nom</option>
+                                <option value="PERCENT" {{ $po->global_tax_type == 'PERCENT' ? 'selected' : '' }}>%</option>
+                                <option value="FIXED" {{ $po->global_tax_type == 'FIXED' ? 'selected' : '' }}>Nom</option>
                             </select>
-                            <input type="number" name="global_tax_value" id="globalTaxValue" class="px-2 border-0 form-control text-end fw-bold text-primary" value="{{ (float)$gTaxVal }}" min="0" step="any" oninput="calculateGrandTotal()">
+                            <input type="number" name="global_tax_value" id="globalTaxValue" class="px-2 border-0 form-control text-end fw-bold text-primary" value="{{ (float)$po->global_tax_value }}" min="0" step="any" oninput="calculateGrandTotal()">
                         </div>
-                        {{-- Hidden Input untuk Controller --}}
-                        <input type="hidden" name="tax_total" id="globalTaxAmountHidden" value="0">
+                        <input type="hidden" name="tax_total" id="globalTaxAmountHidden" value="{{ (float)$po->tax_total }}">
                     </div>
 
                     {{-- Rincian Hitungan --}}
@@ -585,17 +517,16 @@
         }
 
         selectEl.setAttribute('data-current-conv', newConvRate);
-
-        let helpText = document.getElementById(`max-val-${index}`);
-        if(helpText) helpText.innerText = newMaxVal;
-
         calculateRow(qtyInput);
     }
 
     function triggerFilePicker(index) {
         let fileInput = document.createElement('input');
         fileInput.type = 'file';
-        fileInput.name = `item_attachments_${index}[]`;
+
+        // 🔥 INI OBATNYA! Kita ubah nama variabelnya agar persis dengan halaman Create 🔥
+        fileInput.name = `po_items[${index}][attachments][]`;
+
         fileInput.multiple = true;
         fileInput.accept = '.pdf,.jpg,.jpeg,.png,.doc,.docx,.xls,.xlsx';
 
@@ -645,6 +576,7 @@
     // 🔥 LOGIKA PERHITUNGAN BARIS DIREVISI 🔥
     function calculateRow(el) {
         let row = el.closest('.item-row');
+
         let qty = parseFloat(row.querySelector('.qty-input').value) || 0;
         let price = parseFloat(row.querySelector('.price-input').value) || 0;
         let gross = qty * price;

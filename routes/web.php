@@ -110,6 +110,10 @@ Route::middleware('auth')->group(function () {
         Route::post('/{slug}/cancel', [PurchaseOrderController::class, 'cancel'])->name('cancel')->middleware('can:view_po');
         Route::get('/po/attachment/item/{id}/delete', [\App\Http\Controllers\PurchaseOrderController::class, 'deleteItemAttachment'])->name('po.delete_item_attachment');
         Route::get('/po/attachment/header/{id}/delete', [\App\Http\Controllers\PurchaseOrderController::class, 'deleteHeaderAttachment'])->name('po.delete_header_attachment');
+
+
+        Route::get('/attachment/header/delete/{id}', [App\Http\Controllers\PurchaseOrderController::class, 'deleteHeaderAttachment'])->name('po.delete_header_attachment');
+        Route::get('/attachment/item/delete/{id}', [App\Http\Controllers\PurchaseOrderController::class, 'deleteItemAttachment'])->name('po.delete_item_attachment');
     });
 
 

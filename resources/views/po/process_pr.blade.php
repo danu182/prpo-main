@@ -456,11 +456,22 @@
                 </div>
             </div>
 
-            {{-- Catatan Global PO --}}
+            {{-- Catatan Global PO & Lampiran Header --}}
             <div class="mb-4 border-0 shadow-sm card rounded-4">
                 <div class="p-4 card-body">
-                    <label class="form-label fw-bold text-dark"><i class="bi bi-file-text me-2 text-primary"></i>Catatan Internal / Pesan Utama Dokumen PO</label>
-                    <textarea name="notes" class="form-control form-input-custom bg-light" rows="3" placeholder="Tulis instruksi pengiriman umum, referensi, dll di sini...">{{ $pr->description ?? '' }}</textarea>
+                    <div class="row">
+                        <div class="col-md-6">
+                            <label class="form-label fw-bold text-dark"><i class="bi bi-file-text me-2 text-primary"></i>Catatan Internal / Pesan Utama PO</label>
+                            <textarea name="notes" class="form-control form-input-custom bg-light" rows="3" placeholder="Tulis instruksi pengiriman umum, referensi, dll di sini...">{{ $pr->description ?? '' }}</textarea>
+                        </div>
+                        <div class="pl-4 col-md-6 border-start">
+                            <label class="form-label fw-bold text-dark"><i class="bi bi-cloud-upload me-1 text-primary"></i>Upload Dokumen Header PO</label>
+                            <div class="mt-1 mb-2 form-text text-muted" style="font-size: 0.75rem;">
+                                Opsional: Lampirkan dokumen global seperti Kontrak Kerja (MoU), NPWP Vendor, atau Syarat & Ketentuan Umum.
+                            </div>
+                            <input type="file" name="header_attachments[]" class="form-control form-control-sm border-secondary-subtle" multiple accept=".pdf,.jpg,.jpeg,.png,.xls,.xlsx,.doc,.docx">
+                        </div>
+                    </div>
                 </div>
             </div>
 
