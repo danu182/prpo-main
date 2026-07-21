@@ -200,4 +200,16 @@ class StockOpnameController extends Controller
         $opname = StockOpname::with(['items.item', 'attachments', 'warehouse', 'status', 'approvals.role', 'approvals.approver'])->findOrFail($id);
         return view('stock_opnames.show', compact('opname'));
     }
+
+
+    // 7. Cetak Lembar Kerja Opname (Blind Count Sheet)
+    public function print($id)
+    {
+        $opname = StockOpname::with(['items.item', 'warehouse', 'creator'])->findOrFail($id);
+        return view('stock_opnames.print', compact('opname'));
+    }
+
+
+
+
 }

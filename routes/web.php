@@ -642,6 +642,10 @@ Route::middleware('auth')->group(function () {
         Route::put('/{id}', [App\Http\Controllers\StockOpnameController::class, 'update'])->name('update');
 
         Route::get('/{id}', [App\Http\Controllers\StockOpnameController::class, 'show'])->name('show');
+
+
+        // Route::get('/{id}', [App\Http\Controllers\StockOpnameController::class, 'show'])->name('show');
+        Route::get('/{id}/print', [App\Http\Controllers\StockOpnameController::class, 'print'])->name('print'); // <-- TAMBAHKAN INI
         // Nanti kita tambahkan route untuk Cetak Blind Count & Submit Approval di sini
     });
 
