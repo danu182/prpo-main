@@ -202,11 +202,15 @@ class StockOpnameController extends Controller
     }
 
 
-    // 7. Cetak Lembar Kerja Opname (Blind Count Sheet)
+    // 7. Cetak Lembar Kerja Opname (Blind Count Sheet) - Format PDF
     public function print($id)
     {
         $opname = StockOpname::with(['items.item', 'warehouse', 'creator'])->findOrFail($id);
-        return view('stock_opnames.print', compact('opname'));
+
+        $pdf = \Barryvdh\DomPDF\Facade\Pdf::loadView('stock_opnames.print', compact('opname'))
+                  ->setPaper('A4', 'portrait');
+
+        return $pdf->stream('Stock_Opname_' . str_replace('/', '_', $opname->document_number) . '.pdf');
     }
 
 
