@@ -105,6 +105,9 @@
                 <a href="{{ route('stock-opnames.print', $opname->id) }}" target="_blank" class="btn btn-outline-dark btn-action-rounded">
                     <i class="bi bi-printer me-1"></i> Cetak
                 </a>
+                <a href="{{ route('stock-opnames.cetakHasil', $opname->id) }}" target="_blank" class="btn btn-outline-dark btn-action-rounded">
+                    <i class="bi bi-printer me-1"></i> Cetak Laporan
+                </a>
 
                 {{-- Group Tombol Eksekutor (Hanya Tampil Jika DRAFT) --}}
                 @if(!$hasApprovals && ($statusSlug === 'draft' || empty($statusSlug)))

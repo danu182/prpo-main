@@ -500,6 +500,32 @@ class StockOpnameController extends Controller
 
 
 
+    // ====================================================
+    // 7. CETAK LAPORAN HASIL AUDIT STOK (PDF)
+    // ====================================================
+    public function cetakHasil($id)
+    {
+        // Tarik data beserta seluruh relasi yang dibutuhkan oleh PDF
+        $opname = StockOpname::with([
+            'items.item',
+            'warehouse',
+            'company',
+            'creator',
+            'status',
+            'approvals.role',
+            'approvals.approver'
+        ])->findOrFail($id);
+
+        // Render tampilan blade 'print' menjadi PDF ukuran A4 Portrait
+        $pdf = \Barryvdh\DomPDF\Facade\Pdf::loadView('stock_opnames.cetak_hasil', compact('opname'))
+                  ->setPaper('A4', 'portrait');
+
+        // Buka PDF langsung di tab baru (stream)
+        $namaFile = 'Hasil_Audit_Stok_' . str_replace('/', '_', $opname->document_number) . '.pdf';
+        return $pdf->stream($namaFile);
+    }
+
+
 
 
 }

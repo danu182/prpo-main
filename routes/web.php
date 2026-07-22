@@ -664,6 +664,9 @@ Route::middleware('auth')->group(function () {
         Route::post('/{id}/approve', [\App\Http\Controllers\StockOpnameController::class, 'approve'])->name('approve');
         Route::post('/{id}/reject', [\App\Http\Controllers\StockOpnameController::class, 'reject'])->name('reject');
 
+
+        Route::get('/{id}/cetakHasil', [\App\Http\Controllers\StockOpnameController::class, 'cetakHasil'])->name('cetakHasil');
+
     });
 
 

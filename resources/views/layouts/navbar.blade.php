@@ -162,10 +162,25 @@
 
                 {{-- 6. REPORT --}}
                 @can('view_reports')
-                <li class="nav-item">
-                    <a class="nav-link px-3 {{ request()->routeIs('reports.*') ? 'active bg-primary-subtle text-primary rounded-pill' : 'text-secondary' }}" href="{{ route('reports.finance') }}">
+                <li class="nav-item dropdown">
+                    <a class="nav-link dropdown-toggle px-3 {{ request()->routeIs('reports.*') ? 'active bg-primary-subtle text-primary rounded-pill' : 'text-secondary' }}" href="#" role="button" data-bs-toggle="dropdown" aria-expanded="false">
                         Report
                     </a>
+                    <ul class="mt-2 border-0 shadow-sm dropdown-menu rounded-4">
+                        {{-- Laporan Keuangan --}}
+                        <li>
+                            <a class="dropdown-item py-2 {{ request()->routeIs('reports.finance') ? 'active' : '' }}" href="{{ route('reports.finance') }}">
+                                <i class="bi bi-file-earmark-bar-graph me-2 text-primary"></i> Laporan Keuangan
+                            </a>
+                        </li>
+
+                        {{-- Laporan Valuasi Persediaan --}}
+                        <li>
+                            <a class="dropdown-item py-2 {{ request()->routeIs('reports.inventory-valuation') ? 'active' : '' }}" href="{{ route('reports.inventory-valuation') }}">
+                                <i class="bi bi-boxes me-2 text-success"></i> Valuasi Persediaan
+                            </a>
+                        </li>
+                    </ul>
                 </li>
                 @endcan
 
