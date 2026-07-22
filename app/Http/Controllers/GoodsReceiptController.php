@@ -236,6 +236,8 @@ class GoodsReceiptController extends Controller
                             }
                         }
 
+                        $hargaDariPO = (float) ($poItem->unit_price ?? 0);
+
                         // 🔥 LOGIKA UOM PENYIMPANAN YANG SUDAH DIBERSIHKAN 🔥
                         $inputConvFactor = 1;
                         $selectedUomId = null;
@@ -382,6 +384,7 @@ class GoodsReceiptController extends Controller
                                 'warehouse_id'     => $request->warehouse_id ?? 1,
                                 'item_id'          => $masterItem->id,
                                 'stock_qty'        => $baseQtyReceived,
+                                'unit_price'       => $hargaDariPO, // 🔥 BARIS PENTING YANG KURANG!
                                 'reference_number' => $grNumber,
                                 'notes'            => $noteMutasi,
                             ]);

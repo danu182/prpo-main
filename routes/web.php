@@ -686,6 +686,9 @@ Route::middleware('auth')->group(function () {
     // Route::resource('asset-categories', \App\Http\Controllers\AssetCategoryController::class)->except(['create', 'edit', 'show']);
 
 
+    // Route Laporan Valuasi Persediaan
+    Route::get('/reports/inventory-valuation', [\App\Http\Controllers\InventoryValuationController::class, 'index'])->name('reports.inventory-valuation');
+    Route::get('/reports/inventory-valuation/print', [\App\Http\Controllers\InventoryValuationController::class, 'print'])->name('reports.inventory-valuation.print');
 
 
 
