@@ -4,6 +4,7 @@
 <style>
     .card-kpi { transition: all 0.3s ease; border-left: 5px solid transparent; }
     .card-kpi:hover { transform: translateY(-5px); box-shadow: 0 0.5rem 1.5rem rgba(0,0,0,0.08) !important; }
+    .filter-wrapper { background-color: #f8f9fc; border: 1px solid #e3e6f0; }
 </style>
 @endpush
 
@@ -11,7 +12,7 @@
 <div class="pb-5 container-fluid text-dark">
 
     {{-- HEADER HALAMAN --}}
-    <div class="row align-items-center pb-3 mb-4 border-bottom gy-3">
+    <div class="row align-items-center pb-3 mb-3 border-bottom gy-3">
         <div class="col-xl-7 col-lg-6">
             <h3 class="mb-1 fw-bold text-dark d-flex align-items-center">
                 <i class="bi bi-bar-chart-line text-primary me-2"></i> Laporan Valuasi Persediaan
@@ -27,6 +28,30 @@
         </div>
     </div>
 
+    {{-- FILTER GUDANG --}}
+    <div class="p-3 mb-4 rounded-4 filter-wrapper shadow-sm">
+        <form action="{{ route('reports.inventory-valuation') }}" method="GET" class="row g-2 align-items-center m-0">
+            <div class="col-md-5">
+                <label class="form-label small fw-bold text-secondary mb-1"><i class="bi bi-geo-alt-fill me-1 text-danger"></i> Pilih Lokasi Gudang:</label>
+                <select name="warehouse_id" class="form-select fw-semibold border-secondary-subtle" onchange="this.form.submit()">
+                    <option value="">-- Semua Gudang (Global / Akumulasi Keseluruhan) --</option>
+                    @foreach($warehouses as $wh)
+                        <option value="{{ $wh->id }}" {{ $selectedWarehouseId == $wh->id ? 'selected' : '' }}>
+                            🏢 {{ $wh->name }}
+                        </option>
+                    @endforeach
+                </select>
+            </div>
+            @if($selectedWarehouseId)
+                <div class="col-md-2 mt-md-4">
+                    <a href="{{ route('reports.inventory-valuation') }}" class="btn btn-outline-danger btn-sm w-100 fw-bold">
+                        <i class="bi bi-x-circle me-1"></i> Reset Filter
+                    </a>
+                </div>
+            @endif
+        </form>
+    </div>
+
     {{-- KARTU KPI (KEY PERFORMANCE INDICATORS) --}}
     <div class="row g-4 mb-4">
         {{-- KPI 1: GRAND TOTAL VALUASI --}}
@@ -38,7 +63,7 @@
                 </div>
                 <h1 class="fw-bolder text-primary display-5 mb-0">Rp {{ number_format($grandTotalValue, 0, ',', '.') }}</h1>
                 <div class="mt-3 text-muted small">
-                    <i class="bi bi-info-circle me-1"></i> Total nilai kekayaan seluruh barang yang saat ini fisik-nya tersedia di gudang.
+                    <i class="bi bi-info-circle me-1"></i> Total nilai kekayaan seluruh barang di {{ $selectedWarehouseId ? 'gudang yang dipilih' : 'seluruh gudang' }}.
                 </div>
             </div>
         </div>
@@ -114,8 +139,8 @@
                         @empty
                             <tr>
                                 <td colspan="6" class="py-5 text-center text-muted">
-                                    <i class="bi bi-inbox fs-1 opacity-25 d-block mb-2"></i>
-                                    Tidak ada stok barang di gudang saat ini. Valuasi Rp 0.
+                                    <i class="bi bi-inbox fs-1 opacity-25 d-block mb-3"></i>
+                                    Tidak ada stok barang pada lokasi gudang ini. Valuasi Rp 0.
                                 </td>
                             </tr>
                         @endforelse
@@ -137,7 +162,7 @@
 <style>
     @media print {
         body { background-color: white !important; }
-        .btn, nav, header, footer { display: none !important; }
+        .btn, nav, header, footer, .filter-wrapper { display: none !important; }
         .container-fluid { width: 100% !important; padding: 0 !important; }
         .card { border: 1px solid #ddd !important; box-shadow: none !important; }
         .bg-primary-subtle { background-color: #f8f9fa !important; border: 1px solid #000 !important; }
