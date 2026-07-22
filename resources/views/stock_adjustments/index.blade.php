@@ -7,13 +7,13 @@
     <div class="mb-4 d-flex justify-content-between align-items-center">
         <div>
             <h4 class="mb-0 fw-bold text-dark">
-                <i class="bi bi-journal-text text-warning me-2"></i> Riwayat Stock Opname
+                <i class="bi bi-journal-text text-warning me-2"></i> Riwayat Penyesuaian Stock
             </h4>
             <div class="mt-1 text-muted small">Daftar seluruh penyesuaian stok dan koreksi inventaris.</div>
         </div>
         <div>
             <a href="{{ route('stock-adjustments.create') }}" class="px-4 shadow-sm btn btn-warning text-dark fw-bold rounded-pill">
-                <i class="bi bi-plus-lg me-1"></i> Buat Opname Baru
+                <i class="bi bi-plus-lg me-1"></i> Buat Penyesuaian Stok Baru
             </a>
         </div>
     </div>

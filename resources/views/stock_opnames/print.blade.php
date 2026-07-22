@@ -14,15 +14,17 @@
         .data-table { width: 100%; border-collapse: collapse; margin-bottom: 30px; }
         .data-table th, .data-table td { border: 1px solid #000; padding: 6px; text-align: left; vertical-align: middle; }
         .data-table th { background-color: #e9ecef; text-align: center; font-weight: bold; }
-
-        /* Menghindari baris tabel terpotong di halaman baru */
         .data-table tr { page-break-inside: avoid; }
 
-        .sign-table { width: 100%; margin-top: 50px; text-align: center; page-break-inside: avoid; }
-        .sign-table td { width: 33%; padding-bottom: 60px; vertical-align: bottom; }
-        .sign-line { border-top: 1px solid #000; width: 80%; margin: 0 auto; padding-top: 5px; font-weight: bold; }
-
         .fill-area { height: 25px; }
+
+        /* Area Tanda Tangan Dinamis */
+        .sign-table { width: 100%; margin-top: 40px; text-align: center; page-break-inside: avoid; border-collapse: collapse; }
+        .sign-table td { padding: 10px; vertical-align: top; }
+        .sign-title { font-weight: bold; margin-bottom: 60px; font-size: 11px; }
+        .sign-line { border-top: 1px solid #000; width: 90%; margin: 0 auto; padding-top: 5px; font-weight: bold; font-size: 11px; }
+        .sign-role { font-size: 10px; margin-top: 2px; color: #333; }
+        .sign-date { font-size: 9px; margin-top: 2px; color: #666; font-style: italic; }
     </style>
 </head>
 <body>
@@ -76,17 +78,66 @@
         </tbody>
     </table>
 
+    {{-- 🔥 LOGIKA TANDA TANGAN DINAMIS 🔥 --}}
+    @php
+        $signatureBoxes = [];
+
+        // 1. Box Pertama: Pembuat / Checker
+        $signatureBoxes[] = [
+            'title' => 'Dihitung Oleh',
+            'name'  => optional($opname->creator)->name ?? '_______________________',
+            'role'  => 'Checker / Eksekutor',
+            'date'  => \Carbon\Carbon::parse($opname->created_at)->format('d/m/Y')
+        ];
+
+        $approvals = $opname->approvals ?? collect();
+
+        if ($approvals->count() > 0) {
+            // SKENARIO A: Dokumen sudah diajukan (Tarik dari data Approval yang sudah terbentuk)
+            foreach ($approvals->sortBy('step_order') as $approval) {
+                $signatureBoxes[] = [
+                    'title' => 'Diverifikasi Oleh',
+                    'name'  => optional($approval->approver)->name ?? '_______________________',
+                    'role'  => optional($approval->role)->name ?? 'Supervisor / Manager',
+                    'date'  => $approval->approved_at ? \Carbon\Carbon::parse($approval->approved_at)->format('d/m/Y') : ''
+                ];
+            }
+        } else {
+            // SKENARIO B: Dokumen masih Draft / Blind Count (Tarik dari Master Matrix Workflow)
+            $workflow = \App\Models\ApprovalWorkflow::with('steps.role')
+                        ->where('document_type', 'App\Models\StockOpname')
+                        ->where('is_active', true)
+                        ->first();
+
+            if ($workflow) {
+                foreach ($workflow->steps->sortBy('step_order') as $step) {
+                    $signatureBoxes[] = [
+                        'title' => 'Diverifikasi Oleh',
+                        'name'  => '_______________________',
+                        'role'  => optional($step->role)->name ?? 'Manager',
+                        'date'  => ''
+                    ];
+                }
+            }
+        }
+
+        // Hitung lebar kolom dinamis (membagi 100% dengan jumlah kotak tanda tangan)
+        $colWidth = count($signatureBoxes) > 0 ? (100 / count($signatureBoxes)) : 100;
+    @endphp
+
+    {{-- CETAK TABEL TANDA TANGAN --}}
     <table class="sign-table">
         <tr>
-            <td>
-                <div class="sign-line">Dihitung Oleh (Checker)</div>
+            @foreach($signatureBoxes as $box)
+            <td style="width: {{ $colWidth }}%;">
+                <div class="sign-title">{{ $box['title'] }}</div>
+                <div class="sign-line">{{ $box['name'] }}</div>
+                <div class="sign-role">{{ $box['role'] }}</div>
+                @if($box['date'])
+                    <div class="sign-date">Tgl: {{ $box['date'] }}</div>
+                @endif
             </td>
-            <td>
-                <div class="sign-line">Diverifikasi Oleh (Supervisor)</div>
-            </td>
-            <td>
-                <div class="sign-line">Diinput Ke Sistem Oleh</div>
-            </td>
+            @endforeach
         </tr>
     </table>
 

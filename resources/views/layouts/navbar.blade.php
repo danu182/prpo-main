@@ -65,7 +65,8 @@
                 {{-- 4. WAREHOUSE DROPDOWN --}}
                 @canany(['view_inventory', 'manage_gi', 'view_assets', 'manage_items'])
                 <li class="nav-item dropdown">
-                    <a class="nav-link dropdown-toggle px-3 {{ request()->routeIs('asset-capitalizations.*', 'assets.*', 'goods-issues.*', 'goods-issue-returns.*', 'stock-transfers.*', 'employee-inventories.*', 'stock-adjustments.*', 'fixed-assets.*', 'items.*', 'inventory.*', 'rtv.*') ? 'active bg-primary-subtle text-primary rounded-pill' : 'text-secondary' }}" href="#" role="button" data-bs-toggle="dropdown" aria-expanded="false">
+                    {{-- 🔥 PERBAIKAN: Menambahkan 'stock-opnames.*' ke dalam route check agar tab Warehouse menyala 🔥 --}}
+                    <a class="nav-link dropdown-toggle px-3 {{ request()->routeIs('asset-capitalizations.*', 'assets.*', 'goods-issues.*', 'goods-issue-returns.*', 'stock-transfers.*', 'employee-inventories.*', 'stock-adjustments.*', 'stock-opnames.*', 'fixed-assets.*', 'items.*', 'inventory.*', 'rtv.*') ? 'active bg-primary-subtle text-primary rounded-pill' : 'text-secondary' }}" href="#" role="button" data-bs-toggle="dropdown" aria-expanded="false">
                         Warehouse
                     </a>
                     <ul class="mt-2 border-0 shadow-sm dropdown-menu rounded-4" style="min-width: 280px;">
@@ -85,32 +86,22 @@
                         <li><a class="dropdown-item py-2 {{ request()->routeIs('goods-issue-returns.*') ? 'active' : '' }}" href="{{ route('goods-issue-returns.index') }}"><i class="bi bi-arrow-return-left text-warning me-2"></i> Retur Barang (Masuk)</a></li>
                         <li><a class="dropdown-item py-2 {{ request()->routeIs('rtv.*') ? 'active' : '' }}" href="{{ route('rtv.index') }}"><i class="bi bi-truck-flatbed text-danger me-2"></i> Retur ke Vendor (RTV)</a></li>
                         <li><a class="dropdown-item py-2 {{ request()->routeIs('employee-inventories.*') ? 'active' : '' }}" href="{{ route('employee-inventories.index') }}"><i class="bi bi-person-badge text-info me-2"></i> Inventaris Karyawan</a></li>
-                        <li><a class="dropdown-item py-2 {{ request()->routeIs('stock-adjustments.*') ? 'active' : '' }}" href="{{ route('stock-adjustments.index') }}"><i class="bi bi-sliders text-success me-2"></i> Stock Opname</a></li>
+
+                        {{-- 🔥 PERBAIKAN: Memisahkan Penyesuaian Stok dan Stock Opname 🔥 --}}
+                        <li><a class="dropdown-item py-2 {{ request()->routeIs('stock-adjustments.*') ? 'active' : '' }}" href="{{ route('stock-adjustments.index') }}"><i class="bi bi-sliders text-success me-2"></i> Penyesuaian Stok</a></li>
+                        <li><a class="dropdown-item py-2 {{ request()->routeIs('stock-opnames.*') ? 'active' : '' }}" href="{{ route('stock-opnames.index') }}"><i class="bi bi-ui-checks-grid text-warning me-2"></i> Audit & Stock Opname</a></li>
+
                         <li><hr class="dropdown-divider"></li>
                         @endcan
 
-                        {{-- 🔥 PERBAIKAN MENU ASET (FLAT DROPDOWN) 🔥 --}}
                         @can('view_assets')
                         <li><h6 class="opacity-50 dropdown-header text-uppercase small fw-bold">Manajemen Aset</h6></li>
-
-                        {{-- Master List Data Aset --}}
                         <li><a class="dropdown-item py-2 {{ request()->routeIs('fixed-assets.master_list') ? 'active' : '' }}" href="{{ route('fixed-assets.master_list') }}"><i class="bi bi-server text-primary me-2"></i> Master Data Aset</a></li>
-
-                        {{-- 🔥 MENU BARU: TRANSAKSI & PENGEMBALIAN ASET 🔥 --}}
                         <li><a class="dropdown-item py-2 {{ request()->routeIs('fixed-assets.transactions') ? 'active' : '' }}" href="{{ route('fixed-assets.transactions') }}"><i class="bi bi-arrow-left-right text-danger me-2"></i> Transaksi & Retur Aset</a></li>
-
-                        {{-- Pengakuan Aset / Capitalization --}}
                         <li><a class="dropdown-item py-2 {{ request()->routeIs('asset-capitalizations.*') ? 'active' : '' }}" href="{{ route('asset-capitalizations.index') }}"><i class="bi bi-magic text-warning me-2"></i> Pengakuan Aset (Capitalization)</a></li>
-
-                        {{-- Registrasi / Import Aset --}}
                         <li><a class="dropdown-item py-2 {{ request()->routeIs('fixed-assets.index') ? 'active' : '' }}" href="{{ route('fixed-assets.index') }}"><i class="bi bi-cloud-arrow-up text-info me-2"></i> Registrasi / Import Aset</a></li>
-
-                        {{-- Riwayat Import --}}
                         <li><a class="dropdown-item py-2 {{ request()->routeIs('fixed-assets.import_history') ? 'active' : '' }}" href="{{ route('fixed-assets.import_history') }}"><i class="bi bi-clock-history text-secondary me-2"></i> Riwayat Import & Label</a></li>
-
-                        {{-- Riwayat Hibah --}}
                         <li><a class="dropdown-item py-2 {{ request()->routeIs('fixed-assets.hibah_history') ? 'active' : '' }}" href="{{ route('fixed-assets.hibah_history') }}"><i class="bi bi-gift text-success me-2"></i> Riwayat Hibah</a></li>
-
                         <li><hr class="dropdown-divider"></li>
                         @endcan
 

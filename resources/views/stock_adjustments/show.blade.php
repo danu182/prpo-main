@@ -1,61 +1,152 @@
 @extends('layouts.app')
 
-@section('content')
-<div class="container pb-5 text-dark">
+@push('css')
+<style>
+    .btn-action-rounded { border-radius: 50rem; font-weight: 600; padding: 0.5rem 1.2rem; box-shadow: 0 0.125rem 0.25rem rgba(0,0,0,0.075); transition: all 0.2s; }
+    .btn-action-rounded:hover { transform: translateY(-2px); box-shadow: 0 0.25rem 0.5rem rgba(0,0,0,0.15); }
+    .summary-card { transition: all 0.3s ease; border-left: 5px solid transparent; }
+    .summary-card:hover { transform: translateY(-4px); }
+</style>
+@endpush
 
-    {{-- HEADER HALAMAN --}}
-    <div class="mb-4 d-flex justify-content-between align-items-end">
-        <div>
-            <a href="{{ route('stock-adjustments.index') }}" class="mb-2 text-decoration-none text-muted small fw-bold d-inline-block">
-                <i class="bi bi-arrow-left me-1"></i> Kembali ke Riwayat
-            </a>
-            <h4 class="mb-0 fw-bold text-dark">
-                <i class="bi bi-file-earmark-text text-primary me-2"></i> Rincian Berita Acara Opname
+@section('content')
+<div class="pb-5 container-fluid text-dark">
+
+    {{-- ========================================================================= --}}
+    {{-- 1. PRE-CALCULATION LOGIC (DENGAN RADAR HARGA 3 LAPIS) --}}
+    {{-- ========================================================================= --}}
+    @php
+        $totalValuasiMutasi = 0;
+        $totalQtyMasuk = 0;
+        $totalQtyKeluar = 0;
+
+        foreach($adjustment->items as $item) {
+            // LAPIS 1: Coba ambil dari tabel detail penyesuaian
+            $unitPrice = (float) ($item->unit_price ?? 0);
+
+            // LAPIS 2 (RADAR CERDAS): Jika 0, intip langsung ke tumpukan fisik gudang (InventoryStock) yang baru masuk
+            if ($unitPrice <= 0 && $item->difference > 0) {
+                $invStock = \App\Models\InventoryStock::where('reference_number', $adjustment->adjustment_number)
+                                ->where('item_id', $item->item_id)
+                                ->first();
+                if ($invStock) {
+                    $unitPrice = (float) ($invStock->unit_price ?? 0);
+                }
+            }
+
+            // LAPIS 3: Jika masih 0 juga, baru ambil harga bawaan dari Master Barang
+            if ($unitPrice <= 0) {
+                $unitPrice = (float) (optional($item->item)->purchase_price ?? optional($item->item)->unit_price ?? 0);
+            }
+
+            $totalValuasiMutasi += (abs($item->difference) * $unitPrice);
+
+            if($item->difference > 0) $totalQtyMasuk += $item->difference;
+            if($item->difference < 0) $totalQtyKeluar += abs($item->difference);
+        }
+    @endphp
+
+    {{-- ========================================================================= --}}
+    {{-- 2. HEADER HALAMAN & TOMBOL AKSI --}}
+    {{-- ========================================================================= --}}
+    <div class="row align-items-center pb-3 mb-4 border-bottom gy-3">
+        <div class="col-xl-7 col-lg-6">
+            <h4 class="mb-1 fw-bold text-dark d-flex align-items-center">
+                <i class="bi bi-sliders text-primary me-2 fs-3"></i> Detail Penyesuaian Stok
             </h4>
-            <div class="mt-1 text-muted small">ID Dokumen: <strong class="text-primary">{{ $adjustment->adjustment_number }}</strong></div>
+            <div class="d-flex align-items-center gap-3 mt-2 flex-wrap">
+                <span class="badge border px-3 py-2 rounded-pill bg-success-subtle text-success border-success-subtle shadow-sm">
+                    <i class="bi bi-check-circle-fill me-1" style="font-size: 0.6rem;"></i> DIEKSEKUSI
+                </span>
+                <span class="text-muted small fw-medium">
+                    ID Dokumen: <strong class="text-primary fs-6">{{ $adjustment->adjustment_number }}</strong>
+                </span>
+            </div>
         </div>
-        <div class="gap-2 d-flex">
-            {{-- Tombol Cetak (Opsional untuk masa depan) --}}
-            <button onclick="window.print()" class="px-4 shadow-sm btn btn-dark rounded-pill fw-bold">
-                <i class="bi bi-printer me-1"></i> Cetak Dokumen
-            </button>
+
+        <div class="col-xl-5 col-lg-6 text-lg-end">
+            <div class="d-flex gap-2 justify-content-lg-end flex-wrap align-items-center">
+                <a href="{{ route('stock-adjustments.index') }}" class="btn btn-light border btn-action-rounded">
+                    <i class="bi bi-arrow-left me-1"></i> Kembali ke Riwayat
+                </a>
+                <a href="{{ route('stock-adjustments.print', $adjustment->id) }}" target="_blank" class="btn btn-dark btn-action-rounded">
+                    <i class="bi bi-printer me-1"></i> Cetak Dokumen
+                </a>
+            </div>
         </div>
     </div>
 
-    {{-- KARTU INFORMASI HEADER --}}
-    <div class="mb-4 border-0 shadow-sm card rounded-4 bg-light">
-        <div class="p-4 card-body">
-            <div class="row g-4 text-start">
-                <div class="col-md-3 border-end">
-                    <label class="mb-1 text-muted small fw-bold text-uppercase d-block">Tanggal Opname</label>
-                    <h6 class="mb-0 fw-bold text-dark">
-                        <i class="bi bi-calendar3 me-2 text-primary"></i>{{ \Carbon\Carbon::parse($adjustment->adjustment_date)->format('d F Y') }}
-                    </h6>
+    {{-- ========================================================================= --}}
+    {{-- 3. KARTU INFORMASI & RINGKASAN VALUASI --}}
+    {{-- ========================================================================= --}}
+    <div class="row g-4 mb-4">
+        {{-- INFORMASI DOKUMEN --}}
+        <div class="col-lg-7">
+            <div class="border-0 shadow-sm card rounded-4 h-100 bg-white">
+                <div class="p-4 card-body d-flex flex-column justify-content-center">
+                    <h6 class="mb-3 fw-bold text-muted text-uppercase small"><i class="bi bi-info-circle me-1"></i> Informasi Penyesuaian</h6>
+                    <div class="row g-4 text-start">
+                        <div class="col-sm-4 border-end">
+                            <label class="mb-1 text-muted small fw-semibold d-block">Tanggal Eksekusi</label>
+                            <h6 class="mb-0 fw-bold text-dark">
+                                <i class="bi bi-calendar3 me-2 text-primary"></i>{{ \Carbon\Carbon::parse($adjustment->adjustment_date)->format('d M Y') }}
+                            </h6>
+                        </div>
+                        <div class="col-sm-4 border-end">
+                            <label class="mb-1 text-muted small fw-semibold d-block">Lokasi Gudang</label>
+                            <h6 class="mb-0 fw-bold text-dark">
+                                <i class="bi bi-shop me-2 text-success"></i>{{ optional($adjustment->warehouse)->name }}
+                            </h6>
+                        </div>
+                        <div class="col-sm-4">
+                            <label class="mb-1 text-muted small fw-semibold d-block">Eksekutor (PIC)</label>
+                            <h6 class="mb-0 fw-bold text-dark text-truncate">
+                                <i class="bi bi-person-badge me-2 text-warning"></i>{{ optional($adjustment->adjuster)->name ?? 'Sistem' }}
+                            </h6>
+                        </div>
+                    </div>
+                    <div class="mt-4 pt-3 border-top">
+                        <label class="mb-1 text-muted small fw-semibold d-block">Alasan / Keterangan</label>
+                        <p class="mb-0 small text-secondary bg-light p-2 rounded-3 border fst-italic lh-sm">{{ $adjustment->reason }}</p>
+                    </div>
                 </div>
-                <div class="col-md-3 border-end text-start">
-                    <label class="mb-1 text-muted small fw-bold text-uppercase d-block">Lokasi Gudang</label>
-                    <h6 class="mb-0 fw-bold text-dark text-start">
-                        <i class="bi bi-shop me-2 text-success"></i>{{ optional($adjustment->warehouse)->name }}
-                    </h6>
-                </div>
-                <div class="col-md-3 border-end text-start">
-                    <label class="mb-1 text-muted small fw-bold text-uppercase d-block">Eksekutor (PIC)</label>
-                    <h6 class="mb-0 fw-bold text-dark text-start">
-                        <i class="bi bi-person-check me-2 text-warning"></i>{{ optional($adjustment->adjuster)->name ?? 'Sistem' }}
-                    </h6>
-                </div>
-                <div class="col-md-3 text-start">
-                    <label class="mb-1 text-muted small fw-bold text-uppercase d-block">Alasan / Keterangan</label>
-                    <p class="mb-0 small text-dark lh-sm text-start">{{ $adjustment->reason }}</p>
+            </div>
+        </div>
+
+        {{-- RINGKASAN VALUASI MUTASI --}}
+        <div class="col-lg-5">
+            <div class="border-0 shadow-sm card rounded-4 h-100 summary-card bg-primary-subtle border-primary-subtle" style="border-left-color: #0d6efd;">
+                <div class="p-4 card-body d-flex flex-column justify-content-between">
+                    <div>
+                        <div class="mb-1 d-flex justify-content-between align-items-center">
+                            <h6 class="text-primary fw-bold text-uppercase small mb-0"><i class="bi bi-wallet2 me-1"></i> Total Valuasi Mutasi</h6>
+                            <div class="p-2 bg-white text-primary rounded-circle shadow-sm"><i class="bi bi-cash-stack"></i></div>
+                        </div>
+                        <h2 class="fw-bolder text-primary mb-0 display-6">Rp {{ number_format($totalValuasiMutasi, 0, ',', '.') }}</h2>
+                        <span class="small text-muted fw-medium">*Total nilai absolut seluruh perubahan stok</span>
+                    </div>
+
+                    <div class="mt-3 pt-3 border-top border-primary-subtle d-flex justify-content-between align-items-center">
+                        <div>
+                            <span class="text-muted small d-block">Total Item</span>
+                            <strong class="text-dark fs-5">{{ $adjustment->items->count() }} Jenis</strong>
+                        </div>
+                        <div class="text-end">
+                            <span class="badge bg-success-subtle text-success border border-success-subtle rounded-pill px-2 py-1 mb-1 d-block"><i class="bi bi-arrow-down-left"></i> {{ $totalQtyMasuk }} Masuk</span>
+                            <span class="badge bg-danger-subtle text-danger border border-danger-subtle rounded-pill px-2 py-1 d-block"><i class="bi bi-arrow-up-right"></i> {{ $totalQtyKeluar }} Keluar</span>
+                        </div>
+                    </div>
                 </div>
             </div>
         </div>
     </div>
 
-    {{-- TABEL RINCIAN BARANG --}}
-    <div class="overflow-hidden border-0 border-4 shadow-sm card rounded-4 border-top border-primary">
-        <div class="py-3 bg-white card-header border-bottom">
-            <h6 class="mb-0 fw-bold text-dark"><i class="bi bi-list-check me-2 text-primary"></i>Daftar Penyesuaian Barang</h6>
+    {{-- ========================================================================= --}}
+    {{-- 4. TABEL RINCIAN BARANG --}}
+    {{-- ========================================================================= --}}
+    <div class="overflow-hidden border-0 shadow-sm card rounded-4 border-top border-4 border-primary">
+        <div class="py-3 bg-white card-header border-bottom d-flex justify-content-between align-items-center">
+            <h6 class="mb-0 fw-bold text-dark"><i class="bi bi-list-check me-2 text-primary"></i>Daftar Rincian Mutasi Barang</h6>
         </div>
         <div class="p-0 card-body">
             <div class="table-responsive">
@@ -63,49 +154,87 @@
                     <thead class="bg-light text-muted small text-uppercase fw-bold border-bottom">
                         <tr>
                             <th class="py-3 ps-4" width="5%">No</th>
-                            <th class="py-3" width="35%">Nama Barang & Kode</th>
-                            <th class="py-3 text-center" width="15%">Stok Sistem</th>
-                            <th class="py-3 text-center" width="15%">Stok Fisik</th>
-                            <th class="py-3 text-center pe-4" width="30%">Selisih / Mutasi</th>
+                            <th class="py-3" width="25%">Barang & Kode</th>
+                            <th class="py-3 text-end" width="15%">HPP / Unit (Rp)</th>
+                            <th class="py-3 text-center" width="12%">Stok Lama</th>
+                            <th class="py-3 text-center text-dark" width="12%">Stok Baru</th>
+                            <th class="py-3 text-center" width="15%">Selisih Qty</th>
+                            <th class="py-3 text-end pe-4" width="16%">Nilai Mutasi</th>
                         </tr>
                     </thead>
                     <tbody>
                         @foreach($adjustment->items as $index => $item)
-                        <tr>
+                        @php
+                            // ULANGI RADAR CERDAS UNTUK TIAP BARIS
+                            $unitPrice = (float) ($item->unit_price ?? 0);
+
+                            if ($unitPrice <= 0 && $item->difference > 0) {
+                                $invStock = \App\Models\InventoryStock::where('reference_number', $adjustment->adjustment_number)
+                                                ->where('item_id', $item->item_id)
+                                                ->first();
+                                if ($invStock) $unitPrice = (float) ($invStock->unit_price ?? 0);
+                            }
+
+                            if ($unitPrice <= 0) {
+                                $unitPrice = (float) (optional($item->item)->purchase_price ?? optional($item->item)->unit_price ?? 0);
+                            }
+
+                            $totalVal = abs($item->difference) * $unitPrice;
+                            $rowClass = $item->difference < 0 ? 'table-danger-subtle' : ($item->difference > 0 ? 'table-info-subtle' : '');
+                        @endphp
+                        <tr class="{{ $rowClass }}">
                             <td class="py-3 ps-4 text-muted fw-bold">{{ $index + 1 }}</td>
                             <td class="py-3">
-                                <div class="fw-bold text-dark">{{ optional($item->item)->name }}</div>
-                                <div class="small text-muted">[{{ optional($item->item)->code }}]</div>
+                                <div class="fw-bold text-dark">{{ optional($item->item)->name ?? 'Item Tidak Ditemukan' }}</div>
+                                <div class="small text-muted font-monospace"><i class="bi bi-upc-scan me-1"></i>{{ optional($item->item)->code ?? '-' }}</div>
+                            </td>
+                            <td class="py-3 text-end fw-semibold text-secondary">
+                                Rp {{ number_format($unitPrice, 0, ',', '.') }}
                             </td>
                             <td class="py-3 text-center fw-bold text-muted">
-                                {{ (float)$item->previous_stock }} <small>{{ optional($item->item)->unit }}</small>
+                                {{ (float)$item->previous_stock }} <span class="small fw-normal">{{ optional($item->item)->unit }}</span>
                             </td>
-                            <td class="py-3 text-center fw-bold text-primary fs-6">
-                                {{ (float)$item->new_stock }} <small>{{ optional($item->item)->unit }}</small>
+                            <td class="py-3 text-center fw-bolder text-primary fs-6">
+                                {{ (float)$item->new_stock }} <span class="small fw-normal">{{ optional($item->item)->unit }}</span>
                             </td>
-                            <td class="py-3 text-center pe-4">
+                            <td class="py-3 text-center">
                                 @if($item->difference > 0)
-                                    <div class="p-2 px-4 border border-success rounded-pill bg-success-subtle text-success fw-bold small d-inline-block">
-                                        <i class="bi bi-plus-circle-fill me-1"></i> +{{ (float)$item->difference }} (Koreksi Tambah)
-                                    </div>
+                                    <span class="badge bg-success-subtle text-success border border-success-subtle rounded-pill px-3 py-2 shadow-sm">
+                                        <i class="bi bi-arrow-down-left me-1"></i> +{{ (float)$item->difference }}
+                                    </span>
                                 @elseif($item->difference < 0)
-                                    <div class="p-2 px-4 border border-danger rounded-pill bg-danger-subtle text-danger fw-bold small d-inline-block">
-                                        <i class="bi bi-dash-circle-fill me-1"></i> {{ (float)$item->difference }} (Koreksi Kurang)
-                                    </div>
+                                    <span class="badge bg-danger-subtle text-danger border border-danger-subtle rounded-pill px-3 py-2 shadow-sm">
+                                        <i class="bi bi-arrow-up-right me-1"></i> {{ (float)$item->difference }}
+                                    </span>
                                 @else
-                                    <div class="p-2 px-4 border border-secondary rounded-pill bg-light text-muted fw-bold small d-inline-block">
-                                        = 0 (Sesuai)
-                                    </div>
+                                    <span class="badge bg-light text-muted border rounded-pill px-3 py-2 shadow-sm">
+                                        = 0 (Tetap)
+                                    </span>
+                                @endif
+                            </td>
+                            <td class="py-3 text-end pe-4 fw-bold">
+                                @if($item->difference > 0)
+                                    <span class="text-success">+ Rp {{ number_format($totalVal, 0, ',', '.') }}</span>
+                                @elseif($item->difference < 0)
+                                    <span class="text-danger">- Rp {{ number_format($totalVal, 0, ',', '.') }}</span>
+                                @else
+                                    <span class="text-muted">Rp 0</span>
                                 @endif
                             </td>
                         </tr>
                         @endforeach
                     </tbody>
+                    <tfoot class="table-light fw-bold border-top">
+                        <tr>
+                            <td colspan="6" class="py-3 text-end text-uppercase text-muted small">Total Valuasi Mutasi Keseluruhan :</td>
+                            <td class="py-3 text-end pe-4 text-primary fs-6">Rp {{ number_format($totalValuasiMutasi, 0, ',', '.') }}</td>
+                        </tr>
+                    </tfoot>
                 </table>
             </div>
         </div>
         <div class="p-4 bg-light card-footer border-top small text-muted">
-            <i class="bi bi-info-circle me-1"></i> Penyesuaian ini telah memicu mutasi stok otomatis pada kartu stok barang terkait.
+            <i class="bi bi-info-circle me-1"></i> Dokumen penyesuaian ini bersifat mutlak dan telah memperbarui saldo kuantitas serta HPP di tabel riwayat Kartu Stok Gudang.
         </div>
     </div>
 </div>

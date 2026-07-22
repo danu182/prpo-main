@@ -10,7 +10,7 @@ class StatusSeeder extends Seeder
 {
     public function run(): void
     {
-        // Data Status untuk PR, PO, INV, OPEX, AST, dan IMPORT
+        // Data Status untuk PR, PO, INV, OPEX, AST, GI, IMPORT, dan SO
         $statuses = [
             // ==========================================================
             // 1. STATUS UNTUK PURCHASE REQUEST (PR)
@@ -279,7 +279,7 @@ class StatusSeeder extends Seeder
             ['type' => 'GI', 'name' => 'VOID (Batal)', 'slug' => 'void', 'color' => 'danger', 'sequence' => 4],
 
             // ==========================================================
-            // 🔥 7. STATUS UNTUK IMPORT MASTER ITEM (IMPORT) 🔥
+            // 7. STATUS UNTUK IMPORT MASTER ITEM (IMPORT)
             // ==========================================================
             [
                 'type' => 'IMPORT',
@@ -309,6 +309,45 @@ class StatusSeeder extends Seeder
                 'color' => 'danger',
                 'sequence' => 4,
             ],
+
+            // ==========================================================
+            // 🔥 8. STATUS UNTUK AUDIT & STOCK OPNAME (SO) 🔥
+            // ==========================================================
+            [
+                'type' => 'SO',
+                'name' => 'Draft / Menghitung',
+                'slug' => 'draft',
+                'color' => 'secondary',
+                'sequence' => 1,
+            ],
+            [
+                'type' => 'SO',
+                'name' => 'Menunggu Persetujuan',
+                'slug' => 'pending_approval',
+                'color' => 'warning',
+                'sequence' => 2,
+            ],
+            [
+                'type' => 'SO',
+                'name' => 'Disetujui / Selesai',
+                'slug' => 'approved',
+                'color' => 'success',
+                'sequence' => 3,
+            ],
+            [
+                'type' => 'SO',
+                'name' => 'Ditolak',
+                'slug' => 'rejected',
+                'color' => 'danger',
+                'sequence' => 4,
+            ],
+            [
+                'type' => 'SO',
+                'name' => 'Dibatalkan',
+                'slug' => 'cancelled',
+                'color' => 'dark',
+                'sequence' => 5,
+            ],
         ];
 
         foreach ($statuses as $status) {
@@ -317,7 +356,6 @@ class StatusSeeder extends Seeder
                 [
                     'name' => $status['name'],
                     'color' => $status['color'],
-                    // Menambahkan ?? 0 agar sistem tidak error jika ada data yang lupa diberi sequence
                     'sequence' => $status['sequence'] ?? 0,
                 ]
             );

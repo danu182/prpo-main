@@ -38,6 +38,14 @@ class DocumentTypeSeeder extends Seeder
                 'model_class' => 'App\Models\FixedAssetImportBatch',
                 'is_active'   => true,
             ],
+            // =======================================================
+            // 🔥 TAMBAHAN BARU: persetujaun Stok Opname 🔥
+            // =======================================================
+            [
+                'name'        => 'persetujaun Stok Opname',
+                'model_class' => 'App\Models\StockOpname',
+                'is_active'   => true,
+            ],
         ];
 
         foreach ($documents as $doc) {

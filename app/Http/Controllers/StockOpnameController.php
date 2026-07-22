@@ -27,6 +27,65 @@ class StockOpnameController extends Controller
         return $prefix . str_pad($nextSeq, 4, '0', STR_PAD_LEFT);
     }
 
+
+    // 9. Ajukan Hasil Opname ke Matriks Approval
+    public function submitApproval($id)
+    {
+        $opname = StockOpname::findOrFail($id);
+
+        try {
+            DB::beginTransaction();
+
+            // 1. Cari rule matriks yang aktif untuk Stock Opname
+            $workflow = \App\Models\ApprovalWorkflow::where('document_type', 'App\Models\StockOpname')
+                            ->where('is_active', true)
+                            ->first();
+
+            if (!$workflow) {
+                return back()->with('error', 'Gagal: Matriks Persetujuan untuk Stock Opname belum diatur oleh Administrator!');
+            }
+
+            // 2. Ambil nilai selisih untuk trigger level approval (Gunakan nilai absolute)
+            $totalVariance = abs($opname->total_variance_value);
+
+            // 3. Tarik langkah-langkah approval-nya
+            $steps = \App\Models\ApprovalWorkflowStep::where('approval_workflow_id', $workflow->id)
+                        ->orderBy('step_order', 'asc')
+                        ->get();
+
+            $approvalCreated = false;
+
+            foreach ($steps as $step) {
+                // Hanya buat antrean jika selisihnya memenuhi batas min_amount matriks
+                if ($totalVariance >= $step->min_amount) {
+                    $opname->approvals()->create([
+                        'role_id' => $step->role_id,
+                        'step_order' => $step->step_order,
+                        'status' => 'pending',
+                    ]);
+                    $approvalCreated = true;
+                }
+            }
+
+            if (!$approvalCreated) {
+                return back()->with('error', 'Gagal: Nilai selisih tidak memenuhi batas minimum untuk diajukan pada matriks manapun.');
+            }
+
+            // 4. Update status dokumen menjadi Pending Approval
+            $statusPending = Status::where('type', 'SO')->where('slug', 'pending_approval')->first();
+            $opname->update([
+                'status_id' => $statusPending ? $statusPending->id : $opname->status_id,
+            ]);
+
+            DB::commit();
+            return redirect()->back()->with('success', 'Luar Biasa! Hasil Stock Opname berhasil diajukan dan antrean persetujuan telah dibentuk.');
+
+        } catch (\Exception $e) {
+            DB::rollBack();
+            return back()->with('error', 'Terjadi kesalahan sistem: ' . $e->getMessage());
+        }
+    }
+
     // 1. Tampilkan Daftar Opname
     public function index(Request $request)
     {
@@ -73,11 +132,11 @@ class StockOpnameController extends Controller
                 'notes' => $request->notes,
             ]);
 
-            // 🔥 MAGIC: Ambil seluruh stok dari gudang yang dipilih dan simpan ke Opname Items
+            // Ambil seluruh stok dari gudang yang dipilih dan simpan ke Opname Items
             $stocks = InventoryStock::with('item.uom')->where('warehouse_id', $request->warehouse_id)
                                     ->where('stock_qty', '>', 0)
                                     ->get()
-                                    ->groupBy('item_id'); // Gabungkan jika ada lot/batch yang item_id-nya sama
+                                    ->groupBy('item_id'); // Gabungkan lot/batch yang item_id-nya sama
 
             $totalSystemValue = 0;
 
@@ -85,8 +144,20 @@ class StockOpnameController extends Controller
                 $totalQty = $itemStocks->sum('stock_qty');
                 $masterItem = $itemStocks->first()->item;
 
-                // Ambil harga HPP (Asumsi Anda punya field unit_price/hpp di tabel item)
-                $unitPrice = $masterItem->unit_price ?? $masterItem->purchase_price ?? 0;
+                // 🔥 LOGIKA BARU: Hitung Valuasi Langsung Dari Tumpukan GR Aktual 🔥
+                // Mengalikan Qty * Harga Beli masing-masing tumpukan stok
+                $actualStockValue = $itemStocks->sum(function($stock) {
+                    return $stock->stock_qty * ($stock->unit_price ?? 0);
+                });
+
+                // Hitung Harga Rata-Rata Tertimbang (Weighted Average Cost)
+                $unitPrice = $totalQty > 0 ? ($actualStockValue / $totalQty) : 0;
+
+                // Fallback: Jika di tumpukan gudang harganya 0, baru intip ke Master Item
+                if ($unitPrice == 0) {
+                    $unitPrice = $masterItem->unit_price ?? $masterItem->purchase_price ?? 0;
+                }
+
                 $systemValue = $totalQty * $unitPrice;
 
                 StockOpnameItem::create([
@@ -108,7 +179,7 @@ class StockOpnameController extends Controller
             DB::commit();
 
             return redirect()->route('stock-opnames.show', $so->id)
-                             ->with('success', 'Sesi Stock Opname berhasil dibuka! Saldo sistem telah difoto. Silakan cetak Lembar Kerja (Blind Count).');
+                             ->with('success', 'Sesi Stock Opname berhasil dibuka! Saldo sistem telah difoto.');
 
         } catch (\Exception $e) {
             DB::rollBack();
@@ -122,18 +193,54 @@ class StockOpnameController extends Controller
     {
         $opname = StockOpname::with(['items.item.itemUoms', 'warehouse'])->findOrFail($id);
 
-        // Cek status agar yang sudah dikirim ke Atasan tidak bisa diubah-ubah angkanya
-        if (optional($opname->status)->slug !== 'draft') {
+        // 🔥 FIX BUG: Izinkan edit jika statusnya 'draft' ATAU kosong (null)
+        $statusSlug = optional($opname->status)->slug;
+        if ($statusSlug !== 'draft' && $statusSlug !== null && $statusSlug !== '') {
             return redirect()->route('stock-opnames.show', $id)->with('error', 'Dokumen ini sudah tidak bisa diedit karena sedang diajukan atau selesai.');
         }
 
         return view('stock_opnames.edit', compact('opname'));
     }
 
+    // 8. BATALKAN SESI (Hapus Draft)
+    public function destroy($id)
+    {
+        $opname = StockOpname::findOrFail($id);
+
+        $statusSlug = optional($opname->status)->slug;
+        if ($statusSlug !== 'draft' && $statusSlug !== null && $statusSlug !== '') {
+            return back()->with('error', 'Hanya dokumen berstatus Draft yang bisa dibatalkan!');
+        }
+
+        try {
+            DB::beginTransaction();
+
+            // Hapus file bukti fisik jika sudah terlanjur di-upload
+            $attachments = StockOpnameAttachment::where('stock_opname_id', $id)->get();
+            foreach ($attachments as $att) {
+                if (\Illuminate\Support\Facades\Storage::disk('public')->exists($att->file_path)) {
+                    \Illuminate\Support\Facades\Storage::disk('public')->delete($att->file_path);
+                }
+            }
+
+            // Hapus paksa (hard delete) agar bersih dari database
+            StockOpnameItem::where('stock_opname_id', $id)->delete();
+            $opname->forceDelete();
+
+            DB::commit();
+            return redirect()->route('stock-opnames.index')->with('success', 'Sesi Stock Opname berhasil dibatalkan dan dihapus.');
+        } catch (\Exception $e) {
+            DB::rollBack();
+            return back()->with('error', 'Gagal membatalkan sesi: ' . $e->getMessage());
+        }
+    }
+
     // 5. Simpan Hasil Hitung Fisik (Kalkulasi Otomatis Selisih Qty & Rupiah)
     public function update(Request $request, $id)
     {
         $opname = StockOpname::with('items')->findOrFail($id);
+
+        $totalSystemValue = 0;
         $totalActualValue = 0;
         $totalVarianceValue = 0; // Total Nilai Absolut Selisih untuk Workflow
 
@@ -144,21 +251,34 @@ class StockOpnameController extends Controller
                 $soItem = StockOpnameItem::findOrFail($itemId);
 
                 $actualQty = (float) ($data['actual_qty'] ?? 0);
-                $unitPrice = $soItem->unit_price;
+
+                // 🔥 RADAR HARGA CERDAS: Jika harga di SO masih Rp 0, paksa cari ke Master Barang!
+                $unitPrice = (float) $soItem->unit_price;
+                if ($unitPrice <= 0) {
+                    $masterItem = \App\Models\Item::find($soItem->item_id);
+                    if ($masterItem) {
+                        $unitPrice = (float) ($masterItem->purchase_price ?? $masterItem->unit_price ?? 0);
+                    }
+                }
 
                 $varianceQty = $actualQty - $soItem->system_qty;
 
+                // Kalkulasi ulang seluruh komponen valuasi dengan harga terbaru
+                $systemValue = $soItem->system_qty * $unitPrice;
                 $actualValue = $actualQty * $unitPrice;
                 $varianceValue = $varianceQty * $unitPrice;
 
                 $soItem->update([
                     'actual_qty' => $actualQty,
                     'variance_qty' => $varianceQty,
+                    'unit_price' => $unitPrice, // Kunci harga baru ke tabel Opname
+                    'system_value' => $systemValue, // Revisi nilai sistem
                     'actual_value' => $actualValue,
                     'variance_value' => $varianceValue,
                     'notes' => $data['notes'] ?? null,
                 ]);
 
+                $totalSystemValue += $systemValue;
                 $totalActualValue += $actualValue;
                 // Hitung absolute (selisih plus/minus tetap dianggap nominal variance)
                 $totalVarianceValue += abs($varianceValue);
@@ -166,11 +286,13 @@ class StockOpnameController extends Controller
 
             // Simpan Dokumen Upload Bukti Fisik
             if ($request->hasFile('attachments')) {
-                $path = 'attachments/stock_opnames/' . str_replace(['/', '\\'], '-', $opname->document_number);
+                $basePath = \App\Models\SystemSetting::where('setting_key', 'path_stock_opnames')->value('setting_value') ?? 'attachments/stock_opname';
+                $path = $basePath . '/' . str_replace(['/', '\\'], '-', $opname->document_number);
+
                 foreach ($request->file('attachments') as $file) {
                     if ($file instanceof \Illuminate\Http\UploadedFile) {
                         $storedPath = $file->storeAs($path, time() . '_' . $file->getClientOriginalName(), 'public');
-                        StockOpnameAttachment::create([
+                        \App\Models\StockOpnameAttachment::create([
                             'stock_opname_id' => $opname->id,
                             'file_name' => $file->getClientOriginalName(),
                             'file_path' => str_replace('\\', '/', $storedPath)
@@ -179,14 +301,16 @@ class StockOpnameController extends Controller
                 }
             }
 
+            // Revisi Total Valuasi di Header Dokumen
             $opname->update([
+                'total_system_value' => $totalSystemValue,
                 'total_actual_value' => $totalActualValue,
                 'total_variance_value' => $totalVarianceValue,
             ]);
 
             DB::commit();
 
-            return redirect()->route('stock-opnames.show', $opname->id)->with('success', 'Hasil hitung fisik dan kalkulasi selisih (Variance) berhasil disimpan!');
+            return redirect()->route('stock-opnames.show', $opname->id)->with('success', 'Luar Biasa! Hasil fisik disimpan dan Valuasi Harga telah direvisi otomatis!');
 
         } catch (\Exception $e) {
             DB::rollBack();
@@ -212,6 +336,7 @@ class StockOpnameController extends Controller
 
         return $pdf->stream('Stock_Opname_' . str_replace('/', '_', $opname->document_number) . '.pdf');
     }
+
 
 
 

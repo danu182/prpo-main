@@ -242,6 +242,9 @@ Route::middleware('auth')->group(function () {
         // AJAX: Ambil Stok Sistem (WAJIB di atas route dengan parameter ID)
         Route::get('/get-stock', [StockAdjustmentController::class, 'getWarehouseStock'])->name('get-stock');
 
+        // AJAX: Ambil Stok Sistem (WAJIB di atas route dengan parameter ID)
+        Route::get('/search-items', [StockAdjustmentController::class, 'searchItems'])->name('search-items');
+
         // Halaman Form Create
         Route::get('/create', [StockAdjustmentController::class, 'create'])->name('create');
 
@@ -250,6 +253,9 @@ Route::middleware('auth')->group(function () {
 
         // 🔥 MISI TAMBAHAN: Jalur untuk halaman Rincian (Show)
         Route::get('/{id}', [StockAdjustmentController::class, 'show'])->name('show');
+
+        // 🔥 TAMBAHKAN BARIS INI: Untuk Cetak PDF
+        Route::get('/{id}/print', [StockAdjustmentController::class, 'print'])->name('print');
 
     });
 
@@ -647,6 +653,13 @@ Route::middleware('auth')->group(function () {
         // Route::get('/{id}', [App\Http\Controllers\StockOpnameController::class, 'show'])->name('show');
         Route::get('/{id}/print', [App\Http\Controllers\StockOpnameController::class, 'print'])->name('print'); // <-- TAMBAHKAN INI
         // Nanti kita tambahkan route untuk Cetak Blind Count & Submit Approval di sini
+
+        Route::delete('/{id}', [App\Http\Controllers\StockOpnameController::class, 'destroy'])->name('destroy');
+
+
+        // 🔥 TAMBAHKAN BARIS INI
+        Route::post('/{id}/submit-approval', [App\Http\Controllers\StockOpnameController::class, 'submitApproval'])->name('submit-approval');
+
     });
 
 

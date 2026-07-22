@@ -1,66 +1,122 @@
 @extends('layouts.app')
 
 @section('content')
-<div class="pb-5 container-fluid">
-    <div class="mb-4 d-flex justify-content-between align-items-center">
+<div class="container-fluid pb-5">
+    {{-- HEADER & TOMBOL AKSI UTAMA --}}
+    <div class="d-flex flex-column flex-md-row justify-content-between align-items-md-center mb-4 gap-3">
         <div>
-            <h3 class="fw-bold text-dark"><i class="bi bi-ui-checks-grid me-2 text-warning"></i> Audit & Stock Opname</h3>
-            <p class="mb-0 text-muted">Kelola dan pantau perhitungan fisik persediaan gudang.</p>
+            <h3 class="fw-bold text-dark mb-1"><i class="bi bi-ui-checks-grid me-2 text-warning"></i> Audit & Stock Opname</h3>
+            <p class="text-muted mb-0">Kelola dan pantau perhitungan fisik persediaan gudang.</p>
         </div>
-        <a href="{{ route('stock-opnames.create') }}" class="px-4 shadow-sm btn btn-warning fw-bold text-dark rounded-pill">
-            <i class="bi bi-plus-lg me-1"></i> Buka Sesi Opname
-        </a>
+
+        <div class="d-flex flex-column flex-md-row gap-2 align-items-md-center">
+            {{-- SEARCH BAR --}}
+            <form action="{{ route('stock-opnames.index') }}" method="GET" class="m-0">
+                <div class="input-group shadow-sm rounded-pill overflow-hidden">
+                    <input type="text" name="search" class="form-control border-0 bg-white ps-4" placeholder="Cari No. Dokumen..." value="{{ request('search') }}">
+                    <button class="btn btn-white bg-white border-0 pe-4 text-primary" type="submit">
+                        <i class="bi bi-search"></i>
+                    </button>
+                </div>
+            </form>
+
+            <a href="{{ route('stock-opnames.create') }}" class="btn btn-warning fw-bold text-dark rounded-pill px-4 shadow-sm text-nowrap">
+                <i class="bi bi-plus-lg me-1"></i> Buka Sesi Opname
+            </a>
+        </div>
     </div>
 
     @if(session('success'))
-        <div class="border-0 shadow-sm alert alert-success rounded-3 fw-bold"><i class="bi bi-check-circle me-2"></i>{{ session('success') }}</div>
+        <div class="alert alert-success border-0 shadow-sm rounded-4 fw-bold p-3 mb-4 d-flex align-items-center">
+            <i class="bi bi-check-circle-fill fs-4 me-3"></i>
+            <div>{{ session('success') }}</div>
+        </div>
     @endif
 
-    <div class="border-0 shadow-sm card rounded-4">
-        <div class="p-0 card-body">
+    {{-- TABEL DATA --}}
+    <div class="card border-0 shadow-sm rounded-4 overflow-hidden">
+        <div class="card-body p-0">
             <div class="table-responsive">
-                <table class="table mb-0 align-middle table-hover">
-                    <thead class="table-light text-muted small text-uppercase">
+                <table class="table table-hover align-middle mb-0">
+                    <thead class="table-light text-muted small text-uppercase fw-bold border-bottom">
                         <tr>
-                            <th class="py-3 ps-4">Dokumen</th>
+                            <th class="ps-4 py-3">Dokumen Opname</th>
                             <th>Tanggal Mulai</th>
-                            <th>Gudang</th>
-                            <th>Valuasi Sistem</th>
-                            <th>Total Selisih</th>
-                            <th>Status</th>
+                            <th>Lokasi Gudang</th>
+                            <th class="text-end">Valuasi Sistem</th>
+                            <th class="text-end">Total Selisih</th>
+                            <th class="text-center">Status</th>
                             <th class="text-end pe-4">Aksi</th>
                         </tr>
                     </thead>
                     <tbody>
                         @forelse($opnames as $so)
+                            @php
+                                $statusSlug = optional($so->status)->slug ?? 'draft';
+                                $statusName = optional($so->status)->name ?? 'Draft / Menghitung';
+                                $badgeClass = match($statusSlug) {
+                                    'draft' => 'bg-secondary-subtle text-secondary border-secondary-subtle',
+                                    'pending_approval', 'pending' => 'bg-warning-subtle text-warning border-warning-subtle',
+                                    'approved' => 'bg-success-subtle text-success border-success-subtle',
+                                    'rejected' => 'bg-danger-subtle text-danger border-danger-subtle',
+                                    default => 'bg-light text-dark border'
+                                };
+                            @endphp
                         <tr>
-                            <td class="py-3 ps-4 fw-bold text-primary">{{ $so->document_number }}</td>
-                            <td>{{ \Carbon\Carbon::parse($so->start_date)->format('d M Y') }}</td>
-                            <td class="fw-bold">{{ optional($so->warehouse)->name }}</td>
-                            <td>Rp {{ number_format($so->total_system_value, 0, ',', '.') }}</td>
-                            <td class="text-danger fw-bold">Rp {{ number_format($so->total_variance_value, 0, ',', '.') }}</td>
+                            <td class="ps-4 py-3">
+                                <a href="{{ route('stock-opnames.show', $so->id) }}" class="fw-bold text-primary text-decoration-none">
+                                    {{ $so->document_number }}
+                                </a>
+                                <div class="small text-muted mt-1"><i class="bi bi-person me-1"></i>{{ optional($so->creator)->name ?? 'Sistem' }}</div>
+                            </td>
+                            <td class="fw-semibold text-dark">{{ \Carbon\Carbon::parse($so->start_date)->format('d M Y') }}</td>
                             <td>
-                                <span class="border badge bg-secondary-subtle text-secondary border-secondary-subtle">
-                                    {{ optional($so->status)->name ?? 'Draft / Menghitung' }}
+                                <span class="fw-bold text-dark"><i class="bi bi-shop me-1 text-muted"></i>{{ optional($so->warehouse)->name }}</span>
+                            </td>
+                            <td class="text-end fw-semibold text-secondary">Rp {{ number_format($so->total_system_value, 0, ',', '.') }}</td>
+                            <td class="text-end fw-bold {{ $so->total_variance_value > 0 ? 'text-danger' : 'text-success' }}">
+                                Rp {{ number_format($so->total_variance_value, 0, ',', '.') }}
+                            </td>
+                            <td class="text-center">
+                                <span class="badge border px-3 py-2 rounded-pill {{ $badgeClass }}">
+                                    {{ strtoupper($statusName) }}
                                 </span>
                             </td>
                             <td class="text-end pe-4">
-                                @if(optional($so->status)->slug === 'draft' || empty($so->status_id))
-                                    <a href="{{ route('stock-opnames.edit', $so->id) }}" class="px-3 btn btn-sm btn-primary fw-bold rounded-pill">Input Fisik</a>
+                                @if($statusSlug === 'draft' || empty($so->status_id))
+                                    <a href="{{ route('stock-opnames.edit', $so->id) }}" class="btn btn-sm btn-warning fw-bold text-dark px-3 rounded-pill shadow-sm">
+                                        <i class="bi bi-pencil-square me-1"></i> Input Fisik
+                                    </a>
                                 @else
-                                    <a href="{{ route('stock-opnames.show', $so->id) }}" class="px-3 btn btn-sm btn-outline-secondary rounded-pill">Lihat Detail</a>
+                                    <a href="{{ route('stock-opnames.show', $so->id) }}" class="btn btn-sm btn-outline-primary fw-bold px-3 rounded-pill">
+                                        <i class="bi bi-eye me-1"></i> Lihat Detail
+                                    </a>
                                 @endif
                             </td>
                         </tr>
                         @empty
                         <tr>
-                            <td colspan="7" class="py-5 text-center text-muted">Belum ada riwayat Stock Opname.</td>
+                            <td colspan="7" class="text-center py-5 text-muted">
+                                <i class="bi bi-ui-checks-grid fs-1 d-block mb-3 text-secondary opacity-50"></i>
+                                @if(request('search'))
+                                    Tidak ada dokumen yang cocok dengan pencarian "<strong>{{ request('search') }}</strong>".
+                                @else
+                                    Belum ada riwayat Stock Opname. Mulai buat sesi baru!
+                                @endif
+                            </td>
                         </tr>
                         @endforelse
                     </tbody>
                 </table>
             </div>
         </div>
+
+        {{-- PAGINATION Bawah Tabel --}}
+        @if($opnames->hasPages())
+        <div class="card-footer bg-white border-top py-3 pe-4">
+            {{ $opnames->appends(request()->query())->links() }}
+        </div>
+        @endif
     </div>
 </div>
 @endsection

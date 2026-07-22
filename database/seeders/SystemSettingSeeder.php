@@ -74,6 +74,15 @@ class SystemSettingSeeder extends Seeder
                 'setting_value' => 'attachments/asset_manual',
                 'description'   => 'Folder penyimpanan lampiran Registrasi Aset Manual (Hibah)'
             ],
+            // ==========================================
+            // MODUL stok opname
+            // ==========================================
+            [
+                'setting_key'   => 'path_stock_opnames',
+                'setting_value' => 'attachments/stock_opnames',
+                'description'   => 'Folder penyimpanan lampiran stok opname'
+            ],
+
 
              // ==========================================
             // MODUL users

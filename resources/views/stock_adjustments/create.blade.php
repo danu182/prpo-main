@@ -17,9 +17,9 @@
             <i class="bi bi-arrow-left me-1"></i> Kembali ke Master Stok
         </a>
         <h4 class="mb-0 fw-bold text-dark">
-            <i class="bi bi-sliders text-warning me-2"></i> Stock Opname (Penyesuaian Massal)
+            <i class="bi bi-sliders text-warning me-2"></i> Penyesuaian Stok (Stock Adjustment)
         </h4>
-        <div class="mt-1 text-muted small">Koreksi perbedaan angka sistem vs fisik aktual untuk banyak barang sekaligus di satu gudang.</div>
+        <div class="mt-1 text-muted small">Koreksi perbedaan angka sistem vs fisik aktual beserta penentuan harga perolehan barang.</div>
     </div>
 
     @if(session('error'))
@@ -51,7 +51,7 @@
                     </div>
                     <div class="col-md-5">
                         <label class="form-label small fw-bold text-muted">Alasan / Keterangan Berita Acara <span class="text-danger">*</span></label>
-                        <input type="text" name="reason" class="shadow-sm form-control" required placeholder="Cth: Hasil Opname Bulanan / Barang Rusak Kena Air">
+                        <input type="text" name="reason" class="shadow-sm form-control" required placeholder="Cth: Penyesuaian Stok Spidol ATK / Hasil Opname">
                     </div>
                 </div>
             </div>
@@ -60,29 +60,30 @@
         {{-- CARD 2: TABEL BARANG --}}
         <div class="border-0 border-4 shadow-sm card rounded-4 border-top border-warning">
             <div class="px-4 py-3 bg-white card-header border-bottom d-flex justify-content-between align-items-center">
-                <h6 class="mb-0 fw-bold text-dark"><i class="bi bi-box-seam me-2 text-warning"></i>Daftar Barang Opname</h6>
+                <h6 class="mb-0 fw-bold text-dark"><i class="bi bi-box-seam me-2 text-warning"></i>Daftar Penyesuaian Barang</h6>
                 <button type="button" class="px-3 shadow-sm btn btn-sm btn-primary rounded-pill fw-bold" id="btn-add-item">
                     <i class="bi bi-plus-lg me-1"></i> Tambah Baris
                 </button>
             </div>
 
             <div class="px-4 py-2 bg-warning-subtle text-warning-emphasis small fw-bold border-bottom">
-                <i class="bi bi-info-circle me-1"></i> Pilih Gudang terlebih dahulu sebelum memilih barang untuk memuat angka sistem.
+                <i class="bi bi-info-circle me-1"></i> Jika barang belum pernah dibeli, silakan isi <strong>Harga Satuan (Rp)</strong> secara manual untuk menetapkan HPP barang tersebut.
             </div>
 
             <div class="p-0 card-body table-responsive" style="min-height: 300px;">
                 <table class="table mb-0 align-middle table-borderless table-hover">
                     <thead class="bg-light text-muted small text-uppercase border-bottom">
                         <tr>
-                            <th class="py-3 ps-4" width="35%">Ketik & Pilih Barang</th>
-                            <th class="py-3 text-center" width="15%">Sistem</th>
-                            <th class="py-3 text-center" width="20%">Fisik (Real)</th>
-                            <th class="py-3 text-center" width="25%">Selisih Mutasi</th>
-                            <th class="py-3 text-center pe-4" width="5%">Aksi</th>
+                            <th class="py-3 ps-4" width="28%">Ketik & Pilih Barang</th>
+                            <th class="py-3 text-center" width="10%">Sistem</th>
+                            <th class="py-3 text-center" width="15%">Fisik (Real)</th>
+                            <th class="py-3 text-center" width="18%">Harga Satuan (HPP)</th>
+                            <th class="py-3 text-center" width="22%">Selisih Mutasi</th>
+                            <th class="py-3 text-center pe-4" width="7%">Aksi</th>
                         </tr>
                     </thead>
                     <tbody id="item-tbody">
-                        {{-- Baris JS --}}
+                        {{-- Baris Dinamis JS --}}
                     </tbody>
                 </table>
             </div>
@@ -108,7 +109,7 @@
         let warehouseSelect = $('#warehouse_id');
         let rowCount = 0;
 
-        // Jika gudang diganti, reset tabel
+        // Reset tabel jika gudang diganti
         warehouseSelect.on('change', function() {
             if (tbody.find('tr').length > 0) {
                 tbody.find('.item-select-ajax').select2('destroy');
@@ -135,13 +136,19 @@
                     <td class="py-3 text-center">
                         <input type="text" class="text-center shadow-none form-control form-control-sm bg-light sys-stock text-muted fw-bold" readonly placeholder="0">
                     </td>
-                    <td class="px-3 py-3">
+                    <td class="px-2 py-3">
                         <div class="shadow-sm input-group input-group-sm">
                             <span class="bg-white input-group-text"><i class="bi bi-box"></i></span>
                             <input type="number" name="items[${rowCount}][real_stock]" class="text-center form-control real-stock fw-bold text-primary border-primary" step="0.01" min="0" required placeholder="Fisik...">
                         </div>
                     </td>
-                    <td class="px-3 py-3">
+                    <td class="px-2 py-3">
+                        <div class="shadow-sm input-group input-group-sm">
+                            <span class="bg-white input-group-text">Rp</span>
+                            <input type="number" name="items[${rowCount}][unit_price]" class="form-control unit-price text-end fw-bold" min="0" step="any" placeholder="0" title="Harga perolehan / HPP per unit">
+                        </div>
+                    </td>
+                    <td class="px-2 py-3">
                         <div class="p-2 text-center border rounded diff-box bg-light text-muted small fw-bold">
                             <span class="diff-icon me-1">=</span> <span class="diff-text">0 (Sama)</span>
                         </div>
@@ -154,30 +161,35 @@
             let $tr = $(tr);
             tbody.append($tr);
 
-            // Kita manfaatkan rute pencarian barang dari modul Goods Issue agar irit kode!
+            // Select2 dengan pencegahan duplikasi barang
             $tr.find('.item-select-ajax').select2({
                 theme: 'bootstrap-5',
                 placeholder: '-- Cari & Ketik Barang --',
                 minimumInputLength: 2,
-                // Di dalam function addRow() bagian Select2:
-                    ajax: {
-                        url: "{{ route('goods-issues.search-items') }}",
-                        dataType: 'json',
-                        delay: 250,
-                        data: function (params) {
-                            return {
-                                search: params.term,
-                                warehouse_id: warehouseSelect.val(),
-                                show_all: true // 🔥 KHUSUS OPNAME: Tampilkan semua master barang!
-                            };
-                        },
-                        processResults: function (data) { return { results: data }; },
-                        cache: true
-                    }
+                ajax: {
+                    url: "{{ route('stock-adjustments.search-items') }}",
+                    dataType: 'json',
+                    delay: 250,
+                    data: function (params) {
+                        let selectedIds = [];
+                        $('.item-select-ajax').each(function() {
+                            let val = $(this).val();
+                            if (val) selectedIds.push(val);
+                        });
+
+                        return {
+                            search: params.term,
+                            warehouse_id: warehouseSelect.val(),
+                            show_all: true,
+                            selected_items: selectedIds
+                        };
+                    },
+                    processResults: function (data) { return { results: data }; },
+                    cache: true
+                }
             });
 
             rowCount++;
-
         }
 
         addRow();
@@ -192,11 +204,25 @@
             }
         });
 
-        // Saat Barang Dipilih -> Tembak AJAX untuk cek stok sistem
+        // Saat Barang Dipilih -> Tembak AJAX untuk cek stok & harga bawaan
         tbody.on('select2:select', '.item-select-ajax', function (e) {
             let data = e.params.data;
-            let tr = $(this).closest('tr');
+            let currentSelect = $(this);
+            let tr = currentSelect.closest('tr');
             let sysInput = tr.find('.sys-stock');
+            let priceInput = tr.find('.unit-price');
+
+            // Cek Duplikasi
+            let isDuplicate = false;
+            $('.item-select-ajax').not(currentSelect).each(function() {
+                if ($(this).val() == data.id) isDuplicate = true;
+            });
+
+            if (isDuplicate) {
+                Swal.fire('Ups, Ditolak!', 'Barang ini sudah ada di baris lain.', 'error');
+                currentSelect.val(null).trigger('change');
+                return;
+            }
 
             sysInput.val('Memuat...');
 
@@ -206,19 +232,23 @@
                 data: { item_id: data.id, warehouse_id: warehouseSelect.val() },
                 success: function(res) {
                     sysInput.val(res.stock);
-                    tr.find('.real-stock').val('').trigger('input'); // Reset input fisik
+                    priceInput.val(res.unit_price || 0); // Isikan harga bawaan master item
+                    tr.find('.real-stock').val('').trigger('input');
                 },
                 error: function() {
                     sysInput.val(0);
+                    priceInput.val(0);
                 }
             });
         });
 
         // Kalkulasi Otomatis (Real Time)
-        tbody.on('input', '.real-stock', function() {
+        tbody.on('input', '.real-stock, .unit-price', function() {
             let tr = $(this).closest('tr');
             let sys = parseFloat(tr.find('.sys-stock').val()) || 0;
-            let real = parseFloat($(this).val());
+            let real = parseFloat(tr.find('.real-stock').val());
+            let price = parseFloat(tr.find('.unit-price').val()) || 0;
+
             let diffBox = tr.find('.diff-box');
             let diffIcon = tr.find('.diff-icon');
             let diffText = tr.find('.diff-text');
@@ -230,29 +260,31 @@
             }
 
             let diff = real - sys;
+            let totalValuasi = Math.abs(diff) * price;
+            let formattedRupiah = new Intl.NumberFormat('id-ID').format(totalValuasi);
 
             if (diff > 0) {
                 diffBox.attr('class', 'p-2 text-center border rounded diff-box bg-success-subtle text-success small fw-bold border-success-subtle');
                 diffIcon.html('<i class="bi bi-arrow-up-circle-fill"></i>');
-                diffText.text('+' + diff + ' (Masuk)');
+                diffText.html('+' + diff + ' (Masuk)<br><small class="text-muted">Rp ' + formattedRupiah + '</small>');
             } else if (diff < 0) {
                 diffBox.attr('class', 'p-2 text-center border rounded diff-box bg-danger-subtle text-danger small fw-bold border-danger-subtle');
                 diffIcon.html('<i class="bi bi-arrow-down-circle-fill"></i>');
-                diffText.text(diff + ' (Keluar)');
+                diffText.html(diff + ' (Keluar)<br><small class="text-muted">Rp ' + formattedRupiah + '</small>');
             } else {
                 diffBox.attr('class', 'p-2 text-center border rounded diff-box bg-light text-muted small fw-bold');
                 diffIcon.html('='); diffText.text('0 (Sama)');
             }
         });
 
-        // Validasi Submit
+        // Submit Form
         $('#form-opname').on('submit', function(e) {
             e.preventDefault();
             let form = this;
 
             Swal.fire({
                 title: 'Kunci & Simpan Opname?',
-                text: "Pastikan angka fisik sudah sesuai. Data ini akan mengubah Kartu Stok secara permanen.",
+                text: "Pastikan angka fisik dan harga perolehan sudah sesuai. Data ini akan memperbarui Kartu Stok & Valuasi Persediaan.",
                 icon: 'warning',
                 showCancelButton: true,
                 confirmButtonColor: '#ffc107',

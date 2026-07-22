@@ -2,41 +2,32 @@
 
 @push('css')
 <style>
+    /* Transisi Halus untuk Efek Hover Kartu KPI */
     .card-kpi {
-        transition: all 0.25s ease-in-out;
+        transition: all 0.3s ease;
         border-left: 5px solid transparent;
     }
     .card-kpi:hover {
-        transform: translateY(-3px);
-        box-shadow: 0 .5rem 1rem rgba(0,0,0,.1) !important;
+        transform: translateY(-5px);
+        box-shadow: 0 0.5rem 1.5rem rgba(0,0,0,0.08) !important;
     }
     .card-kpi-system { border-left-color: #0d6efd; background-color: #f8faff; }
     .card-kpi-actual { border-left-color: #198754; background-color: #f6fff9; }
     .card-kpi-variance { border-left-color: #dc3545; background-color: #fff8f8; }
 
-    .timeline-steps { display: flex; justify-content: space-around; flex-wrap: wrap; }
-    .timeline-step { flex: 1; text-align: center; position: relative; min-width: 140px; }
-    .timeline-step:not(:last-child)::after {
-        content: '';
-        position: absolute;
-        top: 20px;
-        right: -50%;
-        width: 100%;
-        height: 2px;
-        background-color: #dee2e6;
-        z-index: 1;
+    /* Tombol Aksi Bulat & Halus */
+    .btn-action-rounded {
+        border-radius: 50rem;
+        font-weight: 600;
+        padding: 0.5rem 1.2rem;
+        box-shadow: 0 0.125rem 0.25rem rgba(0,0,0,0.075);
+        transition: all 0.2s;
     }
-    .timeline-icon {
-        width: 40px;
-        height: 40px;
-        border-radius: 50%;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        margin: 0 auto 10px;
-        position: relative;
-        z-index: 2;
-        font-size: 1.1rem;
+    .btn-action-rounded:hover {
+        transform: scale(1.02);
+    }
+    .btn-icon-only {
+        padding: 0.5rem 0.8rem;
     }
 </style>
 @endpush
@@ -45,113 +36,171 @@
 <div class="pb-5 container-fluid text-dark">
 
     {{-- ========================================================================= --}}
-    {{-- 1. HEADER HALAMAN & TOMBOL AKSI UTAMA --}}
+    {{-- 1. LOGIKA STATUS & PERSETUJUAN (CLEAN CODE) --}}
     {{-- ========================================================================= --}}
-    <div class="gap-3 pb-3 mb-4 d-flex flex-column flex-md-row justify-content-between align-items-md-center border-bottom">
-        <div>
-            <div class="gap-2 mb-1 d-flex align-items-center">
-                <h3 class="mb-0 fw-bold text-dark"><i class="bi bi-file-earmark-check text-primary me-2"></i> Detail Audit Stock Opname</h3>
-                @php
-                    $statusSlug = optional($opname->status)->slug ?? 'draft';
-                    $statusName = optional($opname->status)->name ?? 'Draft / Menghitung';
-                    $badgeClass = match($statusSlug) {
-                        'draft' => 'bg-secondary-subtle text-secondary border-secondary-subtle',
-                        'pending_approval', 'pending' => 'bg-warning-subtle text-warning border-warning-subtle',
-                        'approved' => 'bg-success-subtle text-success border-success-subtle',
-                        'rejected' => 'bg-danger-subtle text-danger border-danger-subtle',
-                        default => 'bg-light text-dark border'
-                    };
-                @endphp
-                <span class="badge border px-3 py-2 rounded-pill fs-6 {{ $badgeClass }}">
-                    <i class="bi bi-circle-fill me-1 small"></i> {{ strtoupper($statusName) }}
+    @php
+        $hasApprovals = isset($opname->approvals) && $opname->approvals->count() > 0;
+        $statusSlug = optional($opname->status)->slug ?? 'draft';
+        $statusName = optional($opname->status)->name ?? 'Draft / Menghitung';
+        $pendingApproval = null;
+        $canApprove = false;
+
+        // Ambil data antrean persetujuan jika ada
+        if ($hasApprovals) {
+            $pendingApproval = $opname->approvals->where('status', 'pending')->sortBy('step_order')->first();
+
+            // Paksa nama status UI untuk menyesuaikan antrean
+            if ($statusSlug === 'draft') {
+                if ($pendingApproval) {
+                    $statusSlug = 'pending_approval';
+                    $statusName = 'Menunggu Persetujuan';
+                } else {
+                    $statusSlug = 'approved';
+                    $statusName = 'Disetujui / Selesai';
+                }
+            }
+
+            // Cek Hak Akses Tombol Setujui/Tolak
+            if ($pendingApproval && auth()->check()) {
+                $userRoles = auth()->user()->roles->pluck('id')->toArray();
+                if (in_array($pendingApproval->role_id, $userRoles) || auth()->user()->hasRole(['Super Administrator', 'Super Admin'])) {
+                    $canApprove = true;
+                }
+            }
+        }
+
+        $badgeClass = match($statusSlug) {
+            'draft' => 'bg-secondary-subtle text-secondary border-secondary-subtle',
+            'pending_approval', 'pending' => 'bg-warning-subtle text-warning border-warning-subtle',
+            'approved' => 'bg-success-subtle text-success border-success-subtle',
+            'rejected' => 'bg-danger-subtle text-danger border-danger-subtle',
+            default => 'bg-light text-dark border'
+        };
+    @endphp
+
+    {{-- ========================================================================= --}}
+    {{-- 2. HEADER HALAMAN & TOMBOL AKSI UTAMA (DIRAPIKAN) --}}
+    {{-- ========================================================================= --}}
+    <div class="row align-items-center pb-3 mb-4 border-bottom gy-3">
+        <div class="col-xl-5 col-lg-5">
+            <h4 class="mb-1 fw-bold text-dark d-flex align-items-center">
+                <i class="bi bi-file-earmark-check text-primary me-2 fs-3"></i> Detail Audit Stok
+            </h4>
+            <div class="d-flex align-items-center gap-3 mt-2 flex-wrap">
+                <span class="badge border px-3 py-2 rounded-pill {{ $badgeClass }}">
+                    <i class="bi bi-circle-fill me-1" style="font-size: 0.6rem;"></i> {{ strtoupper($statusName) }}
                 </span>
-            </div>
-            <div class="text-muted small">
-                Nomor Dokumen: <strong class="text-primary fs-6">{{ $opname->document_number }}</strong>
+                <span class="text-muted small fw-medium">
+                    No. Dok: <strong class="text-primary fs-6">{{ $opname->document_number }}</strong>
+                </span>
             </div>
         </div>
 
-        <div class="flex-wrap gap-2 d-flex align-items-center">
-            {{-- Tombol Kembali --}}
-            <a href="{{ route('stock-opnames.index') }}" class="px-3 border btn btn-light fw-bold rounded-pill">
-                <i class="bi bi-arrow-left me-1"></i> Kembali
-            </a>
-
-            {{-- Tombol Cetak Blind Count Sheet --}}
-            <a href="{{ route('stock-opnames.print', $opname->id) }}" target="_blank" class="px-3 shadow-sm btn btn-outline-dark fw-bold rounded-pill">
-                <i class="bi bi-printer me-1"></i> Cetak Lembar Hitung
-            </a>
-
-            {{-- Tombol Input/Edit Hasil Fisik (Hanya saat status DRAFT) --}}
-            @if($statusSlug === 'draft')
-                <a href="{{ route('stock-opnames.edit', $opname->id) }}" class="px-4 shadow-sm btn btn-warning fw-bold text-dark rounded-pill">
-                    <i class="bi bi-pencil-square me-1"></i> Input Hasil Fisik
+        <div class="col-xl-7 col-lg-7 text-lg-end">
+            <div class="d-flex gap-2 justify-content-lg-end flex-wrap align-items-center">
+                {{-- Tombol Sekunder --}}
+                <a href="{{ route('stock-opnames.index') }}" class="btn btn-light border btn-action-rounded">
+                    <i class="bi bi-arrow-left me-1"></i> Kembali
+                </a>
+                <a href="{{ route('stock-opnames.print', $opname->id) }}" target="_blank" class="btn btn-outline-dark btn-action-rounded">
+                    <i class="bi bi-printer me-1"></i> Cetak
                 </a>
 
-                {{-- Tombol Ajukan Ke Worklist Approval --}}
-                @if($opname->items->sum('actual_qty') > 0 || $opname->total_actual_value > 0)
-                    <form action="{{ route('stock-opnames.submit-approval', $opname->id) }}" method="POST" class="d-inline" id="formSubmitApproval">
-                        @csrf
-                        <button type="button" onclick="confirmSubmitApproval()" class="px-4 shadow-sm btn btn-primary fw-bold rounded-pill">
-                            <i class="bi bi-send-check me-1"></i> Ajukan Penyesuaian
-                        </button>
-                    </form>
+                {{-- Group Tombol Eksekutor (Hanya Tampil Jika DRAFT) --}}
+                @if(!$hasApprovals && ($statusSlug === 'draft' || empty($statusSlug)))
+                    <div class="border-start ms-1 ps-2 d-flex gap-2">
+                        <a href="{{ route('stock-opnames.edit', $opname->id) }}" class="btn btn-warning text-dark btn-action-rounded">
+                            <i class="bi bi-pencil-square me-1"></i> Input Fisik
+                        </a>
+
+                        <form action="{{ route('stock-opnames.submit-approval', $opname->id) }}" method="POST" id="formSubmitApproval" class="m-0">
+                            @csrf
+                            <button type="button" onclick="confirmSubmitApproval()" class="btn btn-primary btn-action-rounded">
+                                <i class="bi bi-send-check me-1"></i> Ajukan
+                            </button>
+                        </form>
+
+                        <form action="{{ route('stock-opnames.destroy', $opname->id) }}" method="POST" id="formCancelOpname" class="m-0">
+                            @csrf
+                            @method('DELETE')
+                            <button type="button" onclick="confirmCancelOpname()" class="btn btn-outline-danger btn-action-rounded btn-icon-only" title="Batalkan Sesi">
+                                <i class="bi bi-trash"></i>
+                            </button>
+                        </form>
+                    </div>
                 @endif
-            @endif
+
+                {{-- Group Tombol Approver (Hanya Tampil Jika Ada Antrean & User Berwenang) --}}
+                @if($canApprove)
+                    <div class="border-start ms-1 ps-2 d-flex gap-2">
+                        <form action="{{ route('stock-opnames.approve', $opname->id) }}" method="POST" id="formApprove" class="m-0">
+                            @csrf
+                            <button type="button" onclick="confirmApproval()" class="btn btn-success btn-action-rounded">
+                                <i class="bi bi-check-circle me-1"></i> Setujui
+                            </button>
+                        </form>
+
+                        <form action="{{ route('stock-opnames.reject', $opname->id) }}" method="POST" id="formReject" class="m-0">
+                            @csrf
+                            <button type="button" onclick="confirmRejection()" class="btn btn-danger btn-action-rounded">
+                                <i class="bi bi-x-circle me-1"></i> Tolak
+                            </button>
+                        </form>
+                    </div>
+                @endif
+            </div>
         </div>
     </div>
 
     {{-- NOTIFIKASI SYSTEM --}}
     @if(session('success'))
         <div class="p-3 mb-4 border-0 shadow-sm alert alert-success rounded-4 fw-bold d-flex align-items-center">
-            <i class="bi bi-check-circle-fill fs-4 me-3"></i>
-            <div>{{ session('success') }}</div>
+            <i class="bi bi-check-circle-fill fs-4 me-3"></i> <div>{{ session('success') }}</div>
         </div>
     @endif
     @if(session('error'))
         <div class="p-3 mb-4 border-0 shadow-sm alert alert-danger rounded-4 fw-bold d-flex align-items-center">
-            <i class="bi bi-exclamation-triangle-fill fs-4 me-3"></i>
-            <div>{{ session('error') }}</div>
+            <i class="bi bi-exclamation-triangle-fill fs-4 me-3"></i> <div>{{ session('error') }}</div>
         </div>
     @endif
 
     {{-- ========================================================================= --}}
-    {{-- 2. INFORMASI ULASAN DOKUMEN & CARD VALUASI --}}
+    {{-- 3. INFORMASI SESI & KPI KARTU (VALUASI & AKURASI) --}}
     {{-- ========================================================================= --}}
     <div class="mb-4 row g-4">
         {{-- METADATA SESI --}}
-        <div class="col-xl-4 col-lg-5">
+        <div class="col-xl-3 col-lg-4">
             <div class="border-0 shadow-sm card rounded-4 h-100">
                 <div class="py-3 bg-white card-header border-bottom">
-                    <h6 class="mb-0 fw-bold text-dark"><i class="bi bi-info-circle me-2 text-primary"></i>Informasi Sesi Audit</h6>
+                    <h6 class="mb-0 fw-bold text-dark"><i class="bi bi-info-circle me-2 text-primary"></i>Informasi Sesi</h6>
                 </div>
                 <div class="p-4 card-body">
                     <table class="table mb-0 table-sm table-borderless">
                         <tr>
-                            <td class="text-muted small ps-0" width="40%">Entitas / PT</td>
-                            <td class="fw-bold text-dark pe-0">: {{ optional($opname->company)->name ?? 'Head Office / Umum' }}</td>
+                            <td class="text-muted small ps-0" width="45%">Entitas / PT</td>
+                            <td class="fw-bold text-dark pe-0">: {{ optional($opname->company)->name ?? 'Head Office' }}</td>
                         </tr>
                         <tr>
                             <td class="text-muted small ps-0">Lokasi Gudang</td>
                             <td class="fw-bold text-primary pe-0">: <i class="bi bi-shop me-1"></i> {{ optional($opname->warehouse)->name }}</td>
                         </tr>
                         <tr>
-                            <td class="text-muted small ps-0">Tgl Mulai Audit</td>
+                            <td class="text-muted small ps-0">Tgl Audit</td>
                             <td class="fw-semibold text-dark pe-0">: {{ \Carbon\Carbon::parse($opname->start_date)->format('d M Y') }}</td>
                         </tr>
                         <tr>
-                            <td class="text-muted small ps-0">Pembuat / Auditor</td>
+                            <td class="text-muted small ps-0">Auditor</td>
                             <td class="fw-semibold text-dark pe-0">: {{ optional($opname->creator)->name ?? '-' }}</td>
                         </tr>
                         <tr>
-                            <td class="text-muted small ps-0">Tgl Selesai / Lock</td>
+                            <td class="text-muted small ps-0">Tgl Lock</td>
                             <td class="fw-semibold text-dark pe-0">: {{ $opname->end_date ? \Carbon\Carbon::parse($opname->end_date)->format('d M Y') : '-' }}</td>
                         </tr>
                     </table>
 
                     @if($opname->notes)
                         <div class="pt-3 mt-3 border-top">
-                            <label class="text-muted small fw-bold">Catatan / Instruksi Auditor:</label>
+                            <label class="text-muted small fw-bold mb-2 d-block">Instruksi Auditor:</label>
                             <div class="p-2 border bg-light rounded-3 small fst-italic text-secondary">{{ $opname->notes }}</div>
                         </div>
                     @endif
@@ -159,43 +208,49 @@
             </div>
         </div>
 
-        {{-- RINGKASAN FINANSIAL & VALUASI PERSEDIAAN --}}
-        <div class="col-xl-8 col-lg-7">
+        {{-- RINGKASAN FINANSIAL & VALUASI PERSEDIAAN (4 KOTAK KPI) --}}
+        <div class="col-xl-9 col-lg-8">
             <div class="row g-3 h-100 align-items-stretch">
-                {{-- VALUASI SISTEM --}}
-                <div class="col-md-4">
+                {{-- KPI 1: VALUASI SISTEM --}}
+                <div class="col-sm-6 col-xl-3">
                     <div class="p-3 border-0 shadow-sm card rounded-4 h-100 card-kpi card-kpi-system d-flex flex-column justify-content-between">
                         <div>
                             <div class="mb-2 d-flex justify-content-between align-items-center">
                                 <span class="text-muted small fw-bold text-uppercase">Valuasi Sistem</span>
                                 <div class="p-2 bg-primary bg-opacity-10 text-primary rounded-circle"><i class="bi bi-laptop"></i></div>
                             </div>
-                            <h4 class="mb-1 fw-bolder text-primary">Rp {{ number_format($opname->total_system_value, 0, ',', '.') }}</h4>
+                            <h4 class="mb-1 fw-bolder text-primary text-truncate" title="Rp {{ number_format($opname->total_system_value, 0, ',', '.') }}">
+                                Rp {{ number_format($opname->total_system_value, 0, ',', '.') }}
+                            </h4>
                         </div>
-                        <div class="pt-2 mt-3 border-top border-primary-subtle text-muted small">
-                            Total Barang: <strong>{{ number_format($opname->items->sum('system_qty'), 0, ',', '.') }} Unit</strong>
+                        <div class="pt-2 mt-3 border-top border-primary-subtle text-muted small d-flex justify-content-between align-items-center">
+                            <span>Total Barang:</span>
+                            <strong class="text-primary">{{ number_format($opname->items->sum('system_qty'), 0, ',', '.') }} Unit</strong>
                         </div>
                     </div>
                 </div>
 
-                {{-- VALUASI FISIK --}}
-                <div class="col-md-4">
+                {{-- KPI 2: VALUASI FISIK --}}
+                <div class="col-sm-6 col-xl-3">
                     <div class="p-3 border-0 shadow-sm card rounded-4 h-100 card-kpi card-kpi-actual d-flex flex-column justify-content-between">
                         <div>
                             <div class="mb-2 d-flex justify-content-between align-items-center">
                                 <span class="text-muted small fw-bold text-uppercase">Valuasi Fisik</span>
                                 <div class="p-2 bg-success bg-opacity-10 text-success rounded-circle"><i class="bi bi-box-seam-fill"></i></div>
                             </div>
-                            <h4 class="mb-1 fw-bolder text-success">Rp {{ number_format($opname->total_actual_value, 0, ',', '.') }}</h4>
+                            <h4 class="mb-1 fw-bolder text-success text-truncate" title="Rp {{ number_format($opname->total_actual_value, 0, ',', '.') }}">
+                                Rp {{ number_format($opname->total_actual_value, 0, ',', '.') }}
+                            </h4>
                         </div>
-                        <div class="pt-2 mt-3 border-top border-success-subtle text-muted small">
-                            Hasil Hitung: <strong>{{ number_format($opname->items->sum('actual_qty'), 0, ',', '.') }} Unit</strong>
+                        <div class="pt-2 mt-3 border-top border-success-subtle text-muted small d-flex justify-content-between align-items-center">
+                            <span>Hasil Hitung:</span>
+                            <strong class="text-success">{{ number_format($opname->items->sum('actual_qty'), 0, ',', '.') }} Unit</strong>
                         </div>
                     </div>
                 </div>
 
-                {{-- VALUASI VARIANCE / SELISIH --}}
-                <div class="col-md-4">
+                {{-- KPI 3: VALUASI VARIANCE --}}
+                <div class="col-sm-6 col-xl-3">
                     @php
                         $netVarianceRupiah = $opname->total_actual_value - $opname->total_system_value;
                         $netVarianceQty = $opname->items->sum('variance_qty');
@@ -205,14 +260,14 @@
                     <div class="p-3 border-0 shadow-sm card rounded-4 h-100 card-kpi card-kpi-variance d-flex flex-column justify-content-between">
                         <div>
                             <div class="mb-2 d-flex justify-content-between align-items-center">
-                                <span class="text-muted small fw-bold text-uppercase">Total Selisih (Absolut)</span>
+                                <span class="text-muted small fw-bold text-uppercase">Total Selisih</span>
                                 <div class="p-2 bg-danger bg-opacity-10 text-danger rounded-circle"><i class="bi bi-calculator-fill"></i></div>
                             </div>
-                            <h4 class="fw-bolder {{ $isLoss ? 'text-danger' : ($isGain ? 'text-primary' : 'text-success') }} mb-1">
+                            <h4 class="fw-bolder {{ $isLoss ? 'text-danger' : ($isGain ? 'text-primary' : 'text-success') }} mb-1 text-truncate" title="Rp {{ number_format($opname->total_variance_value, 0, ',', '.') }}">
                                 Rp {{ number_format($opname->total_variance_value, 0, ',', '.') }}
                             </h4>
                         </div>
-                        <div class="pt-2 mt-3 border-top border-danger-subtle small d-flex justify-content-between">
+                        <div class="pt-2 mt-3 border-top border-danger-subtle small d-flex justify-content-between align-items-center">
                             <span class="text-muted">Net Delta:</span>
                             <strong class="{{ $isLoss ? 'text-danger' : ($isGain ? 'text-primary' : 'text-success') }}">
                                 {{ $netVarianceQty > 0 ? '+' : '' }}{{ number_format($netVarianceQty, 0, ',', '.') }} Unit
@@ -220,17 +275,45 @@
                         </div>
                     </div>
                 </div>
+
+                {{-- KPI 4: TINGKAT AKURASI --}}
+                <div class="col-sm-6 col-xl-3">
+                    @php
+                        $sysQty = (float) $opname->items->sum('system_qty');
+                        $absVarQty = (float) $opname->items->sum(function($i) { return abs((float)$i->variance_qty); });
+                        $accuracy = $sysQty > 0 ? max(0, 100 - (($absVarQty / $sysQty) * 100)) : ($absVarQty > 0 ? 0 : 100);
+                        $accColor = $accuracy >= 98 ? 'success' : ($accuracy >= 85 ? 'warning' : 'danger');
+                    @endphp
+                    <div class="p-3 border-0 shadow-sm card rounded-4 h-100 card-kpi d-flex flex-column justify-content-between" style="border-left-color: var(--bs-{{ $accColor }}); background-color: var(--bs-{{ $accColor }}-bg-subtle);">
+                        <div>
+                            <div class="mb-2 d-flex justify-content-between align-items-center">
+                                <span class="text-muted small fw-bold text-uppercase">Tingkat Akurasi</span>
+                                <div class="p-2 bg-{{ $accColor }} bg-opacity-10 text-{{ $accColor }} rounded-circle"><i class="bi bi-bullseye"></i></div>
+                            </div>
+                            <h4 class="mb-1 fw-bolder text-{{ $accColor }}">
+                                {{ number_format($accuracy, 1, ',', '') }}%
+                            </h4>
+                        </div>
+                        <div class="pt-2 mt-3 border-top border-{{ $accColor }}-subtle small d-flex justify-content-between align-items-center">
+                            <span class="text-muted">Kondisi:</span>
+                            <strong class="text-{{ $accColor }}">
+                                {{ $accuracy >= 98 ? 'Sangat Baik' : ($accuracy >= 85 ? 'Cukup' : 'Kritis/Buruk') }}
+                            </strong>
+                        </div>
+                    </div>
+                </div>
+
             </div>
         </div>
     </div>
 
     {{-- ========================================================================= --}}
-    {{-- 3. TABEL DETAIL BARANG & HASIL HITUNG FISIK --}}
+    {{-- 4. TABEL DETAIL BARANG & HASIL HITUNG FISIK --}}
     {{-- ========================================================================= --}}
     <div class="mb-4 overflow-hidden border-0 shadow-sm card rounded-4">
         <div class="py-3 bg-white card-header border-bottom d-flex justify-content-between align-items-center">
             <h6 class="mb-0 fw-bold text-dark"><i class="bi bi-table me-2 text-primary"></i>Rincian Hasil Audit Persediaan Gudang</h6>
-            <span class="border badge bg-light text-dark">Total: {{ $opname->items->count() }} Jenis Barang</span>
+            <span class="border badge bg-light text-dark shadow-sm">Total: {{ $opname->items->count() }} Jenis Barang</span>
         </div>
         <div class="p-0 card-body">
             <div class="table-responsive">
@@ -240,9 +323,9 @@
                             <th class="py-3 ps-4" width="5%">No</th>
                             <th width="12%">Kode</th>
                             <th width="23%">Nama Barang</th>
-                            <th class="text-end" width="10%">HPP / Unit (Rp)</th>
+                            <th class="text-end" width="10%">HPP/Unit (Rp)</th>
                             <th class="text-center" width="10%">Stok Sistem</th>
-                            <th class="text-center bg-warning-subtle" width="10%">Hitung Fisik</th>
+                            <th class="text-center bg-warning-subtle text-dark" width="10%">Hitung Fisik</th>
                             <th class="text-center" width="10%">Selisih Qty</th>
                             <th class="text-end" width="10%">Selisih Rp</th>
                             <th class="pe-4" width="10%">Keterangan</th>
@@ -256,36 +339,28 @@
                                 $rowClass = $vQty < 0 ? 'table-danger-subtle' : ($vQty > 0 ? 'table-info-subtle' : '');
                             @endphp
                             <tr class="{{ $rowClass }}">
-                                <td class="py-3 ps-4 text-muted small">{{ $idx + 1 }}</td>
+                                <td class="py-3 ps-4 text-muted fw-bold">{{ $idx + 1 }}</td>
                                 <td><span class="border badge bg-secondary-subtle text-secondary font-monospace">{{ optional($item->item)->code ?? '-' }}</span></td>
                                 <td>
                                     <div class="fw-bold text-dark">{{ optional($item->item)->name ?? 'Item Terhapus' }}</div>
-                                    <small class="text-muted" style="font-size:0.75rem;">Satuan: {{ $item->base_uom }}</small>
+                                    <div class="text-muted" style="font-size:0.75rem;">Satuan: {{ $item->base_uom }}</div>
                                 </td>
                                 <td class="text-end fw-semibold">Rp {{ number_format($item->unit_price, 0, ',', '.') }}</td>
-
-                                {{-- STOK SISTEM --}}
                                 <td class="text-center fw-semibold text-secondary">
-                                    {{ (float) $item->system_qty }} <small class="text-muted">{{ $item->base_uom }}</small>
+                                    {{ (float) $item->system_qty }} <span class="small fw-normal">{{ $item->base_uom }}</span>
                                 </td>
-
-                                {{-- FISIK AKTUAL --}}
                                 <td class="text-center bg-warning-subtle fw-bolder text-dark fs-6">
-                                    {{ (float) $item->actual_qty }} <small class="text-muted">{{ $item->base_uom }}</small>
+                                    {{ (float) $item->actual_qty }} <span class="small fw-normal">{{ $item->base_uom }}</span>
                                 </td>
-
-                                {{-- SELISIH QTY --}}
                                 <td class="text-center fw-bolder">
                                     @if($vQty == 0)
-                                        <span class="border badge bg-success-subtle text-success border-success-subtle"><i class="bi bi-check-circle me-1"></i> Cocok</span>
+                                        <span class="border badge bg-success-subtle text-success border-success-subtle px-2 py-1"><i class="bi bi-check-circle me-1"></i> Cocok</span>
                                     @elseif($vQty < 0)
-                                        <span class="text-danger"><i class="bi bi-arrow-down-right"></i> {{ $vQty }} {{ $item->base_uom }}</span>
+                                        <span class="text-danger"><i class="bi bi-arrow-down-right"></i> {{ $vQty }} <span class="small">{{ $item->base_uom }}</span></span>
                                     @else
-                                        <span class="text-primary"><i class="bi bi-arrow-up-right"></i> +{{ $vQty }} {{ $item->base_uom }}</span>
+                                        <span class="text-primary"><i class="bi bi-arrow-up-right"></i> +{{ $vQty }} <span class="small">{{ $item->base_uom }}</span></span>
                                     @endif
                                 </td>
-
-                                {{-- SELISIH RUPIAH --}}
                                 <td class="text-end fw-bold">
                                     @if($vVal == 0)
                                         <span class="text-muted">Rp 0</span>
@@ -295,28 +370,26 @@
                                         <span class="text-primary">+ Rp {{ number_format($vVal, 0, ',', '.') }}</span>
                                     @endif
                                 </td>
-
-                                {{-- KETERANGAN --}}
-                                <td class="pe-4 small text-muted">
+                                <td class="pe-4 small text-muted fst-italic">
                                     {{ $item->notes ?? '-' }}
                                 </td>
                             </tr>
                         @empty
                             <tr>
                                 <td colspan="9" class="py-5 text-center text-muted">
-                                    <i class="mb-2 opacity-50 bi bi-inbox fs-1 d-block text-secondary"></i>
-                                    Tidak ada data persediaan untuk dihitung di gudang ini.
+                                    <i class="mb-2 opacity-25 bi bi-inbox fs-1 d-block"></i>
+                                    Tidak ada persediaan untuk dihitung di gudang ini.
                                 </td>
                             </tr>
                         @endforelse
                     </tbody>
                     <tfoot class="table-light fw-bold border-top">
                         <tr>
-                            <td colspan="4" class="py-3 ps-4 text-uppercase">Total Keseluruhan</td>
-                            <td class="text-center">{{ (float) $opname->items->sum('system_qty') }}</td>
-                            <td class="text-center bg-warning-subtle">{{ (float) $opname->items->sum('actual_qty') }}</td>
-                            <td class="text-center">{{ $netVarianceQty > 0 ? '+' : '' }}{{ (float) $netVarianceQty }}</td>
-                            <td class="text-end text-danger">Rp {{ number_format($opname->total_variance_value, 0, ',', '.') }}</td>
+                            <td colspan="4" class="py-3 ps-4 text-end text-uppercase text-muted">Total Keseluruhan :</td>
+                            <td class="text-center text-dark">{{ (float) $opname->items->sum('system_qty') }}</td>
+                            <td class="text-center bg-warning-subtle text-dark">{{ (float) $opname->items->sum('actual_qty') }}</td>
+                            <td class="text-center text-dark">{{ $netVarianceQty > 0 ? '+' : '' }}{{ (float) $netVarianceQty }}</td>
+                            <td class="text-end text-danger fs-6">Rp {{ number_format($opname->total_variance_value, 0, ',', '.') }}</td>
                             <td></td>
                         </tr>
                     </tfoot>
@@ -326,30 +399,30 @@
     </div>
 
     {{-- ========================================================================= --}}
-    {{-- 4. AREA BUKTI FISIK & WORKFLOW PERSETUJUAN --}}
+    {{-- 5. AREA BUKTI FISIK & WORKFLOW PERSETUJUAN --}}
     {{-- ========================================================================= --}}
     <div class="row g-4">
         {{-- BUKTI FISIK --}}
         <div class="col-md-5">
             <div class="border-0 shadow-sm card rounded-4 h-100">
                 <div class="py-3 bg-white card-header border-bottom d-flex justify-content-between align-items-center">
-                    <h6 class="mb-0 fw-bold text-dark"><i class="bi bi-paperclip me-2 text-primary"></i>Dokumen & Bukti Fisik Audit</h6>
+                    <h6 class="mb-0 fw-bold text-dark"><i class="bi bi-paperclip me-2 text-primary"></i>Dokumen Bukti Fisik</h6>
                 </div>
                 <div class="p-4 card-body">
                     @if(isset($opname->attachments) && $opname->attachments->count() > 0)
                         <div class="gap-2 d-flex flex-column">
                             @foreach($opname->attachments as $file)
-                                <div class="p-2 border rounded-3 bg-light d-flex justify-content-between align-items-center">
-                                    <a href="{{ asset('storage/' . $file->file_path) }}" target="_blank" class="text-decoration-none fw-bold text-dark text-truncate small" style="max-width: 80%;">
+                                <div class="p-2 px-3 border rounded-pill bg-light d-flex justify-content-between align-items-center shadow-sm">
+                                    <a href="{{ asset('storage/' . $file->file_path) }}" target="_blank" class="text-decoration-none fw-bold text-dark text-truncate small" style="max-width: 75%;">
                                         <i class="bi bi-file-earmark-pdf-fill text-danger me-2 fs-5"></i> {{ $file->file_name }}
                                     </a>
-                                    <a href="{{ asset('storage/' . $file->file_path) }}" target="_blank" class="px-3 btn btn-sm btn-outline-primary rounded-pill">Buka</a>
+                                    <a href="{{ asset('storage/' . $file->file_path) }}" target="_blank" class="px-3 btn btn-sm btn-primary rounded-pill fw-semibold">Buka</a>
                                 </div>
                             @endforeach
                         </div>
                     @else
                         <div class="py-4 text-center text-muted small">
-                            <i class="mb-1 opacity-50 bi bi-cloud-upload fs-2 d-block text-secondary"></i>
+                            <i class="mb-1 opacity-25 bi bi-cloud-upload fs-1 d-block"></i>
                             Belum ada bukti fisik yang diunggah.
                         </div>
                     @endif
@@ -369,7 +442,7 @@
                             <table class="table align-middle table-sm table-borderless">
                                 <thead class="border-bottom small text-muted">
                                     <tr>
-                                        <th>Level</th>
+                                        <th class="ps-2">Lvl</th>
                                         <th>Role / Jabatan</th>
                                         <th>Penyetuju</th>
                                         <th>Status</th>
@@ -379,16 +452,16 @@
                                 <tbody>
                                     @foreach($opname->approvals as $app)
                                         <tr>
-                                            <td><span class="border badge bg-light text-dark rounded-circle">{{ $app->step_order ?? 1 }}</span></td>
+                                            <td class="ps-2"><span class="border badge bg-light text-dark rounded-circle px-2 py-1 shadow-sm">{{ $app->step_order ?? 1 }}</span></td>
                                             <td class="fw-bold text-dark">{{ optional($app->role)->name ?? 'Approver' }}</td>
                                             <td>{{ optional($app->approver)->name ?? '-' }}</td>
                                             <td>
                                                 @if($app->status === 'APPROVED')
-                                                    <span class="border badge bg-success-subtle text-success border-success-subtle"><i class="bi bi-check-lg"></i> Disetujui</span>
+                                                    <span class="border badge bg-success-subtle text-success border-success-subtle px-2 py-1"><i class="bi bi-check-lg me-1"></i> Disetujui</span>
                                                 @elseif($app->status === 'REJECTED')
-                                                    <span class="border badge bg-danger-subtle text-danger border-danger-subtle"><i class="bi bi-x-lg"></i> Ditolak</span>
+                                                    <span class="border badge bg-danger-subtle text-danger border-danger-subtle px-2 py-1"><i class="bi bi-x-lg me-1"></i> Ditolak</span>
                                                 @else
-                                                    <span class="border badge bg-warning-subtle text-warning border-warning-subtle"><i class="bi bi-clock me-1"></i> Menunggu</span>
+                                                    <span class="border badge bg-warning-subtle text-warning border-warning-subtle px-2 py-1"><i class="bi bi-clock me-1"></i> Menunggu</span>
                                                 @endif
                                             </td>
                                             <td class="small text-muted">{{ $app->approved_at ? \Carbon\Carbon::parse($app->approved_at)->format('d/m/Y H:i') : '-' }}</td>
@@ -399,8 +472,8 @@
                         </div>
                     @else
                         <div class="py-4 text-center text-muted small">
-                            <i class="mb-1 opacity-50 bi bi-diagram-3 fs-2 d-block text-secondary"></i>
-                            Persetujuan akan dibentuk otomatis berdasarkan Total Nilai Selisih setelah diajukan.
+                            <i class="mb-1 opacity-25 bi bi-diagram-3 fs-1 d-block"></i>
+                            Persetujuan akan dibentuk otomatis berdasarkan <strong>Total Nilai Selisih</strong> setelah dokumen diajukan.
                         </div>
                     @endif
                 </div>
@@ -414,24 +487,78 @@
 @push('scripts')
 <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
 <script>
-    function confirmSubmitApproval() {
-        Swal.fire({
-            title: 'Ajukan Hasil Opname?',
-            html: "Sistem akan mengunci lembar hitung fisik ini dan mengirimkannya ke <b>Worklist Persetujuan Atasan</b> untuk eksekusi penyesuaian stok.",
-            icon: 'question',
+    // Konfigurasi Standar Tombol SweetAlert
+    const swalCustom = Swal.mixin({
+        customClass: {
+            confirmButton: 'btn btn-primary rounded-pill px-4 fw-bold mx-2',
+            cancelButton: 'btn btn-light border rounded-pill px-4 fw-bold mx-2'
+        },
+        buttonsStyling: false
+    });
+
+    function confirmCancelOpname() {
+        swalCustom.fire({
+            title: 'Batalkan Sesi Opname?',
+            text: "Dokumen ini akan dihapus permanen. Anda dapat membuat sesi baru setelahnya.",
+            icon: 'warning',
             showCancelButton: true,
-            confirmButtonColor: '#0d6efd',
-            cancelButtonColor: '#6c757d',
-            confirmButtonText: '<i class="bi bi-send-check me-1"></i> Ya, Ajukan Sekarang!',
-            cancelButtonText: 'Batal',
-            customClass: {
-                confirmButton: 'rounded-pill px-4',
-                cancelButton: 'rounded-pill px-4'
-            }
+            confirmButtonText: '<i class="bi bi-trash me-1"></i> Ya, Batalkan!',
+            cancelButtonText: 'Tutup',
+            customClass: { confirmButton: 'btn btn-danger rounded-pill px-4 fw-bold mx-2', cancelButton: 'btn btn-light border rounded-pill px-4 fw-bold mx-2' }
         }).then((result) => {
             if (result.isConfirmed) {
-                Swal.fire({ title: 'Mengajukan Dokumen...', allowOutsideClick: false, didOpen: () => { Swal.showLoading() } });
+                Swal.fire({ title: 'Menghapus...', allowOutsideClick: false, didOpen: () => { Swal.showLoading() } });
+                document.getElementById('formCancelOpname').submit();
+            }
+        });
+    }
+
+    function confirmSubmitApproval() {
+        swalCustom.fire({
+            title: 'Ajukan Penyesuaian?',
+            html: "Sistem akan mengunci lembar ini dan mengirimkannya ke <b>Worklist Atasan</b> untuk persetujuan akhir.",
+            icon: 'question',
+            showCancelButton: true,
+            confirmButtonText: '<i class="bi bi-send-check me-1"></i> Ajukan Sekarang',
+            cancelButtonText: 'Cek Kembali'
+        }).then((result) => {
+            if (result.isConfirmed) {
+                Swal.fire({ title: 'Mengajukan...', allowOutsideClick: false, didOpen: () => { Swal.showLoading() } });
                 document.getElementById('formSubmitApproval').submit();
+            }
+        });
+    }
+
+    function confirmApproval() {
+        swalCustom.fire({
+            title: 'Setujui Dokumen?',
+            text: "Anda akan menyetujui hasil perhitungan Stock Opname ini.",
+            icon: 'info',
+            showCancelButton: true,
+            confirmButtonText: '<i class="bi bi-check-circle me-1"></i> Setujui',
+            cancelButtonText: 'Batal',
+            customClass: { confirmButton: 'btn btn-success rounded-pill px-4 fw-bold mx-2', cancelButton: 'btn btn-light border rounded-pill px-4 fw-bold mx-2' }
+        }).then((result) => {
+            if (result.isConfirmed) {
+                Swal.fire({ title: 'Memproses...', allowOutsideClick: false, didOpen: () => { Swal.showLoading() } });
+                document.getElementById('formApprove').submit();
+            }
+        });
+    }
+
+    function confirmRejection() {
+        swalCustom.fire({
+            title: 'Tolak Dokumen?',
+            text: "Dokumen yang ditolak akan dikembalikan ke status Draft.",
+            icon: 'warning',
+            showCancelButton: true,
+            confirmButtonText: '<i class="bi bi-x-circle me-1"></i> Tolak',
+            cancelButtonText: 'Batal',
+            customClass: { confirmButton: 'btn btn-danger rounded-pill px-4 fw-bold mx-2', cancelButton: 'btn btn-light border rounded-pill px-4 fw-bold mx-2' }
+        }).then((result) => {
+            if (result.isConfirmed) {
+                Swal.fire({ title: 'Memproses...', allowOutsideClick: false, didOpen: () => { Swal.showLoading() } });
+                document.getElementById('formReject').submit();
             }
         });
     }

@@ -175,6 +175,37 @@ class ApprovalWorkflowSeeder extends Seeder
             'min_amount'           => 0
         ]);
 
+        // ===================================================================
+        // 🔥 9. MATRIKS STOCK OPNAME (Penyesuaian Saldo Fisik Gudang) 🔥
+        // ===================================================================
+        $workflowOpname = ApprovalWorkflow::updateOrCreate(
+            [
+                'document_type' => 'App\Models\StockOpname',
+                'department_id' => null
+            ],
+            [
+                'name'      => 'Matriks Persetujuan Stock Opname',
+                'is_active' => true
+            ]
+        );
+        $workflowOpname->steps()->delete();
+
+        // Lapis 1: SPV Gudang wajib periksa (Berapapun nominal selisihnya)
+        ApprovalWorkflowStep::create([
+            'approval_workflow_id' => $workflowOpname->id,
+            'step_order'           => 1,
+            'role_id'              => $roleSupervisor->id,
+            'min_amount'           => 0
+        ]);
+
+        // Lapis 2: Manager baru akan dimintai approval jika selisihnya di atas Rp 5.000.000
+        ApprovalWorkflowStep::create([
+            'approval_workflow_id' => $workflowOpname->id,
+            'step_order'           => 2,
+            'role_id'              => $roleManager->id,
+            'min_amount'           => 0
+        ]);
+
         $this->command->info('✅ Mesin Matriks Persetujuan (Workflow) Hybrid berhasil di-deploy!');
     }
 }
