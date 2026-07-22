@@ -340,5 +340,166 @@ class StockOpnameController extends Controller
 
 
 
+    // ====================================================
+    // 10. PROSES APPROVE (SETUJUI) & POTONG STOK OTOMATIS
+    // ====================================================
+    public function approve(Request $request, $id)
+    {
+        $opname = StockOpname::with('items', 'approvals')->findOrFail($id);
+
+        try {
+            DB::beginTransaction();
+
+            // 1. Cari antrean pertama yang statusnya masih 'pending' berdasarkan urutan (Level terendah)
+            $approval = $opname->approvals()
+                ->where('status', 'pending')
+                ->orderBy('step_order', 'asc')
+                ->first();
+
+            if (!$approval) {
+                return back()->with('error', 'Tidak ada antrean persetujuan untuk dokumen ini.');
+            }
+
+            // 2. CEK OTORISASI (Jabatan sesuai matriks ATAU hak istimewa Super Admin)
+            $user = auth()->user();
+            $roleName = strtolower(optional($user->role)->name ?? ''); // Tarik nama role dari database
+
+            // Super admin bisa dideteksi dari ID 1, nama, ATAU nama rolenya
+            $isSuperAdmin = ($user->role_id == 1 || strtolower($user->name) == 'super administrator' || $roleName == 'super admin');
+
+            if ($approval->role_id != $user->role_id && !$isSuperAdmin) {
+                return back()->with('error', 'Gagal: Saat ini adalah giliran jabatan lain (Level ' . $approval->step_order . ') untuk menyetujui.');
+            }
+
+            // 3. Update status antrean saat ini menjadi Approved
+            $approval->update([
+                'status' => 'approved',
+                'approved_by' => $user->id, // 🔥 UBAH 'user_id' MENJADI 'approver_id' DI SINI
+                'note' => $request->notes ?? 'Disetujui', // 🔥 PASTIKAN SEBELAH KIRI HANYA 'note' (TANPA S)
+                'approved_at' => now(),
+            ]);
+
+            // 4. Cek apakah masih ada sisa antrean persetujuan lain setelah ini
+            $remainingApprovals = $opname->approvals()->where('status', 'pending')->count();
+
+            // 5. JIKA SEMUA LEVEL SUDAH SETUJU -> EKSEKUSI FINALISASI STOK
+            if ($remainingApprovals === 0) {
+                // Ubah status dokumen SO menjadi Completed (Selesai)
+                $statusCompleted = Status::where('type', 'SO')->where('slug', 'completed')->first();
+                $opname->update([
+                    'status_id' => $statusCompleted ? $statusCompleted->id : $opname->status_id,
+                ]);
+
+                // Eksekusi Pemotongan / Penambahan Stok Riil
+                foreach ($opname->items as $item) {
+                    if ($item->variance_qty == 0) continue; // Jika cocok, lewati
+
+                    $masterItem = \App\Models\Item::find($item->item_id);
+                    $newStockBalance = $masterItem->current_stock + $item->variance_qty;
+
+                    if ($item->variance_qty > 0) {
+                        // KASUS A: SURPLUS (BARANG LEBIH) -> Masukkan stok baru ke gudang
+                        InventoryStock::create([
+                            'company_id' => $opname->company_id,
+                            'warehouse_id' => $opname->warehouse_id,
+                            'item_id' => $item->item_id,
+                            'stock_qty' => $item->variance_qty,
+                            'unit_price' => $item->unit_price,
+                            'reference_number' => $opname->document_number,
+                            'notes' => 'Surplus Stock Opname',
+                        ]);
+                    } else {
+                        // KASUS B: DEFICIT (BARANG HILANG/MINUS) -> Potong stok pakai metode FIFO
+                        $qtyToDeduct = abs($item->variance_qty);
+
+                        $availableStocks = InventoryStock::where('warehouse_id', $opname->warehouse_id)
+                                            ->where('item_id', $item->item_id)
+                                            ->where('stock_qty', '>', 0)
+                                            ->orderBy('id', 'asc') // FIFO: Tumpukan terlama
+                                            ->get();
+
+                        foreach ($availableStocks as $stock) {
+                            if ($qtyToDeduct <= 0) break;
+
+                            if ($stock->stock_qty <= $qtyToDeduct) {
+                                // Habiskan tumpukan ini
+                                $qtyToDeduct -= $stock->stock_qty;
+                                $stock->update(['stock_qty' => 0]);
+                            } else {
+                                // Potong sebagian tumpukan ini
+                                $stock->update(['stock_qty' => $stock->stock_qty - $qtyToDeduct]);
+                                $qtyToDeduct = 0;
+                            }
+                        }
+                    }
+
+                    // Update total qty saat ini di Master Barang
+                    $masterItem->update(['current_stock' => $newStockBalance]);
+                }
+            }
+
+            DB::commit();
+            return redirect()->back()->with('success', 'Berhasil disetujui! ' . ($remainingApprovals === 0 ? 'Stok gudang telah direvisi secara otomatis.' : 'Menunggu persetujuan level selanjutnya.'));
+
+        } catch (\Exception $e) {
+            DB::rollBack();
+            Log::error('Error Approve Stock Opname: ' . $e->getMessage());
+            return back()->with('error', 'Terjadi kesalahan sistem: ' . $e->getMessage());
+        }
+    }
+
+    // ====================================================
+    // 11. PROSES REJECT (TOLAK)
+    // ====================================================
+    public function reject(Request $request, $id)
+    {
+        $opname = StockOpname::findOrFail($id);
+
+        try {
+            DB::beginTransaction();
+
+            $approval = $opname->approvals()
+                ->where('status', 'pending')
+                ->orderBy('step_order', 'asc')
+                ->first();
+
+            if (!$approval) {
+                return back()->with('error', 'Tidak ada antrean yang bisa ditolak.');
+            }
+
+            $user = auth()->user();
+            $isSuperAdmin = ($user->role_id == 1 || strtolower($user->name) == 'Super Administrator');
+
+            if ($approval->role_id != $user->role_id && !$isSuperAdmin) {
+                return back()->with('error', 'Gagal: Anda tidak berhak menolak dokumen ini.');
+            }
+
+            $approval->update([
+                'status' => 'rejected',
+                'approved_by' => $user->id, // 🔥 UBAH 'user_id' MENJADI 'approver_id' DI SINI
+                'note' => $request->notes ?? 'Disetujui', // 🔥 PASTIKAN SEBELAH KIRI HANYA 'note' (TANPA S)
+                'approved_at' => now(),
+            ]);
+
+            $statusRejected = Status::where('type', 'SO')->where('slug', 'rejected')->first();
+            $opname->update([
+                'status_id' => $statusRejected ? $statusRejected->id : $opname->status_id,
+            ]);
+
+            $opname->approvals()->where('status', 'pending')->update(['status' => 'cancelled']);
+
+            DB::commit();
+            return redirect()->back()->with('success', 'Dokumen ditolak. Proses dihentikan.');
+
+        } catch (\Exception $e) {
+            DB::rollBack();
+            Log::error('Error Reject Stock Opname: ' . $e->getMessage());
+            return back()->with('error', 'Terjadi kesalahan sistem: ' . $e->getMessage());
+        }
+    }
+
+
+
+
 
 }

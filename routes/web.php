@@ -660,6 +660,10 @@ Route::middleware('auth')->group(function () {
         // 🔥 TAMBAHKAN BARIS INI
         Route::post('/{id}/submit-approval', [App\Http\Controllers\StockOpnameController::class, 'submitApproval'])->name('submit-approval');
 
+        // MENJADI SEPERTI INI (Hapus awalan 'stock-opnames.' di dalam name):
+        Route::post('/{id}/approve', [\App\Http\Controllers\StockOpnameController::class, 'approve'])->name('approve');
+        Route::post('/{id}/reject', [\App\Http\Controllers\StockOpnameController::class, 'reject'])->name('reject');
+
     });
 
 

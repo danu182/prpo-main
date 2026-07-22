@@ -115,7 +115,7 @@
 
                         <form action="{{ route('stock-opnames.submit-approval', $opname->id) }}" method="POST" id="formSubmitApproval" class="m-0">
                             @csrf
-                            <button type="button" onclick="confirmSubmitApproval()" class="btn btn-primary btn-action-rounded">
+                            <button type="button" onclick="if(confirm('Ajukan dokumen ini?')) document.getElementById('formSubmitApproval').submit();" class="btn btn-primary btn-action-rounded">
                                 <i class="bi bi-send-check me-1"></i> Ajukan
                             </button>
                         </form>
@@ -123,7 +123,7 @@
                         <form action="{{ route('stock-opnames.destroy', $opname->id) }}" method="POST" id="formCancelOpname" class="m-0">
                             @csrf
                             @method('DELETE')
-                            <button type="button" onclick="confirmCancelOpname()" class="btn btn-outline-danger btn-action-rounded btn-icon-only" title="Batalkan Sesi">
+                            <button type="button" onclick="if(confirm('Batalkan sesi ini?')) document.getElementById('formCancelOpname').submit();" class="btn btn-outline-danger btn-action-rounded btn-icon-only" title="Batalkan Sesi">
                                 <i class="bi bi-trash"></i>
                             </button>
                         </form>
@@ -133,19 +133,23 @@
                 {{-- Group Tombol Approver (Hanya Tampil Jika Ada Antrean & User Berwenang) --}}
                 @if($canApprove)
                     <div class="border-start ms-1 ps-2 d-flex gap-2">
-                        <form action="{{ route('stock-opnames.approve', $opname->id) }}" method="POST" id="formApprove" class="m-0">
+                        <div class="d-flex gap-2">
+                        {{-- FORM SETUJUI (Menggunakan Animasi SweetAlert) --}}
+                        <form action="{{ route('stock-opnames.approve', $opname->id) }}" method="POST" id="form-approve" class="m-0">
                             @csrf
-                            <button type="button" onclick="confirmApproval()" class="btn btn-success btn-action-rounded">
+                            <button type="button" class="btn btn-success btn-action-rounded shadow-sm" onclick="confirmApproval()">
                                 <i class="bi bi-check-circle me-1"></i> Setujui
                             </button>
                         </form>
 
-                        <form action="{{ route('stock-opnames.reject', $opname->id) }}" method="POST" id="formReject" class="m-0">
+                        {{-- FORM TOLAK (Menggunakan Animasi SweetAlert) --}}
+                        <form action="{{ route('stock-opnames.reject', $opname->id) }}" method="POST" id="form-reject" class="m-0">
                             @csrf
-                            <button type="button" onclick="confirmRejection()" class="btn btn-danger btn-action-rounded">
+                            <button type="button" class="btn btn-danger btn-action-rounded shadow-sm" onclick="confirmRejection()">
                                 <i class="bi bi-x-circle me-1"></i> Tolak
                             </button>
                         </form>
+                    </div>
                     </div>
                 @endif
             </div>
@@ -482,85 +486,55 @@
     </div>
 
 </div>
-@endsection
+
 
 @push('scripts')
 <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
 <script>
-    // Konfigurasi Standar Tombol SweetAlert
-    const swalCustom = Swal.mixin({
-        customClass: {
-            confirmButton: 'btn btn-primary rounded-pill px-4 fw-bold mx-2',
-            cancelButton: 'btn btn-light border rounded-pill px-4 fw-bold mx-2'
-        },
-        buttonsStyling: false
-    });
-
-    function confirmCancelOpname() {
-        swalCustom.fire({
-            title: 'Batalkan Sesi Opname?',
-            text: "Dokumen ini akan dihapus permanen. Anda dapat membuat sesi baru setelahnya.",
-            icon: 'warning',
-            showCancelButton: true,
-            confirmButtonText: '<i class="bi bi-trash me-1"></i> Ya, Batalkan!',
-            cancelButtonText: 'Tutup',
-            customClass: { confirmButton: 'btn btn-danger rounded-pill px-4 fw-bold mx-2', cancelButton: 'btn btn-light border rounded-pill px-4 fw-bold mx-2' }
-        }).then((result) => {
-            if (result.isConfirmed) {
-                Swal.fire({ title: 'Menghapus...', allowOutsideClick: false, didOpen: () => { Swal.showLoading() } });
-                document.getElementById('formCancelOpname').submit();
-            }
-        });
-    }
-
-    function confirmSubmitApproval() {
-        swalCustom.fire({
-            title: 'Ajukan Penyesuaian?',
-            html: "Sistem akan mengunci lembar ini dan mengirimkannya ke <b>Worklist Atasan</b> untuk persetujuan akhir.",
+    function confirmApproval() {
+        Swal.fire({
+            title: 'Setujui Dokumen?',
+            text: "Apakah Anda yakin ingin menyetujui dokumen Audit Stok ini?",
             icon: 'question',
             showCancelButton: true,
-            confirmButtonText: '<i class="bi bi-send-check me-1"></i> Ajukan Sekarang',
-            cancelButtonText: 'Cek Kembali'
-        }).then((result) => {
-            if (result.isConfirmed) {
-                Swal.fire({ title: 'Mengajukan...', allowOutsideClick: false, didOpen: () => { Swal.showLoading() } });
-                document.getElementById('formSubmitApproval').submit();
-            }
-        });
-    }
-
-    function confirmApproval() {
-        swalCustom.fire({
-            title: 'Setujui Dokumen?',
-            text: "Anda akan menyetujui hasil perhitungan Stock Opname ini.",
-            icon: 'info',
-            showCancelButton: true,
-            confirmButtonText: '<i class="bi bi-check-circle me-1"></i> Setujui',
+            confirmButtonColor: '#198754',
+            cancelButtonColor: '#6c757d',
+            confirmButtonText: '<i class="bi bi-check-circle me-1"></i> Ya, Setujui',
             cancelButtonText: 'Batal',
-            customClass: { confirmButton: 'btn btn-success rounded-pill px-4 fw-bold mx-2', cancelButton: 'btn btn-light border rounded-pill px-4 fw-bold mx-2' }
+            reverseButtons: true,
+            customClass: {
+                confirmButton: 'rounded-pill px-4',
+                cancelButton: 'rounded-pill px-4'
+            }
         }).then((result) => {
             if (result.isConfirmed) {
-                Swal.fire({ title: 'Memproses...', allowOutsideClick: false, didOpen: () => { Swal.showLoading() } });
-                document.getElementById('formApprove').submit();
+                document.getElementById('form-approve').submit();
             }
         });
     }
 
     function confirmRejection() {
-        swalCustom.fire({
+        Swal.fire({
             title: 'Tolak Dokumen?',
-            text: "Dokumen yang ditolak akan dikembalikan ke status Draft.",
+            text: "Apakah Anda yakin ingin menolak dokumen ini? Proses akan dihentikan.",
             icon: 'warning',
             showCancelButton: true,
-            confirmButtonText: '<i class="bi bi-x-circle me-1"></i> Tolak',
+            confirmButtonColor: '#dc3545',
+            cancelButtonColor: '#6c757d',
+            confirmButtonText: '<i class="bi bi-x-circle me-1"></i> Ya, Tolak',
             cancelButtonText: 'Batal',
-            customClass: { confirmButton: 'btn btn-danger rounded-pill px-4 fw-bold mx-2', cancelButton: 'btn btn-light border rounded-pill px-4 fw-bold mx-2' }
+            reverseButtons: true,
+            customClass: {
+                confirmButton: 'rounded-pill px-4',
+                cancelButton: 'rounded-pill px-4'
+            }
         }).then((result) => {
             if (result.isConfirmed) {
-                Swal.fire({ title: 'Memproses...', allowOutsideClick: false, didOpen: () => { Swal.showLoading() } });
-                document.getElementById('formReject').submit();
+                document.getElementById('form-reject').submit();
             }
         });
     }
 </script>
 @endpush
+
+@endsection
