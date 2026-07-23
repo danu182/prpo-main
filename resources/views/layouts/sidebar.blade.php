@@ -164,6 +164,7 @@
                 <i class="bi bi-chevron-down dropdown-chevron"></i>
             </a>
             <div class="collapse {{ request()->routeIs('users.*', 'roles.*', 'workflows.*', 'document-types.*') ? 'show' : '' }}" id="menuSettings">
+                <a href="{{ route('departments.index') }}" class="sidebar-sublink {{ request()->routeIs('departments.*') ? 'active' : '' }}">Departments Management</a>
                 <a href="{{ route('users.index') }}" class="sidebar-sublink {{ request()->routeIs('users.*') ? 'active' : '' }}">User Management</a>
                 <a href="{{ route('roles.index') }}" class="sidebar-sublink {{ request()->routeIs('roles.*') ? 'active' : '' }}">Role & Permissions</a>
                 <a href="{{ route('workflows.index') }}" class="sidebar-sublink {{ request()->routeIs('workflows.*') ? 'active' : '' }}">Workflows Approval</a>

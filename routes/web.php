@@ -261,7 +261,7 @@ Route::middleware('auth')->group(function () {
 
 
    // Modul Pengeluaran Barang (Goods Issue)
-    Route::prefix('goods-issues')->name('goods-issues.')->group(function () {
+    Route::prefix('goods-issues')->name('goods-issues.')->middleware(['can:manage_gi'])->group(function () {
         Route::get('/', [App\Http\Controllers\GoodsIssueController::class, 'index'])->name('index');
         Route::get('/create', [App\Http\Controllers\GoodsIssueController::class, 'create'])->name('create');
         Route::post('/', [App\Http\Controllers\GoodsIssueController::class, 'store'])->name('store');
@@ -304,7 +304,7 @@ Route::middleware('auth')->group(function () {
 
 
     // Employee Inventory Tracking (Minor Assets)
-    Route::prefix('employee-inventories')->name('employee-inventories.')->middleware(['auth'])->group(function () {
+    Route::prefix('employee-inventories')->name('employee-inventories.')->middleware(['manage_gi'])->group(function () {
         Route::get('/', [\App\Http\Controllers\EmployeeInventoryController::class, 'index'])->name('index');
         Route::get('/history/{employee_name}', [\App\Http\Controllers\EmployeeInventoryController::class, 'history'])->name('history');
 
@@ -329,7 +329,7 @@ Route::middleware('auth')->group(function () {
     // ====================================================
     // 4. MODUL RETURN TO VENDOR (RTV)
     // ====================================================
-    Route::prefix('rtv')->name('rtv.')->group(function () {
+    Route::prefix('rtv')->name('rtv.')->middleware(['can:manage_gi'])->group(function ()  {
         Route::get('/', [\App\Http\Controllers\ReturnToVendorController::class, 'index'])->name('index');
 
         // 🔥 PASTIKAN ADA ->where('slug', '.*') DI BAGIAN AKHIR INI 🔥
@@ -472,6 +472,28 @@ Route::middleware('auth')->group(function () {
         Route::get('/{company}/edit', [\App\Http\Controllers\CompanyController::class, 'edit'])->name('edit');
         Route::put('/{company}', [\App\Http\Controllers\CompanyController::class, 'update'])->name('update');
     });
+
+
+   // MODUL master departement  (MASTER departement)
+    Route::prefix('departments')->name('departments.')->middleware(['can:view_companies'])->group(function () {
+        // 1. Halaman Utama & Pencarian
+        Route::get('/', [\App\Http\Controllers\DepartmentController::class, 'index'])->name('index');
+
+        // 2. Tambah Departemen Baru
+        Route::get('/create', [\App\Http\Controllers\DepartmentController::class, 'create'])->name('create');
+        Route::post('/', [\App\Http\Controllers\DepartmentController::class, 'store'])->name('store');
+
+        // 3. Detail Departemen (SHOW)
+        Route::get('/{department}', [\App\Http\Controllers\DepartmentController::class, 'show'])->name('show');
+
+        // 4. Edit Data Departemen
+        Route::get('/{department}/edit', [\App\Http\Controllers\DepartmentController::class, 'edit'])->name('edit');
+        Route::put('/{department}', [\App\Http\Controllers\DepartmentController::class, 'update'])->name('update');
+
+        // 5. Hapus Data Departemen (🔥 INI YANG SEBELUMNYA KURANG 🔥)
+        Route::delete('/{department}', [\App\Http\Controllers\DepartmentController::class, 'destroy'])->name('destroy');
+    });
+
 
 
     // ====================================================
@@ -642,29 +664,29 @@ Route::middleware('auth')->group(function () {
 
     });
 
-    Route::prefix('asset-capitalizations')->name('asset-capitalizations.')->middleware(['can:view_inventory'])->group(function () {
+    Route::prefix('asset-capitalizations')->name('asset-capitalizations.')->middleware(['can:view_assets'])->group(function () {
 
-    // Menampilkan daftar aset (Index)
-    Route::get('/', [App\Http\Controllers\AssetCapitalizationController::class, 'index'])->name('index');
+            // Menampilkan daftar aset (Index)
+            Route::get('/', [App\Http\Controllers\AssetCapitalizationController::class, 'index'])->name('index');
 
-    // Modul Kapitalisasi / Pengakuan Aset (Create & Store)
-    Route::get('/create', [App\Http\Controllers\AssetCapitalizationController::class, 'create'])->name('create');
-    Route::post('/asset-capitalizations', [App\Http\Controllers\AssetCapitalizationController::class, 'store'])->name('store');
-    Route::get('/get-items/{gr_id}', [App\Http\Controllers\AssetCapitalizationController::class, 'getGrItems'])->name('get-items');
+            // Modul Kapitalisasi / Pengakuan Aset (Create & Store)
+            Route::get('/create', [App\Http\Controllers\AssetCapitalizationController::class, 'create'])->name('create');
+            Route::post('/asset-capitalizations', [App\Http\Controllers\AssetCapitalizationController::class, 'store'])->name('store');
+            Route::get('/get-items/{gr_id}', [App\Http\Controllers\AssetCapitalizationController::class, 'getGrItems'])->name('get-items');
 
-    // Menampilkan detail aset (Show)
-    Route::get('/{id}', [App\Http\Controllers\AssetCapitalizationController::class, 'show'])->name('show');
+            // Menampilkan detail aset (Show)
+            Route::get('/{id}', [App\Http\Controllers\AssetCapitalizationController::class, 'show'])->name('show');
 
-    // Void / Pembatalan Aset
-    Route::post('/{id}/void', [App\Http\Controllers\AssetCapitalizationController::class, 'voidAsset'])->name('void');
+            // Void / Pembatalan Aset
+            Route::post('/{id}/void', [App\Http\Controllers\AssetCapitalizationController::class, 'voidAsset'])->name('void');
 
-});
+        });
 
 
     // ====================================================
     // settings
     // ====================================================
-    Route::prefix('settings')->group(function () {
+    Route::prefix('settings')->middleware(['can:manage_roles'])->group(function () {
         Route::resource('workflows', \App\Http\Controllers\ApprovalWorkflowController::class);
         Route::resource('document-types', \App\Http\Controllers\DocumentTypeController::class);
     });
@@ -673,7 +695,7 @@ Route::middleware('auth')->group(function () {
     // ====================================================
     // MODUL STOCK OPNAME (AUDIT PERSEDIAAN)
     // ====================================================
-    Route::prefix('stock-opnames')->name('stock-opnames.')->group(function () {
+    Route::prefix('stock-opnames')->name('stock-opnames.')->middleware(['can:manage_gi'])->group(function () {
         Route::get('/', [App\Http\Controllers\StockOpnameController::class, 'index'])->name('index');
         Route::get('/create', [App\Http\Controllers\StockOpnameController::class, 'create'])->name('create');
         Route::post('/', [App\Http\Controllers\StockOpnameController::class, 'store'])->name('store');
@@ -707,7 +729,7 @@ Route::middleware('auth')->group(function () {
     /// ====================================================
     // MASTER KATEGORI ASET
     // ====================================================
-    Route::prefix('asset-categories')->name('asset-categories.')->group(function () {
+    Route::prefix('asset-categories')->name('asset-categories.')->middleware(['can:view_assets'])->group(function () {
 
         // Halaman Daftar Kategori
         Route::get('/', [\App\Http\Controllers\AssetCategoryController::class, 'index'])->name('index');

@@ -18,6 +18,10 @@ class RolePermissionSeeder extends Seeder
         // 2. DAFTARKAN SEMUA IZIN (PERMISSIONS) GRANULAR
         // ==========================================
         $permissions = [
+            // 🔥 TAMBAHAN: Hak Akses Master Data Perusahaan & Vendor 🔥
+            'view_companies',
+            'view_vendors',
+
             // Hak Akses PR (Purchase Requisition)
             'view_pr',
             'create_pr',
@@ -61,51 +65,59 @@ class RolePermissionSeeder extends Seeder
         // 3. BUAT ROLE & SINKRONISASI HAK AKSES
         // ==========================================
 
-        // A. ROLE STAFF (Bisa buat & edit PR sendiri)
+        // A. ROLE STAFF
         $roleStaff = Role::firstOrCreate(['name' => 'Staff']);
         $roleStaff->syncPermissions([
             'view_pr', 'create_pr', 'edit_own_pr'
         ]);
 
-        // B. ROLE SUPERVISOR (Approval Lapis 1)
+        // B. ROLE SUPERVISOR
         $roleSupervisor = Role::firstOrCreate(['name' => 'Supervisor']);
         $roleSupervisor->syncPermissions([
             'view_pr', 'approve_pr', 'view_reports'
         ]);
 
-        // C. ROLE MANAGER (Approval Lapis 2)
+        // C. ROLE MANAGER
         $roleManager = Role::firstOrCreate(['name' => 'Manager']);
         $roleManager->syncPermissions([
+            // Tambahkan view_companies & view_vendors
+            'view_companies', 'view_vendors',
             'view_pr', 'approve_pr', 'view_po', 'approve_po', 'view_reports'
         ]);
 
-        // D. ROLE DIREKTUR (Approval Final)
+        // D. ROLE DIREKTUR
         $roleDirektur = Role::firstOrCreate(['name' => 'Direktur']);
         $roleDirektur->syncPermissions([
+            // Tambahkan view_companies & view_vendors
+            'view_companies', 'view_vendors',
             'view_pr', 'view_po', 'approve_po', 'view_payments', 'view_reports'
         ]);
 
-        // E. ROLE PURCHASING (Bikin PO dari PR)
+        // E. ROLE PURCHASING
         $rolePurchasing = Role::firstOrCreate(['name' => 'Purchasing']);
         $rolePurchasing->syncPermissions([
+            // Tambahkan view_companies & view_vendors
+            'view_companies', 'view_vendors',
             'view_pr', 'view_po', 'create_po', 'manage_items', 'view_bills'
         ]);
 
-        // F. ROLE GUDANG (Terima & Keluar Barang)
+        // F. ROLE GUDANG
         $roleGudang = Role::firstOrCreate(['name' => 'Gudang']);
         $roleGudang->syncPermissions([
             'view_po', 'view_gr', 'create_gr', 'view_inventory', 'manage_gi', 'manage_items'
         ]);
 
-        // G. ROLE OPEX & FIXED ASSET (IT/GA)
+        // G. ROLE OPEX & FIXED ASSET
         $roleAsset = Role::firstOrCreate(['name' => 'Opex & Asset']);
         $roleAsset->syncPermissions([
             'view_assets', 'manage_assets', 'manage_opex', 'manage_items', 'view_inventory'
         ]);
 
-        // H. ROLE FINANCE (Tagihan & Pembayaran)
+        // H. ROLE FINANCE
         $roleFinance = Role::firstOrCreate(['name' => 'Finance']);
         $roleFinance->syncPermissions([
+            // Tambahkan view_companies & view_vendors
+            'view_companies', 'view_vendors',
             'view_po', 'view_gr', 'view_bills', 'view_invoices', 'manage_invoices', 'view_payments', 'manage_payments', 'view_reports'
         ]);
 
