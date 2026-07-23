@@ -9,7 +9,7 @@
 @endpush
 
 @section('content')
-<div class="container py-4">
+<div class="py-4 container-fluid">
 
     {{-- HEADER & EXPORT BUTTONS --}}
     <div class="mb-4 d-flex justify-content-between align-items-end">

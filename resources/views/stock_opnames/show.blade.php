@@ -36,57 +36,70 @@
 <div class="pb-5 container-fluid text-dark">
 
     {{-- ========================================================================= --}}
-    {{-- 1. LOGIKA STATUS & PERSETUJUAN (CLEAN CODE) --}}
+    {{-- 1. LOGIKA STATUS & PERSETUJUAN (BERDASARKAN TABEL STATUSES DB) --}}
     {{-- ========================================================================= --}}
     @php
         $hasApprovals = isset($opname->approvals) && $opname->approvals->count() > 0;
+
+        // Ambil data asli dari tabel statuses
         $statusSlug = optional($opname->status)->slug ?? 'draft';
         $statusName = optional($opname->status)->name ?? 'Draft / Menghitung';
+        $statusColor = optional($opname->status)->color ?? 'secondary';
+
         $pendingApproval = null;
         $canApprove = false;
 
-        // Ambil data antrean persetujuan jika ada
         if ($hasApprovals) {
-            $pendingApproval = $opname->approvals->where('status', 'pending')->sortBy('step_order')->first();
+            // Cari antrean yang BUKAN APPROVED dan BUKAN REJECTED
+            $pendingApproval = $opname->approvals->reject(function($app) {
+                $st = strtoupper($app->status ?? '');
+                return $st === 'APPROVED' || $st === 'REJECTED';
+            })->sortBy('step_order')->first();
 
-            // Paksa nama status UI untuk menyesuaikan antrean
-            if ($statusSlug === 'draft') {
-                if ($pendingApproval) {
-                    $statusSlug = 'pending_approval';
-                    $statusName = 'Menunggu Persetujuan';
-                } else {
-                    $statusSlug = 'approved';
-                    $statusName = 'Disetujui / Selesai';
-                }
+            $isRejected = $opname->approvals->contains(function($app) {
+                return strtoupper($app->status ?? '') === 'REJECTED';
+            });
+
+            // 🔥 MENCEGAH BUG CONTROLLER: Paksa Label UI Mengikuti Realitas Antrean Bawah 🔥
+            if ($isRejected) {
+                $statusSlug = 'rejected';
+                $statusName = 'Ditolak';
+                $statusColor = 'danger';
+            } elseif ($pendingApproval) {
+                $statusSlug = 'pending_approval';
+                $statusName = 'Menunggu Persetujuan';
+                $statusColor = 'warning';
+            } else {
+                $statusSlug = 'approved';
+                $statusName = 'Disetujui / Selesai';
+                $statusColor = 'success';
             }
 
-            // Cek Hak Akses Tombol Setujui/Tolak
+            // Pengecekan Hak Akses Tombol Setujui/Tolak (Super Admin Bypass)
             if ($pendingApproval && auth()->check()) {
-                $userRoles = auth()->user()->roles->pluck('id')->toArray();
-                if (in_array($pendingApproval->role_id, $userRoles) || auth()->user()->hasRole(['Super Administrator', 'Super Admin'])) {
+                $user = auth()->user();
+                $userRoles = $user->roles->pluck('id')->toArray();
+                $isSuperAdmin = $user->hasAnyRole(['Super Administrator', 'Super Admin']) || $user->id === 1;
+
+                if (in_array($pendingApproval->role_id, $userRoles) || $isSuperAdmin) {
                     $canApprove = true;
                 }
             }
         }
 
-        $badgeClass = match($statusSlug) {
-            'draft' => 'bg-secondary-subtle text-secondary border-secondary-subtle',
-            'pending_approval', 'pending' => 'bg-warning-subtle text-warning border-warning-subtle',
-            'approved' => 'bg-success-subtle text-success border-success-subtle',
-            'rejected' => 'bg-danger-subtle text-danger border-danger-subtle',
-            default => 'bg-light text-dark border'
-        };
+        // Gunakan warna asli dari database (kolom color)
+        $badgeClass = "bg-{$statusColor}-subtle text-{$statusColor} border-{$statusColor}-subtle";
     @endphp
 
     {{-- ========================================================================= --}}
     {{-- 2. HEADER HALAMAN & TOMBOL AKSI UTAMA (DIRAPIKAN) --}}
     {{-- ========================================================================= --}}
-    <div class="row align-items-center pb-3 mb-4 border-bottom gy-3">
+    <div class="pb-3 mb-4 row align-items-center border-bottom gy-3">
         <div class="col-xl-5 col-lg-5">
             <h4 class="mb-1 fw-bold text-dark d-flex align-items-center">
                 <i class="bi bi-file-earmark-check text-primary me-2 fs-3"></i> Detail Audit Stok
             </h4>
-            <div class="d-flex align-items-center gap-3 mt-2 flex-wrap">
+            <div class="flex-wrap gap-3 mt-2 d-flex align-items-center">
                 <span class="badge border px-3 py-2 rounded-pill {{ $badgeClass }}">
                     <i class="bi bi-circle-fill me-1" style="font-size: 0.6rem;"></i> {{ strtoupper($statusName) }}
                 </span>
@@ -97,9 +110,9 @@
         </div>
 
         <div class="col-xl-7 col-lg-7 text-lg-end">
-            <div class="d-flex gap-2 justify-content-lg-end flex-wrap align-items-center">
+            <div class="flex-wrap gap-2 d-flex justify-content-lg-end align-items-center">
                 {{-- Tombol Sekunder --}}
-                <a href="{{ route('stock-opnames.index') }}" class="btn btn-light border btn-action-rounded">
+                <a href="{{ route('stock-opnames.index') }}" class="border btn btn-light btn-action-rounded">
                     <i class="bi bi-arrow-left me-1"></i> Kembali
                 </a>
                 <a href="{{ route('stock-opnames.print', $opname->id) }}" target="_blank" class="btn btn-outline-dark btn-action-rounded">
@@ -111,22 +124,24 @@
 
                 {{-- Group Tombol Eksekutor (Hanya Tampil Jika DRAFT) --}}
                 @if(!$hasApprovals && ($statusSlug === 'draft' || empty($statusSlug)))
-                    <div class="border-start ms-1 ps-2 d-flex gap-2">
+                    <div class="gap-2 border-start ms-1 ps-2 d-flex">
                         <a href="{{ route('stock-opnames.edit', $opname->id) }}" class="btn btn-warning text-dark btn-action-rounded">
                             <i class="bi bi-pencil-square me-1"></i> Input Fisik
                         </a>
 
+                        {{-- Tombol Ajukan (Panggil fungsi confirmSubmit) --}}
                         <form action="{{ route('stock-opnames.submit-approval', $opname->id) }}" method="POST" id="formSubmitApproval" class="m-0">
                             @csrf
-                            <button type="button" onclick="if(confirm('Ajukan dokumen ini?')) document.getElementById('formSubmitApproval').submit();" class="btn btn-primary btn-action-rounded">
+                            <button type="button" onclick="confirmSubmit()" class="btn btn-primary btn-action-rounded">
                                 <i class="bi bi-send-check me-1"></i> Ajukan
                             </button>
                         </form>
 
+                        {{-- Tombol Batalkan / Hapus (Panggil fungsi confirmCancel) --}}
                         <form action="{{ route('stock-opnames.destroy', $opname->id) }}" method="POST" id="formCancelOpname" class="m-0">
                             @csrf
                             @method('DELETE')
-                            <button type="button" onclick="if(confirm('Batalkan sesi ini?')) document.getElementById('formCancelOpname').submit();" class="btn btn-outline-danger btn-action-rounded btn-icon-only" title="Batalkan Sesi">
+                            <button type="button" onclick="confirmCancel()" class="btn btn-outline-danger btn-action-rounded btn-icon-only" title="Batalkan Sesi">
                                 <i class="bi bi-trash"></i>
                             </button>
                         </form>
@@ -135,20 +150,23 @@
 
                 {{-- Group Tombol Approver (Hanya Tampil Jika Ada Antrean & User Berwenang) --}}
                 @if($canApprove)
-                    <div class="border-start ms-1 ps-2 d-flex gap-2">
-                        <div class="d-flex gap-2">
+                    <div class="gap-2 border-start ms-1 ps-2 d-flex">
+                        <div class="gap-2 d-flex">
                         {{-- FORM SETUJUI (Menggunakan Animasi SweetAlert) --}}
+                        {{-- FORM SETUJUI --}}
                         <form action="{{ route('stock-opnames.approve', $opname->id) }}" method="POST" id="form-approve" class="m-0">
                             @csrf
-                            <button type="button" class="btn btn-success btn-action-rounded shadow-sm" onclick="confirmApproval()">
+                            {{-- Tambahkan parameter 'approve' ke dalam fungsi --}}
+                            <button type="button" class="shadow-sm btn btn-success btn-action-rounded" onclick="triggerSweetAlert('approve')">
                                 <i class="bi bi-check-circle me-1"></i> Setujui
                             </button>
                         </form>
 
-                        {{-- FORM TOLAK (Menggunakan Animasi SweetAlert) --}}
+                        {{-- FORM TOLAK --}}
                         <form action="{{ route('stock-opnames.reject', $opname->id) }}" method="POST" id="form-reject" class="m-0">
                             @csrf
-                            <button type="button" class="btn btn-danger btn-action-rounded shadow-sm" onclick="confirmRejection()">
+                            {{-- Tambahkan parameter 'reject' ke dalam fungsi --}}
+                            <button type="button" class="shadow-sm btn btn-danger btn-action-rounded" onclick="triggerSweetAlert('reject')">
                                 <i class="bi bi-x-circle me-1"></i> Tolak
                             </button>
                         </form>
@@ -207,7 +225,7 @@
 
                     @if($opname->notes)
                         <div class="pt-3 mt-3 border-top">
-                            <label class="text-muted small fw-bold mb-2 d-block">Instruksi Auditor:</label>
+                            <label class="mb-2 text-muted small fw-bold d-block">Instruksi Auditor:</label>
                             <div class="p-2 border bg-light rounded-3 small fst-italic text-secondary">{{ $opname->notes }}</div>
                         </div>
                     @endif
@@ -320,7 +338,7 @@
     <div class="mb-4 overflow-hidden border-0 shadow-sm card rounded-4">
         <div class="py-3 bg-white card-header border-bottom d-flex justify-content-between align-items-center">
             <h6 class="mb-0 fw-bold text-dark"><i class="bi bi-table me-2 text-primary"></i>Rincian Hasil Audit Persediaan Gudang</h6>
-            <span class="border badge bg-light text-dark shadow-sm">Total: {{ $opname->items->count() }} Jenis Barang</span>
+            <span class="border shadow-sm badge bg-light text-dark">Total: {{ $opname->items->count() }} Jenis Barang</span>
         </div>
         <div class="p-0 card-body">
             <div class="table-responsive">
@@ -361,7 +379,7 @@
                                 </td>
                                 <td class="text-center fw-bolder">
                                     @if($vQty == 0)
-                                        <span class="border badge bg-success-subtle text-success border-success-subtle px-2 py-1"><i class="bi bi-check-circle me-1"></i> Cocok</span>
+                                        <span class="px-2 py-1 border badge bg-success-subtle text-success border-success-subtle"><i class="bi bi-check-circle me-1"></i> Cocok</span>
                                     @elseif($vQty < 0)
                                         <span class="text-danger"><i class="bi bi-arrow-down-right"></i> {{ $vQty }} <span class="small">{{ $item->base_uom }}</span></span>
                                     @else
@@ -419,7 +437,7 @@
                     @if(isset($opname->attachments) && $opname->attachments->count() > 0)
                         <div class="gap-2 d-flex flex-column">
                             @foreach($opname->attachments as $file)
-                                <div class="p-2 px-3 border rounded-pill bg-light d-flex justify-content-between align-items-center shadow-sm">
+                                <div class="p-2 px-3 border shadow-sm rounded-pill bg-light d-flex justify-content-between align-items-center">
                                     <a href="{{ asset('storage/' . $file->file_path) }}" target="_blank" class="text-decoration-none fw-bold text-dark text-truncate small" style="max-width: 75%;">
                                         <i class="bi bi-file-earmark-pdf-fill text-danger me-2 fs-5"></i> {{ $file->file_name }}
                                     </a>
@@ -459,16 +477,18 @@
                                 <tbody>
                                     @foreach($opname->approvals as $app)
                                         <tr>
-                                            <td class="ps-2"><span class="border badge bg-light text-dark rounded-circle px-2 py-1 shadow-sm">{{ $app->step_order ?? 1 }}</span></td>
+                                            <td class="ps-2"><span class="px-2 py-1 border shadow-sm badge bg-light text-dark rounded-circle">{{ $app->step_order ?? 1 }}</span></td>
                                             <td class="fw-bold text-dark">{{ optional($app->role)->name ?? 'Approver' }}</td>
                                             <td>{{ optional($app->approver)->name ?? '-' }}</td>
                                             <td>
-                                                @if($app->status === 'APPROVED')
-                                                    <span class="border badge bg-success-subtle text-success border-success-subtle px-2 py-1"><i class="bi bi-check-lg me-1"></i> Disetujui</span>
-                                                @elseif($app->status === 'REJECTED')
-                                                    <span class="border badge bg-danger-subtle text-danger border-danger-subtle px-2 py-1"><i class="bi bi-x-lg me-1"></i> Ditolak</span>
+                                                {{-- 🔥 PERBAIKAN CASE SENSITIVITY STATUS 🔥 --}}
+                                                @php $appStatus = strtoupper($app->status ?? ''); @endphp
+                                                @if($appStatus === 'APPROVED')
+                                                    <span class="px-2 py-1 border badge bg-success-subtle text-success border-success-subtle"><i class="bi bi-check-lg me-1"></i> Disetujui</span>
+                                                @elseif($appStatus === 'REJECTED')
+                                                    <span class="px-2 py-1 border badge bg-danger-subtle text-danger border-danger-subtle"><i class="bi bi-x-lg me-1"></i> Ditolak</span>
                                                 @else
-                                                    <span class="border badge bg-warning-subtle text-warning border-warning-subtle px-2 py-1"><i class="bi bi-clock me-1"></i> Menunggu</span>
+                                                    <span class="px-2 py-1 border badge bg-warning-subtle text-warning border-warning-subtle"><i class="bi bi-clock me-1"></i> Menunggu</span>
                                                 @endif
                                             </td>
                                             <td class="small text-muted">{{ $app->approved_at ? \Carbon\Carbon::parse($app->approved_at)->format('d/m/Y H:i') : '-' }}</td>
@@ -492,49 +512,76 @@
 
 
 @push('scripts')
+<!-- Panggil Library SweetAlert2 -->
 <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+
 <script>
-    function confirmApproval() {
+    // Fungsi Tunggal Anti-Gagal untuk Semua Tombol Aksi
+    function triggerSweetAlert(action) {
+        let titleText = '';
+        let descText = '';
+        let iconType = '';
+        let btnColor = '';
+        let btnText = '';
+        let formId = '';
+
+        // Tentukan pesan berdasarkan tombol yang diklik
+        if (action === 'approve') {
+            titleText = 'Setujui Dokumen?';
+            descText = 'Apakah Anda yakin ingin menyetujui dokumen Audit Stok ini?';
+            iconType = 'question';
+            btnColor = '#198754'; // Hijau
+            btnText = '<i class="bi bi-check-circle me-1"></i> Ya, Setujui';
+            formId = 'form-approve';
+        } else if (action === 'reject') {
+            titleText = 'Tolak Dokumen?';
+            descText = 'Apakah Anda yakin ingin menolak dokumen ini? Proses akan dihentikan.';
+            iconType = 'warning';
+            btnColor = '#dc3545'; // Merah
+            btnText = '<i class="bi bi-x-circle me-1"></i> Ya, Tolak';
+            formId = 'form-reject';
+        }
+
+        // Tampilkan SweetAlert
         Swal.fire({
-            title: 'Setujui Dokumen?',
-            text: "Apakah Anda yakin ingin menyetujui dokumen Audit Stok ini?",
-            icon: 'question',
+            title: titleText,
+            text: descText,
+            icon: iconType,
             showCancelButton: true,
-            confirmButtonColor: '#198754',
+            confirmButtonColor: btnColor,
             cancelButtonColor: '#6c757d',
-            confirmButtonText: '<i class="bi bi-check-circle me-1"></i> Ya, Setujui',
+            confirmButtonText: btnText,
             cancelButtonText: 'Batal',
             reverseButtons: true,
             customClass: {
-                confirmButton: 'rounded-pill px-4',
-                cancelButton: 'rounded-pill px-4'
+                confirmButton: 'rounded-pill px-4 shadow-sm m-1',
+                cancelButton: 'rounded-pill px-4 m-1'
             }
         }).then((result) => {
             if (result.isConfirmed) {
-                document.getElementById('form-approve').submit();
+                // Submit form sesuai ID yang dipilih
+                document.getElementById(formId).submit();
             }
         });
     }
 
-    function confirmRejection() {
+    // Fungsi untuk tombol Ajukan dan Batalkan (Jika ada)
+    function confirmSubmit() {
+        triggerAction('formSubmitApproval', 'Ajukan Dokumen?', 'Dokumen akan dikunci dan diajukan.', 'info', '#0d6efd', 'Ya, Ajukan');
+    }
+
+    function confirmCancel() {
+        triggerAction('formCancelOpname', 'Batalkan Sesi?', 'Data audit akan dihapus permanen!', 'warning', '#dc3545', 'Ya, Hapus');
+    }
+
+    function triggerAction(formId, title, text, icon, color, btnText) {
         Swal.fire({
-            title: 'Tolak Dokumen?',
-            text: "Apakah Anda yakin ingin menolak dokumen ini? Proses akan dihentikan.",
-            icon: 'warning',
-            showCancelButton: true,
-            confirmButtonColor: '#dc3545',
-            cancelButtonColor: '#6c757d',
-            confirmButtonText: '<i class="bi bi-x-circle me-1"></i> Ya, Tolak',
-            cancelButtonText: 'Batal',
-            reverseButtons: true,
-            customClass: {
-                confirmButton: 'rounded-pill px-4',
-                cancelButton: 'rounded-pill px-4'
-            }
+            title: title, text: text, icon: icon, showCancelButton: true,
+            confirmButtonColor: color, cancelButtonColor: '#6c757d',
+            confirmButtonText: btnText, cancelButtonText: 'Batal', reverseButtons: true,
+            customClass: { confirmButton: 'rounded-pill px-4 shadow-sm m-1', cancelButton: 'rounded-pill px-4 m-1' }
         }).then((result) => {
-            if (result.isConfirmed) {
-                document.getElementById('form-reject').submit();
-            }
+            if (result.isConfirmed) document.getElementById(formId).submit();
         });
     }
 </script>
