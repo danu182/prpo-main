@@ -11,12 +11,7 @@ class Company extends Model
     use HasRoles; // Dari Spatie Permission
 
 
-    protected $fillable = [
-        'code',
-        'name',
-        'is_head_office',
-        'address',
-    ];
+    protected $guarded = ['id'];
 
 
     public function company()

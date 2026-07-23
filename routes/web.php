@@ -439,23 +439,57 @@ Route::middleware('auth')->group(function () {
     Route::prefix('vendors')->name('vendors.')->middleware(['can:view_vendors'])->group(function () {
 
         // 1. Halaman Utama & Pencarian
-        Route::get('/', [VendorController::class, 'index'])->name('index');
+        Route::get('/', [\App\Http\Controllers\VendorController::class, 'index'])->name('index');
 
         // 2. Tambah Vendor Baru
-        Route::get('/create', [VendorController::class, 'create'])->name('create');
-        Route::post('/', [VendorController::class, 'store'])->name('store');
+        Route::get('/create', [\App\Http\Controllers\VendorController::class, 'create'])->name('create');
+        Route::post('/', [\App\Http\Controllers\VendorController::class, 'store'])->name('store');
 
         // 3. Edit Data Vendor
-        Route::get('/{vendor}/edit', [VendorController::class, 'edit'])->name('edit');
-        Route::put('/{vendor}', [VendorController::class, 'update'])->name('update');
+        Route::get('/{vendor}/edit', [\App\Http\Controllers\VendorController::class, 'edit'])->name('edit');
+        Route::put('/{vendor}', [\App\Http\Controllers\VendorController::class, 'update'])->name('update');
 
         // 4. Fitur Khusus: Aktif/Nonaktifkan Vendor (Toggle)
-        Route::patch('/{vendor}/toggle-status', [VendorController::class, 'toggleStatus'])->name('toggle_status');
+        // Karena sudah di dalam grup name('vendors.'), nama route otomatis menjadi 'vendors.toggle_status'
+        Route::patch('/{vendor}/toggle-status', [\App\Http\Controllers\VendorController::class, 'toggleStatus'])->name('toggle_status');
 
-        // Jika Komandan ingin menggunakan Resource Controller agar lebih ringkas, bisa pakai ini:
-        // Route::resource('/', VendorController::class)->except(['show', 'destroy'])->parameters(['' => 'vendor']);
     });
 
+
+    // MODUL perusahaan  (MASTER perusahaan)
+    Route::prefix('companies')->name('companies.')->middleware(['can:view_companies'])->group(function () {
+        // 1. Halaman Utama & Pencarian
+        Route::get('/', [\App\Http\Controllers\CompanyController::class, 'index'])->name('index');
+
+        // 2. Tambah perusahaan Baru
+        Route::get('/create', [\App\Http\Controllers\CompanyController::class, 'create'])->name('create');
+        Route::post('/', [\App\Http\Controllers\CompanyController::class, 'store'])->name('store');
+
+        // 3. Detail Perusahaan (SHOW)
+        Route::get('/{company}', [\App\Http\Controllers\CompanyController::class, 'show'])->name('show');
+
+        // 4. Edit Data Perusahaan
+        Route::get('/{company}/edit', [\App\Http\Controllers\CompanyController::class, 'edit'])->name('edit');
+        Route::put('/{company}', [\App\Http\Controllers\CompanyController::class, 'update'])->name('update');
+    });
+
+
+    // ====================================================
+    // MASTER WAREHOUSE (GUDANG)
+    // ====================================================
+    Route::prefix('warehouses')->name('warehouses.')->middleware(['can:view_inventory'])->group(function () {
+        Route::get('/', [\App\Http\Controllers\WarehouseController::class, 'index'])->name('index');
+        Route::get('/create', [\App\Http\Controllers\WarehouseController::class, 'create'])->name('create');
+        Route::post('/', [\App\Http\Controllers\WarehouseController::class, 'store'])->name('store');
+
+        // 🔥 RUTE EDIT HARUS DI ATAS SHOW
+        Route::get('/{warehouse}/edit', [\App\Http\Controllers\WarehouseController::class, 'edit'])->name('edit');
+        Route::put('/{warehouse}', [\App\Http\Controllers\WarehouseController::class, 'update'])->name('update');
+        Route::patch('/{warehouse}/toggle-status', [\App\Http\Controllers\WarehouseController::class, 'toggleStatus'])->name('toggle_status');
+
+        // 🔥 RUTE SHOW DI PALING BAWAH KARENA DIA LUBANG HITAM (CATCH-ALL)
+        Route::get('/{warehouse}', [\App\Http\Controllers\WarehouseController::class, 'show'])->name('show');
+    });
 
 
    // ====================================================

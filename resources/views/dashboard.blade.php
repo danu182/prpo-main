@@ -10,7 +10,7 @@
 @endpush
 
 @section('content')
-<div class="container py-4">
+<div class="px-0 container-fluid">
 
     {{-- ============================================================== --}}
     {{-- ZONA VVIP: HANYA BISA DILIHAT OLEH BOS & FINANCE               --}}

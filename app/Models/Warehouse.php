@@ -6,7 +6,13 @@ use Illuminate\Database\Eloquent\Model;
 
 class Warehouse extends Model
 {
-    protected $fillable = ['code', 'name', 'description'];
+    protected $guarded = ['id'];
+
+    // Pastikan is_active dibaca sebagai true/false
+    protected $casts = [
+        'is_active' => 'boolean',
+    ];
+
 
     public function inventoryStocks()
     {

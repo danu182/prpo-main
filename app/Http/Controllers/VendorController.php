@@ -36,9 +36,7 @@ class VendorController extends Controller
     {
         $validated = $request->validate([
             'name'                => 'required|string|max:255',
-            'email'               => 'nullable|email|max:255',
             'phone'               => 'nullable|string|max:50',
-            'tax_id'              => 'nullable|string|max:100',
             'pic_name'            => 'nullable|string|max:255',
             'pic_phone'           => 'nullable|string|max:50',
             'bank_name'           => 'nullable|string|max:100',
@@ -46,8 +44,9 @@ class VendorController extends Controller
             'bank_account_name'   => 'nullable|string|max:255',
             'payment_terms_days'  => 'required|integer|min:0',
             'address'             => 'nullable|string',
-            'email'  => 'nullable|email|max:255|unique:vendors,email',
-            'tax_id' => 'nullable|string|max:100|unique:vendors,tax_id', // NPWP tidak boleh kembar
+            // 🔥 Cukup tulis satu kali saja di bawah ini, gabungkan rules-nya:
+            'email'               => 'nullable|email|max:255|unique:vendors,email',
+            'tax_id'              => 'nullable|string|max:100|unique:vendors,tax_id',
         ]);
 
         try {

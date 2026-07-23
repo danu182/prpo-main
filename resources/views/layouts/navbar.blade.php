@@ -28,24 +28,55 @@
                     </a>
                 </li>
 
-                {{-- 2. PURCHASING DROPDOWN --}}
-                @canany(['view_pr', 'view_po'])
+                {{-- 2. MASTER DATA --}}
+                @canany(['view_companies', 'view_vendors', 'view_inventory', 'manage_items'])
                 <li class="nav-item dropdown">
-                    <a class="nav-link dropdown-toggle px-3 {{ request()->routeIs('pr.*', 'po.*') ? 'active bg-primary-subtle text-primary rounded-pill' : 'text-secondary' }}" href="#" role="button" data-bs-toggle="dropdown" aria-expanded="false">
-                        Purchasing
+                    <a class="nav-link dropdown-toggle px-3 {{ request()->routeIs('companies.*', 'vendors.*', 'warehouses.*', 'items.*', 'uoms.*') ? 'active bg-primary-subtle text-primary rounded-pill' : 'text-secondary' }}" href="#" role="button" data-bs-toggle="dropdown" aria-expanded="false">
+                        Master Data
                     </a>
-                    <ul class="mt-2 border-0 shadow-sm dropdown-menu rounded-4">
-                        @can('view_pr')
+                    <ul class="p-2 mt-2 border-0 shadow-lg dropdown-menu rounded-4" style="min-width: 260px;">
+                        @can('manage_items')
                         <li>
-                            <a class="dropdown-item py-2 {{ request()->routeIs('pr.*') ? 'active' : '' }}" href="{{ route('pr.index') }}">
-                                <i class="bi bi-file-earmark-text me-2 text-primary"></i> Purchase Requisitions
+                            <a class="dropdown-item py-2 px-3 rounded-3 d-flex align-items-center {{ request()->routeIs('items.*') ? 'active bg-primary-subtle text-primary fw-bold' : 'text-secondary' }}" href="{{ route('items.index') }}">
+                                <i class="bi bi-box-seam fs-6 me-3 text-primary"></i>
+                                <span>Master Barang & Jasa</span>
                             </a>
                         </li>
                         @endcan
-                        @can('view_po')
+
+                        @can('view_inventory')
                         <li>
-                            <a class="dropdown-item py-2 {{ request()->routeIs('po.*') ? 'active' : '' }}" href="{{ route('po.index') }}">
-                                <i class="bi bi-cart2 me-2 text-success"></i> Purchase Orders
+                            <a class="dropdown-item py-2 px-3 rounded-3 d-flex align-items-center {{ request()->routeIs('uoms.*') ? 'active bg-primary-subtle text-primary fw-bold' : 'text-secondary' }}" href="{{ route('uoms.index') }}">
+                                <i class="bi bi-aspect-ratio fs-6 me-3 text-warning"></i>
+                                <span>Master Satuan (UOM)</span>
+                            </a>
+                        </li>
+                        <li><hr class="dropdown-divider my-2"></li>
+                        @endcan
+
+                        @can('view_companies')
+                        <li>
+                            <a class="dropdown-item py-2 px-3 rounded-3 d-flex align-items-center {{ request()->routeIs('companies.*') ? 'active bg-primary-subtle text-primary fw-bold' : 'text-secondary' }}" href="{{ route('companies.index') }}">
+                                <i class="bi bi-buildings fs-6 me-3 text-info"></i>
+                                <span>Master Perusahaan (PT)</span>
+                            </a>
+                        </li>
+                        @endcan
+
+                        @can('view_vendors')
+                        <li>
+                            <a class="dropdown-item py-2 px-3 rounded-3 d-flex align-items-center {{ request()->routeIs('vendors.*') ? 'active bg-primary-subtle text-primary fw-bold' : 'text-secondary' }}" href="{{ route('vendors.index') }}">
+                                <i class="bi bi-shop fs-6 me-3 text-success"></i>
+                                <span>Master Vendor / Supplier</span>
+                            </a>
+                        </li>
+                        @endcan
+
+                        @can('view_inventory')
+                        <li>
+                            <a class="dropdown-item py-2 px-3 rounded-3 d-flex align-items-center {{ request()->routeIs('warehouses.*') ? 'active bg-primary-subtle text-primary fw-bold' : 'text-secondary' }}" href="{{ route('warehouses.index') }}">
+                                <i class="bi bi-house-door fs-6 me-3 text-secondary"></i>
+                                <span>Master Gudang</span>
                             </a>
                         </li>
                         @endcan
@@ -53,7 +84,34 @@
                 </li>
                 @endcanany
 
-                {{-- 3. RECEIVING --}}
+                {{-- 3. PURCHASING --}}
+                @canany(['view_pr', 'view_po'])
+                <li class="nav-item dropdown">
+                    <a class="nav-link dropdown-toggle px-3 {{ request()->routeIs('pr.*', 'po.*') ? 'active bg-primary-subtle text-primary rounded-pill' : 'text-secondary' }}" href="#" role="button" data-bs-toggle="dropdown" aria-expanded="false">
+                        Purchasing
+                    </a>
+                    <ul class="p-2 mt-2 border-0 shadow-lg dropdown-menu rounded-4" style="min-width: 240px;">
+                        @can('view_pr')
+                        <li>
+                            <a class="dropdown-item py-2 px-3 rounded-3 d-flex align-items-center {{ request()->routeIs('pr.*') ? 'active bg-primary-subtle text-primary fw-bold' : 'text-secondary' }}" href="{{ route('pr.index') }}">
+                                <i class="bi bi-file-earmark-text fs-6 me-3 text-primary"></i>
+                                <span>Purchase Requisitions</span>
+                            </a>
+                        </li>
+                        @endcan
+                        @can('view_po')
+                        <li>
+                            <a class="dropdown-item py-2 px-3 rounded-3 d-flex align-items-center {{ request()->routeIs('po.*') ? 'active bg-primary-subtle text-primary fw-bold' : 'text-secondary' }}" href="{{ route('po.index') }}">
+                                <i class="bi bi-cart2 fs-6 me-3 text-success"></i>
+                                <span>Purchase Orders</span>
+                            </a>
+                        </li>
+                        @endcan
+                    </ul>
+                </li>
+                @endcanany
+
+                {{-- 4. RECEIVING --}}
                 @can('view_gr')
                 <li class="nav-item">
                     <a class="nav-link px-3 {{ request()->routeIs('gr.*') ? 'active bg-primary-subtle text-primary rounded-pill' : 'text-secondary' }}" href="{{ route('gr.index') }}">
@@ -62,58 +120,56 @@
                 </li>
                 @endcan
 
-                {{-- 4. WAREHOUSE DROPDOWN --}}
-                @canany(['view_inventory', 'manage_gi', 'view_assets', 'manage_items'])
+                {{-- 5. WAREHOUSE & LOGISTIK (MURNI STOK & PERGERAKAN LOGISTIK) --}}
+                @canany(['view_inventory', 'manage_gi'])
                 <li class="nav-item dropdown">
-                    {{-- 🔥 PERBAIKAN: Menambahkan 'stock-opnames.*' ke dalam route check agar tab Warehouse menyala 🔥 --}}
-                    <a class="nav-link dropdown-toggle px-3 {{ request()->routeIs('asset-capitalizations.*', 'assets.*', 'goods-issues.*', 'goods-issue-returns.*', 'stock-transfers.*', 'employee-inventories.*', 'stock-adjustments.*', 'stock-opnames.*', 'fixed-assets.*', 'items.*', 'inventory.*', 'rtv.*') ? 'active bg-primary-subtle text-primary rounded-pill' : 'text-secondary' }}" href="#" role="button" data-bs-toggle="dropdown" aria-expanded="false">
+                    <a class="nav-link dropdown-toggle px-3 {{ request()->routeIs('goods-issues.*', 'goods-issue-returns.*', 'stock-transfers.*', 'employee-inventories.*', 'stock-adjustments.*', 'stock-opnames.*', 'inventory.*', 'rtv.*') ? 'active bg-primary-subtle text-primary rounded-pill' : 'text-secondary' }}" href="#" role="button" data-bs-toggle="dropdown" aria-expanded="false">
                         Warehouse
                     </a>
-                    <ul class="mt-2 border-0 shadow-sm dropdown-menu rounded-4" style="min-width: 280px;">
+                    <ul class="p-2 mt-2 border-0 shadow-lg dropdown-menu rounded-4" style="min-width: 260px;">
                         @can('view_inventory')
                         <li>
-                            <a class="dropdown-item py-2 {{ request()->routeIs('inventory.*') ? 'active' : '' }}" href="{{ route('inventory.index') }}">
-                                <i class="bi bi-boxes me-2 text-primary"></i> Master Stok Barang
+                            <a class="dropdown-item py-2 px-3 rounded-3 d-flex align-items-center {{ request()->routeIs('inventory.*') ? 'active bg-primary-subtle text-primary fw-bold' : 'text-secondary' }}" href="{{ route('inventory.index') }}">
+                                <i class="bi bi-boxes fs-6 me-3 text-primary"></i>
+                                <span>Ringkasan Stok Barang</span>
                             </a>
                         </li>
-                        <li><hr class="dropdown-divider"></li>
+                        <li><hr class="dropdown-divider my-2"></li>
                         @endcan
 
                         @can('manage_gi')
-                        <li><h6 class="opacity-50 dropdown-header text-uppercase small fw-bold">Operasional Gudang</h6></li>
-                        <li><a class="dropdown-item py-2 {{ request()->routeIs('goods-issues.*') ? 'active' : '' }}" href="{{ route('goods-issues.index') }}"><i class="bi bi-box-arrow-up text-danger me-2"></i> Pengeluaran Barang</a></li>
-                        <li><a class="dropdown-item py-2 {{ request()->routeIs('stock-transfers.*') ? 'active' : '' }}" href="{{ route('stock-transfers.index') }}"><i class="bi bi-truck text-primary me-2"></i> Mutasi Antar Gudang</a></li>
-                        <li><a class="dropdown-item py-2 {{ request()->routeIs('goods-issue-returns.*') ? 'active' : '' }}" href="{{ route('goods-issue-returns.index') }}"><i class="bi bi-arrow-return-left text-warning me-2"></i> Retur Barang (Masuk)</a></li>
-                        <li><a class="dropdown-item py-2 {{ request()->routeIs('rtv.*') ? 'active' : '' }}" href="{{ route('rtv.index') }}"><i class="bi bi-truck-flatbed text-danger me-2"></i> Retur ke Vendor (RTV)</a></li>
-                        <li><a class="dropdown-item py-2 {{ request()->routeIs('employee-inventories.*') ? 'active' : '' }}" href="{{ route('employee-inventories.index') }}"><i class="bi bi-person-badge text-info me-2"></i> Inventaris Karyawan</a></li>
-
-                        {{-- 🔥 PERBAIKAN: Memisahkan Penyesuaian Stok dan Stock Opname 🔥 --}}
-                        <li><a class="dropdown-item py-2 {{ request()->routeIs('stock-adjustments.*') ? 'active' : '' }}" href="{{ route('stock-adjustments.index') }}"><i class="bi bi-sliders text-success me-2"></i> Penyesuaian Stok</a></li>
-                        <li><a class="dropdown-item py-2 {{ request()->routeIs('stock-opnames.*') ? 'active' : '' }}" href="{{ route('stock-opnames.index') }}"><i class="bi bi-ui-checks-grid text-warning me-2"></i> Audit & Stock Opname</a></li>
-
-                        <li><hr class="dropdown-divider"></li>
-                        @endcan
-
-                        @can('view_assets')
-                        <li><h6 class="opacity-50 dropdown-header text-uppercase small fw-bold">Manajemen Aset</h6></li>
-                        <li><a class="dropdown-item py-2 {{ request()->routeIs('fixed-assets.master_list') ? 'active' : '' }}" href="{{ route('fixed-assets.master_list') }}"><i class="bi bi-server text-primary me-2"></i> Master Data Aset</a></li>
-                        <li><a class="dropdown-item py-2 {{ request()->routeIs('fixed-assets.transactions') ? 'active' : '' }}" href="{{ route('fixed-assets.transactions') }}"><i class="bi bi-arrow-left-right text-danger me-2"></i> Transaksi & Retur Aset</a></li>
-                        <li><a class="dropdown-item py-2 {{ request()->routeIs('asset-capitalizations.*') ? 'active' : '' }}" href="{{ route('asset-capitalizations.index') }}"><i class="bi bi-magic text-warning me-2"></i> Pengakuan Aset (Capitalization)</a></li>
-                        <li><a class="dropdown-item py-2 {{ request()->routeIs('fixed-assets.index') ? 'active' : '' }}" href="{{ route('fixed-assets.index') }}"><i class="bi bi-cloud-arrow-up text-info me-2"></i> Registrasi / Import Aset</a></li>
-                        <li><a class="dropdown-item py-2 {{ request()->routeIs('fixed-assets.import_history') ? 'active' : '' }}" href="{{ route('fixed-assets.import_history') }}"><i class="bi bi-clock-history text-secondary me-2"></i> Riwayat Import & Label</a></li>
-                        <li><a class="dropdown-item py-2 {{ request()->routeIs('fixed-assets.hibah_history') ? 'active' : '' }}" href="{{ route('fixed-assets.hibah_history') }}"><i class="bi bi-gift text-success me-2"></i> Riwayat Hibah</a></li>
-                        <li><hr class="dropdown-divider"></li>
-                        @endcan
-
-                        @can('manage_items')
-                        <li><h6 class="opacity-50 dropdown-header text-uppercase small fw-bold">Katalog Data</h6></li>
-                        <li><a class="dropdown-item py-2 {{ request()->routeIs('items.*') ? 'active' : '' }}" href="{{ route('items.index') }}"><i class="bi bi-box text-secondary me-2"></i> Master Barang & Jasa</a></li>
+                        <li><h6 class="opacity-50 dropdown-header text-uppercase small fw-bold px-3 pt-1">Sirkulasi Barang</h6></li>
+                        <li><a class="dropdown-item py-2 px-3 rounded-3 d-flex align-items-center {{ request()->routeIs('goods-issues.*') ? 'active bg-primary-subtle text-primary fw-bold' : 'text-secondary' }}" href="{{ route('goods-issues.index') }}"><i class="bi bi-box-arrow-up fs-6 me-3 text-danger"></i> Pengeluaran Barang</a></li>
+                        <li><a class="dropdown-item py-2 px-3 rounded-3 d-flex align-items-center {{ request()->routeIs('stock-transfers.*') ? 'active bg-primary-subtle text-primary fw-bold' : 'text-secondary' }}" href="{{ route('stock-transfers.index') }}"><i class="bi bi-truck fs-6 me-3 text-primary"></i> Mutasi Antar Gudang</a></li>
+                        <li><a class="dropdown-item py-2 px-3 rounded-3 d-flex align-items-center {{ request()->routeIs('goods-issue-returns.*') ? 'active bg-primary-subtle text-primary fw-bold' : 'text-secondary' }}" href="{{ route('goods-issue-returns.index') }}"><i class="bi bi-arrow-return-left fs-6 me-3 text-warning"></i> Retur Barang (Masuk)</a></li>
+                        <li><a class="dropdown-item py-2 px-3 rounded-3 d-flex align-items-center {{ request()->routeIs('rtv.*') ? 'active bg-primary-subtle text-primary fw-bold' : 'text-secondary' }}" href="{{ route('rtv.index') }}"><i class="bi bi-truck-flatbed fs-6 me-3 text-danger"></i> Retur ke Vendor (RTV)</a></li>
+                        <li><a class="dropdown-item py-2 px-3 rounded-3 d-flex align-items-center {{ request()->routeIs('employee-inventories.*') ? 'active bg-primary-subtle text-primary fw-bold' : 'text-secondary' }}" href="{{ route('employee-inventories.index') }}"><i class="bi bi-person-badge fs-6 me-3 text-info"></i> Inventaris Karyawan</a></li>
+                        <li><a class="dropdown-item py-2 px-3 rounded-3 d-flex align-items-center {{ request()->routeIs('stock-adjustments.*') ? 'active bg-primary-subtle text-primary fw-bold' : 'text-secondary' }}" href="{{ route('stock-adjustments.index') }}"><i class="bi bi-sliders fs-6 me-3 text-success"></i> Penyesuaian Stok</a></li>
+                        <li><a class="dropdown-item py-2 px-3 rounded-3 d-flex align-items-center {{ request()->routeIs('stock-opnames.*') ? 'active bg-primary-subtle text-primary fw-bold' : 'text-secondary' }}" href="{{ route('stock-opnames.index') }}"><i class="bi bi-ui-checks-grid fs-6 me-3 text-warning"></i> Audit & Stock Opname</a></li>
                         @endcan
                     </ul>
                 </li>
                 @endcanany
 
-                {{-- 5. FINANCE --}}
+                {{-- 6. FIXED ASSETS (TAB MENU TERPISAH KHUSUS MANAJEMEN ASET) --}}
+                @can('view_assets')
+                <li class="nav-item dropdown">
+                    <a class="nav-link dropdown-toggle px-3 {{ request()->routeIs('fixed-assets.*', 'asset-capitalizations.*', 'assets.*') ? 'active bg-primary-subtle text-primary rounded-pill' : 'text-secondary' }}" href="#" role="button" data-bs-toggle="dropdown" aria-expanded="false">
+                        Fixed Assets
+                    </a>
+                    <ul class="p-2 mt-2 border-0 shadow-lg dropdown-menu rounded-4" style="min-width: 270px;">
+                        <li><a class="dropdown-item py-2 px-3 rounded-3 d-flex align-items-center {{ request()->routeIs('fixed-assets.master_list') ? 'active bg-primary-subtle text-primary fw-bold' : 'text-secondary' }}" href="{{ route('fixed-assets.master_list') }}"><i class="bi bi-server fs-6 me-3 text-primary"></i> Master Data Aset Aktif</a></li>
+                        <li><a class="dropdown-item py-2 px-3 rounded-3 d-flex align-items-center {{ request()->routeIs('fixed-assets.transactions') ? 'active bg-primary-subtle text-primary fw-bold' : 'text-secondary' }}" href="{{ route('fixed-assets.transactions') }}"><i class="bi bi-arrow-left-right fs-6 me-3 text-danger"></i> Transaksi & Retur Aset</a></li>
+                        <li><a class="dropdown-item py-2 px-3 rounded-3 d-flex align-items-center {{ request()->routeIs('asset-capitalizations.*') ? 'active bg-primary-subtle text-primary fw-bold' : 'text-secondary' }}" href="{{ route('asset-capitalizations.index') }}"><i class="bi bi-magic fs-6 me-3 text-warning"></i> Pengakuan Aset (Capitalization)</a></li>
+                        <li><hr class="dropdown-divider my-2"></li>
+                        <li><a class="dropdown-item py-2 px-3 rounded-3 d-flex align-items-center {{ request()->routeIs('fixed-assets.index') ? 'active bg-primary-subtle text-primary fw-bold' : 'text-secondary' }}" href="{{ route('fixed-assets.index') }}"><i class="bi bi-cloud-arrow-up fs-6 me-3 text-info"></i> Registrasi / Import Aset</a></li>
+                        <li><a class="dropdown-item py-2 px-3 rounded-3 d-flex align-items-center {{ request()->routeIs('fixed-assets.import_history') ? 'active bg-primary-subtle text-primary fw-bold' : 'text-secondary' }}" href="{{ route('fixed-assets.import_history') }}"><i class="bi bi-clock-history fs-6 me-3 text-secondary"></i> Riwayat Import & Label QR</a></li>
+                        <li><a class="dropdown-item py-2 px-3 rounded-3 d-flex align-items-center {{ request()->routeIs('fixed-assets.hibah_history') ? 'active bg-primary-subtle text-primary fw-bold' : 'text-secondary' }}" href="{{ route('fixed-assets.hibah_history') }}"><i class="bi bi-gift fs-6 me-3 text-success"></i> Riwayat Hibah Aset</a></li>
+                    </ul>
+                </li>
+                @endcan
+
+                {{-- 7. FINANCE --}}
                 @canany(['view_invoices', 'view_payments', 'view_bills'])
                 <li class="nav-item dropdown">
                     @php
@@ -137,65 +193,65 @@
                             <span class="badge bg-danger rounded-pill ms-1" style="font-size: 0.65rem;">{{ $totalFinanceNotif }}</span>
                         @endif
                     </a>
-                    <ul class="mt-2 border-0 shadow-sm dropdown-menu rounded-4">
+                    <ul class="p-2 mt-2 border-0 shadow-lg dropdown-menu rounded-4" style="min-width: 250px;">
                         <li>
-                            <a class="dropdown-item py-2 d-flex justify-content-between align-items-center {{ request()->routeIs('vendor-invoices.*') ? 'active' : '' }}" href="{{ route('vendor-invoices.index') }}">
-                                <span><i class="bi bi-receipt me-2 text-primary"></i> Tagihan Vendor (A/P)</span>
+                            <a class="dropdown-item py-2 px-3 rounded-3 d-flex justify-content-between align-items-center {{ request()->routeIs('vendor-invoices.*') ? 'active bg-primary-subtle text-primary fw-bold' : 'text-secondary' }}" href="{{ route('vendor-invoices.index') }}">
+                                <span><i class="bi bi-receipt fs-6 me-3 text-primary"></i> Tagihan Vendor (A/P)</span>
                                 @if($apDebtCount > 0)<span class="badge bg-danger rounded-pill" style="font-size: 0.65rem;">{{ $apDebtCount }}</span>@endif
                             </a>
                         </li>
                         <li>
-                            <a class="dropdown-item py-2 d-flex justify-content-between align-items-center {{ request()->routeIs('bills.*') ? 'active' : '' }}" href="{{ route('bills.index') }}">
-                                <span><i class="bi bi-file-earmark-spreadsheet me-2 text-info"></i> Pengajuan Opex</span>
+                            <a class="dropdown-item py-2 px-3 rounded-3 d-flex justify-content-between align-items-center {{ request()->routeIs('bills.*') ? 'active bg-primary-subtle text-primary fw-bold' : 'text-secondary' }}" href="{{ route('bills.index') }}">
+                                <span><i class="bi bi-file-earmark-spreadsheet fs-6 me-3 text-info"></i> Pengajuan Opex</span>
                                 @if($opexPendingCount > 0)<span class="badge bg-danger rounded-pill" style="font-size: 0.65rem;">{{ $opexPendingCount }}</span>@endif
                             </a>
                         </li>
-                        <li><hr class="dropdown-divider"></li>
+                        <li><hr class="dropdown-divider my-2"></li>
                         <li>
-                            <a class="dropdown-item py-2 {{ request()->routeIs('payments.*') ? 'active' : '' }}" href="{{ route('payments.index') }}">
-                                <i class="bi bi-wallet2 me-2 text-success"></i> Proses Pembayaran
+                            <a class="dropdown-item py-2 px-3 rounded-3 d-flex align-items-center {{ request()->routeIs('payments.*') ? 'active bg-primary-subtle text-primary fw-bold' : 'text-secondary' }}" href="{{ route('payments.index') }}">
+                                <i class="bi bi-wallet2 fs-6 me-3 text-success"></i>
+                                <span>Proses Pembayaran</span>
                             </a>
                         </li>
                     </ul>
                 </li>
                 @endcanany
 
-                {{-- 6. REPORT --}}
+                {{-- 8. REPORT --}}
                 @can('view_reports')
                 <li class="nav-item dropdown">
                     <a class="nav-link dropdown-toggle px-3 {{ request()->routeIs('reports.*') ? 'active bg-primary-subtle text-primary rounded-pill' : 'text-secondary' }}" href="#" role="button" data-bs-toggle="dropdown" aria-expanded="false">
                         Report
                     </a>
-                    <ul class="mt-2 border-0 shadow-sm dropdown-menu rounded-4">
-                        {{-- Laporan Keuangan --}}
+                    <ul class="p-2 mt-2 border-0 shadow-lg dropdown-menu rounded-4" style="min-width: 240px;">
                         <li>
-                            <a class="dropdown-item py-2 {{ request()->routeIs('reports.finance') ? 'active' : '' }}" href="{{ route('reports.finance') }}">
-                                <i class="bi bi-file-earmark-bar-graph me-2 text-primary"></i> Laporan Keuangan
+                            <a class="dropdown-item py-2 px-3 rounded-3 d-flex align-items-center {{ request()->routeIs('reports.finance') ? 'active bg-primary-subtle text-primary fw-bold' : 'text-secondary' }}" href="{{ route('reports.finance') }}">
+                                <i class="bi bi-file-earmark-bar-graph fs-6 me-3 text-primary"></i>
+                                <span>Laporan Keuangan</span>
                             </a>
                         </li>
-
-                        {{-- Laporan Valuasi Persediaan --}}
                         <li>
-                            <a class="dropdown-item py-2 {{ request()->routeIs('reports.inventory-valuation') ? 'active' : '' }}" href="{{ route('reports.inventory-valuation') }}">
-                                <i class="bi bi-boxes me-2 text-success"></i> Valuasi Persediaan
+                            <a class="dropdown-item py-2 px-3 rounded-3 d-flex align-items-center {{ request()->routeIs('reports.inventory-valuation') ? 'active bg-primary-subtle text-primary fw-bold' : 'text-secondary' }}" href="{{ route('reports.inventory-valuation') }}">
+                                <i class="bi bi-boxes fs-6 me-3 text-success"></i>
+                                <span>Valuasi Persediaan</span>
                             </a>
                         </li>
                     </ul>
                 </li>
                 @endcan
 
-                {{-- 7. SETTINGS --}}
+                {{-- 9. SETTINGS --}}
                 @can('manage_roles')
                 <li class="nav-item dropdown">
                     <a class="nav-link dropdown-toggle px-3 {{ request()->routeIs('users.*', 'roles.*', 'workflows.*', 'document-types.*') ? 'active bg-primary-subtle text-primary rounded-pill' : 'text-secondary' }}" href="#" role="button" data-bs-toggle="dropdown" aria-expanded="false">
                         Settings
                     </a>
-                    <ul class="mt-2 border-0 shadow-sm dropdown-menu dropdown-menu-end rounded-4">
-                        <li><a class="dropdown-item py-2 {{ request()->routeIs('users.*') ? 'active' : '' }}" href="{{ route('users.index') }}"><i class="bi bi-people me-2 text-primary"></i> User Management</a></li>
-                        <li><a class="dropdown-item py-2 {{ request()->routeIs('roles.*') ? 'active' : '' }}" href="{{ route('roles.index') }}"><i class="bi bi-shield-lock me-2 text-danger"></i> Role & Permissions</a></li>
-                        <li><hr class="dropdown-divider"></li>
-                        <li><a class="dropdown-item py-2 {{ request()->routeIs('workflows.*') ? 'active' : '' }}" href="{{ route('workflows.index') }}"><i class="bi bi-diagram-3 me-2 text-warning"></i> Workflows</a></li>
-                        <li><a class="dropdown-item py-2 {{ request()->routeIs('document-types.*') ? 'active' : '' }}" href="{{ route('document-types.index') }}"><i class="bi bi-file-earmark-check me-2 text-info"></i> Document Types</a></li>
+                    <ul class="p-2 mt-2 border-0 shadow-lg dropdown-menu dropdown-menu-end rounded-4" style="min-width: 230px;">
+                        <li><a class="dropdown-item py-2 px-3 rounded-3 d-flex align-items-center {{ request()->routeIs('users.*') ? 'active bg-primary-subtle text-primary fw-bold' : 'text-secondary' }}" href="{{ route('users.index') }}"><i class="bi bi-people fs-6 me-3 text-primary"></i> User Management</a></li>
+                        <li><a class="dropdown-item py-2 px-3 rounded-3 d-flex align-items-center {{ request()->routeIs('roles.*') ? 'active bg-primary-subtle text-primary fw-bold' : 'text-secondary' }}" href="{{ route('roles.index') }}"><i class="bi bi-shield-lock fs-6 me-3 text-danger"></i> Role & Permissions</a></li>
+                        <li><hr class="dropdown-divider my-2"></li>
+                        <li><a class="dropdown-item py-2 px-3 rounded-3 d-flex align-items-center {{ request()->routeIs('workflows.*') ? 'active bg-primary-subtle text-primary fw-bold' : 'text-secondary' }}" href="{{ route('workflows.index') }}"><i class="bi bi-diagram-3 fs-6 me-3 text-warning"></i> Workflows</a></li>
+                        <li><a class="dropdown-item py-2 px-3 rounded-3 d-flex align-items-center {{ request()->routeIs('document-types.*') ? 'active bg-primary-subtle text-primary fw-bold' : 'text-secondary' }}" href="{{ route('document-types.index') }}"><i class="bi bi-file-earmark-check fs-6 me-3 text-info"></i> Document Types</a></li>
                     </ul>
                 </li>
                 @endcan
@@ -210,7 +266,7 @@
                     <i class="bi bi-search"></i>
                 </a>
 
-                {{-- 🔥 PUSAT NOTIFIKASI (UPDATE PO) 🔥 --}}
+                {{-- PUSAT NOTIFIKASI --}}
                 @php
                     $pendingPRs = collect();
                     $pendingPOs = collect();
@@ -221,7 +277,6 @@
                     if (auth()->check()) {
                         $userRoles = auth()->user()->roles->pluck('id')->toArray();
 
-                        // Cek Data PR
                         if(class_exists('\App\Models\PurchaseRequest')) {
                             $countPendingPRs = \App\Models\PurchaseRequest::whereHas('approvals', function($q) use ($userRoles) {
                                 $q->where('status', 'PENDING')->whereIn('role_id', $userRoles);
@@ -234,7 +289,6 @@
                             }
                         }
 
-                        // Cek Data PO
                         if(class_exists('\App\Models\PurchaseOrder')) {
                             $countPendingPOs = \App\Models\PurchaseOrder::whereHas('approvals', function($q) use ($userRoles) {
                                 $q->where('status', 'PENDING')->whereIn('role_id', $userRoles);
@@ -280,8 +334,6 @@
                         </ul>
 
                         <div class="tab-content" id="notifTabContent" style="max-height: 350px; overflow-y: auto;">
-
-                            {{-- ================= TAB PR ================= --}}
                             <div class="tab-pane fade show active" id="notif-pr" role="tabpanel">
                                 @if($countPendingPRs > 0)
                                     <div class="list-group list-group-flush">
@@ -312,7 +364,6 @@
                                 @endif
                             </div>
 
-                            {{-- ================= TAB PO ================= --}}
                             <div class="tab-pane fade" id="notif-po" role="tabpanel">
                                 @if($countPendingPOs > 0)
                                     <div class="list-group list-group-flush">

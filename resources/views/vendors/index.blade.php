@@ -72,7 +72,15 @@
                 <tbody id="actual-table" class="d-none">
                     @forelse($vendors as $vendor)
                     <tr>
-                        <td class="py-3 ps-4 fw-bold text-primary">{{ $vendor->code }}</td>
+                        <td class="py-3 ps-4">
+                            @if($vendor->code)
+                                <span class="fw-bold text-primary">{{ $vendor->code }}</span>
+                            @else
+                                <span class="px-2 py-1 border badge bg-secondary-subtle text-secondary" style="font-size: 0.7rem;">
+                                    <i class="bi bi-dash"></i> Kosong
+                                </span>
+                            @endif
+                        </td>
                         <td class="py-3">
                             <div class="fw-bold {{ $vendor->is_active ? 'text-dark' : 'text-muted text-decoration-line-through' }}">
                                 {{ $vendor->name }}
