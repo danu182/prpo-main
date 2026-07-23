@@ -10,6 +10,7 @@ use Maatwebsite\Excel\Concerns\FromCollection;
 use Maatwebsite\Excel\Concerns\WithHeadings;
 use Maatwebsite\Excel\Concerns\WithTitle;
 use Maatwebsite\Excel\Concerns\WithMapping;
+use Spatie\Permission\Models\Role;
 
 class UsersExport implements WithMultipleSheets
 {
@@ -69,17 +70,43 @@ class UsersGuideSheet implements FromCollection, WithHeadings, WithTitle
     public function collection()
     {
         $guideData = collect([]);
+
+        // 1. Panduan Perusahaan
         $guideData->push(['--- DAFTAR ID PERUSAHAAN (PT) ---', '']);
-        foreach (Company::all() as $cmp) { $guideData->push(["ID: {$cmp->id}", $cmp->name]); }
+        foreach (Company::all() as $cmp) {
+            $guideData->push(["ID: {$cmp->id}", $cmp->name]);
+        }
 
-        $guideData->push(['', '']); // Baris kosong
+        $guideData->push(['', '']); // Baris kosong pemisah
 
+        // 2. Panduan Departemen
         $guideData->push(['--- DAFTAR ID DEPARTEMEN ---', '']);
-        foreach (Department::all() as $dept) { $guideData->push(["ID: {$dept->id}", $dept->name]); }
+        foreach (Department::all() as $dept) {
+            $guideData->push(["ID: {$dept->id}", $dept->name]);
+        }
+
+        $guideData->push(['', '']); // Baris kosong pemisah
+
+        // 3. 🔥 TAMBAHAN: Panduan Role 🔥
+        $guideData->push(['--- DAFTAR ROLE (HAK AKSES) ---', '']);
+        $guideData->push(['⚠️ KETIK NAMA ROLE DI BAWAH INI:', '(Perhatikan Huruf Besar/Kecil)']);
+        foreach (Role::all() as $role) {
+            // Untuk role, user harus mengetik NAMANYA, bukan ID-nya
+            $guideData->push([$role->name, "Role: {$role->name}"]);
+        }
 
         return $guideData;
     }
 
-    public function headings(): array { return ['KODE / ID (Masukkan angka ID ke Sheet 1)', 'NAMA (Sebagai Referensi)']; }
-    public function title(): string { return 'PANDUAN_PENGISIAN'; }
+    public function headings(): array
+    {
+        return ['KODE / ID / NAMA (Masukkan ke Sheet 1)', 'KETERANGAN (Sebagai Referensi)'];
+    }
+
+    public function title(): string
+    {
+        return 'PANDUAN_PENGISIAN';
+    }
 }
+
+
