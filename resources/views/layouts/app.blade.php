@@ -321,58 +321,7 @@
         <div id="content-wrapper">
 
             {{-- HEADER ATAS (TOPBAR) --}}
-            <header class="topbar">
-                <div class="d-flex align-items-center">
-                    <button class="btn btn-light border-0 rounded-circle me-2 d-flex align-items-center justify-content-center text-secondary" id="sidebarToggle" style="width: 38px; height: 38px;" title="Sembunyikan/Tampilkan Menu">
-                        <i class="bi bi-list fs-4"></i>
-                    </button>
-                    <h5 class="mb-0 fw-bold text-dark fs-6 d-none d-sm-block">Procurement System</h5>
-                </div>
-
-                <div class="gap-2 d-flex align-items-center">
-                    <a href="#" class="btn btn-light border-0 rounded-circle d-flex align-items-center justify-content-center text-secondary" style="width: 38px; height: 38px;" title="Cari...">
-                        <i class="bi bi-search"></i>
-                    </a>
-
-                    @auth
-                    <div class="dropdown">
-                        <a href="#" class="p-1 bg-white border border-light-subtle shadow-sm text-decoration-none d-flex align-items-center rounded-pill" data-bs-toggle="dropdown">
-                            @if(Auth::user()->avatar)
-                                <img src="{{ asset('storage/' . Auth::user()->avatar) }}" class="rounded-circle object-fit-cover" style="width: 32px; height: 32px;">
-                            @else
-                                <div class="text-white bg-primary rounded-circle d-flex align-items-center justify-content-center fw-bold" style="width: 32px; height: 32px; font-size: 0.8rem;">
-                                    {{ strtoupper(substr(Auth::user()->name, 0, 2)) }}
-                                </div>
-                            @endif
-                            <span class="ms-2 me-2 fw-bold text-dark small d-none d-md-block">{{ explode(' ', Auth::user()->name)[0] }}</span>
-                            <i class="bi bi-chevron-down text-muted me-1 small d-none d-md-block" style="font-size: 0.65rem;"></i>
-                        </a>
-
-                        <ul class="p-2 mt-2 border-0 shadow-lg dropdown-menu dropdown-menu-end rounded-4" style="min-width: 220px;">
-                            <li class="px-3 py-2 mb-2 bg-light rounded-3">
-                                <div class="small text-muted fw-bold text-uppercase" style="font-size: 0.6rem;">Signed in as</div>
-                                <div class="fw-bold text-dark text-truncate">{{ Auth::user()->name }}</div>
-                                <div class="small text-primary fw-semibold">{{ Auth::user()->roles->pluck('name')->first() ?? 'Staff' }}</div>
-                            </li>
-                            <li>
-                                <a class="py-2 dropdown-item rounded-3 text-secondary small" href="{{ route('profile.edit') }}">
-                                    <i class="bi bi-person-circle me-2 text-info"></i> Profil Saya
-                                </a>
-                            </li>
-                            <li><hr class="my-2 dropdown-divider"></li>
-                            <li>
-                                <form method="POST" action="{{ route('logout') }}">
-                                    @csrf
-                                    <button type="submit" class="py-2 dropdown-item text-danger small fw-bold rounded-3 bg-danger-subtle">
-                                        <i class="bi bi-box-arrow-right me-2"></i> Keluar / Sign Out
-                                    </button>
-                                </form>
-                            </li>
-                        </ul>
-                    </div>
-                    @endauth
-                </div>
-            </header>
+            @include('layouts.header')
 
             {{-- ISI HALAMAN --}}
             <main class="content-body">
@@ -394,6 +343,12 @@
 
                 @yield('content')
             </main>
+
+            {{-- footer star --}}
+            @include('layouts.footer')
+            {{-- footer end --}}
+
+
         </div>
 
     </div>

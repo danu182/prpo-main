@@ -380,14 +380,22 @@ class StockOpnameController extends Controller
             ]);
 
             // 4. Cek apakah masih ada sisa antrean persetujuan lain setelah ini
-            $remainingApprovals = $opname->approvals()->where('status', 'pending')->count();
+            // 🔥 PERBAIKAN: Gunakan whereIn agar aman dari huruf besar/kecil di DB
+            $remainingApprovals = $opname->approvals()
+                ->whereIn('status', ['pending', 'PENDING'])
+                ->count();
 
             // 5. JIKA SEMUA LEVEL SUDAH SETUJU -> EKSEKUSI FINALISASI STOK
             if ($remainingApprovals === 0) {
-                // Ubah status dokumen SO menjadi Completed (Selesai)
-                $statusCompleted = Status::where('type', 'SO')->where('slug', 'completed')->first();
+
+                // 🔥 PERBAIKAN UTAMA: Cari slug 'approved' (bukan 'completed')
+                $statusApproved = \App\Models\Status::where('type', 'SO')
+                                    ->where('slug', 'approved')
+                                    ->first();
+
+                // Ubah status utama dokumen SO menjadi Disetujui (Approved)
                 $opname->update([
-                    'status_id' => $statusCompleted ? $statusCompleted->id : $opname->status_id,
+                    'status_id' => $statusApproved ? $statusApproved->id : $opname->status_id,
                 ]);
 
                 // Eksekusi Pemotongan / Penambahan Stok Riil
@@ -395,11 +403,13 @@ class StockOpnameController extends Controller
                     if ($item->variance_qty == 0) continue; // Jika cocok, lewati
 
                     $masterItem = \App\Models\Item::find($item->item_id);
+                    if (!$masterItem) continue; // Keamanan tambahan jika item tidak ditemukan
+
                     $newStockBalance = $masterItem->current_stock + $item->variance_qty;
 
                     if ($item->variance_qty > 0) {
                         // KASUS A: SURPLUS (BARANG LEBIH) -> Masukkan stok baru ke gudang
-                        InventoryStock::create([
+                        \App\Models\InventoryStock::create([
                             'company_id' => $opname->company_id,
                             'warehouse_id' => $opname->warehouse_id,
                             'item_id' => $item->item_id,
@@ -412,7 +422,7 @@ class StockOpnameController extends Controller
                         // KASUS B: DEFICIT (BARANG HILANG/MINUS) -> Potong stok pakai metode FIFO
                         $qtyToDeduct = abs($item->variance_qty);
 
-                        $availableStocks = InventoryStock::where('warehouse_id', $opname->warehouse_id)
+                        $availableStocks = \App\Models\InventoryStock::where('warehouse_id', $opname->warehouse_id)
                                             ->where('item_id', $item->item_id)
                                             ->where('stock_qty', '>', 0)
                                             ->orderBy('id', 'asc') // FIFO: Tumpukan terlama
@@ -440,6 +450,9 @@ class StockOpnameController extends Controller
 
             DB::commit();
             return redirect()->back()->with('success', 'Berhasil disetujui! ' . ($remainingApprovals === 0 ? 'Stok gudang telah direvisi secara otomatis.' : 'Menunggu persetujuan level selanjutnya.'));
+
+            // DB::commit();
+            // return redirect()->back()->with('success', 'Berhasil disetujui! ' . ($remainingApprovals === 0 ? 'Stok gudang telah direvisi secara otomatis.' : 'Menunggu persetujuan level selanjutnya.'));
 
         } catch (\Exception $e) {
             DB::rollBack();

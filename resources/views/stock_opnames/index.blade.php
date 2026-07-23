@@ -51,9 +51,34 @@
                     </thead>
                     <tbody>
                         @forelse($opnames as $so)
-                            @php
+                           @php
+                                $hasApprovals = isset($so->approvals) && $so->approvals->count() > 0;
                                 $statusSlug = optional($so->status)->slug ?? 'draft';
                                 $statusName = optional($so->status)->name ?? 'Draft / Menghitung';
+
+                                // 🔥 LOGIKA SINKRONISASI OTOMATIS (Sama seperti halaman Detail) 🔥
+                                if ($hasApprovals) {
+                                    $pendingApproval = $so->approvals->reject(function($app) {
+                                        $st = strtoupper($app->status ?? '');
+                                        return $st === 'APPROVED' || $st === 'REJECTED';
+                                    })->first();
+
+                                    $isRejected = $so->approvals->contains(function($app) {
+                                        return strtoupper($app->status ?? '') === 'REJECTED';
+                                    });
+
+                                    if ($isRejected) {
+                                        $statusSlug = 'rejected';
+                                        $statusName = 'Ditolak';
+                                    } elseif ($pendingApproval) {
+                                        $statusSlug = 'pending_approval';
+                                        $statusName = 'Menunggu Persetujuan';
+                                    } else {
+                                        $statusSlug = 'approved';
+                                        $statusName = 'Disetujui / Selesai';
+                                    }
+                                }
+
                                 $badgeClass = match($statusSlug) {
                                     'draft' => 'bg-secondary-subtle text-secondary border-secondary-subtle',
                                     'pending_approval', 'pending' => 'bg-warning-subtle text-warning border-warning-subtle',
