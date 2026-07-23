@@ -303,12 +303,10 @@ Route::middleware('auth')->group(function () {
     });
 
 
-    // Employee Inventory Tracking (Minor Assets)
-    Route::prefix('employee-inventories')->name('employee-inventories.')->middleware(['manage_gi'])->group(function () {
+    // 🔥 PERBAIKAN: Ganti 'auth' menjadi 'can:manage_gi' agar staf biasa tidak bisa akses via URL
+    Route::prefix('employee-inventories')->name('employee-inventories.')->middleware(['can:manage_gi'])->group(function () {
         Route::get('/', [\App\Http\Controllers\EmployeeInventoryController::class, 'index'])->name('index');
         Route::get('/history/{employee_name}', [\App\Http\Controllers\EmployeeInventoryController::class, 'history'])->name('history');
-
-        // 🔥 PERBAIKAN: Cukup tulis 'print_qr' saja, karena sudah ada awalan dari grup di atas 🔥
         Route::get('/{id}/print-qr', [\App\Http\Controllers\EmployeeInventoryController::class, 'printQrLabel'])->name('print_qr');
     });
 
@@ -650,8 +648,19 @@ Route::middleware('auth')->group(function () {
     // 7. MODUL SETTINGS / ADMIN -> Izin: manage_roles
     // ====================================================
     Route::resource('roles', RoleController::class)->middleware('can:manage_roles');
-    Route::resource('users', UserController::class)->middleware('can:manage_roles');
 
+    // 🔥 Rute Halaman Khusus Import & Export (WAJIB DI ATAS RESOURCE)
+    Route::prefix('users')->name('users.')->middleware('can:manage_roles')->group(function () {
+        Route::get('/import-export', [\App\Http\Controllers\UserController::class, 'importForm'])->name('import_form');
+        Route::get('/template', [\App\Http\Controllers\UserController::class, 'downloadTemplate'])->name('template');
+        Route::get('/export', [\App\Http\Controllers\UserController::class, 'export'])->name('export');
+
+        // 2 Rute baru untuk sistem Preview
+        Route::post('/import/preview', [\App\Http\Controllers\UserController::class, 'previewImport'])->name('preview_import');
+        Route::post('/import/process', [\App\Http\Controllers\UserController::class, 'processImport'])->name('process_import');
+    });
+
+    Route::resource('users', UserController::class)->middleware('can:manage_roles');
 
 
     // ====================================================

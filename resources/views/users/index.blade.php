@@ -30,6 +30,10 @@
                     </button>
                 </div>
             </form>
+            {{-- 🔥 Tombol Baru: Mengarah ke halaman Import/Export 🔥 --}}
+            <a href="{{ route('users.import_form') }}" class="px-4 shadow-sm btn btn-outline-success fw-bold rounded-pill text-nowrap" title="Manajemen Data Excel">
+                <i class="bi bi-file-earmark-spreadsheet me-1"></i> <span class="d-none d-md-inline">Import / Export</span>
+            </a>
             <button type="button" class="px-4 shadow-sm btn btn-dark fw-bold rounded-pill text-nowrap" data-bs-toggle="modal" data-bs-target="#modalAdd">
                 <i class="bi bi-person-plus me-1"></i> Tambah Karyawan
             </button>
