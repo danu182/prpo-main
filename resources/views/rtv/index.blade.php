@@ -1,7 +1,7 @@
 @extends('layouts.app')
 
 @section('content')
-<div class="container pb-5 text-dark">
+<div class="pb-5 container-fluid text-dark">
 
     <div class="mb-4 d-flex flex-column flex-md-row justify-content-between align-items-md-center">
         <div>
@@ -18,7 +18,7 @@
             </form>
 
             {{-- 🔥 TOMBOL BUAT RETUR BARU (Diarahkan ke daftar GR) 🔥 --}}
-            <a href="{{ route('gr.index') }}" class="btn btn-sm btn-danger shadow-sm fw-bold d-flex align-items-center">
+            <a href="{{ route('gr.index') }}" class="shadow-sm btn btn-sm btn-danger fw-bold d-flex align-items-center">
                 <i class="bi bi-plus-lg me-1"></i> Buat Retur Baru
             </a>
         </div>

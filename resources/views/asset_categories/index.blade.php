@@ -1,7 +1,7 @@
 @extends('layouts.app') {{-- Sesuaikan dengan nama layout master Anda --}}
 
 @section('content')
-<div class="container mt-4">
+<div class="px-0 container-fluid">
     <div class="mb-4 d-flex justify-content-between align-items-center">
         <h3 class="fw-bold text-dark">Master Kategori Aset</h3>
         <button class="btn btn-primary rounded-pill fw-bold" data-bs-toggle="modal" data-bs-target="#modalTambah">

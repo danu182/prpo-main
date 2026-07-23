@@ -94,7 +94,7 @@
         border-color: #0d6efd;
         box-shadow: 0 4px 10px rgba(13, 110, 253, 0.3);
     }
-    
+
     /* Search Bar Modern */
     .po-search-box {
         background: #fff;
@@ -111,7 +111,7 @@
 @endpush
 
 @section('content')
-<div class="container pb-5 text-dark">
+<div class="px-0 container-fluid">
 
     {{-- LOGIKA SMART UX: Tentukan tab mana yang harus aktif --}}
     @php
@@ -199,7 +199,7 @@
                 <span class="badge {{ $activeTab == 'pr' ? 'bg-white text-primary' : 'bg-secondary text-white' }} rounded-pill ms-2 shadow-sm">{{ $readyPrs->total() ?? $readyPrs->count() }}</span>
             @endif
         </button>
-        
+
         <button class="po-tab-btn {{ $activeTab == 'po' ? 'active' : '' }}" id="po-history-tab" data-bs-toggle="pill" data-bs-target="#po-history" type="button" role="tab" aria-controls="po-history" aria-selected="{{ $activeTab == 'po' ? 'true' : 'false' }}">
             <i class="bi bi-clock-history me-1"></i> Riwayat & Draft PO
             @if($purchaseOrders->count() > 0 && request('search'))
@@ -270,7 +270,7 @@
                         </tbody>
                     </table>
                 </div>
-                
+
                 @if($readyPrs->hasPages())
                     <div class="d-flex justify-content-center mt-4">
                         {{ $readyPrs->appends(request()->query())->links() }}
@@ -359,7 +359,7 @@
                         </tbody>
                     </table>
                 </div>
-                
+
                 @if($purchaseOrders->hasPages())
                     <div class="d-flex justify-content-center mt-4">
                         {{ $purchaseOrders->appends(request()->query())->links() }}

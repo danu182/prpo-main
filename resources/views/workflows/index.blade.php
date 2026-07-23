@@ -1,7 +1,7 @@
 @extends('layouts.app')
 
 @section('content')
-<div class="container pb-5">
+<div class="pb-5 container-fluid">
 
     <div class="mb-4 d-flex justify-content-between align-items-center">
         <div>

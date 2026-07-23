@@ -20,7 +20,7 @@
 @endpush
 
 @section('content')
-<div class="container pb-5 text-dark">
+<div class="px-0 container-fluid">
 
     {{-- HEADER HALAMAN & TOMBOL AKSI --}}
     <div class="gap-3 mb-4 d-flex flex-column flex-md-row justify-content-between align-items-md-center">
@@ -118,7 +118,7 @@
                         <td class="py-3 text-muted">{{ $gi->department ?? '-' }}</td>
 
                         <td class="py-3">
-                            <span class="badge bg-light text-secondary border border-secondary-subtle rounded-pill px-3 py-2 shadow-sm">
+                            <span class="px-3 py-2 border shadow-sm badge bg-light text-secondary border-secondary-subtle rounded-pill">
                                 <i class="bi bi-shop me-1"></i> {{ optional($gi->warehouse)->name ?? 'Gudang Utama' }}
                             </span>
                         </td>
@@ -129,7 +129,7 @@
                                     {{ $gi->status->name }}
                                 </span>
                             @else
-                                <span class="badge bg-secondary rounded-pill px-3 py-2">-</span>
+                                <span class="px-3 py-2 badge bg-secondary rounded-pill">-</span>
                             @endif
                         </td>
 
@@ -141,7 +141,7 @@
                                 </a>
 
                                 @if(optional($gi->status)->slug === 'void')
-                                    <button class="px-3 border shadow-sm btn btn-sm btn-secondary text-white fw-bold rounded-pill" disabled title="Transaksi Dibatalkan">
+                                    <button class="px-3 text-white border shadow-sm btn btn-sm btn-secondary fw-bold rounded-pill" disabled title="Transaksi Dibatalkan">
                                         <i class="bi bi-ban"></i> Void
                                     </button>
                                 @elseif($totalReturned < $totalIssued)

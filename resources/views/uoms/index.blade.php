@@ -1,7 +1,7 @@
     @extends('layouts.app')
 
 @section('content')
-<div class="container pb-5 text-dark">
+<div class="pb-5 container-fluid text-dark">
     <div class="gap-3 mb-4 d-flex flex-column flex-md-row justify-content-between align-items-md-center">
         <div>
             <h4 class="mb-0 fw-bold text-dark"><i class="bi bi-rulers text-primary me-2"></i> Master Satuan (UOM)</h4>

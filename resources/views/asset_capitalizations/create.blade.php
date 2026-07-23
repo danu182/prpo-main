@@ -13,7 +13,7 @@
 @endpush
 
 @section('content')
-<div class="container pb-5 text-dark">
+<div class="px-0 container-fluid text-dark">
     <div class="mb-4">
         <h4 class="mb-0 fw-bold text-dark">
             <i class="bi bi-magic text-info me-2"></i> Pengakuan Aset (Capitalization)

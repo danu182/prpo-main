@@ -13,7 +13,7 @@
 @endpush
 
 @section('content')
-<div class="container py-4">
+<div class="px-0 py-4 container-fluid">
 
     {{-- HEADER --}}
     <div class="mb-4 d-flex justify-content-between align-items-end">

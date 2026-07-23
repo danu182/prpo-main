@@ -12,7 +12,7 @@
 @endpush
 
 @section('content')
-<div class="container pb-5 text-dark">
+<div class="px-0 pb-5 container-fluid text-dark">
 
     <div class="mb-4 row align-items-center">
         <div class="mb-3 col-lg-5 mb-lg-0">

@@ -10,7 +10,7 @@
 @endpush
 
 @section('content')
-<div class="container pb-5 text-dark">
+<div class="pb-5 container-fluid text-dark">
 
     {{-- HEADER --}}
     <div class="gap-3 mb-4 d-flex flex-column flex-md-row justify-content-between align-items-md-center">
@@ -203,7 +203,7 @@
                                         </div>
 
                                         {{-- 🔥 FILTER GUDANG 🔥 --}}
-                                        <div class="p-3 mb-4 bg-white border border-info-subtle rounded-3 shadow-sm">
+                                        <div class="p-3 mb-4 bg-white border shadow-sm border-info-subtle rounded-3">
                                             <label class="mb-1 form-label fw-bold small text-info-emphasis">
                                                 <i class="bi bi-box-seam text-info me-1"></i> Isolasi Akses Gudang <span class="fw-normal text-muted">(Opsional)</span>
                                             </label>
@@ -326,7 +326,7 @@
                     </div>
 
                     {{-- 🔥 FILTER GUDANG 🔥 --}}
-                    <div class="p-3 mb-4 bg-white border border-info-subtle rounded-3 shadow-sm">
+                    <div class="p-3 mb-4 bg-white border shadow-sm border-info-subtle rounded-3">
                         <label class="mb-1 form-label fw-bold small text-info-emphasis">
                             <i class="bi bi-box-seam text-info me-1"></i> Isolasi Akses Gudang <span class="fw-normal text-muted">(Opsional)</span>
                         </label>

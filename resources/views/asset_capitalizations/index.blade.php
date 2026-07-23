@@ -1,6 +1,6 @@
 @extends('layouts.app') @section('content')
-<div class="container-fluid">
-    <div class="d-flex justify-content-between align-items-center mb-3">
+<div class="px-0 container-fluid">
+    <div class="mb-3 d-flex justify-content-between align-items-center">
         <h2>Daftar Pengakuan Aset</h2>
         <a href="{{ route('asset-capitalizations.create') }}" class="btn btn-primary">
             + Tambah Pengakuan Aset
@@ -37,7 +37,7 @@
                         </td>
                         <td>{{ $row->created_at->format('d M Y') }}</td>
                         <td>
-                            <a href="{{ route('asset-capitalizations.show', $row->id) }}" class="btn btn-sm btn-info text-white">
+                            <a href="{{ route('asset-capitalizations.show', $row->id) }}" class="text-white btn btn-sm btn-info">
                                 Detail
                             </a>
                         </td>

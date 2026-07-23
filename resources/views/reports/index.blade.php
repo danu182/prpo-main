@@ -1,7 +1,7 @@
 @extends('layouts.app')
 
 @section('content')
-<div class="container pb-5 text-dark">
+<div class="pb-5 container-fluid text-dark">
 
     <div class="mb-4 d-flex justify-content-between align-items-end">
         <div>

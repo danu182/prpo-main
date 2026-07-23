@@ -47,7 +47,7 @@
 @endpush
 
 @section('content')
-<div class="container pb-5 text-dark">
+<div class="pb-5 container-fluid text-dark">
 
     {{-- HEADER & PENCARIAN --}}
     <div class="gap-3 mb-4 d-flex flex-column flex-md-row justify-content-between align-items-md-center">
@@ -106,7 +106,7 @@
                         <tr class="main-row border-bottom">
                             <td class="py-3 ps-4">
                                 <div class="d-flex align-items-center">
-                                    <div class="avatar-circle me-3 flex-shrink-0">
+                                    <div class="flex-shrink-0 avatar-circle me-3">
                                         {{ strtoupper(substr($employeeName, 0, 2)) }}
                                     </div>
                                     <div>
@@ -115,18 +115,18 @@
                                 </div>
                             </td>
                             <td class="py-3 text-center">
-                                <span class="px-3 badge bg-primary-subtle text-primary border border-primary-subtle rounded-pill fw-bold">
+                                <span class="px-3 border badge bg-primary-subtle text-primary border-primary-subtle rounded-pill fw-bold">
                                     {{ $majorCount }} Unit
                                 </span>
                             </td>
                             <td class="py-3 text-center">
-                                <span class="px-3 badge bg-secondary-subtle text-secondary border border-secondary-subtle rounded-pill fw-bold">
+                                <span class="px-3 border badge bg-secondary-subtle text-secondary border-secondary-subtle rounded-pill fw-bold">
                                     {{ $activeMinorCount }} Item
                                 </span>
                             </td>
                             <td class="py-3 text-center">
                                 @if($totalCount > 0)
-                                    <span class="px-3 badge bg-info-subtle text-info-emphasis border border-info-subtle rounded-pill fw-bold fs-6 shadow-sm">
+                                    <span class="px-3 border shadow-sm badge bg-info-subtle text-info-emphasis border-info-subtle rounded-pill fw-bold fs-6">
                                         {{ $totalCount }} Barang
                                     </span>
                                 @else
@@ -140,7 +140,7 @@
                                             <i class="bi bi-chevron-down me-1"></i> Rincian Barang
                                         </button>
                                     @endif
-                                    <a href="{{ route('employee-inventories.history', $employeeName) }}" class="shadow-sm btn btn-sm btn-info text-white rounded-pill fw-bold" title="Riwayat Serah Terima">
+                                    <a href="{{ route('employee-inventories.history', $employeeName) }}" class="text-white shadow-sm btn btn-sm btn-info rounded-pill fw-bold" title="Riwayat Serah Terima">
                                         <i class="bi bi-clock-history me-1"></i> Riwayat
                                     </a>
                                 </div>
@@ -161,17 +161,17 @@
                                                 @if($majorCount > 0)
                                                     <div class="list-group item-list-group custom-scrollbar" style="max-height: 250px; overflow-y: auto;">
                                                         @foreach($majorItems as $asset)
-                                                            <div class="border rounded-3 p-3 bg-white mb-2 shadow-sm">
-                                                                <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
+                                                            <div class="p-3 mb-2 bg-white border shadow-sm rounded-3">
+                                                                <div class="flex-wrap gap-2 d-flex justify-content-between align-items-center">
                                                                     <div>
                                                                         {{-- Nama Utama Barang --}}
                                                                         <strong class="text-dark text-uppercase fs-6">{{ $asset->name ?? optional($asset->item)->name }}</strong>
                                                                         <div class="mt-1">
-                                                                            <span class="badge bg-primary-subtle text-primary border border-primary-subtle rounded-pill" style="font-size: 0.75rem;">
+                                                                            <span class="border badge bg-primary-subtle text-primary border-primary-subtle rounded-pill" style="font-size: 0.75rem;">
                                                                                 <i class="bi bi-tag-fill me-1"></i>{{ $asset->asset_number }}
                                                                             </span>
                                                                             @if($asset->serial_number)
-                                                                                <span class="badge bg-light text-secondary border border-secondary-subtle rounded-pill ms-1" style="font-size: 0.75rem;">
+                                                                                <span class="border badge bg-light text-secondary border-secondary-subtle rounded-pill ms-1" style="font-size: 0.75rem;">
                                                                                     <i class="bi bi-upc-scan me-1"></i>S/N: {{ $asset->serial_number }}
                                                                                 </span>
                                                                             @endif
@@ -192,15 +192,15 @@
                                                                 @endphp
 
                                                                 @if(!empty(trim(strip_tags($spekDetail))))
-                                                                    <div class="accordion mt-3" id="accAsset-{{ $asset->id }}">
-                                                                        <div class="accordion-item border-0 bg-light rounded-3 overflow-hidden">
+                                                                    <div class="mt-3 accordion" id="accAsset-{{ $asset->id }}">
+                                                                        <div class="overflow-hidden border-0 accordion-item bg-light rounded-3">
                                                                             <h2 class="accordion-header">
-                                                                                <button class="accordion-button collapsed py-2 px-3 bg-light text-secondary fw-bold small shadow-none" type="button" data-bs-toggle="collapse" data-bs-target="#collSpec-{{ $asset->id }}" style="font-size: 0.8rem;">
+                                                                                <button class="px-3 py-2 shadow-none accordion-button collapsed bg-light text-secondary fw-bold small" type="button" data-bs-toggle="collapse" data-bs-target="#collSpec-{{ $asset->id }}" style="font-size: 0.8rem;">
                                                                                     <i class="bi bi-card-text me-2 text-primary"></i> Lihat Spesifikasi Lengkap
                                                                                 </button>
                                                                             </h2>
                                                                             <div id="collSpec-{{ $asset->id }}" class="accordion-collapse collapse" data-bs-parent="#accAsset-{{ $asset->id }}">
-                                                                                <div class="accordion-body bg-white border-top p-3 text-dark style-html-content" style="font-size: 0.85rem; line-height: 1.5; max-height: 250px; overflow-y: auto;">
+                                                                                <div class="p-3 bg-white accordion-body border-top text-dark style-html-content" style="font-size: 0.85rem; line-height: 1.5; max-height: 250px; overflow-y: auto;">
                                                                                     {{-- Menggunakan {!! !!} agar tag HTML dari Rich Editor merender cetak tebal dan bullet list dengan sempurna --}}
                                                                                     {!! $spekDetail !!}
                                                                                 </div>
@@ -208,7 +208,7 @@
                                                                         </div>
                                                                     </div>
                                                                 @else
-                                                                    <div class="text-muted small mt-2 fst-italic"><i class="bi bi-info-circle me-1"></i> Tidak ada spesifikasi detail terdaftar.</div>
+                                                                    <div class="mt-2 text-muted small fst-italic"><i class="bi bi-info-circle me-1"></i> Tidak ada spesifikasi detail terdaftar.</div>
                                                                 @endif
                                                             </div>
                                                         @endforeach
@@ -231,8 +231,8 @@
                                                                         <div class="text-muted" style="font-size: 0.7rem;">Kode: {{ optional($inv->item)->code }}</div>
                                                                     </div>
                                                                     <div class="text-end">
-                                                                        <div class="badge bg-light text-dark border mb-1">{{ (float)$inv->qty }} {{ optional($inv->item)->unit ?? 'pcs' }}</div><br>
-                                                                        <a href="{{ route('employee-inventories.print_qr', $inv->id) }}" target="_blank" class="btn btn-sm btn-link text-secondary p-0" style="font-size: 0.7rem; text-decoration: none;">
+                                                                        <div class="mb-1 border badge bg-light text-dark">{{ (float)$inv->qty }} {{ optional($inv->item)->unit ?? 'pcs' }}</div><br>
+                                                                        <a href="{{ route('employee-inventories.print_qr', $inv->id) }}" target="_blank" class="p-0 btn btn-sm btn-link text-secondary" style="font-size: 0.7rem; text-decoration: none;">
                                                                             <i class="bi bi-qr-code"></i> Print Label
                                                                         </a>
                                                                     </div>
@@ -255,7 +255,7 @@
                     @empty
                         <tr>
                             <td colspan="5" class="py-5 text-center">
-                                <div class="p-4 mx-auto max-w-sm">
+                                <div class="max-w-sm p-4 mx-auto">
                                     <i class="mb-3 opacity-25 bi bi-search text-muted display-4 d-block"></i>
                                     <h6 class="fw-bold text-dark">Karyawan tidak ditemukan</h6>
                                     <p class="mb-0 text-muted small">Belum ada data barang yang direkam atau coba kata kunci lain.</p>
