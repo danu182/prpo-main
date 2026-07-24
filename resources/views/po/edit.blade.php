@@ -8,19 +8,24 @@
     /* Styling Select2 */
     .select2-container--bootstrap-5 .select2-selection { border-radius: 8px; min-height: 40px; font-size: 0.85rem; border-color: #dee2e6; }
     .select2-container--bootstrap-5.select2-container--focus .select2-selection { border-color: #0d6efd; box-shadow: 0 0 0 0.25rem rgba(13, 110, 253, 0.15); }
+
     /* Modern Input Styling */
     .form-input-custom { border: 1px solid #dee2e6; border-radius: 8px; font-size: 0.85rem; min-height: 40px; transition: all 0.2s; }
     .form-input-custom:focus { border-color: #0d6efd; box-shadow: 0 0 0 0.25rem rgba(13, 110, 253, 0.15); background-color: #fff; }
+
     /* Input Group Modern */
     .input-group-modern { border-radius: 8px; overflow: hidden; border: 1px solid #dee2e6; display: flex; }
     .input-group-modern:focus-within { border-color: #0d6efd; box-shadow: 0 0 0 0.25rem rgba(13, 110, 253, 0.15); }
     .input-group-modern input, .input-group-modern select, .input-group-modern .input-group-text { border: none !important; background: transparent; }
     .input-group-modern .input-group-text { background-color: #f8f9fa; color: #6c757d; font-weight: 600; border-right: 1px solid #dee2e6 !important; }
+
     /* Fixed Sidebar Summary */
     .summary-card { position: sticky; top: 20px; border-radius: 16px; border: 1px solid #e9ecef; }
+
     /* CSS VALIDASI ERROR */
     .is-invalid { border-color: #dc3545 !important; background-color: #fff8f8 !important; }
     .input-group-modern:has(.is-invalid) { border-color: #dc3545 !important; box-shadow: 0 0 0 0.25rem rgba(220, 53, 69, 0.25) !important; }
+
     /* 🔥 STYLING KHUSUS CKEDITOR 🔥 */
     .ck-editor__editable_inline { min-height: 120px; font-size: 0.85rem; }
     input[type=number]::-webkit-inner-spin-button, input[type=number]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
@@ -153,7 +158,8 @@
                                                         <a href="{{ asset('storage/' . $file->file_path) }}" target="_blank" class="text-truncate small text-decoration-none text-primary fw-bold ms-1" style="font-size: 0.7rem; max-width: 80%;" title="{{ $file->file_name }}">
                                                             <i class="bi bi-file-earmark-text-fill text-danger me-1"></i> {{ $file->file_name }}
                                                         </a>
-                                                        <a href="{{ route('po.delete_item_attachment', $file->id) }}" class="p-0 px-1 btn btn-sm text-danger" onclick="return confirm('Hapus lampiran ini secara permanen?')">
+                                                        {{-- 🔥 PERBAIKAN NAMA ROUTE DI SINI 🔥 --}}
+                                                        <a href="{{ route('po.po.delete_item_attachment', $file->id) }}" class="p-0 px-1 btn btn-sm text-danger" onclick="return confirm('Hapus lampiran ini secara permanen?')">
                                                             <i class="bi bi-trash-fill"></i>
                                                         </a>
                                                     </div>
@@ -212,26 +218,44 @@
                                 <div class="col-md-3">
                                     <label class="form-label small fw-bold text-dark">Diskon per Item</label>
                                     <div class="shadow-sm input-group-modern">
-                                        <select name="po_items[{{ $item->id }}][discount_type]" class="text-center form-select fw-bold text-secondary disc-type" style="max-width: 65px;" onchange="calculateRow(this)">
+                                        <select name="po_items[{{ $item->id }}][discount_type]" class="text-center form-select fw-bold text-secondary disc-type" style="flex: 0 0 85px;" onchange="calculateRow(this)">
                                             <option value="PERCENT" {{ $item->discount_type == 'PERCENT' ? 'selected' : '' }}>%</option>
-                                            <option value="FIXED" {{ $item->discount_type == 'FIXED' ? 'selected' : '' }}>Nom</option>
+                                            <option value="FIXED" class="dynamic-currency-text" {{ $item->discount_type == 'FIXED' ? 'selected' : '' }}>{{ $po->currency }}</option>
                                         </select>
                                         <input type="number" name="po_items[{{ $item->id }}][discount_value]" class="form-control text-end fw-bold text-danger disc-val" value="{{ (float)$item->discount_value }}" min="0" step="any" oninput="calculateRow(this)">
                                     </div>
                                     <input type="hidden" name="po_items[{{ $item->id }}][discount_amount]" class="disc-amt-hidden" value="{{ (float)$item->discount_amount }}">
                                 </div>
 
-                                {{-- PAJAK ITEM MANUAL --}}
+                                {{-- 🔥 PAJAK HYBRID 🔥 --}}
                                 <div class="col-md-3">
                                     <label class="form-label small fw-bold text-dark">Pajak (VAT/PPN)</label>
                                     <div class="shadow-sm input-group-modern">
-                                        <select name="po_items[{{ $item->id }}][tax_type]" class="text-center form-select fw-bold text-secondary tax-type" style="max-width: 65px;" onchange="calculateRow(this)">
-                                            <option value="PERCENT" {{ $item->tax_type == 'PERCENT' ? 'selected' : '' }}>%</option>
-                                            <option value="FIXED" {{ $item->tax_type == 'FIXED' ? 'selected' : '' }}>Nom</option>
+                                        <select name="po_items[{{ $item->id }}][tax_type]" class="text-center form-select fw-bold text-secondary tax-type-select" style="flex: 0 0 85px;" onchange="toggleTaxUI(this); calculateRow(this)">
+                                            <option value="PERCENT" {{ ($item->tax_type ?? 'PERCENT') == 'PERCENT' ? 'selected' : '' }}>%</option>
+                                            <option value="FIXED" class="dynamic-currency-text" {{ ($item->tax_type ?? '') == 'FIXED' ? 'selected' : '' }}>{{ $po->currency }}</option>
                                         </select>
-                                        <input type="number" name="po_items[{{ $item->id }}][tax_value]" class="form-control text-end fw-bold text-info tax-val" value="{{ (float)$item->tax_value }}" min="0" step="any" oninput="calculateRow(this)">
+
+                                        @php
+                                            $isManualPct = false; $matchedTaxId = "";
+                                            if (($item->tax_type ?? 'PERCENT') == 'PERCENT' && (float)($item->tax_value ?? 0) > 0) {
+                                                $taxMatch = collect($taxes)->where('percent', (float)$item->tax_value)->first();
+                                                if ($taxMatch) $matchedTaxId = $taxMatch->id; else $isManualPct = true;
+                                            }
+                                        @endphp
+
+                                        <select name="po_items[{{ $item->id }}][tax_id]" class="form-select text-end fw-bold text-info tax-master-select" onchange="applyMasterTax(this); calculateRow(this)">
+                                            <option value="" data-rate="0">- Tanpa Pajak -</option>
+                                            <option value="MANUAL_PERCENT" data-rate="0" {{ $isManualPct ? 'selected' : '' }}>Manual (%)</option>
+                                            @foreach($taxes as $tax)
+                                                <option value="{{ $tax->id }}" data-rate="{{ (float)$tax->percent }}" {{ $matchedTaxId == $tax->id ? 'selected' : '' }}>{{ $tax->name }} ({{ (float)$tax->percent }}%)</option>
+                                            @endforeach
+                                        </select>
+
+                                        <input type="number" name="po_items[{{ $item->id }}][tax_value]" class="form-control text-end fw-bold text-info tax-val-input" value="{{ (float)($item->tax_value ?? 0) }}" min="0" step="any" oninput="calculateRow(this)">
                                     </div>
-                                    <input type="hidden" name="po_items[{{ $item->id }}][tax_amount]" class="tax-amt-hidden" value="{{ (float)$item->tax_amount }}">
+                                    <input type="hidden" name="po_items[{{ $item->id }}][tax_amount]" class="tax-amt-hidden" value="{{ (float)($item->tax_amount ?? 0) }}">
+                                    <input type="hidden" name="po_items[{{ $item->id }}][tax_type]" class="tax-type-hidden" value="{{ $item->tax_type ?? 'NONE' }}">
                                 </div>
 
                             </div>
@@ -314,6 +338,7 @@
                                     @foreach($po->attachments as $file)
                                         <div class="p-2 mb-1 border rounded d-flex justify-content-between bg-light">
                                             <a href="{{ asset('storage/' . $file->file_path) }}" target="_blank" class="small text-decoration-none fw-bold"><i class="bi bi-search text-success me-1"></i> {{ $file->file_name }}</a>
+                                            {{-- 🔥 PERBAIKAN NAMA ROUTE DI SINI 🔥 --}}
                                             <a href="{{ route('po.po.delete_header_attachment', $file->id) }}" class="text-danger small" onclick="return confirm('Hapus file master ini secara permanen?')"><i class="bi bi-trash"></i></a>
                                         </div>
                                     @endforeach
@@ -348,26 +373,46 @@
                         <label class="mb-2 form-label small fw-bold text-dark">
                             <i class="bi bi-tags-fill me-1 text-danger"></i> Diskon Global (Header PO)
                         </label>
-                        <div class="mb-1 overflow-hidden border shadow-sm input-group input-group-sm rounded-2">
-                            <select name="global_discount_type" id="globalDiscType" class="px-1 text-center bg-white border-0 form-select fw-bold" style="max-width: 60px;" onchange="calculateGrandTotal()">
+                        <div class="mb-1 overflow-hidden border shadow-sm input-group input-group-sm rounded-2 input-group-modern">
+                            <select name="global_discount_type" id="globalDiscType" class="px-1 text-center bg-white border-0 form-select fw-bold tax-type-select" style="flex: 0 0 85px;" onchange="calculateGrandTotal()">
                                 <option value="PERCENT" {{ $po->global_discount_type == 'PERCENT' ? 'selected' : '' }}>%</option>
-                                <option value="FIXED" {{ $po->global_discount_type == 'FIXED' ? 'selected' : '' }}>Nom</option>
+                                <option value="FIXED" class="dynamic-currency-text" {{ $po->global_discount_type == 'FIXED' ? 'selected' : '' }}>{{ $po->currency }}</option>
                             </select>
                             <input type="number" name="global_discount_value" id="globalDiscValue" class="px-2 border-0 form-control text-end fw-bold text-danger" value="{{ (float)$po->global_discount_value }}" min="0" step="any" oninput="calculateGrandTotal()">
                         </div>
                         <input type="hidden" name="discount_total" id="globalDiscAmountHidden" value="{{ (float)$po->discount_total }}">
                     </div>
 
+                    {{-- 🔥 PAJAK GLOBAL (HEADER PO) 🔥 --}}
                     <div class="p-3 mb-4 border bg-light rounded-3 border-primary-subtle">
                         <label class="mb-2 form-label small fw-bold text-dark">
                             <i class="bi bi-bank me-1 text-primary"></i> Pajak Global (Header PO)
                         </label>
-                        <div class="mb-1 overflow-hidden border shadow-sm input-group input-group-sm rounded-2">
-                            <select name="global_tax_type" id="globalTaxType" class="px-1 text-center bg-white border-0 form-select fw-bold" style="max-width: 60px;" onchange="calculateGrandTotal()">
-                                <option value="PERCENT" {{ $po->global_tax_type == 'PERCENT' ? 'selected' : '' }}>%</option>
-                                <option value="FIXED" {{ $po->global_tax_type == 'FIXED' ? 'selected' : '' }}>Nom</option>
+                        <div class="mb-1 overflow-hidden border shadow-sm input-group input-group-sm rounded-2 input-group-modern">
+
+                            <select name="global_tax_type" id="globalTaxType" class="px-1 text-center bg-white border-0 form-select fw-bold text-secondary tax-type-select" style="flex: 0 0 85px;" onchange="toggleTaxUI(this); calculateGrandTotal()">
+                                <option value="PERCENT" {{ ($po->global_tax_type ?? 'PERCENT') == 'PERCENT' ? 'selected' : '' }}>%</option>
+                                <option value="FIXED" class="dynamic-currency-text" {{ ($po->global_tax_type ?? '') == 'FIXED' ? 'selected' : '' }}>{{ $po->currency }}</option>
                             </select>
-                            <input type="number" name="global_tax_value" id="globalTaxValue" class="px-2 border-0 form-control text-end fw-bold text-primary" value="{{ (float)$po->global_tax_value }}" min="0" step="any" oninput="calculateGrandTotal()">
+
+                            @php
+                                $isGManualPct = false; $matchedGTaxId = "";
+                                if (($po->global_tax_type ?? 'PERCENT') == 'PERCENT' && (float)($po->global_tax_value ?? 0) > 0) {
+                                    $gtaxMatch = collect($taxes)->where('percent', (float)$po->global_tax_value)->first();
+                                    if ($gtaxMatch) $matchedGTaxId = $gtaxMatch->id; else $isGManualPct = true;
+                                }
+                            @endphp
+
+                            <select class="bg-white border-0 form-select text-end fw-bold text-info tax-master-select" onchange="applyMasterTax(this); calculateGrandTotal()">
+                                <option value="" data-rate="0">- Tanpa Pajak -</option>
+                                <option value="MANUAL_PERCENT" data-rate="0" {{ $isGManualPct ? 'selected' : '' }}>Manual (%)</option>
+                                @foreach($taxes as $tax)
+                                    <option value="{{ $tax->id }}" data-rate="{{ (float)$tax->percent }}" {{ $matchedGTaxId == $tax->id ? 'selected' : '' }}>{{ $tax->name }} ({{ (float)$tax->percent }}%)</option>
+                                @endforeach
+                            </select>
+
+                            <input type="number" name="global_tax_value" id="globalTaxValue" class="px-2 border-0 form-control text-end fw-bold text-primary tax-val-input global-tax-val" value="{{ (float)$po->global_tax_value }}" min="0" step="any" oninput="calculateGrandTotal()">
+                            <input type="hidden" id="globalTaxTypeHidden" class="tax-type-hidden" value="{{ $po->global_tax_type ?? 'NONE' }}">
                         </div>
                         <input type="hidden" name="tax_total" id="globalTaxAmountHidden" value="{{ (float)$po->tax_total }}">
                     </div>
@@ -454,16 +499,6 @@
         }
     }
 
-    $(document).ready(function() {
-        $('.select2-init').select2({ theme: 'bootstrap-5', width: '100%' });
-
-        document.querySelectorAll('.ckeditor-spec').forEach(ta => initCKEditor(ta.id));
-
-        document.querySelectorAll('.item-row').forEach(row => calculateRow(row.querySelector('.qty-input')));
-        updateCurrencySymbol();
-        calculateGrandTotal();
-    });
-
     function updateShippingAddress() {
         var select = document.getElementById('billToSelect');
         var address = select.options[select.selectedIndex].getAttribute('data-address');
@@ -504,18 +539,9 @@
 
         let qtyInput = document.getElementById(`qty-input-${index}`);
         let currentQty = parseFloat(qtyInput.value) || 0;
-        let sisaBaseQty = parseFloat(qtyInput.getAttribute('data-base-remaining')) || 0;
 
         let newQty = (currentQty * oldConvRate) / newConvRate;
-        let newMaxVal = sisaBaseQty / newConvRate;
-
-        qtyInput.max = newMaxVal;
         qtyInput.value = parseFloat(newQty.toFixed(2));
-
-        if(parseFloat(qtyInput.value) > newMaxVal) {
-            qtyInput.value = newMaxVal;
-        }
-
         selectEl.setAttribute('data-current-conv', newConvRate);
         calculateRow(qtyInput);
     }
@@ -523,10 +549,7 @@
     function triggerFilePicker(index) {
         let fileInput = document.createElement('input');
         fileInput.type = 'file';
-
-        // 🔥 INI OBATNYA! Kita ubah nama variabelnya agar persis dengan halaman Create 🔥
         fileInput.name = `po_items[${index}][attachments][]`;
-
         fileInput.multiple = true;
         fileInput.accept = '.pdf,.jpg,.jpeg,.png,.doc,.docx,.xls,.xlsx';
 
@@ -573,7 +596,7 @@
         setTimeout(() => pill.remove(), 200);
     }
 
-    // 🔥 LOGIKA PERHITUNGAN BARIS DIREVISI 🔥
+    // 🔥 LOGIKA PERHITUNGAN BARIS ITEM 🔥
     function calculateRow(el) {
         let row = el.closest('.item-row');
 
@@ -581,7 +604,7 @@
         let price = parseFloat(row.querySelector('.price-input').value) || 0;
         let gross = qty * price;
 
-        // Hitung Diskon
+        // Diskon
         let discType = row.querySelector('.disc-type').value;
         let discVal = parseFloat(row.querySelector('.disc-val').value) || 0;
         let discAmt = (discType === 'PERCENT') ? (gross * discVal / 100) : discVal;
@@ -589,10 +612,17 @@
 
         let dpp = gross - discAmt;
 
-        // Hitung Pajak Manual
-        let taxType = row.querySelector('.tax-type').value;
-        let taxVal = parseFloat(row.querySelector('.tax-val').value) || 0;
-        let taxAmt = (taxType === 'PERCENT') ? (dpp * taxVal / 100) : taxVal;
+        // Pajak Hibrida
+        let taxTypeHidden = row.querySelector('.tax-type-hidden');
+        let taxType = taxTypeHidden ? taxTypeHidden.value : 'NONE';
+        let taxVal = parseFloat(row.querySelector('.tax-val-input').value) || 0;
+        let taxAmt = 0;
+
+        if (taxType === 'PERCENT') {
+            taxAmt = dpp * taxVal / 100;
+        } else if (taxType === 'FIXED') {
+            taxAmt = taxVal;
+        }
         row.querySelector('.tax-amt-hidden').value = taxAmt;
 
         let subtotal = dpp + taxAmt;
@@ -601,7 +631,7 @@
         calculateGrandTotal();
     }
 
-    // 🔥 LOGIKA PERHITUNGAN GRAND TOTAL DIREVISI 🔥
+    // 🔥 LOGIKA PERHITUNGAN GRAND TOTAL 🔥
     function calculateGrandTotal() {
         let totalGross = 0; let totalItemDisc = 0; let totalTax = 0;
         document.querySelectorAll('.item-row').forEach(row => {
@@ -625,10 +655,17 @@
 
         let dppAfterGlobalDisc = dpp - globalDiscAmt;
 
-        // Hitung Pajak Global Manual
-        let globalTaxType = document.getElementById('globalTaxType').value;
+        // Hitung Pajak Global Manual/Hybrid
+        let globalTaxTypeHidden = document.getElementById('globalTaxTypeHidden');
+        let globalTaxType = globalTaxTypeHidden ? globalTaxTypeHidden.value : 'NONE';
         let globalTaxVal = parseFloat(document.getElementById('globalTaxValue').value) || 0;
-        let globalTaxAmt = (globalTaxType === 'PERCENT') ? (dppAfterGlobalDisc * globalTaxVal / 100) : globalTaxVal;
+        let globalTaxAmt = 0;
+
+        if (globalTaxType === 'PERCENT') {
+            globalTaxAmt = dppAfterGlobalDisc * globalTaxVal / 100;
+        } else if (globalTaxType === 'FIXED') {
+            globalTaxAmt = globalTaxVal;
+        }
 
         let hiddenTaxTotal = document.getElementById('globalTaxAmountHidden');
         if(hiddenTaxTotal) hiddenTaxTotal.value = globalTaxAmt;
@@ -650,11 +687,79 @@
     function updateCurrencySymbol() {
         let currencySelect = document.getElementById('currencySelect');
         if(!currencySelect) return;
-
         let currency = currencySelect.value;
         document.querySelectorAll('.currency-label').forEach(el => { el.innerText = currency; });
-        document.querySelectorAll('option[value="FIXED"]').forEach(opt => { opt.innerText = currency; });
+        document.querySelectorAll('.dynamic-currency-text').forEach(opt => { opt.innerText = currency; });
     }
+
+    // 🔥 FUNGSI UI PAJAK HYBRID (ANTI-BOCOR & LEBIH RAPI) 🔥
+    function toggleTaxUI(typeSelect, isInit = false) {
+        let container = typeSelect.closest('.input-group-modern');
+        if(!container) return;
+
+        let masterSelect = container.querySelector('.tax-master-select');
+        let valInput = container.querySelector('.tax-val-input');
+        let typeHidden = container.querySelector('.tax-type-hidden');
+
+        if(!masterSelect || !valInput) return;
+
+        let selectedOpt = typeSelect.options[typeSelect.selectedIndex];
+        let type = selectedOpt.value;
+
+        if(typeHidden) typeHidden.value = type;
+
+        if (type === 'PERCENT') {
+            masterSelect.classList.remove('d-none');
+
+            if (masterSelect.value === 'MANUAL_PERCENT') {
+                masterSelect.style.flex = '0 0 110px';
+                valInput.classList.remove('d-none');
+                if(!isInit) valInput.value = 0;
+            } else {
+                masterSelect.style.flex = '1 1 auto';
+                valInput.classList.add('d-none');
+                if(!isInit) valInput.value = masterSelect.options[masterSelect.selectedIndex].getAttribute('data-rate') || 0;
+            }
+        } else {
+            // FIXED (IDR / USD)
+            masterSelect.classList.add('d-none');
+            valInput.classList.remove('d-none');
+            if(!isInit) valInput.value = 0;
+        }
+    }
+
+    function applyMasterTax(masterSelect) {
+        let container = masterSelect.closest('.input-group-modern');
+        let valInput = container.querySelector('.tax-val-input');
+
+        if (masterSelect.value === 'MANUAL_PERCENT') {
+            masterSelect.style.flex = '0 0 110px';
+            valInput.classList.remove('d-none');
+            valInput.value = 0;
+            valInput.focus();
+        } else {
+            masterSelect.style.flex = '1 1 auto';
+            valInput.classList.add('d-none');
+            valInput.value = masterSelect.options[masterSelect.selectedIndex].getAttribute('data-rate') || 0;
+        }
+    }
+
+    // 🔥 INIT KETIKA HALAMAN DIBUKA 🔥
+    $(document).ready(function() {
+        $('.select2-init').select2({ theme: 'bootstrap-5', width: '100%' });
+
+        document.querySelectorAll('.ckeditor-spec').forEach(ta => initCKEditor(ta.id));
+
+        // 1. Tembak UI Mata Uang secara Paksa! (Untuk mengatasi glitch di gambar)
+        updateCurrencySymbol();
+
+        // 2. Tembak UI Pajak
+        document.querySelectorAll('.tax-type-select').forEach(el => toggleTaxUI(el, true));
+
+        // 3. Hitung Ulang Semua Baris
+        document.querySelectorAll('.item-row').forEach(row => calculateRow(row.querySelector('.qty-input')));
+        calculateGrandTotal();
+    });
 
     document.getElementById('poForm').addEventListener('submit', function(e) {
         e.preventDefault();

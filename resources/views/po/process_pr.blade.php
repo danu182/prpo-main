@@ -202,7 +202,7 @@
                         $prConvRate = 1;
                         $cleanPrUom = $baseUomName;
                         $safePrUom = $baseUomName;
-                        $prUomId = $item->uom_id ?? ''; // ID MURNI
+                        $prUomId = $item->uom_id ?? '';
 
                         if (!empty($item->uom_id) && optional($item->item)->itemUoms) {
                             $altUom = collect($item->item->itemUoms)->where('id', $item->uom_id)->first();
@@ -211,8 +211,7 @@
                                 $cleanPrUom = $altUom->uom_name;
                                 $safePrUom = $cleanPrUom . ' (Isi: ' . $prConvRate . ' ' . $baseUomName . ')';
                             }
-                        }
-                        else {
+                        } else {
                             $rawUom = $item->getRawOriginal('uom') ?? $item->uom;
                             if (is_string($rawUom) && !str_starts_with(trim($rawUom), '{')) {
                                 $cleanPrUom = trim(preg_replace('/ \(Isi:.*\)/i', '', $rawUom));
@@ -309,7 +308,7 @@
                                                 @if($item->vendorQuotes && $item->vendorQuotes->count() > 0)
                                                 <div class="pt-2 border-top">
                                                     <button class="bg-white shadow-sm btn btn-outline-secondary btn-sm w-100 rounded-3 fw-bold d-flex justify-content-between align-items-center" type="button" data-bs-toggle="collapse" data-bs-target="#vendorData{{ $index }}" aria-expanded="false">
-                                                        <span class="text-primary"><i class="bi bi-search me-1"></i> Intip Penawaran PR</span>
+                                                        <span class="text-primary"><i class="bi bi-search me-1"></i> Intip Penawaran</span>
                                                         <span class="shadow-sm badge bg-primary rounded-pill">{{ $item->vendorQuotes->count() }} Vendor</span>
                                                     </button>
 
@@ -397,24 +396,36 @@
                                 <div class="col-md-3">
                                     <label class="form-label small fw-bold text-dark">Diskon per Item</label>
                                     <div class="shadow-sm input-group-modern">
-                                        <select name="po_items[{{ $index }}][discount_type]" class="text-center form-select fw-bold text-secondary disc-type" style="max-width: 65px;" onchange="calculateRow(this)">
+                                        <select name="po_items[{{ $index }}][discount_type]" class="text-center form-select fw-bold text-secondary disc-type" style="flex: 0 0 85px;" onchange="calculateRow(this)">
                                             <option value="PERCENT">%</option>
-                                            <option value="FIXED">Rp</option>
+                                            <option value="FIXED" class="dynamic-currency-text">IDR</option>
                                         </select>
                                         <input type="number" name="po_items[{{ $index }}][discount_value]" class="form-control text-end fw-bold text-danger disc-val" value="0" min="0" step="any" oninput="calculateRow(this)">
                                     </div>
                                     <input type="hidden" name="po_items[{{ $index }}][discount_amount]" class="disc-amt-hidden" value="0">
                                 </div>
 
-                                {{-- 🔥 PAJAK ITEM MANUAL 🔥 --}}
+                                {{-- PAJAK ITEM (HYBRID MASTER DATA & NOMINAL) --}}
                                 <div class="col-md-3">
                                     <label class="form-label small fw-bold text-dark">Pajak (VAT/PPN)</label>
                                     <div class="shadow-sm input-group-modern">
-                                        <select name="po_items[{{ $index }}][tax_type]" class="text-center form-select fw-bold text-secondary tax-type" style="max-width: 65px;" onchange="calculateRow(this)">
+                                        {{-- 1. Pilihan Tipe (% atau USD/IDR) --}}
+                                        <select name="po_items[{{ $index }}][tax_type]" class="text-center form-select fw-bold text-secondary tax-type-select" style="flex: 0 0 85px;" onchange="toggleTaxUI(this); calculateRow(this)">
                                             <option value="PERCENT">%</option>
-                                            <option value="FIXED">Rp</option>
+                                            <option value="FIXED" class="dynamic-currency-text">IDR</option>
                                         </select>
-                                        <input type="number" name="po_items[{{ $index }}][tax_value]" class="form-control text-end fw-bold text-info tax-val" value="0" min="0" step="any" oninput="calculateRow(this)">
+
+                                        {{-- 2. Dropdown Master Data --}}
+                                        <select name="po_items[{{ $index }}][tax_id]" class="form-select text-end fw-bold text-info tax-master-select" onchange="applyMasterTax(this); calculateRow(this)">
+                                            <option value="" data-rate="0">- Tanpa Pajak -</option>
+                                            <option value="MANUAL_PERCENT" data-rate="0">Manual (%)</option>
+                                            @foreach($taxes as $tax)
+                                                <option value="{{ $tax->id }}" data-rate="{{ (float)$tax->percent }}">{{ $tax->name }} ({{ (float)$tax->percent }}%)</option>
+                                            @endforeach
+                                        </select>
+
+                                        {{-- 3. Kotak Nominal Manual --}}
+                                        <input type="number" name="po_items[{{ $index }}][tax_value]" class="form-control text-end fw-bold text-info tax-val-input d-none" value="0" min="0" step="any" oninput="calculateRow(this)">
                                     </div>
                                     <input type="hidden" name="po_items[{{ $index }}][tax_amount]" class="tax-amt-hidden" value="0">
                                 </div>
@@ -497,13 +508,13 @@
                         </label>
                         <div id="globalDiscContainer">
                             <div class="pb-2 mb-2 border-white global-disc-row border-bottom position-relative">
-                                <div class="mb-1 overflow-hidden border shadow-sm input-group input-group-sm rounded-2">
+                                <div class="mb-1 overflow-hidden border shadow-sm input-group input-group-sm rounded-2 input-group-modern">
                                     <select name="global_discounts[0][vendor_id]" class="bg-white border-0 form-select text-dark small fw-bold dynamic-vendor-select" style="max-width: 120px;">
                                         <option value="ALL">- Semua Vendor Terpilih -</option>
                                     </select>
-                                    <select name="global_discounts[0][type]" class="px-1 text-center border-0 form-select bg-light fw-bold" style="max-width: 60px;">
+                                    <select name="global_discounts[0][type]" class="px-1 text-center border-0 form-select bg-light fw-bold" style="flex: 0 0 75px;">
                                         <option value="PERCENT">%</option>
-                                        <option value="FIXED">Nom</option>
+                                        <option value="FIXED" class="dynamic-currency-text">IDR</option>
                                     </select>
                                     <input type="number" name="global_discounts[0][value]" class="px-2 border-0 form-control text-end fw-bold text-danger global-disc-val" value="0" min="0" step="any" oninput="calculateGrandTotal()">
                                 </div>
@@ -512,22 +523,29 @@
                         <button type="button" class="p-0 btn btn-sm btn-link text-decoration-none small" onclick="addGlobalDiscRow()"><i class="bi bi-plus-circle"></i> Tambah Diskon Vendor Lain</button>
                     </div>
 
-                    {{-- 🔥 PAJAK GLOBAL (DIUBAH MENJADI MANUAL SEPERTI DISKON) 🔥 --}}
+                    {{-- 🔥 PAJAK GLOBAL HYBRID 🔥 --}}
                     <div class="p-3 mb-4 border bg-light rounded-3 border-primary-subtle">
                         <label class="mb-2 form-label small fw-bold text-dark">
                             <i class="bi bi-bank me-1 text-primary"></i> Pajak Global (Header PO)
                         </label>
                         <div id="globalTaxContainer">
                             <div class="pb-2 mb-2 border-white global-tax-row border-bottom position-relative">
-                                <div class="mb-1 overflow-hidden border shadow-sm input-group input-group-sm rounded-2">
+                                <div class="mb-1 overflow-hidden border shadow-sm input-group input-group-sm rounded-2 input-group-modern">
                                     <select name="global_taxes[0][vendor_id]" class="bg-white border-0 form-select text-dark small fw-bold dynamic-vendor-select" style="max-width: 120px;">
                                         <option value="ALL">- Semua Vendor Terpilih -</option>
                                     </select>
-                                    <select name="global_taxes[0][type]" class="px-1 text-center border-0 form-select bg-light fw-bold" style="max-width: 60px;">
+                                    <select name="global_taxes[0][type]" class="px-1 text-center bg-white border-0 form-select fw-bold text-secondary tax-type-select" style="flex: 0 0 75px;" onchange="toggleTaxUI(this); calculateGrandTotal()">
                                         <option value="PERCENT">%</option>
-                                        <option value="FIXED">Nom</option>
+                                        <option value="FIXED" class="dynamic-currency-text">IDR</option>
                                     </select>
-                                    <input type="number" name="global_taxes[0][value]" class="px-2 border-0 form-control text-end fw-bold text-primary global-tax-val" value="0" min="0" step="any" oninput="calculateGrandTotal()">
+                                    <select name="global_taxes[0][tax_id]" class="bg-white border-0 form-select text-end fw-bold text-info tax-master-select" onchange="applyMasterTax(this); calculateGrandTotal()">
+                                        <option value="" data-rate="0">- Tanpa Pajak -</option>
+                                        <option value="MANUAL_PERCENT" data-rate="0">Manual (%)</option>
+                                        @foreach($taxes as $tax)
+                                            <option value="{{ $tax->id }}" data-rate="{{ (float)$tax->percent }}">{{ $tax->name }} ({{ (float)$tax->percent }}%)</option>
+                                        @endforeach
+                                    </select>
+                                    <input type="number" name="global_taxes[0][value]" class="px-2 border-0 form-control text-end fw-bold text-primary tax-val-input global-tax-val d-none" value="0" min="0" step="any" oninput="calculateGrandTotal()">
                                 </div>
                             </div>
                         </div>
@@ -537,34 +555,13 @@
                     {{-- Rincian Hitungan --}}
                     <h6 class="pb-2 mb-3 fw-bold text-dark border-bottom">Rincian Kalkulasi</h6>
 
-                    <div class="mb-2 d-flex justify-content-between small text-muted">
-                        <span>Total Bruto (Item)</span>
-                        <span class="fw-bold text-dark" id="lblSubtotal">0</span>
-                    </div>
-                    <div class="mb-2 d-flex justify-content-between small text-danger">
-                        <span>Total Diskon Item (-)</span>
-                        <span class="fw-bold" id="lblTotalItemDisc">0</span>
-                    </div>
-                    <div class="mb-2 d-flex justify-content-between small text-primary fw-bolder">
-                        <span>DPP (Dasar Pajak)</span>
-                        <span id="lblDpp">0</span>
-                    </div>
-                    <div class="mb-2 d-flex justify-content-between small text-danger fw-bolder">
-                        <span>Diskon Global (-)</span>
-                        <span id="lblGlobalDisc">0</span>
-                    </div>
-                    <div class="mb-2 d-flex justify-content-between small text-muted">
-                        <span>Total Pajak PPN (+)</span>
-                        <span class="fw-bold text-dark" id="lblTax">0</span>
-                    </div>
-                    <div class="mb-2 d-flex justify-content-between small text-success">
-                        <span>Biaya Tambahan (+)</span>
-                        <span class="fw-bold" id="lblCharges">0</span>
-                    </div>
-                    <div class="pb-3 mb-4 d-flex justify-content-between small text-danger border-bottom">
-                        <span>Potongan Voucher (-)</span>
-                        <span class="fw-bold" id="lblExtraDisc">0</span>
-                    </div>
+                    <div class="mb-2 d-flex justify-content-between small text-muted"><span>Total Bruto (Item)</span><span class="fw-bold text-dark" id="lblSubtotal">0</span></div>
+                    <div class="mb-2 d-flex justify-content-between small text-danger"><span>Total Diskon Item (-)</span><span class="fw-bold" id="lblTotalItemDisc">0</span></div>
+                    <div class="mb-2 d-flex justify-content-between small text-primary fw-bolder"><span>DPP (Dasar Pajak)</span><span id="lblDpp">0</span></div>
+                    <div class="mb-2 d-flex justify-content-between small text-danger fw-bolder"><span>Diskon Global (-)</span><span id="lblGlobalDisc">0</span></div>
+                    <div class="mb-2 d-flex justify-content-between small text-muted"><span>Total Pajak PPN (+)</span><span class="fw-bold text-dark" id="lblTax">0</span></div>
+                    <div class="mb-2 d-flex justify-content-between small text-success"><span>Biaya Tambahan (+)</span><span class="fw-bold" id="lblCharges">0</span></div>
+                    <div class="pb-3 mb-4 d-flex justify-content-between small text-danger border-bottom"><span>Potongan Voucher (-)</span><span class="fw-bold" id="lblExtraDisc">0</span></div>
 
                     {{-- TANGGAL & TERMIN --}}
                     <h6 class="pt-3 pb-2 mb-3 fw-bold text-dark border-bottom">Jadwal & Pembayaran</h6>
@@ -605,7 +602,7 @@
     @foreach($discountTypes as $type) <option value="{{ $type->name }}"></option> @endforeach
 </datalist>
 
-{{-- 🔥 TEMPLATE BIAYA TAMBAHAN (HANYA VENDOR YG DIPILIH) 🔥 --}}
+{{-- TEMPLATE BIAYA TAMBAHAN --}}
 <template id="chargeRowTemplate">
     <tr class="charge-row border-bottom">
         <td width="35%" class="p-1 pb-2">
@@ -625,7 +622,7 @@
     </tr>
 </template>
 
-{{-- 🔥 TEMPLATE POTONGAN TAMBAHAN (HANYA VENDOR YG DIPILIH) 🔥 --}}
+{{-- TEMPLATE POTONGAN TAMBAHAN --}}
 <template id="extraDiscRowTemplate">
     <tr class="extradisc-row border-bottom">
         <td width="35%" class="p-1 pb-2">
@@ -661,30 +658,23 @@
     let gTaxIdx = 0;
     let myEditors = {};
 
-    function initSelect2() {
-        $('.select2-init').select2({ theme: 'bootstrap-5', width: '100%' });
-    }
+    function initSelect2() { $('.select2-init').select2({ theme: 'bootstrap-5', width: '100%' }); }
 
     function initCKEditor(selectorId) {
         let domElement = document.querySelector('#' + selectorId);
         if (domElement && !domElement.ckeditorInstance) {
-            ClassicEditor
-                .create(domElement, { toolbar: [ 'heading', '|', 'bold', 'italic', 'bulletedList', 'numberedList', 'blockQuote', '|', 'undo', 'redo' ] })
-                .then(editor => {
-                    myEditors[selectorId] = editor;
-                    domElement.ckeditorInstance = editor;
-                })
-                .catch(error => { console.error('Oops, CKEditor gagal jalan:', error); });
+            ClassicEditor.create(domElement, { toolbar: [ 'heading', '|', 'bold', 'italic', 'bulletedList', 'numberedList', 'blockQuote', '|', 'undo', 'redo' ] })
+                .then(editor => { myEditors[selectorId] = editor; domElement.ckeditorInstance = editor; })
+                .catch(error => { console.error(error); });
         }
     }
 
     function updateCurrencySymbol() {
         let currencySelect = document.getElementById('currencySelect');
         if(!currencySelect) return;
-
         let currency = currencySelect.value;
         document.querySelectorAll('.currency-label').forEach(el => { el.innerText = currency; });
-        document.querySelectorAll('option[value="FIXED"]').forEach(opt => { opt.innerText = currency; });
+        document.querySelectorAll('.dynamic-currency-text').forEach(opt => { opt.innerText = currency; });
     }
 
     // =========================================================================
@@ -692,7 +682,6 @@
     // =========================================================================
     function syncVendorDropdowns() {
         let selectedVendors = new Map();
-
         document.querySelectorAll('.item-row').forEach(row => {
             let checkbox = row.querySelector('.row-checkbox');
             if(checkbox && checkbox.checked) {
@@ -700,26 +689,19 @@
                 if(vendorSelect) {
                     let vId = vendorSelect.value;
                     let vName = vendorSelect.options[vendorSelect.selectedIndex]?.text;
-                    if(vId && vName && vId !== '') {
-                        selectedVendors.set(vId, vName);
-                    }
+                    if(vId && vName && vId !== '') selectedVendors.set(vId, vName);
                 }
             }
         });
 
         let optionsHtml = '<option value="ALL">- Semua Vendor Terpilih -</option>';
-        selectedVendors.forEach((name, id) => {
-            optionsHtml += `<option value="${id}">${name}</option>`;
-        });
+        selectedVendors.forEach((name, id) => { optionsHtml += `<option value="${id}">${name}</option>`; });
 
         document.querySelectorAll('.dynamic-vendor-select').forEach(dropdown => {
             let currentVal = dropdown.value;
             dropdown.innerHTML = optionsHtml;
-            if(dropdown.querySelector(`option[value="${currentVal}"]`)) {
-                dropdown.value = currentVal;
-            } else {
-                dropdown.value = "ALL";
-            }
+            if(dropdown.querySelector(`option[value="${currentVal}"]`)) dropdown.value = currentVal;
+            else dropdown.value = "ALL";
         });
 
         updateTemplateSelect('chargeRowTemplate', optionsHtml);
@@ -737,27 +719,7 @@
         }
     }
 
-    $(document).on('change', '.vendor-select', function() {
-        syncVendorDropdowns();
-    });
-
-    $(document).ready(function() {
-        initSelect2();
-
-        document.querySelectorAll('.ckeditor-spec').forEach(function(textarea) {
-            initCKEditor(textarea.id);
-        });
-
-        $('#checkAllItems').change(function() {
-            $('.row-checkbox').prop('checked', this.checked).trigger('change');
-        });
-
-        document.querySelectorAll('.item-row').forEach(row => calculateRow(row.querySelector('.qty-input')));
-        updateCurrencySymbol();
-        calculateDueDate();
-
-        syncVendorDropdowns();
-    });
+    $(document).on('change', '.vendor-select', function() { syncVendorDropdowns(); });
 
     function updateShippingAddress(forceReset = false) {
         var select = document.getElementById('billToSelect');
@@ -776,9 +738,7 @@
             let poDate = new Date(poDateVal);
             poDate.setDate(poDate.getDate() + daysToAdd);
             document.getElementById('dueDateInput').value = poDate.toISOString().split('T')[0];
-        } else if(poDateVal) {
-            document.getElementById('dueDateInput').value = poDateVal;
-        }
+        } else if(poDateVal) document.getElementById('dueDateInput').value = poDateVal;
     }
 
     function addChargeRow() {
@@ -800,13 +760,13 @@
 
         let template = `
             <div class="pb-2 mb-2 border-white global-disc-row border-bottom position-relative">
-                <div class="mb-1 overflow-hidden border shadow-sm input-group input-group-sm rounded-2">
+                <div class="mb-1 overflow-hidden border shadow-sm input-group input-group-sm rounded-2 input-group-modern">
                     <select name="global_discounts[${gDiscIdx}][vendor_id]" class="bg-white border-0 form-select text-dark small fw-bold dynamic-vendor-select" style="max-width: 120px;">
                         ${vendorsHtml}
                     </select>
-                    <select name="global_discounts[${gDiscIdx}][type]" class="px-1 text-center border-0 form-select bg-light fw-bold" style="max-width: 70px;">
+                    <select name="global_discounts[${gDiscIdx}][type]" class="px-1 text-center border-0 form-select bg-light fw-bold" style="flex: 0 0 75px;" onchange="calculateGrandTotal()">
                         <option value="PERCENT">%</option>
-                        <option value="FIXED">${currentCurrency}</option>
+                        <option value="FIXED" class="dynamic-currency-text">${currentCurrency}</option>
                     </select>
                     <input type="number" name="global_discounts[${gDiscIdx}][value]" class="px-2 border-0 form-control text-end fw-bold text-danger global-disc-val" value="0" min="0" step="any" oninput="calculateGrandTotal()">
                 </div>
@@ -816,34 +776,44 @@
         document.getElementById('globalDiscContainer').insertAdjacentHTML('beforeend', template);
     }
 
-    // 🔥 FUNGSI BARU UNTUK PAJAK GLOBAL MANUAL 🔥
+    // 🔥 PAJAK GLOBAL HYBRID 🔥
     function addGlobalTaxRow() {
         gTaxIdx++;
         let vendorsHtml = document.querySelector('.dynamic-vendor-select').innerHTML;
         let currentCurrency = document.getElementById('currencySelect').value || 'IDR';
 
+        let taxesOptions = `
+            <option value="" data-rate="0">- Tanpa Pajak -</option>
+            <option value="MANUAL_PERCENT" data-rate="0">Manual (%)</option>
+            @foreach($taxes as $tax)
+                <option value="{{ $tax->id }}" data-rate="{{ (float)$tax->percent }}">{{ $tax->name }} ({{ (float)$tax->percent }}%)</option>
+            @endforeach
+        `;
+
         let template = `
             <div class="pb-2 mb-2 border-white global-tax-row border-bottom position-relative">
-                <div class="mb-1 overflow-hidden border shadow-sm input-group input-group-sm rounded-2">
+                <div class="mb-1 overflow-hidden border shadow-sm input-group input-group-sm rounded-2 input-group-modern">
                     <select name="global_taxes[${gTaxIdx}][vendor_id]" class="bg-white border-0 form-select text-dark small fw-bold dynamic-vendor-select" style="max-width: 120px;">
                         ${vendorsHtml}
                     </select>
-                    <select name="global_taxes[${gTaxIdx}][type]" class="px-1 text-center border-0 form-select bg-light fw-bold" style="max-width: 70px;">
+                    <select name="global_taxes[${gTaxIdx}][type]" class="px-1 text-center bg-white border-0 form-select fw-bold text-secondary tax-type-select" style="flex: 0 0 75px;" onchange="toggleTaxUI(this); calculateGrandTotal()">
                         <option value="PERCENT">%</option>
-                        <option value="FIXED">${currentCurrency}</option>
+                        <option value="FIXED" class="dynamic-currency-text">${currentCurrency}</option>
                     </select>
-                    <input type="number" name="global_taxes[${gTaxIdx}][value]" class="px-2 border-0 form-control text-end fw-bold text-primary global-tax-val" value="0" min="0" step="any" oninput="calculateGrandTotal()">
+                    <select name="global_taxes[${gTaxIdx}][tax_id]" class="bg-white border-0 form-select text-end fw-bold text-info tax-master-select" onchange="applyMasterTax(this); calculateGrandTotal()">
+                        ${taxesOptions}
+                    </select>
+                    <input type="number" name="global_taxes[${gTaxIdx}][value]" class="px-2 border-0 form-control text-end fw-bold text-primary tax-val-input global-tax-val d-none" value="0" min="0" step="any" oninput="calculateGrandTotal()">
                 </div>
                 <button type="button" class="top-0 p-0 btn btn-sm text-danger position-absolute end-0" onclick="this.closest('.global-tax-row').remove(); calculateGrandTotal();" style="margin-top:-10px; margin-right:-5px;"><i class="bi bi-x-circle-fill"></i></button>
             </div>
         `;
         document.getElementById('globalTaxContainer').insertAdjacentHTML('beforeend', template);
+        let newRow = document.getElementById('globalTaxContainer').lastElementChild;
+        toggleTaxUI(newRow.querySelector('.tax-type-select'), true);
     }
 
-    function removeRow(btn) {
-        btn.closest('tr').remove();
-        calculateGrandTotal();
-    }
+    function removeRow(btn) { btn.closest('tr').remove(); calculateGrandTotal(); }
 
     function updateRowUom(selectEl, index) {
         let selectedOption = selectEl.options[selectEl.selectedIndex];
@@ -863,10 +833,7 @@
 
         qtyInput.max = newMaxVal;
         qtyInput.value = parseFloat(newQty.toFixed(2));
-
-        if(parseFloat(qtyInput.value) > newMaxVal) {
-            qtyInput.value = newMaxVal;
-        }
+        if(parseFloat(qtyInput.value) > newMaxVal) qtyInput.value = newMaxVal;
 
         selectEl.setAttribute('data-current-conv', newConvRate);
 
@@ -886,7 +853,6 @@
         splitIdx++;
 
         clonedCard.attr('data-parent-idx', originalIdx);
-
         clonedCard.find('.ck-editor').remove();
         let clonedTextarea = clonedCard.find('.ckeditor-spec');
         clonedTextarea.show().css('display', '');
@@ -936,14 +902,15 @@
         }
 
         originalCard.after(clonedCard);
-
         initSelect2();
         initCKEditor(newSpecId);
 
         calculateRow(origQtyInput[0]);
         calculateRow(clonedCard.find('.qty-input')[0]);
-
         syncVendorDropdowns();
+
+        // Triger UI Pajak pada item clone
+        toggleTaxUI(clonedCard.find('.tax-type-select')[0], true);
     }
 
     function removeSplitItem(btn, editorId) {
@@ -966,11 +933,7 @@
             calculateRow(parentQtyInput[0]);
         }
 
-        if (myEditors[editorId]) {
-            myEditors[editorId].destroy();
-            delete myEditors[editorId];
-        }
-
+        if (myEditors[editorId]) { myEditors[editorId].destroy(); delete myEditors[editorId]; }
         cardToDelete.remove();
         calculateGrandTotal();
         syncVendorDropdowns();
@@ -1002,7 +965,6 @@
                 let hiddenContainer = document.getElementById('hiddenFileInputs_' + index);
                 let listContainer = document.getElementById('fileListContainer_' + index);
                 let inputId = 'fileInput_' + Date.now() + Math.random().toString(36).substr(2, 5);
-
                 this.id = inputId;
                 hiddenContainer.appendChild(this);
 
@@ -1018,9 +980,7 @@
                                     <div class="fw-bold text-dark text-truncate" style="max-width: 100px; font-size: 0.65rem;" title="${file.name}">${file.name}</div>
                                 </div>
                             </div>
-                            <button type="button" class="p-0 btn btn-link text-danger ms-1" onclick="removeSpecificFile('${inputId}', ${fileIndex}, '${pillId}')" title="Hapus File">
-                                <i class="bi bi-x-circle-fill"></i>
-                            </button>
+                            <button type="button" class="p-0 btn btn-link text-danger ms-1" onclick="removeSpecificFile('${inputId}', ${fileIndex}, '${pillId}')" title="Hapus File"><i class="bi bi-x-circle-fill"></i></button>
                         </div>
                     `;
                     listContainer.insertAdjacentHTML('beforeend', pillHTML);
@@ -1046,7 +1006,7 @@
         setTimeout(() => pill.remove(), 200);
     }
 
-    // 🔥 PERHITUNGAN BARIS (DENGAN PAJAK MANUAL) 🔥
+    // 🔥 LOGIKA PERHITUNGAN BARIS ITEM 🔥
     function calculateRow(el) {
         let row = el.closest('.item-row');
         if(row.querySelector('.row-checkbox') && !row.querySelector('.row-checkbox').checked) return;
@@ -1062,8 +1022,9 @@
 
         let dpp = gross - discAmt;
 
-        let taxType = row.querySelector('.tax-type').value;
-        let taxVal = parseFloat(row.querySelector('.tax-val').value) || 0;
+        // Pajak Item Manual / Master Data
+        let taxType = row.querySelector('.tax-type-select').value;
+        let taxVal = parseFloat(row.querySelector('.tax-val-input').value) || 0;
         let taxAmt = (taxType === 'PERCENT') ? (dpp * taxVal / 100) : taxVal;
         row.querySelector('.tax-amt-hidden').value = taxAmt;
 
@@ -1074,12 +1035,9 @@
         calculateGrandTotal();
     }
 
-    // 🔥 PERHITUNGAN GRAND TOTAL (DENGAN PAJAK GLOBAL MANUAL) 🔥
+    // 🔥 LOGIKA PERHITUNGAN GRAND TOTAL 🔥
     function calculateGrandTotal() {
-        let totalGross = 0;
-        let totalItemDisc = 0;
-        let totalTaxItem = 0;
-        let vendorDpp = {};
+        let totalGross = 0; let totalItemDisc = 0; let totalTaxItem = 0; let vendorDpp = {};
 
         document.querySelectorAll('.item-row').forEach(row => {
             if(row.querySelector('.row-checkbox').checked) {
@@ -1101,11 +1059,8 @@
             }
         });
 
-        let totalCharges = 0;
-        document.querySelectorAll('.charge-input').forEach(i => totalCharges += parseFloat(i.value) || 0);
-
-        let totalExtraDisc = 0;
-        document.querySelectorAll('.extradisc-input').forEach(i => totalExtraDisc += parseFloat(i.value) || 0);
+        let totalCharges = 0; document.querySelectorAll('.charge-input').forEach(i => totalCharges += parseFloat(i.value) || 0);
+        let totalExtraDisc = 0; document.querySelectorAll('.extradisc-input').forEach(i => totalExtraDisc += parseFloat(i.value) || 0);
 
         let totalDpp = totalGross - totalItemDisc;
 
@@ -1114,18 +1069,17 @@
             let vId = row.querySelector('select[name$="[vendor_id]"]').value;
             let type = row.querySelector('select[name$="[type]"]').value;
             let val = parseFloat(row.querySelector('.global-disc-val').value) || 0;
-
             let targetDpp = (vId === 'ALL') ? totalDpp : (vendorDpp[vId] || 0);
             globalDiscAmt += (type === 'PERCENT') ? (targetDpp * val / 100) : val;
         });
 
         let dppAfterGlobalDisc = totalDpp - globalDiscAmt;
 
-        // Pajak Global Manual (Disesuaikan dengan pilihan Vendor)
+        // Pajak Global Manual / Master Data
         let globalTaxAmt = 0;
         document.querySelectorAll('.global-tax-row').forEach(row => {
             let vId = row.querySelector('select[name$="[vendor_id]"]').value;
-            let type = row.querySelector('select[name$="[type]"]').value;
+            let type = row.querySelector('.tax-type-select').value;
             let val = parseFloat(row.querySelector('.global-tax-val').value) || 0;
 
             let targetDpp = (vId === 'ALL') ? dppAfterGlobalDisc : ((vendorDpp[vId] || 0) * (1 - (globalDiscAmt/totalDpp || 0)));
@@ -1144,10 +1098,64 @@
         document.getElementById('lblGrandTotal').innerText = formatCurrency(grandTotal);
     }
 
-    function formatCurrency(amount) {
-        return new Intl.NumberFormat('id-ID', { minimumFractionDigits: 0, maximumFractionDigits: 2 }).format(amount);
+    function formatCurrency(amount) { return new Intl.NumberFormat('id-ID', { minimumFractionDigits: 0, maximumFractionDigits: 2 }).format(amount); }
+
+    // 🔥 FUNGSI UI PAJAK HYBRID (ANTI BOCOR) 🔥
+    function toggleTaxUI(typeSelect, isInit = false) {
+        let container = typeSelect.closest('.input-group-modern');
+        if(!container) return;
+        let masterSelect = container.querySelector('.tax-master-select');
+        let valInput = container.querySelector('.tax-val-input');
+        if(!masterSelect || !valInput) return;
+
+        if (typeSelect.value === 'PERCENT') {
+            masterSelect.classList.remove('d-none');
+            if (masterSelect.value === 'MANUAL_PERCENT') {
+                masterSelect.style.flex = '0 0 110px';
+                valInput.classList.remove('d-none');
+                if(!isInit) valInput.value = 0;
+            } else {
+                masterSelect.style.flex = '1 1 auto';
+                valInput.classList.add('d-none');
+                if(!isInit) valInput.value = masterSelect.options[masterSelect.selectedIndex].getAttribute('data-rate') || 0;
+            }
+        } else {
+            masterSelect.classList.add('d-none');
+            valInput.classList.remove('d-none');
+            if(!isInit) valInput.value = 0;
+        }
     }
 
+    function applyMasterTax(masterSelect) {
+        let container = masterSelect.closest('.input-group-modern');
+        let valInput = container.querySelector('.tax-val-input');
+        if (masterSelect.value === 'MANUAL_PERCENT') {
+            masterSelect.style.flex = '0 0 110px';
+            valInput.classList.remove('d-none');
+            valInput.value = 0;
+            valInput.focus();
+        } else {
+            masterSelect.style.flex = '1 1 auto';
+            valInput.classList.add('d-none');
+            valInput.value = masterSelect.options[masterSelect.selectedIndex].getAttribute('data-rate') || 0;
+        }
+    }
+
+    // ================== INIT ==================
+    $(document).ready(function() {
+        initSelect2();
+        document.querySelectorAll('.ckeditor-spec').forEach(function(textarea) { initCKEditor(textarea.id); });
+        $('#checkAllItems').change(function() { $('.row-checkbox').prop('checked', this.checked).trigger('change'); });
+
+        // Triger Initial UI Sync
+        updateCurrencySymbol();
+        document.querySelectorAll('.tax-type-select').forEach(el => toggleTaxUI(el, true));
+        document.querySelectorAll('.item-row').forEach(row => calculateRow(row.querySelector('.qty-input')));
+        calculateDueDate();
+        syncVendorDropdowns();
+    });
+
+    // ================== FORM SUBMIT VALIDATION ==================
     document.getElementById('poForm').addEventListener('submit', function(e) {
         e.preventDefault();
 
@@ -1181,11 +1189,7 @@
             return;
         }
 
-        $('input[type="file"]').each(function() {
-            if ($(this).val() === '') {
-                $(this).prop('disabled', true);
-            }
-        });
+        $('input[type="file"]').each(function() { if ($(this).val() === '') { $(this).prop('disabled', true); } });
 
         let prItemTotals = {};
         let isValidSisa = true;

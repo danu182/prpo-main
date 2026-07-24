@@ -238,6 +238,15 @@ class GoodsReceiptController extends Controller
 
                         $hargaDariPO = (float) ($poItem->unit_price ?? 0);
 
+                        // ====================================================================
+                        // 🔥 PERBAIKAN: HITUNG HPP PER SATUAN DASAR (ANTI VALUASI MELEDAK) 🔥
+                        // ====================================================================
+                        $poConvFactorSafe = $poConvFactor > 0 ? $poConvFactor : 1;
+                        $hargaDasarPerPiece = $hargaDariPO / $poConvFactorSafe;
+
+                        // 🔥 LOGIKA UOM PENYIMPANAN YANG SUDAH DIBERSIHKAN 🔥
+                        $inputConvFactor = 1;
+
                         // 🔥 LOGIKA UOM PENYIMPANAN YANG SUDAH DIBERSIHKAN 🔥
                         $inputConvFactor = 1;
                         $selectedUomId = null;
@@ -379,12 +388,12 @@ class GoodsReceiptController extends Controller
                                 $noteMutasi .= " - " . \Illuminate\Support\Str::limit(strip_tags($catatanAsli), 100);
                             }
 
-                            \App\Models\InventoryStock::create([
+                           \App\Models\InventoryStock::create([
                                 'company_id'       => $po->bill_to_company_id,
                                 'warehouse_id'     => $request->warehouse_id ?? 1,
                                 'item_id'          => $masterItem->id,
                                 'stock_qty'        => $baseQtyReceived,
-                                'unit_price'       => $hargaDariPO, // 🔥 BARIS PENTING YANG KURANG!
+                                'unit_price'       => $hargaDasarPerPiece, // 🔥 SEKARANG SUDAH MENGGUNAKAN HARGA PER PCS
                                 'reference_number' => $grNumber,
                                 'notes'            => $noteMutasi,
                             ]);
