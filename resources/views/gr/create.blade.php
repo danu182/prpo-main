@@ -18,10 +18,9 @@
 
     <form action="{{ route('gr.store', $po->po_number) }}" method="POST" id="grForm" enctype="multipart/form-data">
 
-
         @if ($errors->any())
-            <div class="alert alert-danger shadow-sm mb-4">
-                <h6 class="alert-heading fw-bold mb-2">
+            <div class="mb-4 shadow-sm alert alert-danger">
+                <h6 class="mb-2 fw-bold alert-heading">
                     <i class="fas fa-exclamation-triangle me-2"></i> Gagal Menyimpan! Mohon periksa kembali:
                 </h6>
                 <ul class="mb-0">
@@ -32,7 +31,7 @@
             </div>
         @endif
 
-    @csrf
+        @csrf
 
         {{-- 1. INFORMASI SURAT JALAN & PENERIMAAN --}}
         <div class="mb-4 border-0 border-4 shadow-sm card rounded-4 border-start border-success">
@@ -110,7 +109,7 @@
         {{-- 2. TABEL ITEM YANG DITERIMA --}}
         <div class="mb-4 overflow-hidden border-0 shadow-sm card rounded-4">
             <div class="px-4 py-3 bg-white card-header border-bottom">
-                <h6 class="mb-0 fw-bold text-dark"><i class="bi bi-list-check me-2 text-primary"></i>Rincian Barang D<div id="itemsContainer">atang</h6>
+                <h6 class="mb-0 fw-bold text-dark"><i class="bi bi-list-check me-2 text-primary"></i>Rincian Barang Datang</h6>
             </div>
             <div class="p-0 card-body table-responsive">
                 <table class="table mb-0 align-middle table-hover">
@@ -135,7 +134,6 @@
                             $poUomDisplay = $item->uom ?? $item->raw_po_uom ?? 'PCS';
                             $poConvFactor = 1;
 
-                            // 🔥 3 LAPIS PENDOBRAK KONVERSI UOM 🔥
                             // 1. Tarik dari UOM ID
                             if (!empty($item->uom_id) && $masterItem && $masterItem->itemUoms) {
                                 $uomMaster = collect($masterItem->itemUoms)->firstWhere('id', $item->uom_id);
@@ -161,14 +159,16 @@
 
                             if ($poConvFactor <= 0) $poConvFactor = 1;
 
-                            // Kalkulasi Max Eceran (Batas Maksimal Fisik)
                             $maxBaseQty = $sisaPo * $poConvFactor;
                             $isTrackable = $masterItem && ($masterItem->is_asset || $masterItem->is_trackable);
                         @endphp
                         <tr class="item-row" id="row_{{ $index }}">
                             <td class="py-3 ps-4">
                                 <input type="hidden" name="items[{{ $item->id }}][item_id]" value="{{ $masterItem->id ?? '' }}">
-                                <div class="mb-1 fw-bold text-dark">{{ $masterItem->name ?? 'Unknown Item' }}</div>
+
+                                {{-- 🔥 PRIORITASKAN NAMA DARI PO DI SINI 🔥 --}}
+                                <div class="mb-1 fw-bold text-dark">{{ $item->item_name ?? $masterItem->name ?? 'Unknown Item' }}</div>
+
                                 <span class="border badge bg-secondary-subtle text-secondary border-secondary-subtle">{{ $masterItem->code ?? '-' }}</span>
                                 @if($isTrackable)
                                     <span class="border badge bg-warning-subtle text-warning-emphasis border-warning"><i class="bi bi-upc-scan me-1"></i>Wajib Lacak (SN)</span>
@@ -192,7 +192,6 @@
                             </td>
                             <td>
                                 <div class="mb-1 shadow-sm input-group input-group-sm">
-                                    {{-- 🔥 PERBAIKAN: Max awal diset ke sisaPo, bukan maxBaseQty 🔥 --}}
                                     <input type="number" name="items[{{ $item->id }}][qty_received]" id="qty-input-{{ $index }}" class="text-center form-control fw-bold text-success qty-input" value="0" min="0" max="{{ $sisaPo }}" step="0.01" oninput="checkMaxQty({{ $index }}, {{ $isTrackable ? 'true' : 'false' }})">
 
                                     <select name="items[{{ $item->id }}][uom_id]" id="uom-select-{{ $index }}" class="form-select border-success bg-success-subtle text-success fw-bold uom-selector" style="max-width: 140px;" data-current-conv="{{ $poConvFactor }}" onchange="changeUom(this, {{ $index }}, {{ $maxBaseQty }})">
@@ -267,13 +266,9 @@
 </div>
 @endsection
 
-
 @push('scripts')
 <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
 <script>
-    // ==========================================
-    // 1. MULTI-UPLOAD FILE (LAMPIRAN GR)
-    // ==========================================
     function addGrFileRow() {
         const container = document.getElementById('grFileContainer');
         const div = document.createElement('div');
@@ -293,16 +288,12 @@
         }
     }
 
-    // ==========================================
-    // 2. LOGIKA UOM & KONVERSI MAKSIMAL
-    // ==========================================
     function changeUom(selectElement, index, maxBaseQty) {
         let selectedOption = selectElement.options[selectElement.selectedIndex];
         let newConvRate = parseFloat(selectedOption.getAttribute('data-conv')) || 1;
         let oldConvRate = parseFloat(selectElement.getAttribute('data-current-conv')) || 1;
         let newUomName = selectedOption.getAttribute('data-name') || '';
 
-        // Tembak nama teks uom-nya ke input hidden agar bisa dibaca Controller
         let uomNameInput = document.getElementById(`uom-name-${index}`);
         if(uomNameInput) uomNameInput.value = newUomName;
 
@@ -331,41 +322,32 @@
         let cleanUomName = selectedOption.text.replace(/ \[PO\]|\(Ecer\)/gi, '').trim();
         if (helpUom) helpUom.innerText = cleanUomName;
 
-        // Panggil fungsi regenerasi kotak SN jika itu barang Trackable
         let isTrackable = document.getElementById(`sn-container-${index}`) !== null;
         checkMaxQty(index, isTrackable);
     }
 
-    // ==========================================
-    // 3. LOGIKA GENERATE KOTAK SERIAL NUMBER
-    // ==========================================
     function checkMaxQty(index, isTrackable) {
         const input = document.getElementById(`qty-input-${index}`);
         let val = parseFloat(input.value) || 0;
         const max = parseFloat(input.getAttribute('max')) || 0;
 
-        // Cegah input melebihi sisa PO
         if (val > max) {
             input.value = max;
             val = max;
         }
 
-        // Jika barang wajib lacak, tampilkan kotak SN sebanyak Qty Fisik
         if (isTrackable) {
             const snContainer = document.getElementById(`sn-container-${index}`);
             const snInputsWrapper = document.getElementById(`sn-inputs-${index}`);
 
-            // Ambil nilai konversi saat ini
             let selectElement = document.getElementById(`uom-select-${index}`);
             let convRate = parseFloat(selectElement.getAttribute('data-current-conv')) || 1;
 
-            // Hitung jumlah kotak yang dibutuhkan (Qty Ketikan dikali Konversi)
             let jumlahKotakFisik = Math.floor(val * convRate);
 
             if (jumlahKotakFisik > 0) {
                 snContainer.classList.remove('d-none');
 
-                // Backup isi kotak yang sudah diketik agar tidak hilang saat Qty diubah
                 const existingInputs = snInputsWrapper.querySelectorAll('input');
                 let existingValues = [];
                 existingInputs.forEach(inp => existingValues.push(inp.value));
@@ -389,14 +371,10 @@
         }
     }
 
-    // ==========================================
-    // 4. KONFIRMASI SIMPAN (SWEETALERT)
-    // ==========================================
     function confirmSubmit() {
         const form = document.getElementById('grForm');
         let hasReceipt = false;
 
-        // Cek apakah ada minimal 1 barang yang diterima (> 0)
         document.querySelectorAll('.qty-input').forEach(function(input) {
             if ((parseFloat(input.value) || 0) > 0) {
                 hasReceipt = true;
@@ -413,7 +391,6 @@
             return;
         }
 
-        // Cek validasi form bawaan HTML5
         if (!form.checkValidity()) {
             form.reportValidity();
             return;

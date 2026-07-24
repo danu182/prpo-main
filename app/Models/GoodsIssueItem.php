@@ -9,15 +9,7 @@ class GoodsIssueItem extends Model
 {
     use HasFactory;
 
-    protected $fillable = [
-        'goods_issue_id',
-        'item_id',
-        'qty_issued',
-        'qty_returned',
-        'notes',
-        'uom_id', // <--- Pastikan ini ada
-        'uom',    // <--- Pastikan ini ada
-    ];
+    protected $guarded = ['id'];
 
     // Relasi balik ke Header GI
     public function goodsIssue()

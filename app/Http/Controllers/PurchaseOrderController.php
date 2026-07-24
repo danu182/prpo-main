@@ -27,7 +27,7 @@ use Illuminate\Support\Facades\Storage;
 use App\Models\User;
 use App\Notifications\DocumentApprovalNotification;
 
-use Webklex\PDFMerger\Facades\PDFMergerFacade as PDFMerger; // Pastikan panggil facade merger
+use Webklex\PDFMerger\Facades\PDFMergerFacade as PDFMerger;
 
 class PurchaseOrderController extends Controller
 {
@@ -129,6 +129,7 @@ class PurchaseOrderController extends Controller
                 PurchaseOrderItem::create([
                     'purchase_order_id'        => $po->id,
                     'item_id'                  => $itemData['item_id'],
+                    'item_name'                => $itemData['item_name_override'] ?? null, // 🔥 SIMPAN NAMA PENDEK
                     'purchase_request_item_id' => $itemData['pr_item_id'] ?? null,
                     'qty_ordered'              => $qty,
                     'unit_price'               => $price,
@@ -259,7 +260,7 @@ class PurchaseOrderController extends Controller
                         $poTotalTaxItem += $taxAmt;
 
                         $processedLineItems[] = [
-                            'originalIndex' => $originalIndex, // 🔥 KUNCI UTAMA PENYELAMAT FILE 🔥
+                            'originalIndex' => $originalIndex,
                             'itemData' => $itemData, 'discAmt' => $discAmt, 'dpp' => $dpp,
                             'taxType' => $taxType, 'taxVal' => $taxVal, 'taxAmt' => $taxAmt, 'qty' => $qty, 'price' => $price,
                             'discType' => $discType, 'discVal' => $discVal
@@ -332,7 +333,6 @@ class PurchaseOrderController extends Controller
                         'po_number'             => $newPoNumber,
                         'purchase_request_id'   => $prRecord->id,
                         'vendor_id'             => $vendorId,
-                        // 'company_id'            => $prRecord->company_id, // Identitas dari PR
                         'bill_to_company_id'    => $request->billing_company_id,
                         'status_id'             => 1,
                         'po_date'               => $request->po_date ?? now(),
@@ -386,12 +386,18 @@ class PurchaseOrderController extends Controller
                     // K. SIMPAN BARIS ITEM & LAMPIRAN ITEM
                     foreach ($processedLineItems as $line) {
                         $itemData = $line['itemData'];
+
+                        // 🔥 PERBAIKAN: Tangkap Model PR untuk memanggil nama jika user tidak mengetiknya di form PO
+                        $prItem = \App\Models\PurchaseRequestItem::find($itemData['pr_item_id']);
+
                         $newPoItem = \App\Models\PurchaseOrderItem::create([
                             'purchase_order_id'        => $po->id,
                             'item_id'                  => $itemData['item_id'],
+                            // 🔥 TARIK NAMA DARI FORM PO (JIKA DIEDIT) ATAU DARI PR LAMA 🔥
+                            'item_name'                => $itemData['item_name_override'] ?? ($prItem->item_name ?? null),
                             'purchase_request_item_id' => $itemData['pr_item_id'],
                             'uom_id'                   => $itemData['uom_id'] ?? null,
-                            'uom'                      => $itemData['uom'] ?? (\App\Models\PurchaseRequestItem::find($itemData['pr_item_id'])->uom_short ?? 'PCS'),
+                            'uom'                      => $itemData['uom'] ?? ($prItem->uom_short ?? 'PCS'),
                             'description'              => $itemData['notes'] ?? (\App\Models\Item::find($itemData['item_id'])->name ?? '-'),
                             'tax_id'                   => null,
                             'qty_ordered'              => $line['qty'],
@@ -405,7 +411,6 @@ class PurchaseOrderController extends Controller
                             'subtotal'                 => $line['dpp'],
                         ]);
 
-                        // 🔥 PERBAIKAN: GUNAKAN originalIndex YANG SUDAH DISELAMATKAN 🔥
                         $files = $request->file("po_items.{$line['originalIndex']}.attachments");
                         if (!empty($files)) {
                             foreach (is_array($files) ? $files : [$files] as $file) {
@@ -496,7 +501,6 @@ class PurchaseOrderController extends Controller
                     $taxType = strtoupper($itemData['tax_type'] ?? 'FIXED');
                     $taxAmt = ($taxType === 'PERCENT') ? ($dpp * ($taxVal / 100)) : $taxVal;
 
-                    // 🔥 PERBAIKAN: MENANGKAP ARRAY FILE ITEM SESUAI STRUKTUR HTML DI EDIT 🔥
                     $files = $request->file("po_items.{$itemId}.attachments");
                     if (!empty($files)) {
                         foreach (is_array($files) ? $files : [$files] as $file) {
@@ -517,6 +521,7 @@ class PurchaseOrderController extends Controller
                     $poTotalTax += $taxAmt;
 
                     $poItem->update([
+                        'item_name'       => $itemData['item_name_override'] ?? $poItem->item_name, // 🔥 UPDATE NAMA SPESIFIK
                         'uom_id'          => $itemData['uom_id'] ?? $poItem->uom_id,
                         'uom'             => $itemData['uom'] ?? $poItem->uom,
                         'description'     => $itemData['notes'] ?? $poItem->description,
@@ -532,7 +537,6 @@ class PurchaseOrderController extends Controller
                     ]);
                 }
 
-                // 🔥 PERBAIKAN: SIMPAN LAMPIRAN HEADER DENGAN AMAN 🔥
                 if ($request->hasFile('header_attachments')) {
                     foreach ($request->file('header_attachments') as $file) {
                         if ($file instanceof \Illuminate\Http\UploadedFile) {
@@ -811,7 +815,6 @@ class PurchaseOrderController extends Controller
     {
         $po = \App\Models\PurchaseOrder::with(['items.item.itemUoms', 'vendor', 'status', 'attachments'])->where('po_number',$slug)->firstOrFail();
 
-        // 🔥 Tambahkan 'pending' ke dalam array agar tidak terkunci saat direvisi 🔥
         if (!in_array(strtolower(optional($po->status)->slug ?? ''), ['draft', 'pending_approval', 'pending', 'rejected', ''])) {
             return redirect()->route('po.index')->with('error', 'Gagal: PO ini sudah tidak dapat diedit karena statusnya ' . optional($po->status)->name);
         }
@@ -867,7 +870,7 @@ class PurchaseOrderController extends Controller
             'status',
             'user',
             'purchaseRequest.department',
-            'approvals.approver', // 🔥 INI YANG DIPERBAIKI (sebelumnya approvals.user)
+            'approvals.approver',
             'approvals.role'
         ])->where('po_number', $slug)->firstOrFail();
 
@@ -881,9 +884,6 @@ class PurchaseOrderController extends Controller
 
         return $pdf->stream('Purchase_Order_' . str_replace('/', '_', $po->po_number) . '.pdf');
     }
-
-
-
 
     // =========================================================================
     // 🔥 CETAK PURCHASE ORDER + LAMPIRAN PENDUKUNG (ANTI-BADAI / SMART MERGE) 🔥
@@ -937,14 +937,10 @@ class PurchaseOrderController extends Controller
                         // 1. PENANGANAN FILE PDF
                         if ($extension === 'pdf') {
                             try {
-                                // TEST: Coba baca PDF-nya dulu, apakah kompresinya didukung?
                                 $fpdi = new \setasign\Fpdi\Fpdi();
                                 $fpdi->setSourceFile($finalFilePath);
-
-                                // Jika lolos tanpa error, gabungkan!
                                 $oMerger->addPDF($finalFilePath, 'all');
                             } catch (\Exception $e) {
-                                // Jika PDF-nya terlalu canggih/terkompresi, buat halaman Info Pengganti
                                 $html = "<div style='border:2px solid #0d6efd; padding:20px; text-align:center; font-family:sans-serif; margin-top:50px;'>
                                             <h2 style='color:#0d6efd;'>📄 LAMPIRAN PDF (TERENKRIPSI/TERKOMPRESI)</h2>
                                             <p>File pendukung bernama: <b>{$file->file_name}</b></p>
@@ -1029,7 +1025,6 @@ class PurchaseOrderController extends Controller
                 ->header('Content-Type', 'application/pdf')
                 ->header('Content-Disposition', 'inline; filename="PO_Lengkap_' . str_replace('/', '_', $po->po_number) . '.pdf"');
     }
-
 
     // =========================================================================
     // 8. HALAMAN INDEX PO & 🔥 VISIBILITAS APPROVAL 🔥
@@ -1301,38 +1296,6 @@ class PurchaseOrderController extends Controller
         }
     }
 
-    // public function deleteItemAttachment($id)
-    // {
-    //     try {
-    //         $attachment = \DB::table('purchase_order_item_attachments')->where('id', $id)->first();
-    //         if ($attachment) {
-    //             if (\Storage::disk('public')->exists($attachment->file_path)) {
-    //                 \Storage::disk('public')->delete($attachment->file_path);
-    //             }
-    //             \DB::table('purchase_order_item_attachments')->where('id', $id)->delete();
-    //         }
-    //         return back()->with('success', 'Lampiran Barang berhasil dihapus secara permanen!');
-    //     } catch (\Exception $e) {
-    //         return back()->with('error', 'Gagal menghapus lampiran: ' . $e->getMessage());
-    //     }
-    // }
-
-    // public function deleteHeaderAttachment($id)
-    // {
-    //     try {
-    //         $attachment = \DB::table('purchase_order_attachments')->where('id', $id)->first();
-    //         if ($attachment) {
-    //             if (\Storage::disk('public')->exists($attachment->file_path)) {
-    //                 \Storage::disk('public')->delete($attachment->file_path);
-    //             }
-    //             \DB::table('purchase_order_attachments')->where('id', $id)->delete();
-    //         }
-    //         return back()->with('success', 'Lampiran Header PO berhasil dihapus secara permanen!');
-    //     } catch (\Exception $e) {
-    //         return back()->with('error', 'Gagal menghapus lampiran: ' . $e->getMessage());
-    //     }
-    // }
-
     // =========================================================================
     // HELPER 5: LOG HISTORY
     // =========================================================================
@@ -1346,9 +1309,6 @@ class PurchaseOrderController extends Controller
         ]);
     }
 
-
-
-
     // =========================================================================
     // CETAK BPR LENGKAP DENGAN LAMPIRAN (PDF MERGER) UNTUK PO
     // =========================================================================
@@ -1358,7 +1318,6 @@ class PurchaseOrderController extends Controller
             'items.item', 'company', 'user', 'vendor', 'attachments', 'purchaseRequest'
         ])->where('po_number', $slug)->firstOrFail();
 
-        // 🔥 WAJIB: Tarik manual lampiran item (Sama seperti di fungsi show)
         $poItemIds = $po->items->pluck('id')->toArray();
         $itemAttachments = \DB::table('purchase_order_item_attachments')
                             ->whereIn('purchase_order_item_id', $poItemIds)
@@ -1368,20 +1327,15 @@ class PurchaseOrderController extends Controller
             $item->raw_attachments = $itemAttachments->where('purchase_order_item_id', $item->id)->values();
         }
 
-        // 1. RENDER DOMPDF MENGGUNAKAN TEMPLATE BPR PO
         $pdf = \Barryvdh\DomPDF\Facade\Pdf::loadView('po.pdf_bpr', compact('po'))
                 ->setPaper('A4', 'portrait');
 
-        // 2. SIMPAN HASIL DOMPDF SEMENTARA DI FOLDER STORAGE
         $tempMainPdfPath = storage_path('app/temp_po_bpr_' . uniqid() . '.pdf');
         $pdf->save($tempMainPdfPath);
 
-        // 3. INISIASI MESIN PENGGABUNG PDF (MERGER)
         $merger = new \iio\libmergepdf\Merger();
         $merger->addFile($tempMainPdfPath);
 
-        // 4. CARI SEMUA LAMPIRAN BERFORMAT PDF & MASUKKAN KE MERGER
-        // A. Dari Header
         if ($po->attachments) {
             foreach ($po->attachments as $attachment) {
                 $ext = strtolower(pathinfo($attachment->file_path, PATHINFO_EXTENSION));
@@ -1392,11 +1346,9 @@ class PurchaseOrderController extends Controller
             }
         }
 
-        // B. Dari Item (Berdasarkan raw_attachments yang baru ditarik)
         foreach ($po->items as $item) {
             if (isset($item->raw_attachments) && count($item->raw_attachments) > 0) {
                 foreach ($item->raw_attachments as $attachment) {
-                    // Cek ekstensi file (asumsi kolom file_name atau file_path tersedia)
                     $ext = strtolower(pathinfo($attachment->file_name ?? $attachment->file_path, PATHINFO_EXTENSION));
                     if ($ext === 'pdf') {
                         $pdfPath = public_path('storage/' . $attachment->file_path);
@@ -1406,10 +1358,8 @@ class PurchaseOrderController extends Controller
             }
         }
 
-        // 5. JAHIT/GABUNGKAN SEMUA PDF MENJADI SATU KESATUAN
         $mergedPdfData = $merger->merge();
 
-        // 6. BERSIHKAN FILE SEMENTARA
         if (file_exists($tempMainPdfPath)) {
             unlink($tempMainPdfPath);
         }
@@ -1421,8 +1371,6 @@ class PurchaseOrderController extends Controller
                 ->header('Content-Disposition', 'inline; filename="' . $filename . '"');
     }
 
-
-
     // =========================================================================
     // 🔥 FUNGSI HAPUS LAMPIRAN HEADER PO 🔥
     // =========================================================================
@@ -1430,11 +1378,9 @@ class PurchaseOrderController extends Controller
     {
         $attachment = \Illuminate\Support\Facades\DB::table('purchase_order_attachments')->where('id', $id)->first();
         if ($attachment) {
-            // Hapus file fisik dari folder storage
             if (\Illuminate\Support\Facades\Storage::disk('public')->exists($attachment->file_path)) {
                 \Illuminate\Support\Facades\Storage::disk('public')->delete($attachment->file_path);
             }
-            // Hapus data dari database
             \Illuminate\Support\Facades\DB::table('purchase_order_attachments')->where('id', $id)->delete();
         }
         return back()->with('success', 'File Lampiran Header berhasil dihapus.');
@@ -1447,15 +1393,11 @@ class PurchaseOrderController extends Controller
     {
         $attachment = \Illuminate\Support\Facades\DB::table('purchase_order_item_attachments')->where('id', $id)->first();
         if ($attachment) {
-            // Hapus file fisik dari folder storage
             if (\Illuminate\Support\Facades\Storage::disk('public')->exists($attachment->file_path)) {
                 \Illuminate\Support\Facades\Storage::disk('public')->delete($attachment->file_path);
             }
-            // Hapus data dari database
             \Illuminate\Support\Facades\DB::table('purchase_order_item_attachments')->where('id', $id)->delete();
         }
         return back()->with('success', 'File Lampiran Item berhasil dihapus.');
     }
-
-
 }

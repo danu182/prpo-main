@@ -9,17 +9,7 @@ class GoodsIssue extends Model
 {
     use HasFactory;
 
-    protected $fillable = [
-        'gi_number',
-        'issue_date',
-        'requester_name',
-        'department',
-        'warehouse_id',
-        'notes',
-        'issued_by',
-        'status_id',
-
-    ];
+    protected $guarded = ['id'];
 
     // Relasi ke detail item yang dikeluarkan
     public function items()

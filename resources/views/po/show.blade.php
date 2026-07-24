@@ -309,8 +309,9 @@
 
                                 {{-- KOLOM 2: NAMA BARANG + SPESIFIKASI + LAMPIRAN ITEM --}}
                                 <td>
+                                    {{-- 🔥 PERBAIKAN: MENAMPILKAN SHORT TEXT OVERRIDE JIKA ADA 🔥 --}}
                                     <div class="mb-2 fw-bolder text-dark" style="font-size: 0.95rem;">
-                                        {{ optional($item->item)->name ?? 'Item Terhapus / Tidak Ditemukan' }}
+                                        {{ $item->item_name ?? optional($item->item)->name ?? 'Item Terhapus / Tidak Ditemukan' }}
                                     </div>
 
                                     <div class="p-2 border rounded text-muted bg-light border-light" style="font-size: 0.85rem;">
@@ -383,7 +384,6 @@
 
                 <div class="col-sm-5">
                     @php
-                        // 🔥 PERBAIKAN: SESUAIKAN DENGAN NAMA KOLOM DI DATABASE ANDA 🔥
                         $sumSubtotal = (float)($po->subtotal ?? 0) > 0 ? (float)$po->subtotal : $calcSubtotalGross;
 
                         // Perbaiki pemanggilan nama variabel diskon
@@ -613,7 +613,7 @@
                         $allAttachments->push((object)[
                             'file_name' => $att->file_name,
                             'file_path' => $att->file_path,
-                            'label' => 'Item: ' . (optional($itm->item)->name ?? 'Unknown')
+                            'label' => 'Item: ' . ($itm->item_name ?? optional($itm->item)->name ?? 'Unknown')
                         ]);
                     }
                 }

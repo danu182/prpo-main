@@ -87,7 +87,7 @@
                 <td style="text-align: center;">{{ $index + 1 }}</td>
                 <td style="text-align: center;">{{ optional($item->item)->code ?? '-' }}</td>
                 <td>
-                    <strong>{{ optional($item->item)->name ?? '-' }}</strong>
+                    <strong>{{ $item->item_name ?? optional($item->item)->name }}</strong>
                     @if(optional($item->item)->specification)
                         <br><span style="font-size: 8pt; color:#444;">{{ strip_tags(optional($item->item)->specification) }}</span>
                     @endif

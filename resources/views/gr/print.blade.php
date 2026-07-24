@@ -100,23 +100,25 @@
                 $isAsset = optional($item->item)->is_asset;
                 $qtyReturned = (float) ($item->qty_returned ?? 0);
 
-                // 🔥 LOGIKA CERDAS UOM 🔥
+                // 🔥 LOGIKA CERDAS UOM & NAMA SPESIFIK 🔥
                 $poItem = $item->purchaseOrderItem;
                 $masterItem = $item->item;
+
+                // 1. Tarik Nama Spesifik
+                $itemName = $poItem?->item_name ?? $masterItem?->name ?? '-';
+
                 $baseUomName = optional($masterItem->uom)->name ?? 'PCS';
 
-                // 1. Mencari Satuan yang dipesan di PO
+                // 2. Mencari Satuan yang dipesan di PO
                 $poUomName = $baseUomName;
                 $poUomId = $poItem?->uom_id ?? $poItem?->item_uom_id ?? null;
 
-                // Jika PO pakai ID Konversi Kemasan (Box, Pack, dll)
                 if (!empty($poUomId) && optional($masterItem)->itemUoms) {
                     $altUom = collect($masterItem->itemUoms)->where('id', $poUomId)->first();
                     if ($altUom) {
                         $poUomName = $altUom->uom_name ?? $altUom->name ?? $poUomName;
                     }
                 } else {
-                    // Jika tidak pakai ID, coba baca teks manualnya (atau JSON-nya)
                     $rawPoUom = $poItem?->uom;
                     if (is_string($rawPoUom) && str_starts_with(trim($rawPoUom), '{')) {
                         $parsed = json_decode($rawPoUom);
@@ -126,7 +128,7 @@
                     }
                 }
 
-                // 2. Mencari Satuan Kedatangan (GR)
+                // 3. Mencari Satuan Kedatangan (GR)
                 $uomDatang = $item->uom ?? $poUomName;
                 if (is_string($uomDatang) && str_starts_with(trim($uomDatang), '{')) {
                     $parsedGr = json_decode($uomDatang);
@@ -134,7 +136,6 @@
                 }
 
                 // Bersihkan Deskripsi
-                $itemName = $masterItem?->name ?? '-';
                 $rawDesc = $poItem?->description ?? '';
                 $cleanDesc = strip_tags(str_replace(['</li>', '</p>', '<br>', '<br/>'], [', ', ' ', ' ', ' '], $rawDesc));
                 $cleanDesc = str_replace('&nbsp;', ' ', $cleanDesc);
@@ -144,7 +145,7 @@
                 <td style="text-align: center;">{{ $idx + 1 }}</td>
                 <td>
                     <strong style="text-transform: uppercase;">{{ $itemName }}</strong><br>
-                    <span style="font-size: 7.5pt; color: #444;">{{ $item->item?->code ?? '-' }}</span>
+                    <span style="font-size: 7.5pt; color: #444;">{{ $masterItem?->code ?? '-' }}</span>
                     @if($isAsset) <span style="font-size: 7.5pt; font-weight: bold; color: #000;">[ASET]</span> @endif
                     @if($cleanDesc && $cleanDesc !== '-')
                         <div style="font-size: 7.5pt; color: #555; margin-top: 3px;">Spec: {{ \Illuminate\Support\Str::limit($cleanDesc, 100) }}</div>

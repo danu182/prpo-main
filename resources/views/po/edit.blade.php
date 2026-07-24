@@ -127,7 +127,8 @@
                     <div class="mb-4 border-0 shadow-sm card item-row" style="border-radius: 12px; overflow: hidden;">
                         <div class="px-4 py-3 card-header bg-light border-bottom d-flex justify-content-between align-items-center">
                             <div>
-                                <div class="fw-bolder text-dark fs-6">{{ optional($item->item)->name ?? 'Item Terhapus' }}</div>
+                                {{-- 🔥 HEADER: NAMA SPESIFIK OVERRIDE 🔥 --}}
+                                <div class="fw-bolder text-dark fs-6">{{ $item->item_name ?? optional($item->item)->name ?? 'Item Terhapus' }}</div>
                                 <span class="mt-1 border badge bg-secondary-subtle text-secondary">{{ optional($item->item)->code }}</span>
                                 <input type="hidden" name="po_items[{{ $item->id }}][pr_item_id]" value="{{ $item->purchase_request_item_id }}">
                                 <input type="hidden" name="po_items[{{ $item->id }}][vendor_id]" value="{{ $po->vendor_id }}">
@@ -144,6 +145,13 @@
                             {{-- BARIS 1: Spesifikasi & File Upload --}}
                             <div class="pb-4 mb-4 row g-3 border-bottom">
                                 <div class="col-md-7">
+                                    {{-- 🔥 KOTAK NAMA SPESIFIK (SHORT TEXT) 🔥 --}}
+                                    <div class="mb-3">
+                                        <label class="form-label small fw-bold text-dark">Nama Barang di PO (Bisa disesuaikan)</label>
+                                        <input type="text" name="po_items[{{ $item->id }}][item_name_override]" class="form-control form-input-custom fw-bold text-primary" value="{{ $item->item_name ?? optional($item->item)->name }}" placeholder="Ketik nama spesifik barang...">
+                                        <div class="mt-1 form-text text-muted" style="font-size: 0.65rem;">*Nama ini yang akan tercetak di PDF PO. Master Data tetap aman.</div>
+                                    </div>
+
                                     <label class="form-label small fw-bold text-dark">Spesifikasi Detail (Bisa diedit)</label>
                                     <textarea name="po_items[{{ $item->id }}][notes]" id="spec_{{ $item->id }}" class="form-control ckeditor-spec">{!! $item->description !!}</textarea>
                                 </div>
@@ -158,7 +166,6 @@
                                                         <a href="{{ asset('storage/' . $file->file_path) }}" target="_blank" class="text-truncate small text-decoration-none text-primary fw-bold ms-1" style="font-size: 0.7rem; max-width: 80%;" title="{{ $file->file_name }}">
                                                             <i class="bi bi-file-earmark-text-fill text-danger me-1"></i> {{ $file->file_name }}
                                                         </a>
-                                                        {{-- 🔥 PERBAIKAN NAMA ROUTE DI SINI 🔥 --}}
                                                         <a href="{{ route('po.po.delete_item_attachment', $file->id) }}" class="p-0 px-1 btn btn-sm text-danger" onclick="return confirm('Hapus lampiran ini secara permanen?')">
                                                             <i class="bi bi-trash-fill"></i>
                                                         </a>
@@ -338,7 +345,6 @@
                                     @foreach($po->attachments as $file)
                                         <div class="p-2 mb-1 border rounded d-flex justify-content-between bg-light">
                                             <a href="{{ asset('storage/' . $file->file_path) }}" target="_blank" class="small text-decoration-none fw-bold"><i class="bi bi-search text-success me-1"></i> {{ $file->file_name }}</a>
-                                            {{-- 🔥 PERBAIKAN NAMA ROUTE DI SINI 🔥 --}}
                                             <a href="{{ route('po.po.delete_header_attachment', $file->id) }}" class="text-danger small" onclick="return confirm('Hapus file master ini secara permanen?')"><i class="bi bi-trash"></i></a>
                                         </div>
                                     @endforeach

@@ -4,108 +4,20 @@
 <link href="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css" rel="stylesheet" />
 <link href="https://cdn.jsdelivr.net/npm/select2-bootstrap-5-theme@1.3.0/dist/select2-bootstrap-5-theme.min.css" rel="stylesheet" />
 <style>
-    :root { 
-        --pr-blue: #0d6efd; 
-        --pr-red: #ef4444; 
-        --bg-light: #f8fafc; 
-    }
-    
-    .select2-container--bootstrap-5 .select2-selection { 
-        border-radius: 8px; 
-        border-color: #dee2e6; 
-        min-height: 40px; 
-        font-size: 0.875rem; 
-        padding-top: 4px;
-    }
-    
-    .select2-container--bootstrap-5.select2-container--focus .select2-selection { 
-        border-color: #0d6efd; 
-        box-shadow: 0 0 0 0.2rem rgba(13, 110, 253, 0.15); 
-    }
-    
-    .item-card { 
-        background: #ffffff; 
-        border: 1px solid #e2e8f0; 
-        border-radius: 16px; 
-        padding: 0; 
-        margin-bottom: 24px; 
-        position: relative; 
-        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05); 
-        overflow: hidden;
-    }
-    
-    .item-card-header { 
-        background-color: #f1f5f9; 
-        padding: 16px 24px; 
-        border-bottom: 1px solid #e2e8f0; 
-        border-left: 6px solid var(--pr-blue); 
-        display: flex; 
-        justify-content: space-between; 
-        align-items: center;
-    }
-    
-    .item-card-body { 
-        padding: 24px; 
-    }
-    
-    .btn-delete-item { 
-        color: var(--pr-red); 
-        background: #fef2f2; 
-        border: 1px solid #fca5a5; 
-        width: 32px; 
-        height: 32px; 
-        border-radius: 8px; 
-        display: flex; 
-        align-items: center; 
-        justify-content: center; 
-        transition: 0.2s; 
-        cursor: pointer; 
-    }
-    
-    .btn-delete-item:hover { 
-        background: #fee2e2; 
-        transform: scale(1.1); 
-        color: #b91c1c; 
-    }
-    
-    .vendor-section { 
-        background-color: #f8fafc; 
-        border-radius: 12px; 
-        padding: 20px; 
-        border: 1px solid #cbd5e1; 
-    }
-    
-    .vendor-row { 
-        background: #ffffff; 
-        border-radius: 10px; 
-        border: 1px solid #e2e8f0; 
-        padding: 16px; 
-        margin-bottom: 12px; 
-        position: relative; 
-        box-shadow: 0 1px 3px rgba(0,0,0,0.04); 
-    }
-    
-    input[type=number]::-webkit-inner-spin-button, 
-    input[type=number]::-webkit-outer-spin-button { 
-        -webkit-appearance: none; margin: 0; 
-    }
-    
-    input[type=number] { 
-        -moz-appearance: textfield; 
-    }
-    
-    .fixed-bottom-bar { 
-        background: rgba(255, 255, 255, 0.95) !important; 
-        backdrop-filter: blur(10px); 
-        border-top: 1px solid #dee2e6; 
-        z-index: 1040; 
-    }
-
-    /* 🔥 STYLING KHUSUS CKEDITOR 🔥 */
-    .ck-editor__editable_inline {
-        min-height: 120px;
-        font-size: 0.85rem;
-    }
+    :root { --pr-blue: #0d6efd; --pr-red: #ef4444; --bg-light: #f8fafc; }
+    .select2-container--bootstrap-5 .select2-selection { border-radius: 8px; border-color: #dee2e6; min-height: 40px; font-size: 0.875rem; padding-top: 4px; }
+    .select2-container--bootstrap-5.select2-container--focus .select2-selection { border-color: #0d6efd; box-shadow: 0 0 0 0.2rem rgba(13, 110, 253, 0.15); }
+    .item-card { background: #ffffff; border: 1px solid #e2e8f0; border-radius: 16px; padding: 0; margin-bottom: 24px; position: relative; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05); overflow: hidden; }
+    .item-card-header { background-color: #f1f5f9; padding: 16px 24px; border-bottom: 1px solid #e2e8f0; border-left: 6px solid var(--pr-blue); display: flex; justify-content: space-between; align-items: center; }
+    .item-card-body { padding: 24px; }
+    .btn-delete-item { color: var(--pr-red); background: #fef2f2; border: 1px solid #fca5a5; width: 32px; height: 32px; border-radius: 8px; display: flex; align-items: center; justify-content: center; transition: 0.2s; cursor: pointer; }
+    .btn-delete-item:hover { background: #fee2e2; transform: scale(1.1); color: #b91c1c; }
+    .vendor-section { background-color: #f8fafc; border-radius: 12px; padding: 20px; border: 1px solid #cbd5e1; }
+    .vendor-row { background: #ffffff; border-radius: 10px; border: 1px solid #e2e8f0; padding: 16px; margin-bottom: 12px; position: relative; box-shadow: 0 1px 3px rgba(0,0,0,0.04); }
+    input[type=number]::-webkit-inner-spin-button, input[type=number]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
+    input[type=number] { -moz-appearance: textfield; }
+    .fixed-bottom-bar { background: rgba(255, 255, 255, 0.95) !important; backdrop-filter: blur(10px); border-top: 1px solid #dee2e6; z-index: 1040; }
+    .ck-editor__editable_inline { min-height: 120px; font-size: 0.85rem; }
 </style>
 @endpush
 
@@ -113,13 +25,9 @@
 
 @if ($errors->any())
     <div class="mb-4 border-0 shadow-sm alert alert-danger rounded-4">
-        <div class="fw-bold">
-            <i class="bi bi-exclamation-triangle-fill me-2"></i> Mohon Maaf, Terjadi Kesalahan:
-        </div>
+        <div class="fw-bold"><i class="bi bi-exclamation-triangle-fill me-2"></i> Mohon Maaf, Terjadi Kesalahan:</div>
         <ul class="mt-2 mb-0 small">
-            @foreach ($errors->all() as $error) 
-                <li>{{ $error }}</li> 
-            @endforeach
+            @foreach ($errors->all() as $error) <li>{{ $error }}</li> @endforeach
         </ul>
     </div>
 @endif
@@ -130,15 +38,11 @@
 
     <div class="pb-3 mb-4 d-flex justify-content-between align-items-center border-bottom">
         <div>
-            <h4 class="mb-1 fw-bold text-dark">
-                <i class="bi bi-pencil-square me-2 text-primary"></i>Edit Purchase Request
-            </h4>
+            <h4 class="mb-1 fw-bold text-dark"><i class="bi bi-pencil-square me-2 text-primary"></i>Edit Purchase Request</h4>
             <p class="mb-0 text-muted small">Mengubah dokumen: <span class="fw-bold text-primary">{{ $pr->pr_number }}</span></p>
         </div>
         <div class="gap-2 d-none d-md-flex">
-            <a href="{{ route('pr.index') }}" class="px-4 border shadow-sm btn btn-light rounded-pill fw-bold">
-                <i class="bi bi-arrow-left me-1"></i> Kembali
-            </a>
+            <a href="{{ route('pr.index') }}" class="px-4 border shadow-sm btn btn-light rounded-pill fw-bold"><i class="bi bi-arrow-left me-1"></i> Kembali</a>
         </div>
     </div>
 
@@ -147,9 +51,7 @@
         <div class="col-12">
             <div class="mb-4 border-0 shadow-sm card rounded-4">
                 <div class="py-3 bg-light card-header border-bottom">
-                    <h6 class="mb-0 fw-bold text-dark text-uppercase" style="font-size: 0.85rem;">
-                        <i class="bi bi-info-circle-fill me-2 text-primary"></i>Informasi Utama Dokumen
-                    </h6>
+                    <h6 class="mb-0 fw-bold text-dark text-uppercase" style="font-size: 0.85rem;"><i class="bi bi-info-circle-fill me-2 text-primary"></i>Informasi Utama Dokumen</h6>
                 </div>
                 <div class="p-4 bg-white card-body">
                     <div class="row g-4">
@@ -158,9 +60,7 @@
                             <select name="user_id" id="user_id" class="form-select select2-user" required>
                                 <option value="">-- Pilih User --</option>
                                 @foreach($users as $u)
-                                    <option value="{{ $u->id }}" data-company-id="{{ $u->company_id }}" {{ (old('user_id') ?? $pr->user_id) == $u->id ? 'selected' : '' }}>
-                                        {{ $u->name }}
-                                    </option>
+                                    <option value="{{ $u->id }}" data-company-id="{{ $u->company_id }}" {{ (old('user_id') ?? $pr->user_id) == $u->id ? 'selected' : '' }}>{{ $u->name }}</option>
                                 @endforeach
                             </select>
                         </div>
@@ -168,10 +68,8 @@
                             <label class="form-label fw-bold small text-dark">Unit / PT Penanggung <span class="text-danger">*</span></label>
                             <select name="company_id" id="company_id" class="form-select border-secondary-subtle" required>
                                 <option value="">-- Pilih Unit --</option>
-                                @foreach($companies as $c) 
-                                    <option value="{{ $c->id }}" {{ (old('company_id') ?? $pr->company_id) == $c->id ? 'selected' : '' }}>
-                                        {{ $c->name }}
-                                    </option> 
+                                @foreach($companies as $c)
+                                    <option value="{{ $c->id }}" {{ (old('company_id') ?? $pr->company_id) == $c->id ? 'selected' : '' }}>{{ $c->name }}</option>
                                 @endforeach
                             </select>
                         </div>
@@ -218,7 +116,7 @@
                         <label class="mb-2 small text-dark fw-bold">Jumlah (Qty) <span class="text-danger">*</span></label>
                         <input type="number" name="items[{{ $iIdx }}][qty]" class="form-control text-primary fw-bold border-secondary-subtle" value="{{ (float)$item->qty }}" min="0.01" step="0.01" required>
                     </div>
-                    
+
                     {{-- 🔥 UOM DROPDOWN 🔥 --}}
                     <div class="col-md-4">
                         <label class="mb-2 small text-dark fw-bold">Kemasan / Satuan <span class="text-danger">*</span></label>
@@ -234,14 +132,20 @@
                             @endif
                         </select>
                     </div>
-                    
+
+                    {{-- 1. KOTAK NAMA SPESIFIK (SHORT TEXT) --}}
+                    <div class="col-12 mt-3">
+                        <label class="form-label small fw-bold text-dark">Nama Spesifik Barang (Bisa disesuaikan)</label>
+                        <input type="text" name="items[{{ $iIdx }}][item_name]" class="form-control form-input-custom fw-bold text-primary" value="{{ $item->item_name }}" placeholder="Contoh: Asus VivoBook 14 A1404ZA...">
+                        <div class="mt-1 form-text text-muted" style="font-size: 0.7rem;">*Nama ini yang akan tercetak di PDF. Master Data tetap aman.</div>
+                    </div>
+
                     {{-- 🔥 AREA CKEDITOR SPESIFIKASI 🔥 --}}
                     <div class="col-12 mt-3">
                         <label class="mb-2 small text-dark fw-bold">
                             <i class="bi bi-card-text me-1 text-secondary"></i>Spesifikasi / Detail Khusus (Opsional)
                         </label>
-                        {{-- Gunakan {!! !!} agar tag html dari database termuat ke dalam editor --}}
-                        <textarea name="items[{{ $iIdx }}][specification]" id="spec_{{ $iIdx }}" rows="2" class="form-control border-secondary-subtle ckeditor-spec" placeholder="Tuliskan warna, ukuran, merk khusus di sini...">{!! $item->specification !!}</textarea>
+                        <textarea name="items[{{ $iIdx }}][specification]" id="spec_{{ $iIdx }}" rows="2" class="form-control border-secondary-subtle ckeditor-spec" placeholder="Tuliskan spesifikasi teknis di sini...">{!! $item->specification !!}</textarea>
                     </div>
                 </div>
 
@@ -258,22 +162,18 @@
 
                     <div class="vendor-container" id="vendor-container-{{ $iIdx }}">
                         @php $vendorList = $item->vendorQuotes ?? $item->vendors ?? []; @endphp
-                        
+
                         @forelse($vendorList as $vIdx => $v)
                         <div class="vendor-row">
-                            <button type="button" class="top-0 p-1 mt-2 btn btn-sm text-danger position-absolute end-0 me-2" onclick="removeVendor(this)">
-                                <i class="bi bi-x-circle-fill fs-5"></i>
-                            </button>
+                            <button type="button" class="top-0 p-1 mt-2 btn btn-sm text-danger position-absolute end-0 me-2" onclick="removeVendor(this)"><i class="bi bi-x-circle-fill fs-5"></i></button>
 
                             <div class="row g-3 pe-4">
                                 <div class="col-lg-4 col-md-6">
                                     <label class="mb-1 x-small text-muted fw-bold">Pilih Vendor</label>
                                     <select name="items[{{ $iIdx }}][vendors][{{ $vIdx }}][vendor_id]" class="form-select form-select-sm select2-vendor">
                                         <option value="">-- Cari Vendor --</option>
-                                        @foreach($vendors as $vendor) 
-                                            <option value="{{ $vendor->id }}" {{ $v->vendor_id == $vendor->id ? 'selected' : '' }}>
-                                                {{ $vendor->name }}
-                                            </option> 
+                                        @foreach($vendors as $vendor)
+                                            <option value="{{ $vendor->id }}" {{ $v->vendor_id == $vendor->id ? 'selected' : '' }}>{{ $vendor->name }}</option>
                                         @endforeach
                                     </select>
                                 </div>
@@ -281,20 +181,18 @@
                                     <label class="mb-1 x-small text-muted fw-bold">Estimasi Harga Satuan</label>
                                     <div class="overflow-hidden rounded shadow-sm input-group input-group-sm">
                                         <select name="items[{{ $iIdx }}][vendors][{{ $vIdx }}][currency]" class="bg-light fw-bold form-select text-primary" style="max-width: 85px;">
-                                            @foreach($currencies as $curr) 
-                                                <option value="{{ $curr->code }}" {{ (optional($v->currency)->code ?? 'IDR') == $curr->code ? 'selected' : '' }}>
-                                                    {{ $curr->code }}
-                                                </option> 
+                                            @foreach($currencies as $curr)
+                                                <option value="{{ $curr->code }}" {{ (optional($v->currency)->code ?? 'IDR') == $curr->code ? 'selected' : '' }}>{{ $curr->code }}</option>
                                             @endforeach
                                         </select>
                                         <input type="number" name="items[{{ $iIdx }}][vendors][{{ $vIdx }}][price]" class="form-control text-end fw-bold" value="{{ (float)$v->quoted_price }}" step="0.01">
                                     </div>
                                 </div>
-                                
+
                                 {{-- AREA FILE MANAGER (EKSISTING & UPLOAD BARU) --}}
                                 <div class="col-lg-4 col-md-12">
                                     <div class="p-2 border rounded bg-light border-secondary-subtle">
-                                        
+
                                         {{-- File Eksisting --}}
                                         @php
                                             $existingFiles = \Illuminate\Support\Facades\DB::table('pr_vendor_attachments')->where('pr_item_vendor_id', $v->id)->get();
@@ -308,11 +206,8 @@
                                                         <a href="{{ asset('storage/' . $file->file_path) }}" target="_blank" class="text-truncate small text-decoration-none text-primary fw-bold" style="font-size: 0.75rem; max-width: 80%;" title="Buka File di Tab Baru">
                                                             <i class="bi bi-file-earmark-pdf-fill text-danger me-1"></i> {{ $file->file_name }}
                                                         </a>
-                                                        {{-- Hidden input agar Controller tidak menghapus file ini --}}
                                                         <input type="hidden" name="items[{{ $iIdx }}][vendors][{{ $vIdx }}][existing_files][]" value="{{ $file->id }}">
-                                                        <button type="button" class="py-0 px-1 btn btn-sm btn-outline-danger" onclick="this.closest('.file-existing-row').remove()" title="Hapus File Ini">
-                                                            <i class="bi bi-trash"></i>
-                                                        </button>
+                                                        <button type="button" class="py-0 px-1 btn btn-sm btn-outline-danger" onclick="this.closest('.file-existing-row').remove()" title="Hapus File Ini"><i class="bi bi-trash"></i></button>
                                                     </div>
                                                 @endforeach
                                             </div>
@@ -320,9 +215,7 @@
                                         @endif
 
                                         <div class="mb-2 d-flex justify-content-between align-items-center">
-                                            <label class="mb-0 text-muted fw-bold" style="font-size: 0.65rem;">
-                                                <i class="bi bi-cloud-arrow-up"></i> Upload Tambahan:
-                                            </label>
+                                            <label class="mb-0 text-muted fw-bold" style="font-size: 0.65rem;"><i class="bi bi-cloud-arrow-up"></i> Upload Tambahan:</label>
                                             <button type="button" class="px-2 py-0 btn btn-sm btn-outline-secondary btn-add-file" style="font-size: 0.65rem;" onclick="addFileRow({{ $iIdx }}, {{ $vIdx }})">
                                                 <i class="bi bi-plus"></i> Tambah File
                                             </button>
@@ -330,48 +223,40 @@
                                         <div class="file-container" id="fileContainer_{{ $iIdx }}_{{ $vIdx }}">
                                             <div class="mb-1 overflow-hidden rounded shadow-sm input-group input-group-sm file-row">
                                                 <input type="file" name="items[{{ $iIdx }}][vendors][{{ $vIdx }}][files][]" class="bg-white form-control" style="font-size: 0.65rem;" accept=".pdf,.jpg,.jpeg,.png,.doc,.docx,.xls,.xlsx">
-                                                <button type="button" class="px-2 btn btn-danger" onclick="this.closest('.file-row').remove()">
-                                                    <i class="bi bi-x"></i>
-                                                </button>
+                                                <button type="button" class="px-2 btn btn-danger" onclick="this.closest('.file-row').remove()"><i class="bi bi-x"></i></button>
                                             </div>
                                         </div>
                                     </div>
                                 </div>
 
                                 <div class="col-lg-6 mt-2">
-                                    <label class="mb-1 x-small text-muted fw-bold">Link Produk (Tokopedia/dll)</label>
-                                    <input type="url" name="items[{{ $iIdx }}][vendors][{{ $vIdx }}][link]" class="shadow-sm form-control form-control-sm" value="{{ $v->reference_link }}">
+                                    <label class="mb-1 x-small text-muted fw-bold">Link Produk</label>
+                                    <input type="url" name="items[{{ $iIdx }}][vendors][{{ $vIdx }}][link]" class="form-control form-control-sm" value="{{ $v->reference_link }}">
                                 </div>
                                 <div class="mt-2 col-lg-6">
                                     <label class="mb-1 x-small text-muted fw-bold">Catatan untuk Vendor</label>
-                                    <input type="text" name="items[{{ $iIdx }}][vendors][{{ $vIdx }}][notes]" class="shadow-sm form-control form-control-sm" value="{{ $v->notes }}">
+                                    <input type="text" name="items[{{ $iIdx }}][vendors][{{ $vIdx }}][notes]" class="form-control form-control-sm" value="{{ $v->notes }}">
                                 </div>
                             </div>
                         </div>
-                        
+
                         @empty
                         {{-- BLOK KOSONG JIKA TIDAK ADA VENDOR SEBELUMNYA --}}
                         <div class="vendor-row">
-                            <button type="button" class="top-0 p-1 mt-2 btn btn-sm text-danger position-absolute end-0 me-2" onclick="removeVendor(this)">
-                                <i class="bi bi-x-circle-fill fs-5"></i>
-                            </button>
+                            <button type="button" class="top-0 p-1 mt-2 btn btn-sm text-danger position-absolute end-0 me-2" onclick="removeVendor(this)"><i class="bi bi-x-circle-fill fs-5"></i></button>
                             <div class="row g-3 pe-4">
                                 <div class="col-lg-4 col-md-6">
                                     <label class="mb-1 x-small text-muted fw-bold">Pilih Vendor</label>
                                     <select name="items[{{ $iIdx }}][vendors][0][vendor_id]" class="form-select form-select-sm select2-vendor">
                                         <option value="">-- Cari Vendor --</option>
-                                        @foreach($vendors as $vendor) 
-                                            <option value="{{ $vendor->id }}">{{ $vendor->name }}</option> 
-                                        @endforeach
+                                        @foreach($vendors as $vendor) <option value="{{ $vendor->id }}">{{ $vendor->name }}</option> @endforeach
                                     </select>
                                 </div>
                                 <div class="col-lg-4 col-md-6">
                                     <label class="mb-1 x-small text-muted fw-bold">Estimasi Harga Satuan</label>
                                     <div class="overflow-hidden rounded shadow-sm input-group input-group-sm">
                                         <select name="items[{{ $iIdx }}][vendors][0][currency]" class="bg-light fw-bold form-select text-primary" style="max-width: 85px;">
-                                            @foreach($currencies as $curr) 
-                                                <option value="{{ $curr->code }}">{{ $curr->code }}</option> 
-                                            @endforeach
+                                            @foreach($currencies as $curr) <option value="{{ $curr->code }}">{{ $curr->code }}</option> @endforeach
                                         </select>
                                         <input type="number" name="items[{{ $iIdx }}][vendors][0][price]" class="form-control text-end fw-bold" placeholder="0" step="0.01">
                                     </div>
@@ -379,19 +264,13 @@
                                 <div class="col-lg-4 col-md-12">
                                     <div class="p-2 border rounded bg-light border-secondary-subtle">
                                         <div class="mb-2 d-flex justify-content-between align-items-center">
-                                            <label class="mb-0 text-muted fw-bold" style="font-size: 0.65rem;">
-                                                <i class="bi bi-paperclip"></i> Upload Baru:
-                                            </label>
-                                            <button type="button" class="px-2 py-0 btn btn-sm btn-outline-secondary btn-add-file" style="font-size: 0.65rem;" onclick="addFileRow({{ $iIdx }}, 0)">
-                                                <i class="bi bi-plus"></i> Tambah File
-                                            </button>
+                                            <label class="mb-0 text-muted fw-bold" style="font-size: 0.65rem;"><i class="bi bi-paperclip"></i> Upload Baru:</label>
+                                            <button type="button" class="px-2 py-0 btn btn-sm btn-outline-secondary btn-add-file" style="font-size: 0.65rem;" onclick="addFileRow({{ $iIdx }}, 0)"><i class="bi bi-plus"></i> Tambah File</button>
                                         </div>
                                         <div class="file-container" id="fileContainer_{{ $iIdx }}_0">
                                             <div class="mb-1 overflow-hidden rounded shadow-sm input-group input-group-sm file-row">
                                                 <input type="file" name="items[{{ $iIdx }}][vendors][0][files][]" class="bg-white form-control" style="font-size: 0.65rem;" accept=".pdf,.jpg,.jpeg,.png,.doc,.docx,.xls,.xlsx">
-                                                <button type="button" class="px-2 btn btn-danger" onclick="this.closest('.file-row').remove()">
-                                                    <i class="bi bi-x"></i>
-                                                </button>
+                                                <button type="button" class="px-2 btn btn-danger" onclick="this.closest('.file-row').remove()"><i class="bi bi-x"></i></button>
                                             </div>
                                         </div>
                                     </div>
@@ -407,7 +286,6 @@
                             </div>
                         </div>
                         @endforelse
-
                     </div>
                 </div>
             </div>
@@ -431,43 +309,33 @@
 </form>
 @endsection
 
+@push('scripts')
 <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
-{{-- 🔥 SUNTIKAN CKEDITOR 5 CDN 🔥 --}}
 <script src="https://cdn.ckeditor.com/ckeditor5/39.0.1/classic/ckeditor.js"></script>
 
 <script>
     let itemIdx = {{ $pr->items->count() > 0 ? $pr->items->count() - 1 : 0 }};
-    let myEditors = {}; 
+    let myEditors = {};
 
     // 🔥 FUNGSI INISIASI CKEDITOR 🔥
     function initCKEditor(selectorId) {
         let domElement = document.querySelector('#' + selectorId);
-        if (domElement && !domElement.ckeditorInstance) { 
+        if (domElement && !domElement.ckeditorInstance) {
             ClassicEditor
-                .create(domElement, {
-                    toolbar: [ 'heading', '|', 'bold', 'italic', 'bulletedList', 'numberedList', 'blockQuote', '|', 'undo', 'redo' ]
-                })
-                .then(editor => {
-                    myEditors[selectorId] = editor;
-                    domElement.ckeditorInstance = editor; 
-                })
-                .catch(error => {
-                    console.error('Oops, CKEditor gagal jalan:', error);
-                });
+                .create(domElement, { toolbar: [ 'heading', '|', 'bold', 'italic', 'bulletedList', 'numberedList', 'blockQuote', '|', 'undo', 'redo' ] })
+                .then(editor => { myEditors[selectorId] = editor; domElement.ckeditorInstance = editor; })
+                .catch(error => { console.error('Oops, CKEditor gagal jalan:', error); });
         }
     }
 
     $(document).ready(function() {
         initSelect2User();
         initSelect2Vendor($('.item-row'));
-        initSelect2ItemAjax($('.item-row')); 
+        initSelect2ItemAjax($('.item-row'));
 
-        // 🔥 NYALAKAN CKEDITOR DI SEMUA BARIS YANG SUDAH ADA 🔥
-        document.querySelectorAll('.ckeditor-spec').forEach(function(textarea) {
-            initCKEditor(textarea.id);
-        });
+        document.querySelectorAll('.ckeditor-spec').forEach(function(textarea) { initCKEditor(textarea.id); });
 
         $('#user_id').on('change select2:select', function() {
             let companyId = $(this).find(':selected').data('company-id');
@@ -482,49 +350,39 @@
         $('#btn-add-item').on('click', function() {
             itemIdx++;
             let $firstRow = $('.item-row').first();
-            
-            // Matikan Select2 sementara di baris pertama agar bisa di-clone murni
+
             $firstRow.find('.select2-item-ajax, .select2-vendor').select2('destroy');
 
             let $newRow = $firstRow.clone();
             $newRow.attr('data-index', itemIdx);
             $newRow.find('.item-number').text($('.item-row').length + 1);
 
-            // Bersihkan Value Input
             $newRow.find('input').val('');
-            
             $newRow.find('select').each(function() {
                 if ($(this).attr('name') && $(this).attr('name').includes('[currency]')) {
                     $(this).prop('selectedIndex', 0);
-                } else { 
-                    $(this).empty(); 
-                }
+                } else { $(this).empty(); }
             });
 
-            // Setel UOM default
             let $uomDropdown = $newRow.find('.select-uom');
             $uomDropdown.append('<option value="" selected>-- Pilih Barang Dulu --</option>');
 
-            // Perbarui Penamaan Array
             $newRow.find('.select2-item-ajax').attr('name', `items[${itemIdx}][item_id]`);
             $newRow.find('input[name*="[qty]"]').attr('name', `items[${itemIdx}][qty]`);
             $newRow.find('.select-uom').attr('name', `items[${itemIdx}][uom_id]`);
-            
-            // 🔥 RESET CKEDITOR DI BARIS BARU 🔥
+            $newRow.find('input[name*="[item_name]"]').attr('name', `items[${itemIdx}][item_name]`); // <-- UPDATE KOLOM SHORT TEXT
+
             $newRow.find('.ck-editor').remove();
             let clonedTextarea = $newRow.find('.ckeditor-spec');
             let newSpecId = 'spec_' + itemIdx;
             clonedTextarea.css('display', '').attr('id', newSpecId).attr('name', `items[${itemIdx}][specification]`).val('');
 
-            // Reset Vendor Container
             let $vContainer = $newRow.find('.vendor-container');
             $vContainer.attr('id', `vendor-container-${itemIdx}`);
-            
-            // Hapus sisa clone row vendor, sisakan 1
+
             $vContainer.find('.vendor-row:not(:first)').remove();
             let $vRow = $vContainer.find('.vendor-row').first();
-            
-            // Hapus preview file lama hasil clone
+
             $vRow.find('.file-existing-row').remove();
             $vRow.find('hr').remove();
             $vRow.find('label:contains("File Tersimpan")').remove();
@@ -543,86 +401,54 @@
             $newRow.find('button[onclick^="addVendor"]').attr('onclick', `addVendor(${itemIdx})`);
 
             $('#items-container').append($newRow);
-            
-            // 🔥 PERBAIKAN: Hanya Nyalakan Select2 untuk baris Pertama dan baris Baru (Tidak merusak baris lain) 🔥
+
             initSelect2Vendor($firstRow);
             initSelect2ItemAjax($firstRow);
             initSelect2Vendor($newRow);
             initSelect2ItemAjax($newRow);
-            
-            // INISIASI CKEDITOR DI BARIS BARU
+
             initCKEditor(newSpecId);
         });
 
         $('#prForm').on('submit', function(e) {
-            let form = this; 
-            e.preventDefault();
-            
+            let form = this; e.preventDefault();
+
             for (let editorId in myEditors) {
                 if (myEditors.hasOwnProperty(editorId) && myEditors[editorId]) {
                     myEditors[editorId].updateSourceElement();
                 }
             }
-            
-            if ($('.item-row').length === 0) {
-                return Swal.fire({ icon: 'error', title: 'Kosong!', text: 'Belum ada barang!' });
-            }
+
+            if ($('.item-row').length === 0) return Swal.fire({ icon: 'error', title: 'Kosong!', text: 'Belum ada barang!' });
 
             let isBarangValid = true;
-            $('.select2-item-ajax').each(function() { 
-                if (!$(this).val()) isBarangValid = false; 
-            });
+            $('.select2-item-ajax').each(function() { if (!$(this).val()) isBarangValid = false; });
+            if (!isBarangValid) return Swal.fire({ icon: 'warning', title: 'Data Belum Lengkap', text: 'Ada baris barang yang belum dipilih.' });
 
-            if (!isBarangValid) {
-                return Swal.fire({ icon: 'warning', title: 'Data Belum Lengkap', text: 'Ada baris barang yang belum dipilih.' });
-            }
-
-            $('input[type="file"]').each(function() {
-                if ($(this).val() === '') {
-                    $(this).prop('disabled', true);
-                }
-            });
+            $('input[type="file"]').each(function() { if ($(this).val() === '') { $(this).prop('disabled', true); } });
 
             Swal.fire({
-                title: 'Simpan Perubahan?',
-                icon: 'question',
-                showCancelButton: true,
-                confirmButtonColor: '#198754',
-                confirmButtonText: 'Ya, Simpan!',
-                cancelButtonText: 'Batal'
+                title: 'Simpan Perubahan?', icon: 'question', showCancelButton: true,
+                confirmButtonColor: '#198754', confirmButtonText: 'Ya, Simpan!', cancelButtonText: 'Batal'
             }).then((result) => {
                 if (result.isConfirmed) {
                     Swal.fire({ title: 'Menyimpan...', didOpen: () => { Swal.showLoading() }, allowOutsideClick: false });
                     form.submit();
                 } else {
-                    $('input[type="file"]').prop('disabled', false); 
+                    $('input[type="file"]').prop('disabled', false);
                 }
             });
         });
     });
 
-    // ==========================================
-    // INIT SELECT2 FUNCTIONS
-    // ==========================================
-    function initSelect2User() { 
-        $('.select2-user').select2({ theme: 'bootstrap-5', placeholder: "Cari Nama User...", width: '100%', allowClear: true }); 
-    }
-    
-    function initSelect2Vendor(context) {
-        context.find('.select2-vendor').select2({ theme: 'bootstrap-5', placeholder: "-- Cari Vendor --", allowClear: true, width: '100%' });
-    }
+    function initSelect2User() { $('.select2-user').select2({ theme: 'bootstrap-5', placeholder: "Cari Nama User...", width: '100%', allowClear: true }); }
+    function initSelect2Vendor(context) { context.find('.select2-vendor').select2({ theme: 'bootstrap-5', placeholder: "-- Cari Vendor --", allowClear: true, width: '100%' }); }
 
     function initSelect2ItemAjax(context) {
         context.find('.select2-item-ajax').select2({
-            theme: 'bootstrap-5',
-            placeholder: "-- Ketik 2 Huruf untuk Mencari --",
-            allowClear: true,
-            width: '100%',
-            minimumInputLength: 2,
+            theme: 'bootstrap-5', placeholder: "-- Ketik 2 Huruf untuk Mencari --", allowClear: true, width: '100%', minimumInputLength: 2,
             ajax: {
-                url: "{{ route('pr.pr.search-items') }}", 
-                dataType: 'json',
-                delay: 250,
+                url: "{{ route('pr.pr.search-items') }}", dataType: 'json', delay: 250,
                 data: function(params) { return { search: params.term }; },
                 processResults: function(data) { return { results: data }; },
                 cache: true
@@ -630,25 +456,22 @@
         }).on('select2:select', function (e) {
             let $row = $(this).closest('.item-row');
             let $uomSelect = $row.find('.select-uom');
-            let itemData = e.params.data; 
-            
+            let itemData = e.params.data;
+
             $uomSelect.empty().append('<option value="">-- Pilih Kemasan --</option>');
-            
+
             if (itemData.uoms && itemData.uoms.length > 0) {
                 itemData.uoms.forEach(function(uom) {
                     let displayLabel = uom.isi > 1 ? `${uom.name} (Isi: ${uom.isi} ${uom.base})` : uom.name;
                     $uomSelect.append(`<option value="${uom.id}">${displayLabel}</option>`);
                 });
-                $uomSelect.prop('selectedIndex', 1).trigger('change'); 
+                $uomSelect.prop('selectedIndex', 1).trigger('change');
             }
         }).on('select2:clear', function() {
             $(this).closest('.item-row').find('.select-uom').empty().append('<option value="">-- Pilih Barang Dulu --</option>');
         });
     }
 
-    // ==========================================
-    // LOGIKA VENDOR MULTIPLE
-    // ==========================================
     window.addVendor = function(iIdx) {
         let $container = $(`#vendor-container-${iIdx}`);
         let $masterVendor = $container.find('.vendor-row').first();
@@ -666,7 +489,6 @@
             } else { $(this).val(''); }
         });
 
-        // Hapus file lama hasil clone
         $newVendor.find('.file-existing-row').remove();
         $newVendor.find('hr').remove();
         $newVendor.find('label:contains("File Tersimpan")').remove();
@@ -683,9 +505,8 @@
         $newVendor.css('display', 'none');
         $container.append($newVendor);
         $newVendor.fadeIn(300);
-        
-        // 🔥 PERBAIKAN: Hanya inisiasi baris vendor yang baru agar tidak merusak yang lama 🔥
-        initSelect2Vendor($masterVendor); 
+
+        initSelect2Vendor($masterVendor);
         initSelect2Vendor($newVendor);
     };
 
@@ -713,33 +534,22 @@
     window.removeItem = function(btn) {
         if ($('.item-row').length > 1) {
             Swal.fire({
-                title: 'Hapus Item?',
-                icon: 'warning', 
-                showCancelButton: true, 
-                confirmButtonColor: '#ef4444', 
-                confirmButtonText: 'Ya, Hapus!'
+                title: 'Hapus Item?', icon: 'warning', showCancelButton: true, confirmButtonColor: '#ef4444', confirmButtonText: 'Ya, Hapus!'
             }).then((result) => {
                 if (result.isConfirmed) {
                     let row = $(btn).closest('.item-row');
-                    
                     let editorEl = row.find('.ckeditor-spec');
                     if (editorEl.length > 0) {
                         let editorId = editorEl.attr('id');
-                        if (myEditors[editorId]) {
-                            myEditors[editorId].destroy();
-                            delete myEditors[editorId];
-                        }
+                        if (myEditors[editorId]) { myEditors[editorId].destroy(); delete myEditors[editorId]; }
                     }
-
                     row.fadeOut(300, function() {
                         $(this).remove();
                         $('.item-row').each(function(i) { $(this).find('.item-number').text(i + 1); });
                     });
                 }
             });
-        } else { 
-            Swal.fire({ icon: 'error', title: 'Gagal', text: 'Minimal 1 barang.' }); 
-        }
+        } else { Swal.fire({ icon: 'error', title: 'Gagal', text: 'Minimal 1 barang.' }); }
     };
 
     window.removeVendor = function(btn) {
@@ -748,18 +558,15 @@
             $(btn).closest('.vendor-row').fadeOut(200, function() { $(this).remove(); });
         } else {
             let $row = $(btn).closest('.vendor-row');
-            
             $row.find('input').not('[type="hidden"]').val('');
             $row.find('select').each(function() {
                 if ($(this).attr('name') && $(this).attr('name').includes('[currency]')) {
                     $(this).prop('selectedIndex', 0);
-                } else { 
-                    $(this).val('').trigger('change'); 
-                }
+                } else { $(this).val('').trigger('change'); }
             });
-            
+
             let iIdx = $row.closest('.item-row').data('index');
-            
+
             $row.find('.file-existing-row').remove();
             $row.find('hr').remove();
             $row.find('label:contains("File Tersimpan")').remove();
@@ -770,8 +577,9 @@
                     <button type="button" class="px-2 btn btn-danger" onclick="this.closest('.file-row').remove()"><i class="bi bi-x"></i></button>
                 </div>
             `);
-            
+
             Swal.fire({ icon: 'info', title: 'Direset', timer: 1000, showConfirmButton: false });
         }
     };
 </script>
+@endpush

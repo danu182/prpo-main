@@ -82,7 +82,6 @@
                             <option value="">-- Cari Nama Karyawan --</option>
                             @foreach($users as $user)
                                 @php
-                                    // Tarik singkatan PT (Code) atau Nama PT, dan Nama Departemen
                                     $ptName = optional($user->company)->code ?? optional($user->company)->name ?? 'Pusat';
                                     $deptName = optional($user->department)->name ?? 'Tanpa Dept';
                                 @endphp
@@ -120,7 +119,6 @@
                 </button>
             </div>
 
-            {{-- Peringatan Kunci Gudang --}}
             <div class="px-4 py-3 text-center bg-warning-subtle text-warning-emphasis small fw-bold border-bottom" id="warehouse-warning">
                 <i class="mb-1 bi bi-exclamation-circle fs-5 d-block"></i>
                 PILIH "ASAL GUDANG" TERLEBIH DAHULU UNTUK MEMULAI TRANSAKSI.
@@ -160,16 +158,12 @@
 </div>
 @endsection
 
-
 @push('scripts')
 <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
 
 <script>
-    // =========================================================================
-    // 🔥 FORMATTER VISUAL UNTUK SELECT2 🔥
-    // =========================================================================
     function formatAssetList(state) {
         if (!state.id) return state.text;
         let cleanText = $(`<div>${state.text}</div>`).text();
@@ -185,16 +179,14 @@
         `);
     }
 
-    // 👇🔥 TAMBAHKAN FUNGSI INI DI SINI 🔥👇
     function formatAssetSelection(state) {
         if (!state.id) return state.text;
         let cleanText = $(`<div>${state.text}</div>`).text();
         let astNumber = cleanText.split(' (')[0] || cleanText;
-        return astNumber; // Hanya menampilkan Nomor Aset-nya saja saat sudah dipilih
+        return astNumber;
     }
 
     $(document).ready(function() {
-        // Init Select2 User
         $('.select2-user').select2({ theme: 'bootstrap-5' });
 
         $('#requester_select').on('change', function() {
@@ -238,6 +230,12 @@
                     <td class="ps-4">
                         <select name="items[${rowCount}][item_id]" class="shadow-sm form-select item-select-ajax" required></select>
                         <div class="mt-2 stock-display text-muted small d-none"></div>
+
+                        {{-- 🔥 KOTAK NAMA SPESIFIK 🔥 --}}
+                        <div class="mt-3 item-name-container d-none">
+                            <label class="mb-1 form-label small fw-bold text-dark">Nama Spesifik (Pilih dari Riwayat)</label>
+                            <select name="items[${rowCount}][item_name]" class="form-select form-select-sm fw-bold text-primary item-name-select"></select>
+                        </div>
                     </td>
                     <td>
                         <select name="items[${rowCount}][inventory_stock_id]" class="shadow-sm form-select form-select-sm batch-select bg-light" disabled>
@@ -294,9 +292,6 @@
             }
         });
 
-        // =========================================================================
-        // 🔥 HELPER FUNCTION: SETUP MODE STOK BIASA & TRACKABLE 🔥
-        // =========================================================================
         function setupBulkMode(tr, data) {
             let qtyContainer = tr.find('.qty-container');
             let qtyInput = tr.find('.qty-input');
@@ -307,11 +302,10 @@
             let generalNotes = tr.find('.general-notes');
 
             qtyContainer.removeClass('d-none');
-            batchSelect.prop('disabled', false).removeClass('bg-light').html('<option value="">⏳ Memuat Batch...</option>');
+            batchSelect.prop('disabled', false).removeClass('bg-light').html('<option value="">⚡ Memuat Batch...</option>');
 
             uomSelect.empty();
 
-            // 🔥 PERBAIKAN TYPO VARIABEL UOM DI SINI 🔥
             let baseUom = data.base_uom_name || 'PCS';
             uomSelect.append(`<option value="" data-conv="1">${baseUom}</option>`);
 
@@ -341,7 +335,6 @@
                 }
             });
 
-            // LOGIKA JIKA BARANG WAJIB LACAK SN
             if (data.is_trackable) {
                 qtyInput.prop('readonly', true).val('').attr('placeholder', 'Pilih SN 👇').addClass('bg-light text-muted');
                 snContainer.removeClass('d-none');
@@ -365,9 +358,6 @@
             generalNotes.removeClass('d-none');
         }
 
-        // =========================================================================
-        // 🔥 LOGIKA METAMORFOSIS FORM BERDASARKAN FISIK STOK 🔥
-        // =========================================================================
         tbody.on('select2:select', '.item-select-ajax', function (e) {
             let data = e.params.data;
             let tr = $(this).closest('tr');
@@ -377,6 +367,21 @@
                 ${data.available_asset > 0 ? `<span class="border badge bg-info-subtle text-info-emphasis border-info">Aset: ${data.available_asset}</span>` : ''}
             `);
 
+            // 🔥 SET VALUE NAMA SPESIFIK OTOMATIS 🔥
+            // 🔥 POPULATE DROPDOWN NAMA SPESIFIK DARI RIWAYAT PO 🔥
+            let nameSelect = tr.find('.item-name-select');
+            nameSelect.empty();
+
+            if (data.historical_names && data.historical_names.length > 0) {
+                data.historical_names.forEach(name => {
+                    nameSelect.append(new Option(name, name));
+                });
+            } else {
+                nameSelect.append(new Option(data.raw_name, data.raw_name));
+            }
+
+            tr.find('.item-name-container').removeClass('d-none');
+
             let qtyContainer = tr.find('.qty-container');
             let assetContainer = tr.find('.asset-container');
             let assetSelect = tr.find('.asset-select');
@@ -384,7 +389,6 @@
             let snContainer = tr.find('.minor-sn-container');
             let snSelect = tr.find('.sn-select');
 
-            // Reset
             tr.find('.qty-input').prop('required', false);
             assetSelect.prop('required', false);
             snSelect.prop('required', false);
@@ -455,7 +459,6 @@
             }
         });
 
-        // 🔥 PENGHITUNG QTY OTOMATIS JIKA PILIH SN DROPDOWN 🔥
         tbody.on('change', '.sn-select', function() {
             let tr = $(this).closest('tr');
             let qtyInput = tr.find('.qty-input');
@@ -463,7 +466,6 @@
             qtyInput.val(selectedCount);
         });
 
-        // 🔥 HITUNG ULANG MAX QTY SAAT SATUAN UOM DIUBAH 🔥
         tbody.on('change', '.uom-select', function() {
             let tr = $(this).closest('tr');
             let qtyInput = tr.find('.qty-input');
@@ -482,7 +484,6 @@
             }
         });
 
-        // 🔥 VALIDASI FORM SUBMIT 🔥
         $('#form-goods-issue').on('submit', function(e) {
             e.preventDefault();
             let form = this;
@@ -503,14 +504,12 @@
                 } else {
                     validItemCount++;
 
-                    // Cek error Mode Aset
                     let assetContainer = $(this).find('.asset-container');
                     if (!assetContainer.hasClass('d-none')) {
                         let selectedAssets = $(this).find('.asset-select').val();
                         if (!selectedAssets || selectedAssets.length === 0) isAssetError = true;
                     }
 
-                    // Cek error Mode SN Trackable
                     let snContainer = $(this).find('.minor-sn-container');
                     if (!snContainer.hasClass('d-none')) {
                         let selectedSns = $(this).find('.sn-select').val();

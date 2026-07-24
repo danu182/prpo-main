@@ -122,7 +122,7 @@
                                                     <i class="bi bi-dot text-primary"></i>
                                                     <span class="fw-bold text-dark">{{ (float) $pItem->qty_ordered }}</span>
                                                     <span class="badge bg-primary-subtle text-primary ms-1 me-1">{{ $uomDisplayHistory }}</span>
-                                                    <span class="text-muted">{{ optional($pItem->item)->name ?? $pItem->description }}</span>
+                                                    <span class="text-muted">{{ $pItem->item_name ?? optional($pItem->item)->name ?? $pItem->description }}</span>
                                                 </li>
                                             @endforeach
                                         </ul>
@@ -289,6 +289,14 @@
                                 <div class="col-md-7">
                                     <div class="row">
                                         <div class="col-md-7">
+
+                                            {{-- 🔥 KOTAK NAMA SPESIFIK (SHORT TEXT) 🔥 --}}
+                                            <div class="mb-3">
+                                                <label class="form-label small fw-bold text-dark">Nama Barang di PO (Bisa disesuaikan)</label>
+                                                <input type="text" name="po_items[{{ $index }}][item_name_override]" class="form-control form-input-custom fw-bold text-primary" value="{{ $item->item_name ?? optional($item->item)->name }}" placeholder="Ketik nama spesifik barang...">
+                                                <div class="mt-1 form-text text-muted" style="font-size: 0.65rem;">*Nama ini yang akan tercetak di PDF PO.</div>
+                                            </div>
+
                                             <label class="form-label small fw-bold text-dark">Spesifikasi Detail (Bisa diedit)</label>
                                             <textarea name="po_items[{{ $index }}][notes]" id="spec_{{ $index }}" class="form-control form-input-custom ckeditor-spec" placeholder="Ketik spesifikasi detail di sini...">{!! $item->specification ?? $item->notes !!}</textarea>
                                         </div>

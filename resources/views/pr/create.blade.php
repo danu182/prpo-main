@@ -7,26 +7,23 @@
     :root { --pr-blue: #0d6efd; --pr-red: #ef4444; --bg-light: #f8fafc; }
     .select2-container--bootstrap-5 .select2-selection { border-radius: 8px; border-color: #dee2e6; min-height: 40px; font-size: 0.875rem; padding-top: 4px;}
     .select2-container--bootstrap-5.select2-container--focus .select2-selection { border-color: #0d6efd; box-shadow: 0 0 0 0.2rem rgba(13, 110, 253, 0.15); }
-    
+
     .item-card { background: #ffffff; border: 1px solid #e2e8f0; border-radius: 16px; padding: 0; margin-bottom: 24px; position: relative; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05); overflow: hidden;}
     .item-card-header { background-color: #f1f5f9; padding: 16px 24px; border-bottom: 1px solid #e2e8f0; border-left: 6px solid var(--pr-blue); display: flex; justify-content: space-between; align-items: center;}
     .item-card-body { padding: 24px; }
-    
+
     .btn-delete-item { color: var(--pr-red); background: #fef2f2; border: 1px solid #fca5a5; width: 32px; height: 32px; border-radius: 8px; display: flex; align-items: center; justify-content: center; transition: 0.2s; cursor: pointer; }
     .btn-delete-item:hover { background: #fee2e2; transform: scale(1.1); color: #b91c1c; }
-    
+
     .vendor-section { background-color: #f8fafc; border-radius: 12px; padding: 20px; border: 1px solid #cbd5e1; }
     .vendor-row { background: #ffffff; border-radius: 10px; border: 1px solid #e2e8f0; padding: 16px; margin-bottom: 12px; position: relative; box-shadow: 0 1px 3px rgba(0,0,0,0.04); }
-    
+
     input[type=number]::-webkit-inner-spin-button, input[type=number]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
     input[type=number] { -moz-appearance: textfield; }
     .fixed-bottom-bar { background: rgba(255, 255, 255, 0.95) !important; backdrop-filter: blur(10px); border-top: 1px solid #dee2e6; z-index: 1040; }
 
     /* 🔥 STYLING KHUSUS CKEDITOR 🔥 */
-    .ck-editor__editable_inline {
-        min-height: 120px;
-        font-size: 0.85rem;
-    }
+    .ck-editor__editable_inline { min-height: 120px; font-size: 0.85rem; }
 </style>
 @endpush
 
@@ -125,11 +122,18 @@
                             <option value="">-- Pilih Barang Dulu --</option>
                         </select>
                     </div>
-                    
+
+                    {{-- 1. KOTAK NAMA SPESIFIK (SHORT TEXT) --}}
+                    <div class="col-12 mt-3">
+                        <label class="form-label small fw-bold text-dark">Nama Spesifik Barang (Bisa disesuaikan)</label>
+                        <input type="text" name="items[0][item_name]" class="form-control form-input-custom fw-bold text-primary" placeholder="Contoh: Asus VivoBook 14 A1404ZA...">
+                        <div class="mt-1 form-text text-muted" style="font-size: 0.7rem;">*Nama ini yang akan tercetak di PDF. Master Data tetap aman.</div>
+                    </div>
+
                     {{-- 🔥 CKEDITOR SPESIFIKASI 🔥 --}}
                     <div class="col-12 mt-3">
                         <label class="mb-2 small text-dark fw-bold"><i class="bi bi-card-text me-1 text-secondary"></i>Spesifikasi / Detail Khusus (Opsional)</label>
-                        <textarea name="items[0][specification]" id="spec_0" rows="2" class="form-control border-secondary-subtle ckeditor-spec" placeholder="Tuliskan warna, ukuran, merk khusus..."></textarea>
+                        <textarea name="items[0][specification]" id="spec_0" rows="2" class="form-control border-secondary-subtle ckeditor-spec" placeholder="Tuliskan spesifikasi teknis panjang di sini..."></textarea>
                     </div>
                 </div>
 
@@ -163,7 +167,7 @@
                                         <input type="number" name="items[0][vendors][0][price]" class="form-control text-end fw-bold" placeholder="0" step="0.01">
                                     </div>
                                 </div>
-                                
+
                                 {{-- AREA FILE UPLOAD --}}
                                 <div class="col-lg-4 col-md-12">
                                     <div class="p-2 border rounded bg-light border-secondary-subtle">
@@ -218,28 +222,20 @@
 <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
-{{-- 🔥 SUNTIKAN CKEDITOR 5 CDN 🔥 --}}
 <script src="https://cdn.ckeditor.com/ckeditor5/39.0.1/classic/ckeditor.js"></script>
 
 <script>
     let itemIdx = 0;
-    let myEditors = {}; // Tampungan objek CKEditor
+    let myEditors = {};
 
     // 🔥 FUNGSI INISIASI CKEDITOR 🔥
     function initCKEditor(selectorId) {
         let domElement = document.querySelector('#' + selectorId);
-        if (domElement && !domElement.ckeditorInstance) { 
+        if (domElement && !domElement.ckeditorInstance) {
             ClassicEditor
-                .create(domElement, {
-                    toolbar: [ 'heading', '|', 'bold', 'italic', 'bulletedList', 'numberedList', 'blockQuote', '|', 'undo', 'redo' ]
-                })
-                .then(editor => {
-                    myEditors[selectorId] = editor;
-                    domElement.ckeditorInstance = editor; 
-                })
-                .catch(error => {
-                    console.error('Oops, CKEditor gagal jalan:', error);
-                });
+                .create(domElement, { toolbar: [ 'heading', '|', 'bold', 'italic', 'bulletedList', 'numberedList', 'blockQuote', '|', 'undo', 'redo' ] })
+                .then(editor => { myEditors[selectorId] = editor; domElement.ckeditorInstance = editor; })
+                .catch(error => { console.error('Oops, CKEditor gagal jalan:', error); });
         }
     }
 
@@ -248,7 +244,6 @@
         initSelect2Vendor($('.item-row'));
         initSelect2ItemAjax($('.item-row'));
 
-        // 🔥 NYALAKAN CKEDITOR SAAT HALAMAN DIBUKA 🔥
         document.querySelectorAll('.ckeditor-spec').forEach(function(textarea) {
             initCKEditor(textarea.id);
         });
@@ -268,25 +263,20 @@
         $('#btn-add-item').on('click', function() {
             itemIdx++;
             let $firstRow = $('.item-row').first();
-            
+
             $firstRow.find('.select2-item-ajax, .select2-vendor').select2('destroy');
 
             let $newRow = $firstRow.clone();
             $newRow.attr('data-index', itemIdx);
             $newRow.find('.item-number').text($('.item-row').length + 1);
 
-            // Bersihkan Value
             $newRow.find('input, textarea').val('');
-            
             $newRow.find('select').each(function() {
                 if ($(this).attr('name') && $(this).attr('name').includes('[currency]')) {
                     $(this).prop('selectedIndex', 0);
-                } else { 
-                    $(this).empty(); 
-                }
+                } else { $(this).empty(); }
             });
 
-            // Setel UOM default
             let $uomDropdown = $newRow.find('.select-uom');
             $uomDropdown.append('<option value="" selected>-- Pilih Barang Dulu --</option>');
 
@@ -294,7 +284,8 @@
             $newRow.find('.select2-item-ajax').attr('name', `items[${itemIdx}][item_id]`);
             $newRow.find('input[name*="[qty]"]').attr('name', `items[${itemIdx}][qty]`);
             $newRow.find('.select-uom').attr('name', `items[${itemIdx}][uom_id]`);
-            
+            $newRow.find('input[name*="[item_name]"]').attr('name', `items[${itemIdx}][item_name]`); // <-- UPDATE KOLOM SHORT TEXT
+
             // 🔥 RESET CKEDITOR DI BARIS BARU 🔥
             $newRow.find('.ck-editor').remove();
             let clonedTextarea = $newRow.find('.ckeditor-spec');
@@ -321,104 +312,70 @@
             $newRow.find('button[onclick^="addVendor"]').attr('onclick', `addVendor(${itemIdx})`);
 
             $('#items-container').append($newRow);
-            
+
             initSelect2Vendor($('.item-row'));
             initSelect2ItemAjax($('.item-row'));
-            
-            // 🔥 INISIASI CKEDITOR DI BARIS BARU 🔥
             initCKEditor(newSpecId);
         });
 
         $('#prForm').on('submit', function(e) {
             let form = this; e.preventDefault();
-            
-            // 🔥 SINKRONISASI DATA CKEDITOR SEBELUM SUBMIT 🔥
+
             for (let editorId in myEditors) {
                 if (myEditors.hasOwnProperty(editorId) && myEditors[editorId]) {
                     myEditors[editorId].updateSourceElement();
                 }
             }
-            
+
             if ($('.item-row').length === 0) return Swal.fire({ icon: 'error', title: 'Kosong!', text: 'Belum ada barang!' });
             let isBarangValid = true;
             $('.select2-item-ajax').each(function() { if (!$(this).val()) isBarangValid = false; });
             if (!isBarangValid) return Swal.fire({ icon: 'warning', title: 'Data Belum Lengkap', text: 'Ada baris barang yang belum dipilih.' });
 
-            // 🔥 MATIKAN UPLOAD KOSONG AGAR TIDAK ERROR 🔥
-            $('input[type="file"]').each(function() {
-                if ($(this).val() === '') {
-                    $(this).prop('disabled', true);
-                }
-            });
+            $('input[type="file"]').each(function() { if ($(this).val() === '') { $(this).prop('disabled', true); } });
 
             Swal.fire({
-                title: 'Ajukan Purchase Request?',
-                icon: 'question',
-                showCancelButton: true,
-                confirmButtonColor: '#0d6efd',
-                confirmButtonText: 'Ya, Kirim PR!',
-                cancelButtonText: 'Batal'
+                title: 'Ajukan Purchase Request?', icon: 'question', showCancelButton: true,
+                confirmButtonColor: '#0d6efd', confirmButtonText: 'Ya, Kirim PR!', cancelButtonText: 'Batal'
             }).then((result) => {
                 if (result.isConfirmed) {
                     Swal.fire({ title: 'Menyimpan...', didOpen: () => { Swal.showLoading() }, allowOutsideClick: false });
                     form.submit();
                 } else {
-                    $('input[type="file"]').prop('disabled', false); 
+                    $('input[type="file"]').prop('disabled', false);
                 }
             });
         });
     });
 
-    // ==========================================
-    // INIT SELECT2 FUNCTIONS
-    // ==========================================
     function initSelect2User() { $('.select2-user').select2({ theme: 'bootstrap-5', placeholder: "Cari Nama User...", width: '100%', allowClear: true }); }
-    
-    function initSelect2Vendor(context) {
-        context.find('.select2-vendor').select2({ theme: 'bootstrap-5', placeholder: "-- Cari Vendor --", allowClear: true, width: '100%' });
-    }
+    function initSelect2Vendor(context) { context.find('.select2-vendor').select2({ theme: 'bootstrap-5', placeholder: "-- Cari Vendor --", allowClear: true, width: '100%' }); }
 
     function initSelect2ItemAjax(context) {
         context.find('.select2-item-ajax').select2({
-            theme: 'bootstrap-5',
-            placeholder: "-- Ketik 2 Huruf untuk Mencari --",
-            allowClear: true,
-            width: '100%',
-            minimumInputLength: 2,
+            theme: 'bootstrap-5', placeholder: "-- Ketik 2 Huruf untuk Mencari --", allowClear: true, width: '100%', minimumInputLength: 2,
             ajax: {
-                url: "{{ route('pr.pr.search-items') }}", 
-                dataType: 'json',
-                delay: 250,
-                data: function(params) {
-                    return { search: params.term };
-                },
-                processResults: function(data) {
-                    return { results: data };
-                },
+                url: "{{ route('pr.pr.search-items') }}", dataType: 'json', delay: 250,
+                data: function(params) { return { search: params.term }; },
+                processResults: function(data) { return { results: data }; },
                 cache: true
             }
         }).on('select2:select', function (e) {
             let $row = $(this).closest('.item-row');
             let $uomSelect = $row.find('.select-uom');
-            let itemData = e.params.data; 
-            
+            let itemData = e.params.data;
+
             $uomSelect.empty().append('<option value="">-- Pilih Kemasan --</option>');
-            
+
             if (itemData.uoms && itemData.uoms.length > 0) {
                 itemData.uoms.forEach(function(uom) {
-                    // 🔥 PERBAIKAN: Selalu tampilkan "(Isi: ...)" asalkan dia adalah kemasan alternatif (Bukan nama satuan dasar itu sendiri)
                     let displayLabel = uom.name;
-                    
-                    if (uom.isi !== undefined && uom.base !== undefined) {
-                        if (uom.name !== uom.base) {
-                            // Gunakan parseFloat agar angka 1.00 menjadi 1 yang rapi
-                            displayLabel = `${uom.name} (Isi: ${parseFloat(uom.isi)} ${uom.base})`;
-                        }
+                    if (uom.isi !== undefined && uom.base !== undefined && uom.name !== uom.base) {
+                        displayLabel = `${uom.name} (Isi: ${parseFloat(uom.isi)} ${uom.base})`;
                     }
-
                     $uomSelect.append(`<option value="${uom.id}">${displayLabel}</option>`);
                 });
-                $uomSelect.prop('selectedIndex', 1).trigger('change'); 
+                $uomSelect.prop('selectedIndex', 1).trigger('change');
             }
         }).on('select2:clear', function() {
             $(this).closest('.item-row').find('.select-uom').empty().append('<option value="">-- Pilih Barang Dulu --</option>');
@@ -457,8 +414,8 @@
         $newVendor.css('display', 'none');
         $container.append($newVendor);
         $newVendor.fadeIn(300);
-        
-        initSelect2Vendor($('.item-row')); 
+
+        initSelect2Vendor($('.item-row'));
     };
 
     function updateVendorNaming($row, iIdx, vIdx) {
@@ -485,22 +442,15 @@
     window.removeItem = function(btn) {
         if ($('.item-row').length > 1) {
             Swal.fire({
-                title: 'Hapus Item?',
-                icon: 'warning', showCancelButton: true, confirmButtonColor: '#ef4444', confirmButtonText: 'Ya, Hapus!'
+                title: 'Hapus Item?', icon: 'warning', showCancelButton: true, confirmButtonColor: '#ef4444', confirmButtonText: 'Ya, Hapus!'
             }).then((result) => {
                 if (result.isConfirmed) {
                     let row = $(btn).closest('.item-row');
-                    
-                    // 🔥 MATIKAN CKEDITOR SEBELUM HAPUS HTML 🔥
                     let editorEl = row.find('.ckeditor-spec');
                     if (editorEl.length > 0) {
                         let editorId = editorEl.attr('id');
-                        if (myEditors[editorId]) {
-                            myEditors[editorId].destroy();
-                            delete myEditors[editorId];
-                        }
+                        if (myEditors[editorId]) { myEditors[editorId].destroy(); delete myEditors[editorId]; }
                     }
-
                     row.fadeOut(300, function() {
                         $(this).remove();
                         $('.item-row').each(function(i) { $(this).find('.item-number').text(i + 1); });
@@ -522,7 +472,7 @@
                     $(this).prop('selectedIndex', 0);
                 } else { $(this).val('').trigger('change'); }
             });
-            
+
             let iIdx = $row.closest('.item-row').data('index');
             $row.find('.file-container').html(`
                 <div class="mb-1 overflow-hidden rounded shadow-sm input-group input-group-sm file-row">
@@ -530,10 +480,8 @@
                     <button type="button" class="px-2 btn btn-danger" onclick="this.closest('.file-row').remove()"><i class="bi bi-x"></i></button>
                 </div>
             `);
-            
             Swal.fire({ icon: 'info', title: 'Direset', timer: 1000, showConfirmButton: false });
         }
     };
 </script>
 @endpush
-

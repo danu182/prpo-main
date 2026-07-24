@@ -49,7 +49,6 @@ class GoodsIssueController extends Controller
         return view('goods_issues.create', compact('users', 'warehouses'));
     }
 
-
     // ==========================================
     // 2. PROSES SIMPAN PENGELUARAN BARANG
     // ==========================================
@@ -61,6 +60,7 @@ class GoodsIssueController extends Controller
             'requester_name' => 'required|string|max:255',
             'items'          => 'required|array|min:1',
             'items.*.item_id' => 'required|exists:items,id',
+            'items.*.item_name' => 'nullable|string|max:255', // Validasi Nama Spesifik
         ]);
 
         $allSelectedAssets = [];
@@ -108,6 +108,9 @@ class GoodsIssueController extends Controller
                     $item = \App\Models\Item::with(['uom'])->findOrFail($data['item_id']);
                     $satuanDasar = optional($item->uom)->name ?? 'Pieces';
 
+                    // 🔥 TANGKAP NAMA SPESIFIK (JIKA ADA) 🔥
+                    $namaSpesifik = $data['item_name'] ?? $item->name;
+
                     $isModeAsset = !empty($data['asset_ids']);
                     $finalUomString = $satuanDasar;
                     $uomId = null;
@@ -136,7 +139,7 @@ class GoodsIssueController extends Controller
                                 'fixed_asset_id' => $ad->id,
                                 'status'         => 'In Use (Dipakai)',
                                 'assigned_to'    => $assignedToId,
-                                'notes'          => "Dikeluarkan melalui Dokumen GI: {$giNumber}.",
+                                'notes'          => "Dikeluarkan melalui Dokumen GI: {$giNumber}. Unit: {$namaSpesifik}",
                                 'created_by'     => auth()->id(),
                             ]);
 
@@ -150,7 +153,6 @@ class GoodsIssueController extends Controller
                         $itemNote = "Dikeluarkan Aset:\n" . implode("\n", $assetInfoArr);
                         if (!empty($data['notes'])) $itemNote .= "\nCatatan: " . $data['notes'];
 
-                        // 🔥 PERBAIKAN FATAL: CATAT MUTASI OUT PADA KARTU STOK MASTER WALAUPUN INI ASET 🔥
                         $balanceBefore = (float) $item->current_stock;
                         $balanceAfter = $balanceBefore - $qtyRequested;
 
@@ -162,7 +164,7 @@ class GoodsIssueController extends Controller
                             'balance_before'   => $balanceBefore,
                             'balance_after'    => $balanceAfter,
                             'reference_number' => $giNumber,
-                            'notes'            => "Aset diserahkan ke {$request->requester_name}.",
+                            'notes'            => "Aset ({$namaSpesifik}) diserahkan ke {$request->requester_name}.",
                             'created_by'       => auth()->id(),
                         ]);
 
@@ -221,7 +223,7 @@ class GoodsIssueController extends Controller
                         }
                         $itemNote = trim($itemNote . " | Dikeluarkan fisik: {$qtyInput} {$finalUomString}", ' |');
 
-                        // PEMOTONGAN INVENTORY STOCK (HANYA UNTUK BARANG BIASA)
+                        // PEMOTONGAN INVENTORY STOCK
                         $issueMethod = $item->issue_method ?? 'FIFO';
                         $sortDirection = ($issueMethod === 'LIFO') ? 'desc' : 'asc';
 
@@ -238,7 +240,7 @@ class GoodsIssueController extends Controller
                         $totalAvailable = $availableStocks->sum('stock_qty');
 
                         if ($totalAvailable < $qtyRequested) {
-                            throw new \Exception("Stok {$item->name} tidak cukup! Diminta: {$qtyRequested} {$satuanDasar}, Sisa: {$totalAvailable} {$satuanDasar}");
+                            throw new \Exception("Stok {$namaSpesifik} tidak cukup! Diminta: {$qtyRequested} {$satuanDasar}, Sisa: {$totalAvailable} {$satuanDasar}");
                         }
 
                         $qtySisa = $qtyRequested;
@@ -267,7 +269,7 @@ class GoodsIssueController extends Controller
                                 'balance_before'   => $balanceBefore,
                                 'balance_after'    => $balanceAfter,
                                 'reference_number' => $giNumber,
-                                'notes'            => "Keluar ke {$request->requester_name}.{$mutasiNoteExt}",
+                                'notes'            => "Keluar ke {$request->requester_name}. Barang: {$namaSpesifik}.{$mutasiNoteExt}",
                                 'created_by'       => auth()->id(),
                             ]);
                         }
@@ -279,13 +281,14 @@ class GoodsIssueController extends Controller
                     \App\Models\GoodsIssueItem::create([
                         'goods_issue_id' => $gi->id,
                         'item_id'        => $item->id,
+                        'item_name'      => $namaSpesifik, // 🔥 SIMPAN NAMA SPESIFIK 🔥
                         'qty_issued'     => $qtyInput,
                         'uom_id'         => $uomId ?: null,
                         'uom'            => $finalUomString,
                         'notes'          => $itemNote,
                     ]);
 
-                    // Simpan Inventaris Pegawai untuk Minor Asset (Non Aset Tetap)
+                    // Simpan Inventaris Pegawai untuk Minor Asset
                     if (!$isModeAsset && isset($item->is_trackable) && $item->is_trackable) {
                         foreach ($daftarInventarisBaru as $invRecord) {
                             \App\Models\EmployeeInventory::create([
@@ -303,7 +306,7 @@ class GoodsIssueController extends Controller
                         \App\Models\EmployeeInventoryHistory::create([
                             'employee_name'    => $request->requester_name,
                             'item_id'          => $item->id,
-                            'type'             => 'IN',
+                            'type'             => 'OUT',
                             'qty'              => $qtyRequested,
                             'reference_number' => $giNumber,
                             'notes'            => "Diserahkan ke karyawan via GI: {$giNumber}. Unit: " . $invStringForNote,
@@ -320,7 +323,6 @@ class GoodsIssueController extends Controller
             return back()->withInput()->with('error', $e->getMessage());
         }
     }
-
 
     // ==========================================
     // 3. MENAMPILKAN DETAIL GI
@@ -362,7 +364,6 @@ class GoodsIssueController extends Controller
                 ->where('gi_number', $slug)
                 ->firstOrFail();
 
-        // Render menjadi file PDF
         $pdf = \Barryvdh\DomPDF\Facade\Pdf::loadView('goods_issues.print', compact('gi'))
                     ->setPaper('A4', 'portrait');
 
@@ -375,7 +376,6 @@ class GoodsIssueController extends Controller
                 ->where('gi_number', $slug)
                 ->firstOrFail();
 
-        // Cari semua aset yang dikeluarkan melalui nomor GI ini
         $assets = \App\Models\FixedAsset::with('item')
                     ->where('notes', 'like', "%{$gi->gi_number}%")
                     ->get();
@@ -384,7 +384,6 @@ class GoodsIssueController extends Controller
             return back()->with('error', 'Tidak ada Aset Tetap yang diserahkan pada dokumen GI ini.');
         }
 
-        // Render menjadi file PDF (pastikan menggunakan Facade Pdf bawaan DomPDF)
         $pdf = \Barryvdh\DomPDF\Facade\Pdf::loadView('goods_issues.bast', compact('gi', 'assets'))
                     ->setPaper('A4', 'portrait');
 
@@ -447,7 +446,6 @@ class GoodsIssueController extends Controller
                         ]);
                     }
 
-                    // 🔥 PERBAIKAN FATAL: KEMBALIKAN SALDO MASTER & MUTASI IN JIKA TRANSAKSI ASET DIBATALKAN 🔥
                     $balanceBefore = (float) $masterItem->current_stock;
                     $balanceAfter = $balanceBefore + $qtyToRestore;
 
@@ -466,7 +464,6 @@ class GoodsIssueController extends Controller
                     $masterItem->update(['current_stock' => $balanceAfter]);
 
                 } else {
-                    // JIKA BARANG BIASA: KEMBALIKAN STOK FISIK KE GUDANG
                     $conversionFactor = 1;
                     if ($giItem->uom_id) {
                         $uomDb = \App\Models\ItemUom::find($giItem->uom_id);
@@ -509,9 +506,7 @@ class GoodsIssueController extends Controller
 
                     $masterItem->update(['current_stock' => $balanceAfter]);
 
-                    // Kembalikan Minor Asset dari Karyawan (Jika Trackable)
                     if (isset($masterItem->is_trackable) && $masterItem->is_trackable) {
-                        // Tarik SN dan Kembalikan ke 'AVAILABLE'
                         preg_match_all('/SN:\s*([a-zA-Z0-9\-_]+)/', $giItem->notes, $snMatches);
                         $borrowedSns = $snMatches[1] ?? [];
 
@@ -590,6 +585,18 @@ class GoodsIssueController extends Controller
 
             if ($totalStockDisplay <= 0) continue;
 
+            // 🔥 CARI NAMA SPESIFIK DARI RIWAYAT PO 🔥
+            $historicalNames = \App\Models\PurchaseOrderItem::where('item_id', $item->id)
+                                ->whereNotNull('item_name')
+                                ->distinct()
+                                ->pluck('item_name')
+                                ->toArray();
+
+            // Selalu masukkan nama master barang sebagai default / opsi utama
+            if (!in_array($item->name, $historicalNames)) {
+                array_unshift($historicalNames, $item->name);
+            }
+
             $text = "[{$item->code}] {$item->name} ";
             if ($assetStock > 0 || $availableBulk > 0) {
                 $text .= "(Biasa: {$availableBulk} | Aset: {$assetStock})";
@@ -598,6 +605,8 @@ class GoodsIssueController extends Controller
             $results[] = [
                 'id' => $item->id,
                 'text' => $text,
+                'raw_name' => $item->name,
+                'historical_names' => $historicalNames, // 🔥 LEMPAR DAFTAR NAMA KE BLADE
                 'is_asset' => $item->is_asset,
                 'is_trackable' => $item->is_trackable,
                 'stock' => $totalStockDisplay,

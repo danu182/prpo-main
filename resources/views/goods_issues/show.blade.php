@@ -169,7 +169,7 @@
                         <tr class="border-bottom">
                             <td class="py-3 ps-4 text-muted">{{ $index + 1 }}</td>
                             <td>
-                                <h6 class="mb-1 fw-bold text-dark">{{ optional($item->item)->name }}</h6>
+                                <h6 class="mb-1 fw-bold text-dark">{{ $item->item_name ?? optional($item->item)->name }}</h6>
                                 <span class="border badge bg-secondary-subtle text-secondary border-secondary-subtle">{{ optional($item->item)->code }}</span>
                                 @if(optional($item->item)->is_asset)
                                     <span class="border badge bg-primary-subtle text-primary border-primary-subtle ms-1">Aset Tetap</span>

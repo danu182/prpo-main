@@ -1,5 +1,39 @@
 @extends('layouts.app')
 
+@push('css')
+<style>
+    /* Efek Hover Lampiran */
+    .file-card-hover:hover {
+        background-color: #fff !important;
+        border-color: #0d6efd !important;
+        box-shadow: 0 4px 10px rgba(13, 110, 253, 0.1);
+        transform: translateY(-2px);
+    }
+    .border-dashed {
+        border-style: dashed !important;
+        border-width: 2px !important;
+    }
+
+    /* Menyembunyikan elemen UI saat dicetak (Ctrl+P) */
+    @media print {
+        body { background-color: white !important; }
+        .navbar, .btn, .nav, footer { display: none !important; }
+        #printable-area { box-shadow: none !important; border: none !important; }
+        .container { max-width: 100% !important; padding: 0 !important; }
+        .d-print-none { display: none !important; }
+    }
+
+    /* Tambahan CSS untuk Timeline */
+    .timeline-item:last-child {
+        border-start-color: transparent !important;
+        padding-bottom: 0 !important;
+    }
+    .d-print-none {
+        display: block;
+    }
+</style>
+@endpush
+
 @section('content')
 <div class="container pb-5 text-dark">
 
@@ -69,11 +103,11 @@
                         @php
                             $warehouseName = 'Gudang Utama / Default';
 
-                            // 1. Cek bawaan dari relasi GR (Jika suatu saat Anda tambahkan kolomnya)
+                            // 1. Cek bawaan dari relasi GR
                             if (isset($gr->warehouse) && $gr->warehouse) {
                                 $warehouseName = $gr->warehouse->name;
                             } else {
-                                // 2. JARING RAKSASA: Cari di inventory_movements pakai Nomor GR ATAU ID GR
+                                // 2. Cari di inventory_movements
                                 $mov = \Illuminate\Support\Facades\DB::table('inventory_movements')
                                     ->where('reference_number', $gr->gr_number)
                                     ->orWhere('reference_number', (string) $gr->id)
@@ -91,7 +125,6 @@
                                 if ($mov) {
                                     $whId = $mov->warehouse_id ?? null;
 
-                                    // Jika warehouse_id kosong tapi ada inventory_stock_id, intip induknya
                                     if (!$whId && isset($mov->inventory_stock_id)) {
                                         $stockParent = \Illuminate\Support\Facades\DB::table('inventory_stocks')
                                             ->where('id', $mov->inventory_stock_id)->first();
@@ -161,7 +194,8 @@
                         {{-- NAMA BARANG --}}
                         <td class="py-3 ps-4">
                             <div class="fw-bolder text-dark" style="font-size: 0.95rem;">
-                                {{ optional($item->item)->name ?? 'Nama Barang Tidak Ditemukan' }}
+                                {{-- 🔥 PERBAIKAN: Tampilkan Nama Spesifik PO Jika Ada 🔥 --}}
+                                {{ optional($item->purchaseOrderItem)->item_name ?? optional($item->item)->name ?? 'Nama Barang Tidak Ditemukan' }}
                             </div>
                             <div class="gap-1 mt-1 mb-2 d-flex">
                                 <span class="border badge bg-secondary-subtle text-secondary">{{ optional($item->item)->code }}</span>
@@ -192,7 +226,6 @@
                                     }
                                 }
 
-                                // 🔥 FILTER ANTI-PCS: Jika dokumen PO lama bilang PCS, tapi Master bilang Galon, paksa pakai Galon! 🔥
                                 if (strtoupper(trim($poUomText)) === 'PCS' && strtoupper($baseUomName) !== 'PCS') {
                                     $poUomText = $baseUomName;
                                 }
@@ -212,21 +245,11 @@
                                     $grUom = $item->getRawOriginal('uom');
                                     $baseUomName = $item->clean_uom_name ?? 'Unit';
 
-                                    // 🔥 FILTER ANTI-PCS: Obat yang sama untuk kolom Penerimaan 🔥
                                     if (!$grUom || (strtoupper(trim($grUom)) === 'PCS' && strtoupper($baseUomName) !== 'PCS')) {
                                         $grUom = $baseUomName;
                                     }
                                 @endphp
                                 {{ $grUom }}
-                            </span>
-                        </td>
-
-                        {{-- QTY GR (DITERIMA) --}}
-                        <td class="py-3 text-center fw-bold text-success fs-5">
-                            + {{ (float)$item->qty_received }} <br>
-                            <span class="text-nowrap fw-bold text-muted" style="font-size: 0.65rem; text-transform: uppercase;">
-                                {{-- Jika field 'uom' di tabel kosong, fallback ke clean_uom_name dari Controller --}}
-                                {{ $item->getRawOriginal('uom') ?: ($item->clean_uom_name ?? 'Unit') }}
                             </span>
                         </td>
 
@@ -239,12 +262,10 @@
 
                         {{-- CATATAN & SERIAL NUMBER --}}
                         <td class="text-start">
-                            {{-- 1. Tampilkan Catatan Asli Staf --}}
                             <div class="mb-2 text-dark">
                                 {{ $item->notes ?? 'Tidak ada catatan khusus.' }}
                             </div>
 
-                            {{-- 2. Tampilkan Nomor Register / SN dalam bentuk Kotak-Kotak (Badge) --}}
                             @if(!empty($item->registered_sns))
                                 <div class="p-2 border rounded bg-light border-secondary-subtle">
                                     <span class="mb-2 d-block small text-muted fw-bold">
@@ -252,14 +273,12 @@
                                     </span>
 
                                     <div class="flex-wrap gap-1 d-flex">
-                                        {{-- Tampilkan maksimal 5 kotak pertama saja --}}
                                         @foreach(array_slice($item->registered_sns, 0, 5) as $sn)
                                             <span class="px-2 py-1 bg-white border shadow-sm badge text-dark border-secondary-subtle" style="font-size: 0.75rem;">
                                                 {{ $sn }}
                                             </span>
                                         @endforeach
 
-                                        {{-- Jika jumlahnya lebih dari 5, munculkan tombol Lihat Semua --}}
                                         @if(count($item->registered_sns) > 5)
                                             <span class="px-2 py-1 shadow-sm badge bg-primary" style="cursor: pointer;" data-bs-toggle="modal" data-bs-target="#snModal-{{ $item->id }}">
                                                 + {{ count($item->registered_sns) - 5 }} Lainnya
@@ -268,7 +287,6 @@
                                     </div>
                                 </div>
 
-                                {{-- 3. Modal Popup untuk menampilkan keseluruhan 100 SN --}}
                                 @if(count($item->registered_sns) > 5)
                                 <div class="modal fade" id="snModal-{{ $item->id }}" tabindex="-1" aria-hidden="true">
                                     <div class="modal-dialog modal-dialog-centered modal-dialog-scrollable">
@@ -304,13 +322,4 @@
     </div>
 
 </div>
-
-<style>
-    @media print {
-        body { background-color: #fff !important; }
-        .navbar, .sidebar, .btn, footer { display: none !important; }
-        .card { border: none !important; box-shadow: none !important; }
-        .container { max-width: 100% !important; padding: 0 !important; }
-    }
-</style>
 @endsection
