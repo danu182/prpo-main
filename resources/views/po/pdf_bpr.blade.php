@@ -86,7 +86,6 @@
         <tbody>
             @foreach($po->items as $index => $item)
                 @php
-                    // 🔥 LOGIKA CERDAS ANTI-NOL & ANTI-ERROR TAX 🔥
                     $qty = (float) ($item->qty ?? $item->qty_ordered ?? 0);
                     if ($qty <= 0) $qty = 1;
 
@@ -130,68 +129,110 @@
 
             {{-- KALKULASI FINAL --}}
             @php
-                $sumSubtotal = (float)($po->subtotal ?? 0) > 0 ? (float)$po->subtotal : $calcSubtotalGross;
-                $sumDiscount = (float)($po->total_discount ?? $po->discount_amount ?? 0) > 0 ? (float)($po->total_discount ?? $po->discount_amount) : $calcTotalDiscount;
+                // 1. Ambil Subtotal
+                $sumSubtotal = (float)($po->subtotal ?? $calcSubtotalGross);
 
-                $sumTax = (float)($po->total_tax ?? $po->tax_amount ?? 0);
-                if ($sumTax >= $sumSubtotal && $sumSubtotal > 0) { $sumTax = $calcTotalTax; }
+                // 2. Ambil Diskon
+                $sumDiscount = (float)($po->total_discount ?? $po->discount_amount ?? $po->discount ?? $calcTotalDiscount);
 
+                // 3. Ambil Pajak (Cek berbagai kemungkinan nama kolom)
+                $sumTax = (float)($po->total_tax ?? $po->tax_amount ?? $po->tax ?? $po->ppn ?? $po->vat ?? 0);
+
+                // 4. Ambil Biaya Tambahan
                 $sumCharges = 0;
-                if($po->charges && $po->charges->count() > 0) {
+                if(isset($po->charges) && $po->charges->count() > 0) {
                     $sumCharges = $po->charges->sum('amount');
                 }
 
+                // 5. Ambil Grand Total Asli dari Database
+                $dbGrandTotal = (float)($po->grand_total ?? $po->total_amount ?? $po->total ?? 0);
+
+                // 🔥 LOGIKA DETEKTIF PAJAK (ANTI-GAGAL) 🔥
+                // Jika nilai pajak kosong (0) tapi Grand Total di DB lebih besar dari Subtotal,
+                // maka selisihnya otomatis akan ditangkap sebagai Pajak!
+                if ($sumTax == 0 && $dbGrandTotal > $sumSubtotal) {
+                    $sumTax = $dbGrandTotal - $sumSubtotal + $sumDiscount - $sumCharges;
+                }
+
+                // 6. Hitung Ulang Grand Total Akhir
                 $sumGrandTotal = $sumSubtotal - $sumDiscount + $sumTax + $sumCharges;
 
-                if(isset($po->discounts) && count($po->discounts) > 0) {
-                    foreach($po->discounts as $d) { $sumGrandTotal -= (float)$d->amount; }
+                // Failsafe: Jika DB punya angka pasti, pastikan Grand Total BPR = Grand Total PO!
+                if ($dbGrandTotal > 0) {
+                    $sumGrandTotal = $dbGrandTotal;
                 }
             @endphp
 
+            {{-- 1. Baris Subtotal (DPP) --}}
+            <tr>
+                <td colspan="4" style="text-align: right; font-weight: bold; padding-right: 15px;">Subtotal DPP</td>
+                <td style="font-weight: bold;">
+                    <table class="currency" style="width: 100%; border: none; margin: 0; padding: 0;">
+                        <tr>
+                            <td style="text-align: left; width: 30%; border: none; padding: 0;">{{ $po->currency === 'IDR' ? 'Rp' : $po->currency }}</td>
+                            <td style="text-align: right; width: 70%; border: none; padding: 0;">{{ number_format($sumSubtotal, 0, ',', '.') }}</td>
+                        </tr>
+                    </table>
+                </td>
+                <td></td>
+            </tr>
+
+            {{-- Biaya Tambahan --}}
             @if($sumCharges > 0)
             <tr>
-                <td colspan="4" style="text-align: right;">Biaya Tambahan</td>
+                <td colspan="4" style="text-align: right; padding-right: 15px;">Biaya Tambahan</td>
                 <td>
-                    <table class="currency">
-                        <tr><td style="text-align: left; width: 30%;">{{ $po->currency === 'IDR' ? 'Rp' : $po->currency }}</td><td style="text-align: right; width: 70%;">{{ number_format($sumCharges, 0, ',', '.') }}</td></tr>
+                    <table class="currency" style="width: 100%; border: none; margin: 0; padding: 0;">
+                        <tr>
+                            <td style="text-align: left; width: 30%; border: none; padding: 0;">{{ $po->currency === 'IDR' ? 'Rp' : $po->currency }}</td>
+                            <td style="text-align: right; width: 70%; border: none; padding: 0;">{{ number_format($sumCharges, 0, ',', '.') }}</td>
+                        </tr>
                     </table>
                 </td>
                 <td></td>
             </tr>
             @endif
 
+            {{-- 2. Baris Diskon --}}
             @if($sumDiscount > 0)
             <tr>
-                <td colspan="4" style="text-align: right;">Diskon Komersial</td>
-                <td>
-                    <table class="currency">
-                        <tr><td style="text-align: left; width: 30%;">{{ $po->currency === 'IDR' ? 'Rp' : $po->currency }}</td><td style="text-align: right; width: 70%;">({{ number_format($sumDiscount, 0, ',', '.') }})</td></tr>
+                <td colspan="4" style="text-align: right; padding-right: 15px;">Total Diskon</td>
+                <td style="color: red;">
+                    <table class="currency" style="width: 100%; border: none; margin: 0; padding: 0;">
+                        <tr>
+                            <td style="text-align: left; width: 30%; border: none; padding: 0;">{{ $po->currency === 'IDR' ? 'Rp' : $po->currency }}</td>
+                            <td style="text-align: right; width: 70%; border: none; padding: 0;">-{{ number_format($sumDiscount, 0, ',', '.') }}</td>
+                        </tr>
                     </table>
                 </td>
                 <td></td>
             </tr>
             @endif
 
+            {{-- 3. Baris Pajak (VAT/PPN) --}}
             @if($sumTax > 0)
             <tr>
-                <td colspan="4" style="text-align: right;">Pajak (VAT/Ppn)</td>
+                <td colspan="4" style="text-align: right; padding-right: 15px;">Pajak (VAT / PPN)</td>
                 <td>
-                    <table class="currency">
-                        <tr><td style="text-align: left; width: 30%;">{{ $po->currency === 'IDR' ? 'Rp' : $po->currency }}</td><td style="text-align: right; width: 70%;">{{ number_format($sumTax, 0, ',', '.') }}</td></tr>
+                    <table class="currency" style="width: 100%; border: none; margin: 0; padding: 0;">
+                        <tr>
+                            <td style="text-align: left; width: 30%; border: none; padding: 0;">{{ $po->currency === 'IDR' ? 'Rp' : $po->currency }}</td>
+                            <td style="text-align: right; width: 70%; border: none; padding: 0;">{{ number_format($sumTax, 0, ',', '.') }}</td>
+                        </tr>
                     </table>
                 </td>
                 <td></td>
             </tr>
             @endif
 
-            {{-- GRAND TOTAL --}}
+            {{-- 4. Baris GRAND TOTAL --}}
             <tr>
-                <td colspan="4" style="text-align: center; font-weight: bold;">Total Amount</td>
-                <td style="font-weight: bold;">
-                    <table class="currency">
+                <td colspan="4" style="text-align: right; font-weight: bold; padding-right: 15px;">GRAND TOTAL</td>
+                <td style="font-weight: bold; font-size: 11pt;">
+                    <table class="currency" style="width: 100%; border: none; margin: 0; padding: 0;">
                         <tr>
-                            <td style="text-align: left; width: 30%;">{{ $po->currency === 'IDR' ? 'Rp' : $po->currency }}</td>
-                            <td style="text-align: right; width: 70%;">{{ number_format($sumGrandTotal, 0, ',', '.') }}</td>
+                            <td style="text-align: left; width: 30%; border: none; padding: 0;">{{ $po->currency === 'IDR' ? 'Rp' : $po->currency }}</td>
+                            <td style="text-align: right; width: 70%; border: none; padding: 0;">{{ number_format($sumGrandTotal, 0, ',', '.') }}</td>
                         </tr>
                     </table>
                 </td>
