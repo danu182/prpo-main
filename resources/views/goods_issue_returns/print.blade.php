@@ -87,8 +87,12 @@
         <tbody>
             @foreach($return->items as $index => $item)
             @php
-                // Cek aman apakah item ini aset tetap
-                $isAsset = optional($item->item)->item_type_code === 'AST';
+                // 🔥 DEFINISIKAN VARIABEL NAMA BARANG 🔥
+                $masterName = optional($item->item)->name ?? '-';
+                $specificName = $item->item_name ?? optional($item->goodsIssueItem)->item_name ?? $masterName;
+
+                // Pastikan variabel isAsset juga didefinisikan
+                $isAsset = optional($item->item)->is_asset || optional($item->item)->item_type_code === 'AST';
 
                 // 🔥 SIHIR PEMISAH SATUAN DARI CATATAN 🔥
                 $uomName = 'PCS'; // Default
@@ -109,18 +113,23 @@
                 }
             @endphp
             <tr>
-                <td class="center">{{ $index + 1 }}</td>
-                <td class="center">{{ optional($item->item)->code ?? '-' }}</td>
+                <td class="center" style="text-align: center;">{{ $index + 1 }}</td>
+                <td class="center" style="text-align: center;">{{ optional($item->item)->code ?? '-' }}</td>
                 <td>
-                    <strong>{{ optional($item->item)->name ?? '-' }}</strong>
+                    <strong style="text-transform: uppercase;">{{ $specificName }}</strong><br>
+
+                    @if(strtolower(trim($specificName)) !== strtolower(trim($masterName)))
+                        <span style="font-size: 7.5pt; color: #555;">(Master: {{ $masterName }})</span><br>
+                    @endif
+
                     @if($isAsset)
-                        <br><span style="font-size: 8pt; font-weight: bold;">[ASET TETAP]</span>
+                        <span style="font-size: 7.5pt; font-weight: bold; color: #000;">[ASET TETAP]</span>
                     @endif
                 </td>
                 <td class="center">
                     <strong style="font-size: 11pt;">{{ (float) $item->qty_returned }}</strong><br>
                     {{-- Satuan kini tampil cantik di bawah angka --}}
-                    <span style="font-size: 8pt; color: #555;">{{ $uomName }}</span>
+                    <span style="font-size: 8pt; color: #555; text-transform: uppercase;">{{ $uomName }}</span>
                 </td>
                 <td style="font-size: 8.5pt;">
                     @if(count($cleanNotes) > 0)

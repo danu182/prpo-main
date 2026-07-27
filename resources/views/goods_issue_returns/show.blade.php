@@ -85,8 +85,19 @@
                     @endphp
                     <tr class="border-bottom">
                         <td class="text-center ps-4">{{ $index + 1 }}</td>
+                        @php
+                            $masterName = optional($item->item)->name ?? '-';
+                            $specificName = $item->item_name ?? optional($item->goodsIssueItem)->item_name ?? $masterName;
+                        @endphp
                         <td>
-                            <strong class="text-dark">{{ optional($item->item)->name }}</strong>
+                            {{-- 🔥 MENAMPILKAN KEDUA NAMA (SPESIFIK & MASTER) 🔥 --}}
+                            <strong class="text-dark fs-6">{{ $specificName }}</strong>
+                            @if(strtolower(trim($specificName)) !== strtolower(trim($masterName)))
+                                <div class="text-muted" style="font-size: 0.75rem;">
+                                    <i class="bi bi-box me-1"></i>Master: {{ $masterName }}
+                                </div>
+                            @endif
+
                             <div class="mt-1 small text-muted">{{ optional($item->item)->code }}</div>
                             @if($isAsset)
                                 <span class="mt-1 border badge bg-primary-subtle text-primary border-primary-subtle" style="font-size: 0.65rem;">[ASET TETAP]</span>

@@ -7,6 +7,7 @@ use App\Models\GoodsIssue;
 use App\Models\GoodsIssueItem;
 use App\Models\GoodsIssueReturn;
 use App\Models\GoodsIssueReturnItem;
+// use App\Models\GoodsIssueReturn; // 🔥 PASTIKAN BARIS INI ADA! 🔥
 use App\Models\Item;
 use App\Models\Warehouse;
 use App\Models\InventoryStock;
@@ -202,6 +203,7 @@ class GoodsIssueReturnController extends Controller
                         'goods_issue_return_id' => $newReturn->id,
                         'goods_issue_item_id'   => $giItem->id,
                         'item_id'               => $masterItem->id,
+                        'item_name'             => $giItem->item_name ?? $masterItem->name, // 🔥 TARIK NAMA DARI GI LAMA
                         'qty_returned'          => $qtyReturnedInput,
                         'notes'                 => "Satuan: {$finalUomString} | " . ($data['notes'] ?? ''),
                     ]);

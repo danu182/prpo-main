@@ -4,13 +4,10 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 
+
 class GoodsIssueReturn extends Model
 {
-    protected $fillable = [
-        'goods_issue_id', 'return_number', 'return_date',
-        'returned_by_name', 'received_by', 'notes',
-        'warehouse_id', // 🔥 INI WAJIB ADA! JIKA TIDAK, AKAN JADI NULL DI DATABASE!
-    ];
+    protected $guarded = ['id'];
 
     public function goodsIssue()
     {
@@ -27,13 +24,8 @@ class GoodsIssueReturn extends Model
         return $this->hasMany(GoodsIssueReturnItem::class);
     }
 
-
-    // 🔥 RELASI BARU: Ke tabel Gudang (INILAH YANG DIMINTA OLEH ERROR TADI) 🔥
     public function warehouse()
     {
         return $this->belongsTo(Warehouse::class);
     }
-
-
-
 }

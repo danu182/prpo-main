@@ -150,9 +150,13 @@
                         @endphp
                         <tr>
                             <td class="py-3 ps-4">
-                                <div class="fw-bold text-dark">{{ optional($masterItem)->name }}</div>
-                                <span class="mt-1 border badge bg-secondary-subtle text-secondary">{{ optional($masterItem)->code }}</span>
-                                <input type="hidden" name="items[{{ $index }}][gi_item_id]" value="{{ $item->id }}">
+                                {{-- 🔥 TARIK NAMA DARI DOKUMEN GI LAMA 🔥 --}}
+                                <strong class="text-dark">{{ $item->item_name ?? optional($masterItem)->name }}</strong>
+
+                                <div class="mt-1 small text-muted">{{ optional($masterItem)->code }}</div>
+                                @if($isAsset)
+                                    <span class="mt-1 border badge bg-primary-subtle text-primary border-primary-subtle" style="font-size: 0.65rem;">[ASET TETAP]</span>
+                                @endif
                             </td>
 
                             <td class="text-center fw-bold text-danger">
