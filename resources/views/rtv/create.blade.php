@@ -101,10 +101,15 @@
                         </tr>
                     </thead>
                     <tbody>
-                        @foreach($returnableItems as $item)
+                        @foreach($returnableItems as $index => $item)
                         @php
                             $masterItem = $item->item;
                             $baseUomName = optional($masterItem->uom)->name ?? 'PCS';
+
+                            // 🔥 PENENTUAN NAMA SPESIFIK VS NAMA MASTER 🔥
+                            $masterName = optional($masterItem)->name ?? '-';
+                            // Tarik nama spesifik dari dokumen PO
+                            $specificName = optional($item->purchaseOrderItem)->item_name ?? $masterName;
 
                             // Ambil data yang sudah dirapikan dari Controller
                             $grUomText = $item->gr_uom_text;
@@ -123,10 +128,22 @@
 
                         <tr class="item-row" id="row_{{ $item->id }}">
                             <td class="py-3 ps-4">
-                                <h6 class="mb-1 fw-bold text-dark">{{ $masterItem->name }}</h6>
-                                <span class="border badge bg-secondary-subtle text-secondary border-secondary-subtle">{{ $masterItem->code }}</span>
+                                {{-- 🔥 MENAMPILKAN NAMA SPESIFIK & MASTER SECARA BERSUSUN 🔥 --}}
+                                <h6 class="mb-0 fw-bold text-dark text-uppercase">{{ $specificName }}</h6>
+
+                                @if(strtolower(trim($specificName)) !== strtolower(trim($masterName)))
+                                    <div class="mb-1 text-muted" style="font-size: 0.75rem;">
+                                        <i class="bi bi-box me-1"></i>Master: {{ $masterName }}
+                                    </div>
+                                @endif
+
+                                <span class="mt-1 border badge bg-secondary-subtle text-secondary border-secondary-subtle">{{ $masterItem->code }}</span>
+
+                                {{-- 🔥 PERBAIKAN: Gunakan $item->id, bukan $index 🔥 --}}
+                                <input type="hidden" name="items[{{ $item->id }}][gr_item_id]" value="{{ $item->id }}">
+
                                 @if($requiresSnAction)
-                                    <span class="border badge bg-warning-subtle text-warning-emphasis border-warning ms-1"><i class="bi bi-upc-scan me-1"></i>Pilih SN Wajib</span>
+                                    <span class="mt-1 border badge bg-warning-subtle text-warning-emphasis border-warning ms-1"><i class="bi bi-upc-scan me-1"></i>Pilih SN Wajib</span>
                                 @endif
                             </td>
 
@@ -138,6 +155,7 @@
 
                             <td>
                                 <div class="mb-1 shadow-sm input-group input-group-sm">
+                                    {{-- 🔥 PERBAIKAN: Gunakan $item->id, bukan $index 🔥 --}}
                                     <input type="number" name="items[{{ $item->id }}][qty_returned]"
                                            id="qty-input-{{ $item->id }}"
                                            class="text-center form-control fw-bold text-danger border-danger qty-input"
@@ -145,6 +163,7 @@
                                            placeholder="Maks: {{ $maxReturnable }}"
                                            {{ $requiresSnAction ? 'readonly' : "oninput=checkQty({$item->id})" }}>
 
+                                    {{-- 🔥 PERBAIKAN: Gunakan $item->id, bukan $index 🔥 --}}
                                     <select name="items[{{ $item->id }}][uom]" class="form-select border-danger bg-danger-subtle text-danger fw-bold" style="max-width: 140px;" data-current-conv="{{ $grConvRate }}" onchange="changeUomRTV(this, {{ $item->id }}, {{ $maxBaseQty }})">
                                         <option value="{{ $grUomText }}" data-conv="{{ $grConvRate }}">{{ $grUomText }} [GR]</option>
                                         @if(strtolower($baseUomName) !== strtolower($cleanGrUomName))
@@ -158,12 +177,15 @@
                             </td>
 
                             <td class="py-3 pe-4">
+                                {{-- 🔥 PERBAIKAN: Gunakan $item->id, bukan $index 🔥 --}}
                                 <select name="items[{{ $item->id }}][return_reason_id]" id="reason_{{ $item->id }}" class="mb-2 form-select form-select-sm reason-select" disabled required>
                                     <option value="">-- Pilih Alasan Retur --</option>
                                     @foreach($reasons as $reason)
                                         <option value="{{ $reason->id }}">{{ $reason->name }}</option>
                                     @endforeach
                                 </select>
+
+                                {{-- 🔥 PERBAIKAN: Gunakan $item->id, bukan $index 🔥 --}}
                                 <input type="text" name="items[{{ $item->id }}][notes]" class="mb-2 form-control form-control-sm" placeholder="Catatan item (opsional)...">
 
                                 @if($requiresSnAction)
@@ -171,7 +193,7 @@
                                         <div class="mb-1 fw-bold text-dark" style="font-size: 0.7rem;"><i class="bi bi-upc-scan me-1"></i>Centang Unit yang Rusak/Retur:</div>
                                         @foreach($item->available_sn_list as $sn)
                                             <div class="mb-1 form-check">
-                                                {{-- HAPUS $poConvRate dari onchange JS agar dinamis! --}}
+                                                {{-- 🔥 PERBAIKAN: Gunakan $item->id, bukan $index 🔥 --}}
                                                 <input class="form-check-input sn-check-{{ $item->id }}" type="checkbox" name="items[{{ $item->id }}][sn][]" value="{{ $sn }}" id="sn_{{ $item->id }}_{{ $loop->index }}" onchange="countCheckedSn({{ $item->id }})">
                                                 <label class="form-check-label fw-bold text-primary" style="font-size: 0.75rem;" for="sn_{{ $item->id }}_{{ $loop->index }}">
                                                     {{ $sn }}
@@ -224,7 +246,7 @@
         else btn.closest('.rtv-file-row').querySelector('input[type="file"]').value = '';
     }
 
-    // PENGHITUNG OTOMATIS JIKA CHECKBOX SN DICENTANG (Diperbarui agar selalu membaca uom saat ini)
+    // PENGHITUNG OTOMATIS JIKA CHECKBOX SN DICENTANG
     function countCheckedSn(itemId) {
         let checkboxes = document.querySelectorAll('.sn-check-' + itemId + ':checked');
         let totalBaseDicentang = checkboxes.length;
@@ -248,10 +270,7 @@
         let qtyInput = document.getElementById(`qty-input-${itemId}`);
         let currentQty = parseFloat(qtyInput.value) || 0;
 
-        // Kalkulasi qty yang ada di dalam box
         let newQty = (currentQty * oldConvRate) / newConvRate;
-
-        // Hitung batas Max baru menggunakan Math.floor agar membulatkan ke bawah (tidak ada 0.5 Pack)
         let newMaxVal = Math.floor(sisaBaseQty / newConvRate);
 
         qtyInput.setAttribute('max', newMaxVal);

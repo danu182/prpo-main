@@ -88,24 +88,37 @@
         <tbody>
             @foreach($rtv->items as $index => $item)
             @php
+                // 🔥 DEFINISI NAMA SPESIFIK & NAMA MASTER 🔥
+                $masterItem = $item->item;
+                $masterName = optional($masterItem)->name ?? '-';
+
+                // Di RTV, rujukan nama aslinya kembali ke dokumen PO asalnya
+                $specificName = optional($item->purchaseOrderItem)->item_name ?? $masterName;
+
                 // Cek aman apakah item ini aset tetap (AST)
-                $isAsset = optional($item->item)->item_type_code === 'AST';
+                $isAsset = optional($masterItem)->is_asset || optional($masterItem)->item_type_code === 'AST';
             @endphp
             <tr>
                 <td class="center">{{ $index + 1 }}</td>
-                <td class="center">{{ optional($item->item)->code ?? '-' }}</td>
+                <td class="center">{{ optional($masterItem)->code ?? '-' }}</td>
                 <td>
-                    <strong>{{ optional($item->item)->name ?? '-' }}</strong>
+                    {{-- 🔥 CETAK NAMA BERSUSUN 🔥 --}}
+                    <strong style="text-transform: uppercase;">{{ $specificName }}</strong><br>
+
+                    @if(strtolower(trim($specificName)) !== strtolower(trim($masterName)))
+                        <span style="font-size: 7.5pt; color: #555;">(Master: {{ $masterName }})</span><br>
+                    @endif
+
                     @if($isAsset)
-                        <br><span style="font-size: 8pt; font-weight: bold;">[ASET TETAP]</span>
+                        <span style="font-size: 7.5pt; font-weight: bold; color: #000;">[ASET TETAP]</span>
                     @endif
                 </td>
-                <td class="py-3 text-center fw-bold text-danger fs-5">
-                                {{ (float) $item->qty_returned }} <br>
-                                <span class="text-nowrap fw-bold text-muted text-uppercase" style="font-size: 0.65rem;">
-                                    {{ $item->uom ?? 'PCS' }}
-                                </span>
-                            </td>
+                <td class="center" style="vertical-align: middle;">
+                    <strong style="font-size: 11pt; color: #d9534f;">{{ (float) $item->qty_returned }}</strong> <br>
+                    <span style="font-size: 8pt; font-weight: bold; color: #555; text-transform: uppercase;">
+                        {{ $item->uom ?? 'PCS' }}
+                    </span>
+                </td>
                 <td style="font-size: 8.5pt;">
                     @if($item->return_reason)
                         {{-- Memecah alasan dan SN yang dipisah dengan " | " menjadi Bullet List --}}

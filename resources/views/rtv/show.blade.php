@@ -105,23 +105,26 @@
                     @foreach($rtv->items as $index => $item)
                         @php
                             $masterItem = $item->item;
+                            $masterName = optional($masterItem)->name ?? '-';
+                            // 🔥 Tarik nama spesifik / alias dari dokumen PO 🔥
+                            $specificName = optional($item->purchaseOrderItem)->item_name ?? $masterName;
+
                             $isStockable = optional($masterItem)->is_stockable ?? true;
                             $isAsset = optional($masterItem)->is_asset ?? false;
                         @endphp
                         <tr class="border-bottom">
                             <td class="py-3 ps-4 text-muted">{{ $index + 1 }}</td>
                             <td>
-                                <h6 class="mb-1 fw-bold text-dark">{{ optional($masterItem)->name }}</h6>
+                                {{-- 🔥 TAMPILKAN NAMA SPESIFIK & NAMA MASTER BERSUSUN 🔥 --}}
+                                <h6 class="mb-0 fw-bold text-dark text-uppercase">{{ $specificName }}</h6>
+
+                                @if(strtolower(trim($specificName)) !== strtolower(trim($masterName)))
+                                    <div class="mt-1 mb-1 text-muted" style="font-size: 0.75rem;">
+                                        <i class="bi bi-box me-1"></i>Master: {{ $masterName }}
+                                    </div>
+                                @endif
+
                                 <div class="gap-2 mt-1 d-flex align-items-center">
-                                    <span class="small text-muted">{{ optional($masterItem)->code }}</span>
-                                    @if($isAsset)
-                                        <span class="border badge bg-primary-subtle text-primary border-primary-subtle" style="font-size: 0.65rem;">🏢 Aset Tetap</span>
-                                    @elseif($isStockable)
-                                        <span class="border badge bg-success-subtle text-success border-success-subtle" style="font-size: 0.65rem;">📦 Stok</span>
-                                    @else
-                                        <span class="border badge bg-warning-subtle text-warning border-warning-subtle" style="font-size: 0.65rem;">🛠️ Non-Stok</span>
-                                    @endif
-                                </div>
                             </td>
 
                             <td class="py-3 text-center fw-bold text-danger fs-5">
