@@ -64,8 +64,9 @@ class StockTransferController extends Controller
                     $baseUomName = optional($item->uom)->name ?? 'PCS';
                     $itemNote = $data['notes'] ?? null;
 
-                    // Deteksi Mode
-                    // 🔥 PERBAIKAN: Jika item tipenya AST ATAU form mengirimkan data Nomor Aset, paksa jadi Mode Aset!
+                    // 🔥 TANGKAP NAMA SPESIFIK / ALIAS DARI FORM 🔥
+                    $specificName = $data['item_name'] ?? $item->name;
+
                     $isModeAsset = !empty($data['asset_ids']);
 
                     // ========================================================
@@ -97,14 +98,15 @@ class StockTransferController extends Controller
                         StockTransferItem::create([
                             'stock_transfer_id'  => $transfer->id,
                             'item_id'            => $item->id,
-                            'inventory_stock_id' => null, // Aset tidak terikat pada kartu stok
+                            'item_name'          => $specificName, // 🔥 SIMPAN NAMA ALIAS 🔥
+                            'inventory_stock_id' => null,
                             'qty_transferred'    => count($assetIds),
                             'uom_id'             => null,
                             'uom'                => 'Unit',
                             'notes'              => $itemNoteCombined,
                         ]);
 
-                        continue; // 🔥 ABAIKAN JALUR 2, LANJUT BARANG BERIKUTNYA 🔥
+                        continue;
                     }
 
                     // ========================================================
@@ -200,6 +202,7 @@ class StockTransferController extends Controller
                     StockTransferItem::create([
                         'stock_transfer_id'  => $transfer->id,
                         'item_id'            => $item->id,
+                        'item_name'          => $specificName, // 🔥 SIMPAN NAMA ALIAS 🔥
                         'inventory_stock_id' => $newStock->id,
                         'qty_transferred'    => $qtyInput,
                         'uom_id'             => $uomId ?: null,
@@ -259,14 +262,31 @@ class StockTransferController extends Controller
                                     ->whereHas('status', function($q) { $q->where('slug', 'available'); })
                                     ->count();
 
+                // 🔥 CARI SEMUA RIWAYAT NAMA DARI PO 🔥
+                $historicalNames = \App\Models\PurchaseOrderItem::where('item_id', $item->id)
+                                    ->whereNotNull('item_name')->distinct()->pluck('item_name')->toArray();
+
+                // 🔥 CARI NAMA TERAKHIR YANG DIPAKAI DI PO 🔥
+                $latestPoItem = \App\Models\PurchaseOrderItem::where('item_id', $item->id)
+                                    ->whereNotNull('item_name')->latest('id')->first();
+
+                $defaultSpecificName = $latestPoItem ? $latestPoItem->item_name : $item->name;
+
+                if (!in_array($item->name, $historicalNames)) {
+                    array_unshift($historicalNames, $item->name);
+                }
+
                 $formattedItems[] = [
                     'id'              => $item->id,
                     'text'            => '[' . $item->code . '] ' . $item->name,
+                    'raw_name'        => $item->name,
+                    'historical_names'=> $historicalNames,
+                    'default_specific_name' => $defaultSpecificName,
                     'available_bulk'  => (float)$bulkStock,
                     'available_asset' => (int)$assetStock,
                     'base_uom'        => $item->uom->name ?? 'PCS',
                     'uoms'            => $item->uoms,
-                    'is_asset'        => $item->item_type_code === 'AST', // 🔥 Kunci Ajaib!
+                    'is_asset'        => $item->item_type_code === 'AST',
                     'is_trackable'    => $item->is_trackable ?? 0
                 ];
             }

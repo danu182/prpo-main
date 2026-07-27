@@ -173,6 +173,12 @@
                     <td class="py-3 ps-4">
                         <select name="items[${rowCount}][item_id]" class="form-select item-select-ajax" required></select>
                         <div class="mt-2 stock-display text-muted small d-none"></div>
+
+                        {{-- 🔥 KOTAK NAMA SPESIFIK 🔥 --}}
+                        <div class="mt-3 item-name-container d-none">
+                            <label class="mb-1 form-label small fw-bold text-dark">Nama Spesifik Fisik Barang</label>
+                            <select name="items[${rowCount}][item_name]" class="form-select form-select-sm fw-bold text-primary item-name-select"></select>
+                        </div>
                     </td>
                     <td class="py-3">
                         <select name="items[${rowCount}][inventory_stock_id]" class="form-select form-select-sm batch-select bg-light" disabled>
@@ -190,7 +196,7 @@
                         <div class="p-2 mt-2 border asset-container d-none bg-info-subtle border-info rounded-3">
                             <label class="mb-1 small text-info-emphasis fw-bold d-flex justify-content-between align-items-center">
                                 <span><i class="bi bi-pc-display me-1"></i> Pilih Unit Aset</span>
-                                <span class="asset-count badge bg-info text-dark shadow-sm">0 Dipilih</span>
+                                <span class="shadow-sm asset-count badge bg-info text-dark">0 Dipilih</span>
                             </label>
                             <select name="items[${rowCount}][asset_ids][]" class="shadow-sm form-select asset-select" multiple="multiple"></select>
                         </div>
@@ -225,6 +231,11 @@
             if (tbody.find('tr').length > 1) {
                 $(this).closest('tr').find('select').each(function() { if ($(this).hasClass("select2-hidden-accessible")) $(this).select2('destroy'); });
                 $(this).closest('tr').remove();
+
+                // Panggil validasi global pada baris pertama setelah baris lain dihapus (agar qty max terkalibrasi)
+                let firstQtyInput = tbody.find('.qty-input').first();
+                if(firstQtyInput.length > 0) validateGlobalStock(firstQtyInput[0]);
+
             } else { Swal.fire('Ups!', 'Minimal sisakan 1 barang.', 'info'); }
         });
 
@@ -244,7 +255,6 @@
             let batchSelect = tr.find('.batch-select');
             let snContainer = tr.find('.minor-sn-container');
 
-            // Reset
             qtyInput.prop('required', false).val('');
             assetSelect.prop('required', false);
 
@@ -254,7 +264,7 @@
                 snContainer.addClass('d-none').empty();
 
                 assetContainer.removeClass('d-none');
-                tr.find('.asset-count').text('0 Dipilih'); // Reset counter
+                tr.find('.asset-count').text('0 Dipilih');
 
                 if(assetSelect.hasClass("select2-hidden-accessible")) { assetSelect.select2('destroy'); }
                 assetSelect.prop('required', true).select2({
@@ -267,7 +277,6 @@
                     templateResult: formatAssetList, templateSelection: formatAssetSelection, escapeMarkup: function(m) { return m; }
                 });
             } else {
-                // BULK MODE
                 assetContainer.addClass('d-none');
                 qtyContainer.removeClass('d-none');
                 qtyInput.prop('required', true).data('stock-bulk', data.available_bulk).attr('max', data.available_bulk).attr('placeholder', 'Max: ' + data.available_bulk);
@@ -283,10 +292,54 @@
 
                 if (data.is_trackable) {
                     snContainer.removeClass('d-none').empty();
-                    qtyInput.trigger('input'); // Trigger form SN
+                    qtyInput.trigger('input');
                 } else {
                     snContainer.addClass('d-none').empty();
                 }
+            }
+        }
+
+        // 🔥 FUNGSI BARU CERDAS: VALIDASI TOTAL MULTI-BARIS 🔥
+        function validateGlobalStock(currentInput) {
+            let tr = $(currentInput).closest('tr');
+            let itemId = tr.find('.item-select-ajax').val();
+            let maxBulk = parseFloat($(currentInput).data('stock-bulk'));
+
+            // Abaikan jika bukan barang stok atau max bulk tidak ada
+            if (!itemId || isNaN(maxBulk)) return;
+
+            let currentConv = parseFloat(tr.find('.uom-select option:selected').data('conv')) || 1;
+            let currentQty = parseFloat($(currentInput).val()) || 0;
+
+            let otherRowsBaseRequested = 0;
+
+            // Hitung total base qty yang diminta di BARIS LAIN untuk item yang sama
+            $('#item-tbody tr.item-row').each(function() {
+                let rowInput = $(this).find('.qty-input');
+                if (rowInput[0] !== currentInput) {
+                    let rowItemId = $(this).find('.item-select-ajax').val();
+                    let isAssetMode = $(this).find('.asset-container').is(':visible');
+
+                    if (rowItemId === itemId && !isAssetMode) {
+                        let rQty = parseFloat(rowInput.val()) || 0;
+                        let rConv = parseFloat($(this).find('.uom-select option:selected').data('conv')) || 1;
+                        otherRowsBaseRequested += (rQty * rConv);
+                    }
+                }
+            });
+
+            // Hitung sisa stok dasar (base qty) yang boleh dimasukkan di baris saat ini
+            let sisaBolehBase = maxBulk - otherRowsBaseRequested;
+            let sisaBolehSesuaiUom = Math.floor(sisaBolehBase / currentConv);
+
+            if (currentQty > sisaBolehSesuaiUom) {
+                $(currentInput).val(sisaBolehSesuaiUom > 0 ? sisaBolehSesuaiUom : 0);
+
+                Swal.fire({
+                    toast: true, position: 'top-end', showConfirmButton: false, timer: 4500,
+                    icon: 'error',
+                    title: `Stok Gabungan Tidak Cukup! Sisa kuota untuk baris ini: ${sisaBolehSesuaiUom} unit.`
+                });
             }
         }
 
@@ -296,68 +349,72 @@
             let tr = $(this).closest('tr');
             tr.data('is_trackable', data.is_trackable);
 
-            // Tampilkan Stok Aset vs Stok Biasa
             tr.find('.stock-display').removeClass('d-none').html(`
                 <span class="border badge bg-success-subtle text-success-emphasis border-success me-1">Stok Biasa: ${data.available_bulk}</span>
                 ${data.available_asset > 0 ? `<span class="border badge bg-info-subtle text-info-emphasis border-info">Aset: ${data.available_asset}</span>` : ''}
             `);
 
-            // JIKA BARANG PUNYA KEDUANYA (Stok Biasa & Aset), MUNCULKAN POPUP!
+            let nameSelect = tr.find('.item-name-select');
+            if (nameSelect.hasClass("select2-hidden-accessible")) { nameSelect.select2('destroy'); }
+            nameSelect.empty();
+
+            if (data.historical_names && data.historical_names.length > 0) {
+                data.historical_names.forEach(name => {
+                    let isSelected = (name === data.default_specific_name);
+                    nameSelect.append(new Option(name, name, isSelected, isSelected));
+                });
+            } else {
+                nameSelect.append(new Option(data.raw_name, data.raw_name, true, true));
+            }
+
+            tr.find('.item-name-container').removeClass('d-none');
+            nameSelect.select2({ theme: 'bootstrap-5', width: '100%', tags: true, placeholder: "Pilih riwayat atau ketik nama merk..." });
+
             if (data.available_asset > 0 && data.available_bulk > 0) {
                 Swal.fire({
                     title: 'Pilih Mode Mutasi',
                     text: `Sistem mendeteksi [${data.text}] memiliki Stok Fisik Biasa dan terdaftar sebagai Aset. Transfer mana yang ingin Anda lakukan?`,
-                    icon: 'question',
-                    showCancelButton: true,
-                    confirmButtonColor: '#0dcaf0',
-                    cancelButtonColor: '#198754',
+                    icon: 'question', showCancelButton: true, confirmButtonColor: '#0dcaf0', cancelButtonColor: '#198754',
                     confirmButtonText: '<i class="bi bi-pc-display me-1"></i> Transfer Aset',
                     cancelButtonText: '<i class="bi bi-box-seam me-1"></i> Transfer Stok',
-                    allowOutsideClick: false,
-                    allowEscapeKey: false
+                    allowOutsideClick: false, allowEscapeKey: false
                 }).then((result) => {
-                    if (result.isConfirmed) {
-                        applyRowMode(tr, 'ASSET', data);
-                    } else {
-                        applyRowMode(tr, 'BULK', data);
-                    }
+                    if (result.isConfirmed) { applyRowMode(tr, 'ASSET', data); }
+                    else { applyRowMode(tr, 'BULK', data); }
                 });
             }
-            // JIKA HANYA ASET
-            else if (data.available_asset > 0) {
-                applyRowMode(tr, 'ASSET', data);
-            }
-            // JIKA HANYA STOK BIASA
-            else {
-                applyRowMode(tr, 'BULK', data);
-            }
+            else if (data.available_asset > 0) { applyRowMode(tr, 'ASSET', data); }
+            else { applyRowMode(tr, 'BULK', data); }
         });
 
-        // 🔥 LOGIKA UOM MAX QTY 🔥
+        // 🔥 LOGIKA UOM MAX QTY + VALIDASI GLOBAL 🔥
         tbody.on('change', '.uom-select', function() {
             let tr = $(this).closest('tr');
             let qtyInput = tr.find('.qty-input');
+
+            // Panggil validasi global untuk mereset dan mencocokkan total baru
+            validateGlobalStock(qtyInput[0]);
+
             let bulkStock = parseFloat(qtyInput.data('stock-bulk')) || 0;
             let conv = parseFloat($(this).find(':selected').data('conv')) || 1;
             let newMax = Math.floor(bulkStock / conv);
 
             qtyInput.attr('max', newMax).attr('placeholder', 'Max: ' + newMax);
-            if (parseFloat(qtyInput.val()) > newMax) {
-                qtyInput.val(newMax);
-                Swal.fire({ toast: true, position: 'top-end', showConfirmButton: false, timer: 3000, icon: 'info', title: 'Qty disesuaikan dengan stok (' + newMax + ')' });
-            }
         });
 
-        // 🔥 LOGIKA KOTAK SN KUNING 🔥
+        // 🔥 LOGIKA KOTAK SN KUNING & VALIDASI KETIK 🔥
         tbody.on('input', '.qty-input', function() {
+            // Panggil validasi global saat ngetik
+            validateGlobalStock(this);
+
             let tr = $(this).closest('tr');
             if (tr.data('is_trackable')) {
                 let qty = parseInt($(this).val()) || 0;
                 let snContainer = tr.find('.minor-sn-container');
                 if (qty > 0) {
-                    let html = `<span class="badge bg-warning text-dark w-100 mb-2"><i class="bi bi-upc-scan"></i> Ketik/Scan SN:</span><div class="custom-scrollbar" style="max-height: 100px; overflow-y: auto;">`;
+                    let html = `<span class="mb-2 badge bg-warning text-dark w-100"><i class="bi bi-upc-scan"></i> Ketik/Scan SN:</span><div class="custom-scrollbar" style="max-height: 100px; overflow-y: auto;">`;
                     for(let i=0; i<qty; i++) {
-                        html += `<input type="text" class="form-control form-control-sm border-warning mb-1 minor-sn-input" placeholder="SN Unit ke-${i+1}" required>`;
+                        html += `<input type="text" class="mb-1 form-control form-control-sm border-warning minor-sn-input" placeholder="SN Unit ke-${i+1}" required>`;
                     }
                     html += `</div>`;
                     snContainer.removeClass('d-none').html(html);
@@ -374,6 +431,38 @@
 
             if(fromWarehouseSelect.val() === toWarehouseSelect.val()) {
                 Swal.fire('Gagal', 'Gudang Tujuan tidak boleh sama dengan Gudang Asal!', 'error'); return;
+            }
+
+            // Validasi Terakhir: Cegah submission jika global total masih lebih (Antisipasi hack)
+            let isExceeding = false;
+            let totalStockPerItem = {};
+
+            tbody.find('tr.item-row').each(function() {
+                let itemId = $(this).find('.item-select-ajax').val();
+                let isAsset = $(this).find('.asset-container').is(':visible');
+
+                if(itemId && !isAsset) {
+                    let maxBulk = parseFloat($(this).find('.qty-input').data('stock-bulk')) || 0;
+                    let qty = parseFloat($(this).find('.qty-input').val()) || 0;
+                    let conv = parseFloat($(this).find('.uom-select option:selected').data('conv')) || 1;
+
+                    if(!totalStockPerItem[itemId]) {
+                        totalStockPerItem[itemId] = { requested: 0, max: maxBulk };
+                    }
+                    totalStockPerItem[itemId].requested += (qty * conv);
+                }
+            });
+
+            for (let id in totalStockPerItem) {
+                // Gunakan Math.round() untuk menghindari koma gantung JS seperti 47.0000000000001
+                if (Math.round(totalStockPerItem[id].requested * 1000) > Math.round(totalStockPerItem[id].max * 1000)) {
+                    isExceeding = true;
+                }
+            }
+
+            if(isExceeding) {
+                Swal.fire('Gagal', 'Ada barang yang total Qty gabungannya melebihi stok fisik gudang! Silakan periksa kembali angka pada form.', 'error');
+                return;
             }
 
             // Gabungkan SN Lacak ke dalam Keterangan
@@ -401,6 +490,5 @@
         });
     });
 </script>
-
 
 @endpush
