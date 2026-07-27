@@ -248,98 +248,113 @@
                                 </tr>
                             </thead>
                             <tbody>
-                                @foreach($invoice->items as $item)
-                                @php
-                                    // 1. Tarik Data GR dan PO Asli dari Relasi Bawaan Anda
-                                    $grItem = $item->goodsReceiptItem ?? null;
-                                    $poItem = $grItem ? $grItem->purchaseOrderItem : null;
+                        @foreach($invoice->items as $item)
+                        @php
+                            // 1. 🔥 BYPASS RELASI: Cari Langsung Pakai ID (Anti-Gagal) 🔥
+                            $grItem = \App\Models\GoodsReceiptItem::find($item->goods_receipt_item_id);
+                            $poItem = $grItem ? \App\Models\PurchaseOrderItem::find($grItem->purchase_order_item_id) : null;
 
-                                    // 2. Tarik Nomor Header (GR & PO)
-                                    $grNum = $grItem ? optional($grItem->goodsReceipt)->gr_number : null;
-                                    $poNum = $poItem ? optional($poItem->purchaseOrder)->po_number : null;
+                            // 2. Tarik Nomor Header (GR & PO)
+                            $grNum = $grItem ? optional($grItem->goodsReceipt)->gr_number : null;
+                            $poNum = $poItem ? optional($poItem->purchaseOrder)->po_number : null;
 
-                                    // 3. Hitung Potongan Retur
-                                    $qtyGrAsli = $grItem ? (float) $grItem->qty_received : (float) $item->qty_invoiced;
-                                    $returQty = $qtyGrAsli - (float) $item->qty_invoiced;
+                            // 3. Hitung Potongan Retur
+                            $qtyGrAsli = $grItem ? (float) $grItem->qty_received : (float) $item->qty_invoiced;
+                            $returQty = $qtyGrAsli - (float) $item->qty_invoiced;
 
-                                    // 4. 🔥 TARIK DOKUMEN RTV (JIKA ADA RETUR) 🔥
-                                    $rtvDocs = [];
-                                    if ($returQty > 0 && $grItem && $grItem->goods_receipt_id) {
-                                        $rtvRecords = \Illuminate\Support\Facades\DB::table('return_to_vendors')
-                                            ->where('goods_receipt_id', $grItem->goods_receipt_id)
-                                            ->select('rtv_number')
-                                            ->get();
+                            // 4. TARIK DOKUMEN RTV (JIKA ADA RETUR)
+                            $rtvDocs = [];
+                            if ($returQty > 0 && $grItem && $grItem->goods_receipt_id) {
+                                $rtvRecords = \Illuminate\Support\Facades\DB::table('return_to_vendors')
+                                    ->where('goods_receipt_id', $grItem->goods_receipt_id)
+                                    ->select('rtv_number')
+                                    ->get();
 
-                                        $rtvDocs = $rtvRecords->pluck('rtv_number')->filter()->toArray();
-                                    }
-                                @endphp
-                                <tr>
-                                    {{-- KOLOM 1: NAMA BARANG --}}
-                                    <td class="py-3 ps-4">
-                                        <div class="fw-bold text-dark">{{ optional($item->item)->name }}</div>
-                                        <div class="text-muted small">{{ optional($item->item)->code }}</div>
-                                    </td>
+                                $rtvDocs = $rtvRecords->pluck('rtv_number')->filter()->toArray();
+                            }
 
-                                    {{-- KOLOM 2: SUMBER REFERENSI (PO, GR, RTV) --}}
-                                    <td class="py-3">
-                                        <div class="gap-1 d-flex flex-column" style="font-size: 0.75rem;">
+                            // 5. 🔥 LOGIKA NAMA SPESIFIK & MASTER 🔥
+                            $masterItem = $item->item;
+                            $masterName = optional($masterItem)->name ?? '-';
 
-                                            {{-- Link ke PO --}}
-                                            @if($poNum)
-                                                <a href="{{ route('po.show', $poNum) }}" target="_blank" class="text-decoration-none text-primary fw-semibold" title="Lihat PO">
-                                                    <i class="bi bi-cart2 me-1"></i> {{ $poNum }}
-                                                </a>
-                                            @endif
+                            // Ambil nama alias dari GR, jika tidak ada, ambil dari PO, jika tidak ada, ambil Master
+                            $specificName = optional($grItem)->item_name ?? optional($poItem)->item_name ?? $masterName;
+                        @endphp
+                        <tr class="border-bottom">
+                            {{-- KOLOM 1: NAMA BARANG --}}
+                            <td class="py-3 ps-4">
+                                {{-- 🔥 MENAMPILKAN NAMA SPESIFIK & MASTER BERSUSUN 🔥 --}}
+                                <h6 class="mb-0 fw-bold text-dark text-uppercase">{{ $specificName }}</h6>
 
-                                            {{-- Link ke GR --}}
-                                            @if($grNum)
-                                                <a href="{{ route('gr.show', $grNum) }}" target="_blank" class="text-decoration-none text-success fw-semibold" title="Lihat Surat Jalan / GR">
-                                                    <i class="bi bi-box-arrow-in-down-left me-1"></i> {{ $grNum }}
-                                                </a>
-                                            @endif
+                                @if(strtolower(trim($specificName)) !== strtolower(trim($masterName)))
+                                    <div class="mt-1 mb-1 text-muted" style="font-size: 0.75rem;">
+                                        <i class="bi bi-box me-1"></i>Master: {{ $masterName }}
+                                    </div>
+                                @endif
 
-                                            {{-- Label & Link RTV --}}
-                                            @if($returQty > 0)
-                                                <span class="mt-1 text-danger fw-bold" style="font-size: 0.7rem;">
-                                                    <i class="bi bi-arrow-return-left me-1"></i> Potong Retur: {{ $returQty }}
-                                                </span>
+                                <div class="mt-1 text-muted small">{{ optional($masterItem)->code }}</div>
+                            </td>
 
-                                                {{-- Munculkan Nomor RTV --}}
-                                                @if(!empty($rtvDocs))
-                                                    @foreach($rtvDocs as $rtvNum)
-                                                        <a href="{{ route('rtv.show', $rtvNum) }}" target="_blank" class="text-decoration-none text-danger fw-semibold" title="Lihat Detail Retur">
-                                                            <i class="bi bi-file-earmark-minus me-1"></i> {{ $rtvNum }}
-                                                        </a>
-                                                    @endforeach
-                                                @endif
-                                            @endif
+                            {{-- KOLOM 2: SUMBER REFERENSI (PO, GR, RTV) --}}
+                            <td class="py-3">
+                                <div class="gap-1 d-flex flex-column" style="font-size: 0.75rem;">
 
-                                        </div>
-                                    </td>
+                                    {{-- Link ke PO --}}
+                                    @if($poNum)
+                                        <a href="{{ route('po.show', $poNum) }}" target="_blank" class="text-decoration-none text-primary fw-semibold" title="Lihat PO">
+                                            <i class="bi bi-cart2 me-1"></i> {{ $poNum }}
+                                        </a>
+                                    @endif
 
-                                    {{-- KOLOM 3: QTY DITAGIH --}}
-                                    <td class="text-center fw-bold text-primary">
-                                        <span class="fs-6">{{ (float) $item->qty_invoiced }}</span><br>
-                                        <span class="text-muted fw-normal" style="font-size: 0.65rem; text-transform: uppercase;">
-                                            {{ optional($item->goodsReceiptItem->purchaseOrderItem)->uom ?? 'Unit' }}
+                                    {{-- Link ke GR --}}
+                                    @if($grNum)
+                                        <a href="{{ route('gr.show', $grNum) }}" target="_blank" class="text-decoration-none text-success fw-semibold" title="Lihat Surat Jalan / GR">
+                                            <i class="bi bi-box-arrow-in-down-left me-1"></i> {{ $grNum }}
+                                        </a>
+                                    @endif
+
+                                    {{-- Label & Link RTV --}}
+                                    @if($returQty > 0)
+                                        <span class="mt-1 text-danger fw-bold" style="font-size: 0.7rem;">
+                                            <i class="bi bi-arrow-return-left me-1"></i> Potong Retur: {{ $returQty }}
                                         </span>
-                                    </td>
 
-                                    {{-- KOLOM 4: HARGA SATUAN --}}
-                                    <td class="text-end">
-                                        {{ number_format($item->price, 2, ',', '.') }}
-                                        @if($item->discount_amount > 0)
-                                            <div class="text-danger small fw-semibold"><i class="bi bi-arrow-down-short"></i> Disc: {{ number_format($item->discount_amount, 2, ',', '.') }}</div>
+                                        {{-- Munculkan Nomor RTV --}}
+                                        @if(!empty($rtvDocs))
+                                            @foreach($rtvDocs as $rtvNum)
+                                                <a href="{{ route('rtv.show', $rtvNum) }}" target="_blank" class="text-decoration-none text-danger fw-semibold" title="Lihat Detail Retur">
+                                                    <i class="bi bi-file-earmark-minus me-1"></i> {{ $rtvNum }}
+                                                </a>
+                                            @endforeach
                                         @endif
-                                    </td>
+                                    @endif
 
-                                    {{-- KOLOM 5: SUBTOTAL --}}
-                                    <td class="text-end pe-4 fw-bold text-dark fs-6">
-                                        {{ number_format($item->subtotal, 2, ',', '.') }}
-                                    </td>
-                                </tr>
-                                @endforeach
-                            </tbody>
+                                </div>
+                            </td>
+
+                            {{-- KOLOM 3: QTY DITAGIH --}}
+                            <td class="text-center fw-bold text-primary">
+                                <span class="fs-6">{{ (float) $item->qty_invoiced }}</span><br>
+                                <span class="text-muted fw-normal" style="font-size: 0.65rem; text-transform: uppercase;">
+                                    {{ optional($poItem)->uom ?? 'Unit' }}
+                                </span>
+                            </td>
+
+                            {{-- KOLOM 4: HARGA SATUAN --}}
+                            <td class="text-end">
+                                {{ number_format($item->price, 2, ',', '.') }}
+                                @if($item->discount_amount > 0)
+                                    <div class="text-danger small fw-semibold"><i class="bi bi-arrow-down-short"></i> Disc: {{ number_format($item->discount_amount, 2, ',', '.') }}</div>
+                                @endif
+                            </td>
+
+                            {{-- KOLOM 5: SUBTOTAL --}}
+                            <td class="text-end pe-4 fw-bold text-dark fs-6">
+                                {{ number_format($item->subtotal, 2, ',', '.') }}
+                            </td>
+                        </tr>
+                        @endforeach
+                    </tbody>
                         </table>
                     </div>
                 </div>

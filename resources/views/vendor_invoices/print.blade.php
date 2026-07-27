@@ -168,42 +168,43 @@
                 </tr>
             </thead>
             <tbody>
-                @forelse($invoice->items ?? [] as $index => $item)
-                @php
-                    // 🔥 RADAR UOM BERLAPIS: Mendeteksi data string maupun Objek JSON dari DB 🔥
-                    $uomName = 'UNIT';
-                    if ($item->item && $item->item->uom) {
-                        $uomName = is_object($item->item->uom)
-                                    ? ($item->item->uom->code ?? $item->item->uom->name ?? 'UNIT')
-                                    : $item->item->uom;
-                    } elseif (isset($item->goodsReceiptItem->purchaseOrderItem->uom)) {
-                        $poUom = $item->goodsReceiptItem->purchaseOrderItem->uom;
-                        $uomName = is_object($poUom) ? ($poUom->code ?? $poUom->name ?? 'UNIT') : $poUom;
-                    }
-                    if(is_array($uomName) || is_object($uomName)) { $uomName = 'UNIT'; }
-                @endphp
-                <tr>
-                    <td class="text-center" style="color: #6c757d;">{{ $index + 1 }}</td>
-                    <td>
-                        <strong style="color: #212529;">{{ optional($item->item)->name ?? '-' }}</strong><br>
-                        <span style="font-size: 10px; color: #868e96;">{{ optional($item->item)->code ?? '-' }}</span>
-                    </td>
-                    <td class="text-center font-weight-bold" style="color: #0d6efd; font-size: 13px;">
-                        {{ (float) $item->qty_invoiced }}
-                        <span style="font-size: 10px; color: #495057; font-weight: normal; margin-left: 2px;">{{ strtoupper($uomName) }}</span>
-                    </td>
-                    <td class="text-right">
-                        {{ number_format($item->price, 0, ',', '.') }}
-                        @if($item->discount_amount > 0)
-                            <br><span style="font-size: 10px; color: #dc3545;">Disc: -{{ number_format($item->discount_amount, 0, ',', '.') }}</span>
-                        @endif
-                    </td>
-                    <td class="text-right font-weight-bold" style="color: #212529;">{{ number_format($item->subtotal, 0, ',', '.') }}</td>
-                </tr>
-                @empty
-                <tr><td colspan="5" class="text-center" style="color: #6c757d; padding: 20px;">Data item tidak ditemukan.</td></tr>
-                @endforelse
-            </tbody>
+            @foreach($invoice->items as $index => $item)
+            @php
+                // 1. 🔥 BYPASS RELASI: Cari Langsung Pakai ID (Anti-Gagal) 🔥
+                $grItem = \App\Models\GoodsReceiptItem::find($item->goods_receipt_item_id);
+                $poItem = $grItem ? \App\Models\PurchaseOrderItem::find($grItem->purchase_order_item_id) : null;
+
+                // 2. 🔥 LOGIKA NAMA SPESIFIK & MASTER 🔥
+                $masterItem = $item->item;
+                $masterName = optional($masterItem)->name ?? '-';
+
+                // Ambil nama alias dari GR, jika tidak ada, ambil dari PO, jika tidak ada, ambil Master
+                $specificName = optional($grItem)->item_name ?? optional($poItem)->item_name ?? $masterName;
+            @endphp
+            <tr>
+                <td style="text-align: center;">{{ $index + 1 }}</td>
+                <td>
+                    {{-- 🔥 CETAK NAMA BERSUSUN DI PDF 🔥 --}}
+                    <strong style="text-transform: uppercase;">{{ $specificName }}</strong><br>
+
+                    @if(strtolower(trim($specificName)) !== strtolower(trim($masterName)))
+                        <span style="font-size: 7.5pt; color: #555;">(Master: {{ $masterName }})</span><br>
+                    @endif
+                    <span style="font-size: 8pt; color: #888;">{{ optional($masterItem)->code ?? '-' }}</span>
+                </td>
+                <td style="text-align: center;">
+                    <strong style="color: #0275d8; font-size: 10pt;">{{ (float) $item->qty_invoiced }}</strong>
+                    <span style="font-size: 8pt; text-transform: uppercase;">{{ optional($poItem)->uom ?? 'PCS' }}</span>
+                </td>
+                <td style="text-align: right;">
+                    {{ number_format($item->price, 0, ',', '.') }}
+                </td>
+                <td style="text-align: right;">
+                    <strong>{{ number_format($item->subtotal, 0, ',', '.') }}</strong>
+                </td>
+            </tr>
+            @endforeach
+        </tbody>
         </table>
     </div>
 
