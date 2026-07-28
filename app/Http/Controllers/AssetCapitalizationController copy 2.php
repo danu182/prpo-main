@@ -16,6 +16,9 @@ use Illuminate\Support\Facades\Log;
 class AssetCapitalizationController extends Controller
 {
 
+    // =========================================================================
+    // INDEX: Menampilkan Daftar Aset
+    // =========================================================================
     public function index()
     {
         $assets = \App\Models\FixedAsset::with(['item', 'status'])
@@ -26,31 +29,18 @@ class AssetCapitalizationController extends Controller
     }
 
     // =========================================================================
-    // SHOW: Menampilkan Detail 1 Aset dengan Lengkap
+    // SHOW: Menampilkan Detail 1 Aset
     // =========================================================================
     public function show($id)
     {
-        // Load relasi yang dibutuhkan agar data detail bisa ditampilkan
-        $asset = \App\Models\FixedAsset::with([
-            'item',
-            'status',
-            'goodsReceipt.po.vendor'
-        ])->findOrFail($id);
-
-        // Ambil nama kategori jika ada
-        $categoryName = '-';
-        if ($asset->asset_category_id) {
-            $cat = \DB::table('asset_categories')->where('id', $asset->asset_category_id)->first();
-            $categoryName = $cat ? $cat->name . ' (' . $cat->useful_life_years . ' Tahun)' : '-';
-        }
-
-        return view('asset_capitalizations.show', compact('asset', 'categoryName'));
+        $asset = \App\Models\FixedAsset::with(['item', 'status'])->findOrFail($id);
+        return view('asset_capitalizations.show', compact('asset'));
     }
-
 
 
     public function create()
     {
+        // 1. Ambil 100 GR terbaru beserta relasinya
         $rawGrs = \App\Models\GoodsReceipt::with(['items.item', 'po.vendor'])
                     ->orderBy('received_date', 'desc')
                     ->limit(100)
@@ -58,6 +48,7 @@ class AssetCapitalizationController extends Controller
 
         $grIds = $rawGrs->pluck('id')->toArray();
 
+        // 2. Hitung jumlah aset yang SUDAH dikapitalisasi per GR dan per Item (Cepat & Anti-Lemot)
         $capitalizedData = \App\Models\FixedAsset::whereIn('goods_receipt_id', $grIds)
             ->select('goods_receipt_id', 'item_id', \Illuminate\Support\Facades\DB::raw('count(*) as total_capitalized'))
             ->groupBy('goods_receipt_id', 'item_id')
@@ -65,10 +56,12 @@ class AssetCapitalizationController extends Controller
 
         $validGrs = collect();
 
+        // 3. Filter: Hanya simpan GR yang MASIH PUNYA sisa barang ke dalam $validGrs
         foreach ($rawGrs as $gr) {
             $hasSisa = false;
 
             foreach ($gr->items as $grItem) {
+                // Hitung Qty Base (Eceran)
                 $grConvRate = 1;
                 $rawUom = $grItem->getRawOriginal('uom') ?: '';
                 if (preg_match('/Isi\s*[:=]?\s*([0-9.]+)/i', $rawUom, $matches)) {
@@ -78,20 +71,24 @@ class AssetCapitalizationController extends Controller
                     if ($uomDb) $grConvRate = (float) $uomDb->conversion_qty;
                 }
 
+                // Total barang yang diterima dari Gudang
                 $baseQtyReceived = ($grItem->qty_received - ($grItem->qty_returned ?? 0)) * $grConvRate;
 
+                // Cari total yang sudah dikapitalisasi untuk item ini di GR ini
                 $cap = $capitalizedData->where('goods_receipt_id', $gr->id)
                                        ->where('item_id', $grItem->item_id)
                                        ->first();
 
                 $alreadyCapitalized = $cap ? $cap->total_capitalized : 0;
 
+                // Jika masih ada sisa barang yang belum diakui jadi aset
                 if (($baseQtyReceived - $alreadyCapitalized) > 0) {
                     $hasSisa = true;
-                    break;
+                    break; // Cukup temukan 1 item yang punya sisa, GR ini layak tampil di Dropdown
                 }
             }
 
+            // Jika GR ini punya sisa barang, masukkan ke daftar dropdown
             if ($hasSisa) {
                 $validGrs->push($gr);
             }
@@ -99,6 +96,7 @@ class AssetCapitalizationController extends Controller
 
         $assetCategories = \App\Models\AssetCategory::where('is_active', true)->get();
 
+        // PENTING: Gunakan $validGrs (GR yang sudah disaring) dan ganti variabel $grs
         return view('asset_capitalizations.create', [
             'grs' => $validGrs,
             'assetCategories' => $assetCategories
@@ -108,6 +106,7 @@ class AssetCapitalizationController extends Controller
     public function getGrItems($gr_id)
     {
         try {
+            // 🔥 LOAD RELASI PO DAN ITEMS-NYA SEKALIGUS (Untuk Perhitungan Akurat) 🔥
             $gr = \App\Models\GoodsReceipt::with([
                 'items.item.uom',
                 'warehouse',
@@ -119,28 +118,20 @@ class AssetCapitalizationController extends Controller
             $po = $gr->purchaseOrder ?? $gr->po;
 
             // =========================================================================
-            // 🔥 LOGIKA AKUNTANSI PSAK 16: BIAYA TAMBAHAN & DISKON PRORATA 🔥
+            // 🔥 LOGIKA AKUNTANSI: MENGHITUNG BIAYA TAMBAHAN (PRORATA) 🔥
             // =========================================================================
             $biayaTambahanPerUnit = 0;
-            $diskonHeaderPerUnit = 0;
-
             if ($po) {
-                // Menangkap dari kolom 'charge_total' dan 'discount_total' milik PO
-                $totalBiayaTambahan = (float) ($po->charge_total ?? $po->additional_cost ?? 0);
-                $totalDiskonHeader  = (float) ($po->discount_total ?? $po->header_discount ?? 0);
+                $totalBiayaTambahan = (float) ($po->additional_cost ?? $po->shipping_fee ?? 0);
 
                 $poItems = $po->items ?? $po->details ?? collect([]);
-
-                // Cari Qty Total PO (Gunakan qty_ordered jika ada, jika tidak pakai qty)
-                $totalQtyPO = $poItems->sum('qty_ordered') > 0 ? $poItems->sum('qty_ordered') : $poItems->sum('qty');
+                $totalQtyPO = $poItems->sum('qty');
 
                 if ($totalQtyPO <= 0) {
-                    $totalQtyPO = 1;
+                    $totalQtyPO = 1; // Hindari pembagian dengan 0
                 }
 
-                // Bagikan secara adil (Prorata) ke setiap unit barang
                 $biayaTambahanPerUnit = $totalBiayaTambahan / $totalQtyPO;
-                $diskonHeaderPerUnit  = $totalDiskonHeader / $totalQtyPO;
             }
             // =========================================================================
 
@@ -157,9 +148,13 @@ class AssetCapitalizationController extends Controller
                     if ($uomDb) $grConvRate = (float) $uomDb->conversion_qty;
                 }
 
+                // =====================================================================
+                // 🔥 OPERASI BEDAH: HAPUS RELASI BERACUN & HITUNG HARGA MURNI 🔥
+                // =====================================================================
                 $poItem = null;
                 if ($po) {
                     $poItems = $po->items ?? $po->details ?? collect([]);
+                    // Cari item di PO secara paksa pakai Item ID
                     $poItem = $poItems->where('item_id', $masterItem->id)->first();
                     if (!$poItem) $poItem = $poItems->first();
                 }
@@ -175,25 +170,22 @@ class AssetCapitalizationController extends Controller
 
                     $subtotalBaris = (float) ($poItem->subtotal ?? 0);
                     $unitPriceAsli = (float) ($poItem->unit_price ?? 0);
-
-                    // Ini diskon per baris item (jika ada)
                     $discountBaris = (float) ($poItem->discount_amount ?? $poItem->discount ?? 0);
 
+                    // RUMUS AKUNTANSI: Jika ada subtotal, itu pasti harga final yang paling akurat
                     if ($subtotalBaris > 0) {
                         $netUnitPrice = $subtotalBaris / $qtyOrdered;
                     } else {
                         $netUnitPrice = $unitPriceAsli - $discountBaris;
                     }
                 } else {
+                    // Kalau tidak ada PO sama sekali
                     $netUnitPrice = (float) ($masterItem->purchase_price ?? 0);
                 }
 
-                // =====================================================================
-                // 🔥 RUMUS FINAL HARGA PEROLEHAN ASET 🔥
-                // Harga Unit + Biaya Tambahan Prorata - Diskon Tambahan Prorata
-                // Cth: 22.000.000 + 150.000 - 25.000 = 22.125.000
-                // =====================================================================
-                $hargaPerolehan = $netUnitPrice + $biayaTambahanPerUnit - $diskonHeaderPerUnit;
+                // 🔥 RUMUS HARGA PEROLEHAN FINAL (LANDED COST) 🔥
+                // Bebas dari error pembagian UOM!
+                $hargaPerolehan = $netUnitPrice + $biayaTambahanPerUnit;
                 // =====================================================================
 
                 $baseQtyReceived = ($grItem->qty_received - ($grItem->qty_returned ?? 0)) * $grConvRate;
@@ -224,14 +216,14 @@ class AssetCapitalizationController extends Controller
                         'item_id'           => $masterItem->id,
                         'item_code'         => $masterItem->code,
                         'item_name'         => $specificName,
-                        'master_name'       => $masterItem->name,
-                        'specific_name'     => $specificName,
+                        'master_name'       => $masterItem->name, // Dikirim ke view Blade
+                        'specific_name'     => $specificName, // Dikirim ke view Blade
                         'base_uom'          => optional($masterItem->uom)->name ?? 'Unit',
                         'gr_qty'            => $baseQtyReceived,
                         'current_stock'     => $currentStock,
                         'max_capitalizable' => floor($maxCapitalizable),
                         'available_sns'     => $availableSns,
-                        'default_price'     => round($hargaPerolehan, 2), // Dijamin jadi Rp 22.125.000!
+                        'default_price'     => round($hargaPerolehan, 2), // Pasti Muncul 22.000.000!
                         'default_date'      => date('Y-m-d', strtotime($grDate)),
                         'default_spec'      => $defaultSpec
                     ];
@@ -268,19 +260,6 @@ class AssetCapitalizationController extends Controller
             'items.*.details.*.asset_category_id.required' => 'Kategori penyusutan wajib dipilih untuk setiap unit.',
         ]);
 
-        $snList = [];
-        foreach ($request->items as $itemId => $data) {
-            if (!isset($data['details'])) continue;
-            foreach ($data['details'] as $detail) {
-                if (!empty($detail['serial_number'])) {
-                    if (in_array($detail['serial_number'], $snList)) {
-                        return back()->withInput()->with('error', 'GAGAL: Terdapat Serial Number (SN) yang kembar: ' . $detail['serial_number']);
-                    }
-                    $snList[] = $detail['serial_number'];
-                }
-            }
-        }
-
         try {
             DB::transaction(function () use ($request) {
                 $gr = GoodsReceipt::with(['purchaseOrder', 'po'])->findOrFail($request->goods_receipt_id);
@@ -300,17 +279,20 @@ class AssetCapitalizationController extends Controller
 
                     $masterItem = Item::findOrFail($itemId);
 
+                    // 1. Cek Stok Fisik yang Masih Ada di Gudang
                     $availableStocks = InventoryStock::where('item_id', $itemId)
                                         ->where('stock_qty', '>', 0)
                                         ->orderBy('created_at', 'asc')->lockForUpdate()->get();
 
                     $totalAvailable = $availableStocks->sum('stock_qty');
 
+                    // LOGIKA CROSSOVER (RETROACTIVE)
                     $qtyFromStock = min($qtyToCapitalize, $totalAvailable);
                     $qtyRetroactive = $qtyToCapitalize - $qtyFromStock;
 
                     $actualWarehouseId = $gr->warehouse_id ?? 1;
 
+                    // 2. Potong Stok Gudang HANYA untuk barang yang benar-benar masih ada
                     if ($qtyFromStock > 0) {
                         $qtySisaPotong = $qtyFromStock;
                         $saldoTotalSaatIni = (float) $masterItem->current_stock;
@@ -329,7 +311,7 @@ class AssetCapitalizationController extends Controller
                                 'type'             => 'OUT',
                                 'qty'              => $potong,
                                 'balance_before'   => $saldoTotalSaatIni,
-                                'balance_after'    => $saldoTotalSaatIni - $potong,
+                                'balance_after'    => $saldoTotalSaatIni,
                                 'reference_number' => $gr->gr_number,
                                 'notes'            => "[CAPITALIZE] Kapitalisasi menjadi Aset Tetap",
                                 'created_by'       => auth()->id(),
@@ -337,6 +319,23 @@ class AssetCapitalizationController extends Controller
                         }
                     }
 
+                    // 3. Suntik Serial Number
+                    $autoSns = [];
+                    if (isset($masterItem->is_trackable) && $masterItem->is_trackable) {
+                        $autoSns = \DB::table('item_serials')
+                            ->where('item_id', $masterItem->id)
+                            ->where('goods_receipt_id', $gr->id)
+                            ->whereNotIn('status', ['CAPITALIZED', 'RETURNED'])
+                            ->limit($qtyToCapitalize)
+                            ->pluck('serial_number')
+                            ->toArray();
+
+                        \DB::table('item_serials')
+                            ->whereIn('serial_number', $autoSns)
+                            ->update(['status' => 'CAPITALIZED', 'updated_at' => now()]);
+                    }
+
+                    // 4. Simpan ke Tabel `fixed_assets`
                     $details = $data['details'] ?? [];
                     for ($i = 0; $i < $qtyToCapitalize; $i++) {
                         $detail = $details[$i] ?? [];
@@ -358,6 +357,9 @@ class AssetCapitalizationController extends Controller
                         $specDetail   = $detail['notes'] ?? '';
 
                         $serialNumber = $detail['serial_number'] ?? null;
+                        if (empty($serialNumber) && isset($autoSns[$i])) {
+                            $serialNumber = $autoSns[$i];
+                        }
 
                         $extraNote = "Diakui dari dokumen penerimaan: {$gr->gr_number}.";
                         if ($isRetroactive) {
@@ -382,13 +384,6 @@ class AssetCapitalizationController extends Controller
                             'notes'                   => $extraNote,
                         ]);
 
-                        if (!empty($serialNumber)) {
-                            \DB::table('item_serials')
-                                ->where('item_id', $masterItem->id)
-                                ->where('serial_number', $serialNumber)
-                                ->update(['status' => 'CAPITALIZED', 'updated_at' => now()]);
-                        }
-
                         $historyText = $isRetroactive ? "Aset diregistrasi secara Retroactive (Barang sudah dipakai user)." : "Aset diregistrasi dari Stok Gudang.";
 
                         FixedAssetHistory::create([
@@ -401,7 +396,7 @@ class AssetCapitalizationController extends Controller
                 }
             });
 
-            return redirect()->route('asset-capitalizations.create')->with('success', 'Luar biasa! Pengakuan Aset berhasil disimpan. SN yang dipilih telah dikunci sebagai aset.');
+            return redirect()->route('asset-capitalizations.create')->with('success', 'Luar biasa! Pengakuan Aset berhasil. Sistem telah mengaitkan kategori penyusutan secara otomatis.');
 
         } catch (\Exception $e) {
             Log::error('Error Kapitalisasi Aset: ' . $e->getMessage());
@@ -411,7 +406,7 @@ class AssetCapitalizationController extends Controller
 
 
     // =========================================================================
-    // VOID: Proses Pembatalan Pengakuan Aset & Pengembalian Stok
+    // 3. VOID: Proses Pembatalan Pengakuan Aset (Backend Only)
     // =========================================================================
     public function voidAsset($id)
     {
@@ -420,19 +415,15 @@ class AssetCapitalizationController extends Controller
 
             $asset = \App\Models\FixedAsset::with('item')->findOrFail($id);
 
-            // 1. Validasi Status (Hanya bisa void jika status masih Available)
-            // Sesuaikan ID status Available di database Anda (misal: 30 atau 31)
-            $statusAvailableId = \App\Models\Status::where('type', 'AST')->where('slug', 'available')->value('id') ?? 31;
-
-            if ($asset->status_id != $statusAvailableId) {
+            // 1. SESUAIKAN ID STATUS AVAILABLE (ID = 30)
+            if ($asset->status_id != 30) {
                 throw new \Exception("GAGAL: Aset tidak bisa dibatalkan karena sedang digunakan atau sudah diproses.");
             }
 
             $masterItem = $asset->item;
             $balanceBefore = (float) $masterItem->current_stock;
-
-            // 🔥 PERBAIKAN LOGIKA: Saldo Setelah harus ditambah 1 karena stok kembali ke gudang 🔥
-            $balanceAfter = $balanceBefore + 1;
+            // Saldo tidak perlu ditambah +1 lagi di sini karena saat kapitalisasi juga tidak dipotong
+            $balanceAfter = $balanceBefore;
 
             // 2. KEMBALIKAN STOK FISIK KE GUDANG BIASA
             $invStock = \App\Models\InventoryStock::where('item_id', $masterItem->id)
@@ -452,7 +443,7 @@ class AssetCapitalizationController extends Controller
                 ]);
             }
 
-            // 3. CATAT MUTASI REVERT (Tipe: IN)
+            // 3. CATAT MUTASI REVERT (Tipe: IN, TAPI ADA KODE [DE-CAPITALIZE])
             if (class_exists(\App\Models\StockMutation::class)) {
                 \App\Models\StockMutation::create([
                     'item_id'          => $masterItem->id,
@@ -460,52 +451,27 @@ class AssetCapitalizationController extends Controller
                     'type'             => 'IN',
                     'qty'              => 1,
                     'balance_before'   => $balanceBefore,
-                    'balance_after'    => $balanceAfter, // Saldo sudah tepat
+                    'balance_after'    => $balanceAfter, // Saldo Utama Tetap Sama
                     'reference_number' => $asset->asset_number,
                     'notes'            => "[DE-CAPITALIZE] Pembatalan Pengakuan Aset (VOID).",
                     'created_by'       => auth()->id(),
                 ]);
             }
 
-            // 4. 🔥 BEBASKAN SERIAL NUMBER (SN) AGAR BISA DIPAKAI LAGI 🔥
-            if (!empty($asset->serial_number)) {
-                \DB::table('item_serials')
-                    ->where('item_id', $masterItem->id)
-                    ->where('serial_number', $asset->serial_number)
-                    ->update(['status' => 'AVAILABLE', 'updated_at' => now()]);
-            }
-
-            // 5. UBAH STATUS ASET MENJADI VOID (Mencari otomatis kata batal/void)
-            $statusVoid = \App\Models\Status::where('type', 'AST')
-                ->where(function($q) {
-                    $q->where('slug', 'like', '%void%')
-                      ->orWhere('slug', 'like', '%batal%')
-                      ->orWhere('name', 'like', '%Batal%')
-                      ->orWhere('name', 'like', '%Void%');
-                })->first();
-
-            // Jika masih tidak ketemu, kita paksa buatkan statusnya agar tidak nyasar ke Draft!
-            if (!$statusVoid) {
-                $statusVoid = \App\Models\Status::create([
-                    'type' => 'AST',
-                    'name' => 'Batal / Void',
-                    'slug' => 'void',
-                    'is_active' => true
-                ]);
-            }
+            // 4. UBAH STATUS ASET MENJADI VOID (ID 43)
+            $statusVoidId = 43;
 
             $asset->update([
-                'status_id' => $statusVoid->id,
+                'status_id' => $statusVoidId,
                 'notes'     => $asset->notes . "\n[DIBATALKAN PADA " . date('d-m-Y H:i') . "]"
             ]);
 
             \DB::commit();
-            return back()->with('success', "Aset {$asset->asset_number} berhasil dibatalkan. Serial Number telah dibebaskan dan stok fisik dikembalikan ke gudang.");
+            return back()->with('success', "Aset {$asset->asset_number} berhasil dibatalkan dan dikembalikan sebagai stok biasa.");
 
         } catch (\Exception $e) {
             \DB::rollBack();
             return back()->with('error', $e->getMessage());
         }
     }
-
 }
