@@ -30,14 +30,14 @@ class AssetCapitalizationController extends Controller
     // =========================================================================
     public function show($id)
     {
-        // Load relasi yang dibutuhkan agar data detail bisa ditampilkan
+        // 🔥 Tambahkan 'histories' agar sistem tahu aset ini sudah pernah jalan-jalan atau belum
         $asset = \App\Models\FixedAsset::with([
             'item',
             'status',
-            'goodsReceipt.po.vendor'
+            'goodsReceipt.po.vendor',
+            'histories'
         ])->findOrFail($id);
 
-        // Ambil nama kategori jika ada
         $categoryName = '-';
         if ($asset->asset_category_id) {
             $cat = \DB::table('asset_categories')->where('id', $asset->asset_category_id)->first();
@@ -421,11 +421,23 @@ class AssetCapitalizationController extends Controller
             $asset = \App\Models\FixedAsset::with('item')->findOrFail($id);
 
             // 1. Validasi Status (Hanya bisa void jika status masih Available)
-            // Sesuaikan ID status Available di database Anda (misal: 30 atau 31)
             $statusAvailableId = \App\Models\Status::where('type', 'AST')->where('slug', 'available')->value('id') ?? 31;
 
             if ($asset->status_id != $statusAvailableId) {
-                throw new \Exception("GAGAL: Aset tidak bisa dibatalkan karena sedang digunakan atau sudah diproses.");
+                throw new \Exception("GAGAL: Aset tidak bisa dibatalkan karena sedang digunakan di luar gudang.");
+            }
+
+            // 🔥 1.5 GEMBOK AUDIT: Tolak VOID jika aset sudah pernah diserahkan/dipakai 🔥
+            // Kita cek apakah ada history selain "Registered"
+            $hasUsedHistory = \App\Models\FixedAssetHistory::where('fixed_asset_id', $id)
+                ->where(function($q) {
+                    $q->where('status', 'like', '%Diserahkan%')
+                      ->orWhere('status', 'like', '%Dikembalikan%')
+                      ->orWhere('notes', 'like', '%Diserahkan%');
+                })->exists();
+
+            if ($hasUsedHistory) {
+                throw new \Exception("DITOLAK SISTEM: Aset tidak bisa di-VOID karena sudah memiliki riwayat transaksi/pemakaian. Jika aset rusak, gunakan menu Penghapusan (Disposal Aset).");
             }
 
             $masterItem = $asset->item;

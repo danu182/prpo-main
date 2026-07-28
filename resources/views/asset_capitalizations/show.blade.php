@@ -50,15 +50,25 @@
 
             @php
                 $statusAvailableId = \App\Models\Status::where('type', 'AST')->where('slug', 'available')->value('id') ?? 31;
+                // Cek apakah ada riwayat penyerahan
+                $hasBeenUsed = $asset->histories->whereIn('status', ['Aset Diserahkan', 'Aset Dikembalikan'])->isNotEmpty();
             @endphp
 
             @if($asset->status_id == $statusAvailableId && !$isVoid)
-                <form id="form-void-asset" action="{{ route('asset-capitalizations.void', $asset->id) }}" method="POST" class="m-0">
-                    @csrf
-                    <button type="button" class="border-2 border-white shadow-sm btn btn-danger rounded-pill fw-bold" onclick="confirmVoid()">
-                        <i class="bi bi-x-circle me-1"></i> Batalkan Aset (Void)
+                @if($hasBeenUsed)
+                    {{-- Tampilkan tombol tapi DISABLE jika sudah pernah dipakai --}}
+                    <button type="button" class="shadow-sm btn btn-secondary rounded-pill fw-bold" style="cursor: not-allowed;" title="Tidak bisa di-void karena sudah ada riwayat transaksi">
+                        <i class="bi bi-shield-lock me-1"></i> Void Terkunci (Ada Riwayat)
                     </button>
-                </form>
+                @else
+                    {{-- Tombol VOID normal jika aset masih perawan --}}
+                    <form id="form-void-asset" action="{{ route('asset-capitalizations.void', $asset->id) }}" method="POST" class="m-0">
+                        @csrf
+                        <button type="button" class="border-2 border-white shadow-sm btn btn-danger rounded-pill fw-bold" onclick="confirmVoid()">
+                            <i class="bi bi-x-circle me-1"></i> Batalkan Aset (Void)
+                        </button>
+                    </form>
+                @endif
             @endif
         </div>
 

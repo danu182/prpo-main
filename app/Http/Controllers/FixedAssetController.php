@@ -24,6 +24,15 @@ class FixedAssetController extends Controller
                 'histories' => function($q) { $q->orderBy('created_at', 'desc'); },
                 'histories.assignee', 'histories.creator'
             ])
+            // =========================================================================
+            // 🔥 BLOK FILTER VOID: Usir aset yang sudah dibatalkan dari daftar ini! 🔥
+            // =========================================================================
+            ->where('notes', 'not like', '%[DIBATALKAN%')
+            ->whereHas('status', function($q) {
+                $q->where('slug', 'not like', '%void%')
+                  ->where('slug', 'not like', '%batal%');
+            })
+            // =========================================================================
             ->when($warehouseId, function ($query) use ($warehouseId) {
                 $query->where('warehouse_id', $warehouseId);
             })
@@ -43,6 +52,7 @@ class FixedAssetController extends Controller
         $statuses = Status::where('type', 'AST')->orderBy('sequence', 'asc')->get();
         $warehouses = \App\Models\Warehouse::orderBy('name', 'asc')->get();
         $currencies = \App\Models\Currency::where('is_active', 1)->get();
+
         // Tambahkan baris ini di atas return view(...)
         $assetCategories = \App\Models\AssetCategory::where('is_active', true)->orderBy('useful_life_years', 'asc')->get();
 
@@ -876,8 +886,16 @@ class FixedAssetController extends Controller
     {
         // Menampilkan aset yang sedang dipakai (untuk dikembalikan)
         // dan aset di gudang (untuk diserahkan ke staf).
-        // $query = \App\Models\FixedAsset::with(['item', 'assignee', 'department', 'warehouse', 'status']);
-        $query = \App\Models\FixedAsset::with(['item', 'assignee', 'department', 'warehouse', 'status', 'company']); // <-- Tambahkan 'company' di sini
+        $query = \App\Models\FixedAsset::with(['item', 'assignee', 'department', 'warehouse', 'status', 'company'])
+                    // =========================================================================
+                    // 🔥 BLOK FILTER VOID: Usir aset yang sudah dibatalkan dari daftar ini! 🔥
+                    // =========================================================================
+                    ->where('notes', 'not like', '%[DIBATALKAN%')
+                    ->whereHas('status', function($q) {
+                        $q->where('slug', 'not like', '%void%')
+                          ->where('slug', 'not like', '%batal%');
+                    });
+                    // =========================================================================
 
         if ($request->filled('search')) {
             $search = $request->search;
@@ -896,16 +914,8 @@ class FixedAssetController extends Controller
         // Tarik master data untuk dropdown di modal pengembalian & penyerahan
         $warehouses  = \App\Models\Warehouse::orderBy('name')->get();
         $statuses    = \App\Models\Status::where('type', 'AST')->orderBy('sequence')->get();
-        $users = \App\Models\User::with(['department', 'company'])->orderBy('name')->get();
-        // Note: hapus 'company' di dalam array with[] jika User Anda tidak punya relasi ke tabel company.
-        $departments = \App\Models\Department::orderBy('name')->get(); // 🔥 TAMBAHAN
-
-        // 🔥 Jangan lupa tambahkan $users dan $departments ke dalam compact()
-        // return view('fixed_assets.transactions', compact('assets', 'warehouses', 'statuses', 'users', 'departments'));
-
-        // // Tarik master data untuk dropdown di modal pengembalian
-        // $warehouses = \App\Models\Warehouse::orderBy('name')->get();
-        // $statuses = \App\Models\Status::where('type', 'AST')->orderBy('sequence')->get();
+        $users       = \App\Models\User::with(['department', 'company'])->orderBy('name')->get();
+        $departments = \App\Models\Department::orderBy('name')->get();
 
         return view('fixed_assets.transactions', compact('assets', 'warehouses', 'statuses', 'users', 'departments'));
     }
