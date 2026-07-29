@@ -144,4 +144,11 @@ class FixedAsset extends Model
     }
 
 
+    // Tambahkan fungsi ini di dalam class FixedAsset
+    public function photos()
+    {
+        return $this->hasMany(AssetPhoto::class);
+    }
+
+
 }

@@ -36,7 +36,7 @@
         <i class="bi bi-exclamation-octagon-fill fs-3 me-3"></i>
         <div>
             <div class="fs-5">ASET TELAH DIBATALKAN (VOID)</div>
-            <div class="small fw-normal">Data ini hanya sebagai riwayat. Serial Number telah dilepas dan stok fisik telah dikembalikan ke Gudang.</div>
+            <div class="small fw-normal">Data ini hanya sebagai riwayat. Serial Number telah dilepas, foto fisik dihapus, dan stok dikembalikan ke Gudang.</div>
         </div>
     </div>
     @endif
@@ -171,6 +171,20 @@
                                     </div>
                                 </div>
                             </div>
+
+                            {{-- 🔥 GALERI FOTO ASET 🔥 --}}
+                            @if(isset($asset->photos) && $asset->photos->isNotEmpty())
+                            <hr class="my-4 text-muted">
+                            <h6 class="mb-3 fw-bold text-dark"><i class="bi bi-images text-primary me-2"></i> Galeri Foto Fisik Aset</h6>
+                            <div class="flex-wrap gap-3 p-3 border rounded d-flex bg-light">
+                                @foreach($asset->photos as $photo)
+                                    <a href="{{ asset('storage/' . $photo->file_path) }}" target="_blank" title="Klik untuk memperbesar">
+                                        <img src="{{ asset('storage/' . $photo->file_path) }}" class="border rounded shadow-sm img-thumbnail" style="width: 150px; height: 150px; object-fit: cover; transition: transform 0.2s;" onmouseover="this.style.transform='scale(1.05)'" onmouseout="this.style.transform='scale(1)'">
+                                    </a>
+                                @endforeach
+                            </div>
+                            @endif
+
                         </div>
                     </div>
                 </div>
@@ -186,7 +200,7 @@
     function confirmVoid() {
         Swal.fire({
             title: 'Batalkan Pengakuan Aset?',
-            text: "Status aset ini akan dibatalkan (Void). Stok fisik (1 Unit) beserta Serial Number-nya akan dikembalikan ke Gudang (berstatus Available) agar bisa digunakan kembali.",
+            text: "Status aset ini akan dibatalkan (Void). Stok fisik (1 Unit) beserta Serial Number-nya akan dikembalikan ke Gudang (berstatus Available), dan lampiran foto akan dihapus otomatis agar menghemat storage server.",
             icon: 'warning',
             showCancelButton: true,
             confirmButtonColor: '#dc3545',

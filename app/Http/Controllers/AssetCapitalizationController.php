@@ -10,15 +10,18 @@ use App\Models\StockMutation;
 use App\Models\FixedAsset;
 use App\Models\FixedAssetHistory;
 use App\Models\Status;
+use App\Models\AssetPhoto; // 🔥 Panggil model foto
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Storage; // 🔥 Panggil Storage untuk hapus folder
 
 class AssetCapitalizationController extends Controller
 {
 
     public function index()
     {
-        $assets = \App\Models\FixedAsset::with(['item', 'status'])
+        // 🔥 Tambahkan 'photos' agar bisa menampilkan thumbnail di halaman index
+        $assets = \App\Models\FixedAsset::with(['item', 'status', 'photos'])
                     ->orderBy('created_at', 'desc')
                     ->paginate(10);
 
@@ -30,12 +33,13 @@ class AssetCapitalizationController extends Controller
     // =========================================================================
     public function show($id)
     {
-        // 🔥 Tambahkan 'histories' agar sistem tahu aset ini sudah pernah jalan-jalan atau belum
+        // 🔥 Tambahkan 'histories' dan 'photos'
         $asset = \App\Models\FixedAsset::with([
             'item',
             'status',
             'goodsReceipt.po.vendor',
-            'histories'
+            'histories',
+            'photos' // 🔥 Relasi ke tabel asset_photos
         ])->findOrFail($id);
 
         $categoryName = '-';
@@ -46,8 +50,6 @@ class AssetCapitalizationController extends Controller
 
         return view('asset_capitalizations.show', compact('asset', 'categoryName'));
     }
-
-
 
     public function create()
     {
@@ -118,31 +120,23 @@ class AssetCapitalizationController extends Controller
             $grDate = $gr->received_date;
             $po = $gr->purchaseOrder ?? $gr->po;
 
-            // =========================================================================
-            // 🔥 LOGIKA AKUNTANSI PSAK 16: BIAYA TAMBAHAN & DISKON PRORATA 🔥
-            // =========================================================================
             $biayaTambahanPerUnit = 0;
             $diskonHeaderPerUnit = 0;
 
             if ($po) {
-                // Menangkap dari kolom 'charge_total' dan 'discount_total' milik PO
                 $totalBiayaTambahan = (float) ($po->charge_total ?? $po->additional_cost ?? 0);
                 $totalDiskonHeader  = (float) ($po->discount_total ?? $po->header_discount ?? 0);
 
                 $poItems = $po->items ?? $po->details ?? collect([]);
-
-                // Cari Qty Total PO (Gunakan qty_ordered jika ada, jika tidak pakai qty)
                 $totalQtyPO = $poItems->sum('qty_ordered') > 0 ? $poItems->sum('qty_ordered') : $poItems->sum('qty');
 
                 if ($totalQtyPO <= 0) {
                     $totalQtyPO = 1;
                 }
 
-                // Bagikan secara adil (Prorata) ke setiap unit barang
                 $biayaTambahanPerUnit = $totalBiayaTambahan / $totalQtyPO;
                 $diskonHeaderPerUnit  = $totalDiskonHeader / $totalQtyPO;
             }
-            // =========================================================================
 
             $items = [];
             foreach ($gr->items as $grItem) {
@@ -176,7 +170,6 @@ class AssetCapitalizationController extends Controller
                     $subtotalBaris = (float) ($poItem->subtotal ?? 0);
                     $unitPriceAsli = (float) ($poItem->unit_price ?? 0);
 
-                    // Ini diskon per baris item (jika ada)
                     $discountBaris = (float) ($poItem->discount_amount ?? $poItem->discount ?? 0);
 
                     if ($subtotalBaris > 0) {
@@ -188,13 +181,7 @@ class AssetCapitalizationController extends Controller
                     $netUnitPrice = (float) ($masterItem->purchase_price ?? 0);
                 }
 
-                // =====================================================================
-                // 🔥 RUMUS FINAL HARGA PEROLEHAN ASET 🔥
-                // Harga Unit + Biaya Tambahan Prorata - Diskon Tambahan Prorata
-                // Cth: 22.000.000 + 150.000 - 25.000 = 22.125.000
-                // =====================================================================
                 $hargaPerolehan = $netUnitPrice + $biayaTambahanPerUnit - $diskonHeaderPerUnit;
-                // =====================================================================
 
                 $baseQtyReceived = ($grItem->qty_received - ($grItem->qty_returned ?? 0)) * $grConvRate;
                 if ($baseQtyReceived <= 0) continue;
@@ -231,7 +218,7 @@ class AssetCapitalizationController extends Controller
                         'current_stock'     => $currentStock,
                         'max_capitalizable' => floor($maxCapitalizable),
                         'available_sns'     => $availableSns,
-                        'default_price'     => round($hargaPerolehan, 2), // Dijamin jadi Rp 22.125.000!
+                        'default_price'     => round($hargaPerolehan, 2),
                         'default_date'      => date('Y-m-d', strtotime($grDate)),
                         'default_spec'      => $defaultSpec
                     ];
@@ -262,10 +249,14 @@ class AssetCapitalizationController extends Controller
             'items.*.qty'      => 'required|numeric|min:0',
             'items.*.details.*.accounting_no'     => 'nullable|string|distinct|unique:fixed_assets,accounting_asset_number',
             'items.*.details.*.asset_category_id' => 'required|exists:asset_categories,id',
+            // Validasi foto (Maksimal 2MB per foto, tipe harus gambar)
+            'items.*.details.*.photos.*'          => 'nullable|image|mimes:jpeg,png,jpg,gif|max:2048',
         ], [
             'items.*.details.*.accounting_no.distinct' => 'Nomor Akuntansi (FA) ada yang kembar di dalam form ini.',
             'items.*.details.*.accounting_no.unique'   => 'Nomor Akuntansi (FA) tersebut sudah dipakai oleh aset lain.',
             'items.*.details.*.asset_category_id.required' => 'Kategori penyusutan wajib dipilih untuk setiap unit.',
+            'items.*.details.*.photos.*.image' => 'File yang diupload harus berupa gambar (JPG, PNG).',
+            'items.*.details.*.photos.*.max' => 'Ukuran setiap gambar maksimal 2MB.',
         ]);
 
         $snList = [];
@@ -382,6 +373,27 @@ class AssetCapitalizationController extends Controller
                             'notes'                   => $extraNote,
                         ]);
 
+                        // 🔥 PROSES UPLOAD FOTO MULTIPLE KE TABEL ASSET_PHOTOS 🔥
+                        if ($request->hasFile("items.{$itemId}.details.{$i}.photos")) {
+                            $uploadedFiles = $request->file("items.{$itemId}.details.{$i}.photos");
+
+
+                            // 🔥 Ubah garis miring (/) jadi strip (-) khusus untuk nama folder
+                            $safeFolderName = str_replace('/', '-', $sysAssetNumber);
+                            $folderPath = "FixAsset/{$safeFolderName}";
+
+                            foreach ($uploadedFiles as $file) {
+                                $filename = time() . '_' . uniqid() . '.' . $file->getClientOriginalExtension();
+                                $path = $file->storeAs($folderPath, $filename, 'public');
+
+                                // Simpan ke tabel relasi asset_photos
+                                AssetPhoto::create([
+                                    'fixed_asset_id' => $newAsset->id,
+                                    'file_path'      => $path
+                                ]);
+                            }
+                        }
+
                         if (!empty($serialNumber)) {
                             \DB::table('item_serials')
                                 ->where('item_id', $masterItem->id)
@@ -401,7 +413,7 @@ class AssetCapitalizationController extends Controller
                 }
             });
 
-            return redirect()->route('asset-capitalizations.create')->with('success', 'Luar biasa! Pengakuan Aset berhasil disimpan. SN yang dipilih telah dikunci sebagai aset.');
+            return redirect()->route('asset-capitalizations.create')->with('success', 'Luar biasa! Pengakuan Aset berhasil disimpan beserta foto fisiknya.');
 
         } catch (\Exception $e) {
             Log::error('Error Kapitalisasi Aset: ' . $e->getMessage());
@@ -420,15 +432,14 @@ class AssetCapitalizationController extends Controller
 
             $asset = \App\Models\FixedAsset::with('item')->findOrFail($id);
 
-            // 1. Validasi Status (Hanya bisa void jika status masih Available)
+            // 1. Validasi Status
             $statusAvailableId = \App\Models\Status::where('type', 'AST')->where('slug', 'available')->value('id') ?? 31;
 
             if ($asset->status_id != $statusAvailableId) {
                 throw new \Exception("GAGAL: Aset tidak bisa dibatalkan karena sedang digunakan di luar gudang.");
             }
 
-            // 🔥 1.5 GEMBOK AUDIT: Tolak VOID jika aset sudah pernah diserahkan/dipakai 🔥
-            // Kita cek apakah ada history selain "Registered"
+            // 1.5 GEMBOK AUDIT: Tolak VOID jika aset sudah pernah diserahkan/dipakai
             $hasUsedHistory = \App\Models\FixedAssetHistory::where('fixed_asset_id', $id)
                 ->where(function($q) {
                     $q->where('status', 'like', '%Diserahkan%')
@@ -442,8 +453,6 @@ class AssetCapitalizationController extends Controller
 
             $masterItem = $asset->item;
             $balanceBefore = (float) $masterItem->current_stock;
-
-            // 🔥 PERBAIKAN LOGIKA: Saldo Setelah harus ditambah 1 karena stok kembali ke gudang 🔥
             $balanceAfter = $balanceBefore + 1;
 
             // 2. KEMBALIKAN STOK FISIK KE GUDANG BIASA
@@ -472,14 +481,14 @@ class AssetCapitalizationController extends Controller
                     'type'             => 'IN',
                     'qty'              => 1,
                     'balance_before'   => $balanceBefore,
-                    'balance_after'    => $balanceAfter, // Saldo sudah tepat
+                    'balance_after'    => $balanceAfter,
                     'reference_number' => $asset->asset_number,
                     'notes'            => "[DE-CAPITALIZE] Pembatalan Pengakuan Aset (VOID).",
                     'created_by'       => auth()->id(),
                 ]);
             }
 
-            // 4. 🔥 BEBASKAN SERIAL NUMBER (SN) AGAR BISA DIPAKAI LAGI 🔥
+            // 4. BEBASKAN SERIAL NUMBER (SN) AGAR BISA DIPAKAI LAGI
             if (!empty($asset->serial_number)) {
                 \DB::table('item_serials')
                     ->where('item_id', $masterItem->id)
@@ -487,7 +496,7 @@ class AssetCapitalizationController extends Controller
                     ->update(['status' => 'AVAILABLE', 'updated_at' => now()]);
             }
 
-            // 5. UBAH STATUS ASET MENJADI VOID (Mencari otomatis kata batal/void)
+            // 5. UBAH STATUS ASET MENJADI VOID
             $statusVoid = \App\Models\Status::where('type', 'AST')
                 ->where(function($q) {
                     $q->where('slug', 'like', '%void%')
@@ -496,7 +505,6 @@ class AssetCapitalizationController extends Controller
                       ->orWhere('name', 'like', '%Void%');
                 })->first();
 
-            // Jika masih tidak ketemu, kita paksa buatkan statusnya agar tidak nyasar ke Draft!
             if (!$statusVoid) {
                 $statusVoid = \App\Models\Status::create([
                     'type' => 'AST',
@@ -511,8 +519,17 @@ class AssetCapitalizationController extends Controller
                 'notes'     => $asset->notes . "\n[DIBATALKAN PADA " . date('d-m-Y H:i') . "]"
             ]);
 
+            // 🔥 6. HAPUS FOLDER FOTO FISIK & DATA TABEL SAAT DIBATALKAN 🔥
+            $safeFolderName = str_replace('/', '-', $asset->asset_number);
+            $folderPath = "FixAsset/{$safeFolderName}";
+            if (Storage::disk('public')->exists($folderPath)) {
+                Storage::disk('public')->deleteDirectory($folderPath);
+            }
+            // Bersihkan data relasi foto dari database
+            AssetPhoto::where('fixed_asset_id', $asset->id)->delete();
+
             \DB::commit();
-            return back()->with('success', "Aset {$asset->asset_number} berhasil dibatalkan. Serial Number telah dibebaskan dan stok fisik dikembalikan ke gudang.");
+            return back()->with('success', "Aset {$asset->asset_number} berhasil dibatalkan. Foto fisik telah dihapus otomatis dan stok dikembalikan ke gudang.");
 
         } catch (\Exception $e) {
             \DB::rollBack();

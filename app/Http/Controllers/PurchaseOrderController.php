@@ -1309,14 +1309,15 @@ class PurchaseOrderController extends Controller
         ]);
     }
 
-    // =========================================================================
-    // CETAK BPR LENGKAP DENGAN LAMPIRAN (PDF MERGER) UNTUK PO
-    // =========================================================================
     public function printBprWithAttachments($slug)
     {
         $po = \App\Models\PurchaseOrder::with([
             'items.item', 'company', 'user', 'vendor', 'attachments', 'purchaseRequest'
         ])->where('po_number', $slug)->firstOrFail();
+
+        // 🔥 TAMBAHAN WAJIB: Panggil data Biaya & Diskon agar muncul di PDF BPR 🔥
+        $charges = \DB::table('purchase_order_charges')->where('purchase_order_id', $po->id)->get();
+        $extraDiscounts = \DB::table('purchase_order_discounts')->where('purchase_order_id', $po->id)->get();
 
         $poItemIds = $po->items->pluck('id')->toArray();
         $itemAttachments = \DB::table('purchase_order_item_attachments')
@@ -1327,7 +1328,8 @@ class PurchaseOrderController extends Controller
             $item->raw_attachments = $itemAttachments->where('purchase_order_item_id', $item->id)->values();
         }
 
-        $pdf = \Barryvdh\DomPDF\Facade\Pdf::loadView('po.pdf_bpr', compact('po'))
+        // 🔥 Jangan lupa selipkan variabel $charges dan $extraDiscounts di fungsi compact() 🔥
+        $pdf = \Barryvdh\DomPDF\Facade\Pdf::loadView('po.pdf_bpr', compact('po', 'charges', 'extraDiscounts'))
                 ->setPaper('A4', 'portrait');
 
         $tempMainPdfPath = storage_path('app/temp_po_bpr_' . uniqid() . '.pdf');

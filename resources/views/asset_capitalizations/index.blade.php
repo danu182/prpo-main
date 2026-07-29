@@ -28,7 +28,7 @@
                     <thead class="table-light">
                         <tr>
                             <th class="px-4 py-3 text-uppercase small fw-bold text-muted">No Aset</th>
-                            <th class="py-3 text-uppercase small fw-bold text-muted">Nama Barang</th>
+                            <th class="py-3 text-uppercase small fw-bold text-muted">Nama Barang & Foto</th>
                             <th class="py-3 text-uppercase small fw-bold text-muted">Serial Number</th>
                             <th class="py-3 text-center text-uppercase small fw-bold text-muted">Status</th>
                             <th class="py-3 text-uppercase small fw-bold text-muted">Tanggal Diakui</th>
@@ -48,10 +48,23 @@
                                     </span>
                                 </td>
                                 <td class="py-3">
-                                    <div class="fw-bold {{ $isVoid ? 'text-danger' : 'text-dark' }}">{{ $asset->name }}</div>
-                                    @if($asset->item)
-                                        <div class="small text-muted"><i class="bi bi-box me-1"></i>Master: {{ $asset->item->code }}</div>
-                                    @endif
+                                    <div class="d-flex align-items-center">
+                                        {{-- 🔥 THUMBNAIL FOTO ASET DARI TABEL ASSET_PHOTOS 🔥 --}}
+                                        @if($asset->photos->isNotEmpty())
+                                            <img src="{{ asset('storage/' . $asset->photos->first()->file_path) }}" class="shadow-sm img-thumbnail me-3 rounded-3" style="width: 55px; height: 55px; object-fit: cover; border: 2px solid #dee2e6;" alt="Aset">
+                                        @else
+                                            <div class="border bg-light text-secondary d-flex justify-content-center align-items-center me-3 rounded-3" style="width: 55px; height: 55px;">
+                                                <i class="bi bi-image text-muted fs-4"></i>
+                                            </div>
+                                        @endif
+
+                                        <div>
+                                            <div class="fw-bold {{ $isVoid ? 'text-danger' : 'text-dark' }}">{{ $asset->name }}</div>
+                                            @if($asset->item)
+                                                <div class="small text-muted"><i class="bi bi-box me-1"></i>Master: {{ $asset->item->code }}</div>
+                                            @endif
+                                        </div>
+                                    </div>
                                 </td>
                                 <td class="py-3 fw-bold text-dark">{{ $asset->serial_number ?: '-' }}</td>
                                 <td class="py-3 text-center">
@@ -74,7 +87,7 @@
                         @empty
                             <tr>
                                 <td colspan="6" class="py-5 text-center text-muted">
-                                    <i class="mb-2 bi bi-inbox fs-1 d-block text-secondary"></i>
+                                    <i class="mb-2 opacity-50 bi bi-images fs-1 d-block text-secondary"></i>
                                     <span class="fw-bold">Belum ada data pengakuan aset.</span>
                                 </td>
                             </tr>
