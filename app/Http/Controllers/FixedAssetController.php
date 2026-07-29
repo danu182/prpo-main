@@ -202,7 +202,7 @@ class FixedAssetController extends Controller
 
     public function update(Request $request, $id)
     {
-        // 1. Validasi semua data yang datang dari Modal Edit
+        // 1. Validasi semua data yang datang dari form Edit
         $request->validate([
             'serial_number'           => 'nullable|string|max:255',
             'status_id'               => 'required|exists:statuses,id',
@@ -217,6 +217,10 @@ class FixedAssetController extends Controller
             'acquisition_date'        => 'required|date',
             'currency_id'             => 'required|exists:currencies,id',
             'company_id'              => 'required|exists:companies,id',
+
+            // 🔥 VALIDASI FOTO BILA ADA 🔥
+            'delete_photos'           => 'nullable|array',
+            'photos.*'                => 'nullable|image|mimes:jpeg,png,jpg|max:2048',
         ]);
 
         try {
@@ -248,7 +252,24 @@ class FixedAssetController extends Controller
                     'company_id'              => $request->company_id,
                 ]);
 
+                // =======================================================
+                // 🔥 PROSES HAPUS FOTO LAMA (SMART DELETION) 🔥
+                // =======================================================
+                if ($request->has('delete_photos')) {
+                    $photosToDelete = \App\Models\AssetPhoto::whereIn('id', $request->delete_photos)->get();
+                    foreach ($photosToDelete as $photo) {
+                        // Hapus fisik file dari storage server
+                        if (\Illuminate\Support\Facades\Storage::disk('public')->exists($photo->file_path)) {
+                            \Illuminate\Support\Facades\Storage::disk('public')->delete($photo->file_path);
+                        }
+                        // Hapus data dari database
+                        $photo->delete();
+                    }
+                }
+
+                // =======================================================
                 // 🔥 PROSES UPLOAD FOTO TAMBAHAN SAAT EDIT 🔥
+                // =======================================================
                 if ($request->hasFile('photos')) {
                     $safeFolderName = str_replace('/', '-', $asset->asset_number);
                     $folderPathPhotos = "FixAsset/{$safeFolderName}";

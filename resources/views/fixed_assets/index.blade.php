@@ -45,6 +45,9 @@
     /* 🔥 FOTO GALLERY HOVER 🔥 */
     .photo-gallery-item { transition: transform 0.2s ease-in-out; border: 1px solid #dee2e6; border-radius: 8px; overflow: hidden; background: #fff; padding: 3px; display: inline-block; }
     .photo-gallery-item:hover { transform: scale(1.1); z-index: 10; border-color: #0dcaf0; box-shadow: 0 4px 8px rgba(0,0,0,0.1); }
+
+    /* 🔥 KUSTOMISASI MODAL EDUKASI 🔥 */
+    .math-formula { font-family: 'Courier New', Courier, monospace; background: #f1f5f9; padding: 10px 15px; border-left: 4px solid #0d6efd; border-radius: 4px; font-weight: 600; color: #334155; margin-bottom: 1rem; }
 </style>
 @endpush
 
@@ -53,7 +56,11 @@
     <div class="gap-3 mb-4 d-flex flex-column flex-md-row justify-content-between align-items-md-center">
         <div>
             <h4 class="mb-0 fw-bold text-dark"><i class="bi bi-pc-display me-2 text-info"></i> Register Aset Tetap</h4>
-            <div class="mt-1 text-muted small">Kelola data aset tetap, kepemilikan PT, penyusutan, dan penugasan.</div>
+            <div class="mt-1 text-muted small">Kelola data aset tetap, kepemilikan PT, penyusutan, dan penugasan.
+                <a href="#" class="mt-1 ms-2 text-primary fw-bold text-decoration-none d-inline-block mt-md-0" data-bs-toggle="modal" data-bs-target="#modalEdukasiPenyusutan">
+                    <i class="bi bi-lightbulb-fill text-warning"></i> Info Perhitungan Nilai Buku
+                </a>
+            </div>
         </div>
 
         <div class="flex-wrap gap-2 d-flex">
@@ -108,9 +115,9 @@
             <table class="table table-modern">
                 <thead>
                     <tr>
-                        <th width="40%">Identitas & Master Aset</th>
+                        <th width="45%">Identitas, Perolehan & Nilai Buku</th>
                         <th width="15%" class="text-center">Status</th>
-                        <th width="30%">Lokasi / Penanggung Jawab</th>
+                        <th width="25%">Lokasi / Penanggung Jawab</th>
                         <th width="15%" class="text-end">Aksi</th>
                     </tr>
                 </thead>
@@ -123,9 +130,21 @@
                                     <div>
                                         <div class="fw-bold text-dark fs-6 mb-1 {{ optional($ast->status)->slug === 'disposed' ? 'text-decoration-line-through text-danger' : '' }}">{{ $ast->name ?? optional($ast->item)->name }}</div>
                                         <div class="mb-1 text-muted small"><span class="badge-item-code me-1"><i class="bi bi-box me-1"></i>{{ optional($ast->item)->code ?? 'No Code' }}</span> {{ optional($ast->item)->name ?? 'Unknown Master' }}</div>
-                                        <div class="flex-wrap gap-2 d-flex">
-                                            <span class="border badge-soft bg-primary-subtle text-primary border-primary-subtle"><i class="bi bi-tag-fill me-1"></i>{{ $ast->asset_number }}</span>
-                                            @if($ast->serial_number)<span class="border badge-soft bg-light text-secondary border-light"><i class="bi bi-upc-scan me-1"></i>S/N: {{ $ast->serial_number }}</span>@endif
+
+                                        {{-- 🔥 TANGGAL PEROLEHAN & NILAI MUNCUL DI BARIS DEPAN 🔥 --}}
+                                        <div class="flex-wrap gap-2 mt-2 d-flex">
+                                            <span class="border badge-soft bg-primary-subtle text-primary border-primary-subtle" title="Nomor Registrasi Aset">
+                                                <i class="bi bi-tag-fill me-1"></i>{{ $ast->asset_number }}
+                                            </span>
+                                            <span class="border badge-soft bg-warning-subtle text-dark border-warning-subtle" title="Tanggal Perolehan (Mulai Hitung Susut)">
+                                                <i class="bi bi-calendar-check-fill me-1 text-warning" style="filter: brightness(0.8);"></i>Tgl: {{ $ast->acquisition_date ? \Carbon\Carbon::parse($ast->acquisition_date)->format('d M Y') : '-' }}
+                                            </span>
+                                            <span class="border badge-soft bg-danger-subtle text-danger border-danger-subtle" title="Nilai Buku Saat Ini">
+                                                <i class="bi bi-cash-coin me-1"></i>Rp {{ number_format($ast->net_book_value ?? $ast->purchase_price ?? 0, 0, ',', '.') }}
+                                            </span>
+                                            @if($ast->serial_number)
+                                                <span class="border badge-soft bg-light text-secondary border-light" title="Serial Number (S/N)"><i class="bi bi-upc-scan me-1"></i>S/N: {{ $ast->serial_number }}</span>
+                                            @endif
                                         </div>
                                     </div>
                                 </div>
@@ -155,6 +174,11 @@
                                         <button class="btn-action-icon" type="button" data-bs-toggle="dropdown"><i class="bi bi-three-dots-vertical"></i></button>
                                         <ul class="dropdown-menu dropdown-menu-end dropdown-action-menu">
                                             <li><a class="dropdown-item text-primary" href="{{ route('fixed-assets.edit', $ast->id) }}"><i class="bi bi-pencil-square me-2"></i> Edit Data Aset</a></li>
+                                            <li><a class="dropdown-item text-dark" href="#" data-bs-toggle="modal" data-bs-target="#modalHistory{{ $ast->id }}"><i class="bi bi-clock-history me-2"></i> Log Riwayat Aset</a></li>
+                                            <li><hr class="my-1 dropdown-divider"></li>
+                                            <li><a class="dropdown-item text-dark" href="{{ route('fixed-assets.print_qr', $ast->id) }}" target="_blank"><i class="bi bi-qr-code me-2"></i> Cetak Label QR</a></li>
+                                            @if(optional($ast->status)->slug === 'in_use' && $ast->assigned_to) <li><a class="dropdown-item text-info" href="{{ route('fixed-assets.bast', $ast->id) }}" target="_blank"><i class="bi bi-file-earmark-check me-2"></i> Cetak BAST</a></li> @endif
+                                            @if(optional($ast->status)->slug === 'disposed') <li><a class="dropdown-item text-danger fw-bold" href="{{ route('fixed-assets.bapp', $ast->id) }}" target="_blank"><i class="bi bi-file-earmark-x-fill me-2"></i> Cetak BAPP</a></li> @endif
                                         </ul>
                                     </div>
                                 </div>
@@ -182,11 +206,39 @@
                                                 <div class="gap-3 d-flex flex-column">
                                                     <div class="d-flex align-items-center">
                                                         <div class="p-2 rounded bg-light me-3 text-primary"><i class="bi bi-calendar-event fs-5"></i></div>
-                                                        <div><div class="small text-muted">Tgl Perolehan</div><div class="fw-bold text-dark">{{ $ast->acquisition_date ? \Carbon\Carbon::parse($ast->acquisition_date)->format('d M Y') : '-' }}</div></div>
+                                                        <div>
+                                                            <div class="small text-muted">Tgl Perolehan (Mulai Susut)</div>
+                                                            <div class="fw-bold text-dark">{{ $ast->acquisition_date ? \Carbon\Carbon::parse($ast->acquisition_date)->format('d M Y') : '-' }}</div>
+                                                           {{-- 🔥 INDIKATOR KHUSUS ASAL USUL TANGGAL 🔥 --}}
+                                                            @if($ast->batch_id && str_contains($ast->batch_id, 'IMP'))
+                                                                <div class="mt-1" style="font-size: 0.68rem; line-height: 1.2; color: #0369a1; font-weight: 600;">
+                                                                    <i class="bi bi-info-circle-fill"></i> Tgl asli dibeli sebelum di-import ke sistem.
+                                                                </div>
+                                                            @elseif($ast->batch_id && str_contains($ast->batch_id, 'HIBAH'))
+                                                                <div class="mt-1" style="font-size: 0.68rem; line-height: 1.2; color: #15803d; font-weight: 600;">
+                                                                    <i class="bi bi-info-circle-fill"></i> Tgl perolehan fisik via registrasi manual/hibah.
+                                                                </div>
+                                                            @elseif($ast->goods_receipt_id)
+                                                                <div class="mt-1" style="font-size: 0.68rem; line-height: 1.2; color: #64748b; font-weight: 600;">
+                                                                    <i class="bi bi-info-circle-fill"></i> Tgl penerimaan fisik dari Purchase Order (GR).
+                                                                </div>
+                                                            @endif
+                                                        </div>
                                                     </div>
                                                     <div class="d-flex align-items-center">
                                                         <div class="p-2 rounded bg-light me-3 text-info"><i class="bi bi-link-45deg fs-5"></i></div>
-                                                        <div><div class="small text-muted">Referensi Dokumen</div><div class="fw-bold text-dark">@if($ast->goods_receipt_id) GR: {{ optional($ast->goodsReceipt)->gr_number }} @elseif($ast->batch_id) {{ $ast->batch_id }} @else Input Manual / Hibah @endif</div></div>
+                                                        <div>
+                                                            <div class="small text-muted">Referensi Dokumen / Input</div>
+                                                            <div class="fw-bold text-dark">
+                                                                @if($ast->goods_receipt_id)
+                                                                    GR: {{ optional($ast->goodsReceipt)->gr_number }}
+                                                                @elseif($ast->batch_id)
+                                                                    Batch: {{ $ast->batch_id }}
+                                                                @else
+                                                                    Input Manual / Hibah
+                                                                @endif
+                                                            </div>
+                                                        </div>
                                                     </div>
                                                     @if($ast->supporting_document)
                                                         <a href="{{ asset('storage/' . $ast->supporting_document) }}" target="_blank" class="mt-2 border btn btn-sm btn-light fw-bold text-primary text-start" style="width: fit-content;"><i class="bi bi-file-earmark-pdf-fill me-2 text-danger"></i> Lihat Dokumen BAST/Nota Asli</a>
@@ -272,70 +324,71 @@
     </div>
 </div>
 
-{{-- MODAL EDIT TETAP ADA DI SINI (KARENA INI SPESIFIK ROW TABLE) --}}
-<div class="modal fade" id="editModal" tabindex="-1">
+{{-- 🔥 MODAL EDUKASI / PANDUAN PENYUSUTAN ASET 🔥 --}}
+<div class="modal fade" id="modalEdukasiPenyusutan" tabindex="-1">
     <div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable">
-        <div class="overflow-hidden border-0 shadow-lg modal-content rounded-4">
-            <form action="" method="POST" id="formEditAsset">
-                @csrf @method('PUT')
-                <div class="py-3 text-white border-0 modal-header bg-info">
-                    <h5 class="modal-title fw-bold"><i class="bi bi-sliders me-2"></i>Update Data Aset</h5>
-                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+        <div class="border-0 shadow-lg modal-content rounded-4">
+            <div class="py-3 text-white border-0 modal-header bg-primary">
+                <h5 class="modal-title fw-bold"><i class="bi bi-book-half me-2"></i>Panduan Perhitungan Penyusutan Aset</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="p-4 modal-body bg-light text-start" style="font-size: 0.95rem;">
+
+                {{-- Dasar Hukum & Tanggal Perolehan --}}
+                <div class="p-3 mb-4 bg-white border shadow-sm rounded-3 border-primary-subtle">
+                    <h6 class="mb-2 fw-bold text-primary"><i class="bi bi-bank me-2"></i>Dasar Hukum & Waktu Mulai Penyusutan</h6>
+                    <p class="mb-2 text-dark">Penyusutan aset <strong>TIDAK</strong> dihitung berdasarkan tanggal Purchase Order (PO), melainkan dari <strong>Tanggal Perolehan (Acquisition Date)</strong>, yaitu saat barang fisik diterima dan siap digunakan.</p>
+                    <ul class="mb-3 text-muted small fw-medium">
+                        <li><strong>Pembelian via PO:</strong> Dihitung mulai dari tanggal <em>Goods Receipt (GR)</em> oleh Gudang.</li>
+                        <li><strong>Import / Hibah Manual:</strong> Dihitung mulai dari tanggal yang diinputkan oleh staf pada form.</li>
+                    </ul>
+                    <p class="pt-2 mb-0 text-muted small border-top">Sistem ini mengacu pada Standar Akuntansi & Pajak Indonesia (UU PPh Pasal 11 & PMK No 72 Tahun 2023).</p>
                 </div>
-                <div class="p-4 modal-body bg-light text-start">
-                    <div class="mb-4 text-center">
-                        <h5 class="mb-0 fw-bold text-dark" id="editModalItemName">Nama Barang</h5>
-                        <span class="mt-1 badge bg-secondary" id="editModalAssetNumber">No Aset</span>
-                    </div>
-                    <div class="row g-4">
-                        <div class="col-md-6 border-end pe-md-4">
-                            <h6 class="pb-2 mb-3 border-bottom text-primary fw-bold"><i class="bi bi-box-seam me-2"></i>Detail Fisik</h6>
-                            <div class="mb-3"><label class="form-label fw-bold small text-muted">Serial Number (S/N) Fisik</label><input type="text" name="serial_number" class="shadow-sm form-control"></div>
-                            <div class="mb-3"><label class="form-label fw-bold small text-muted">No. Aset (Label Akuntansi)</label><input type="text" name="accounting_asset_number" class="shadow-sm form-control border-info"></div>
-                            <div class="mb-3"><label class="form-label fw-bold small text-muted">Spesifikasi Detail / Unik Unit</label><textarea name="spesifikasi_detail" id="spesifikasi_editor_edit" class="shadow-sm form-control" rows="3"></textarea></div>
-                        </div>
-                        <div class="col-md-6 ps-md-4">
-                            <h6 class="pb-2 mb-3 border-bottom text-primary fw-bold"><i class="bi bi-cash-coin me-2"></i>Nilai & Penyusutan</h6>
-                            <div class="mb-3"><label class="form-label fw-bold small text-muted">Tanggal Perolehan <span class="text-danger">*</span></label><input type="date" name="acquisition_date" class="shadow-sm form-control border-info" required></div>
-                            <div class="mb-3"><label class="form-label fw-bold small text-muted">Mata Uang & Harga Beli</label>
-                                <div class="shadow-sm input-group">
-                                    <select name="currency_id" class="input-group-text bg-light border-success fw-bold text-dark" style="cursor: pointer;" required>
-                                        @foreach($currencies as $currency) <option value="{{ $currency->id }}">{{ $currency->code }}</option> @endforeach
-                                    </select>
-                                    <input type="number" name="purchase_price" class="form-control border-success" placeholder="0">
-                                </div>
-                            </div>
-                            <div class="mb-4"><label class="form-label fw-bold small text-muted">Kategori Penyusutan <span class="text-danger">*</span></label>
-                                <select name="asset_category_id" class="shadow-sm form-select" required>
-                                    <option value="">-- Pilih Kategori --</option>
-                                    @foreach($assetCategories as $category) <option value="{{ $category->id }}">{{ $category->name }} ({{ $category->useful_life_years }} Thn)</option> @endforeach
-                                </select>
-                            </div>
-                            <h6 class="pb-2 mt-4 mb-3 border-bottom text-primary fw-bold"><i class="bi bi-geo-alt me-2"></i>Lokasi & Status</h6>
-                            <div class="mb-3"><label class="form-label fw-bold small text-muted">Aset Milik PT / Departemen <span class="text-danger">*</span></label>
-                                <select name="company_id" class="shadow-sm form-select" style="width: 100%;" required>
-                                    <option value="">-- Pilih Pemilik Aset --</option>
-                                    @foreach($companies as $company) <option value="{{ $company->id }}">{{ $company->name }}</option> @endforeach
-                                </select>
-                            </div>
-                            <div class="mb-3"><label class="form-label fw-bold small text-muted">Status Aset <span class="text-danger">*</span></label>
-                                <select name="status_id" class="shadow-sm form-select" onchange="toggleAssignee('Edit', this.options[this.selectedIndex].getAttribute('data-slug'))" required>
-                                    <option value="">-- Pilih Status Aset --</option>
-                                    @foreach($statuses as $status) <option value="{{ $status->id }}" data-slug="{{ $status->slug }}">{{ $status->name }}</option> @endforeach
-                                </select>
-                            </div>
-                            <div class="mb-3"><label class="form-label fw-bold small text-muted">Ditugaskan Kepada</label>
-                                <select name="assigned_to" id="assigneeSelectEdit" class="shadow-sm form-select select2-user" style="width: 100%;" disabled>
-                                    <option value="">-- Cari Nama Karyawan --</option>
-                                    @foreach($users as $user) <option value="{{ $user->id }}">{{ $user->name }} • {{ optional($user->company)->name ?? 'Kantor Pusat' }}</option> @endforeach
-                                </select>
-                            </div>
-                            <div class="mb-2"><label class="form-label fw-bold small text-muted">Catatan (Kondisi/Perubahan)</label><textarea name="notes" class="shadow-sm form-control border-warning" rows="2" placeholder="Tulis alasan perubahan data..."></textarea></div>
-                        </div>
-                    </div>
+
+                {{-- Rumus Matematika --}}
+                <h6 class="mb-3 fw-bold text-dark"><i class="bi bi-calculator me-2 text-success"></i>Metode Penyusutan: Garis Lurus (Straight-Line)</h6>
+                <div class="math-formula">
+                    <span class="mb-1 text-muted d-block small">1. Menghitung Penyusutan Bulanan:</span>
+                    Penyusutan Bulanan = <span class="text-primary">Harga Perolehan</span> / <span class="text-primary">Masa Manfaat (Dalam Bulan)</span>
                 </div>
-                <div class="p-3 bg-white modal-footer border-top"><button type="button" class="px-4 border btn btn-light rounded-pill fw-bold" data-bs-dismiss="modal">Batal</button><button type="submit" class="px-4 text-white shadow-sm btn btn-info rounded-pill fw-bold">Simpan Perubahan</button></div>
-            </form>
+                <div class="math-formula">
+                    <span class="mb-1 text-muted d-block small">2. Menghitung Total Susut hingga Hari Ini:</span>
+                    Akumulasi Penyusutan = <span class="text-primary">Penyusutan Bulanan</span> × <span class="text-primary">Durasi Pemakaian (Total Bulan)</span>
+                </div>
+                <div class="border-4 math-formula border-success bg-success-subtle border-start">
+                    <span class="mb-1 text-success d-block small">3. Nilai Akhir yang Muncul di Sistem:</span>
+                    Nilai Buku Saat Ini = <span class="text-dark">Harga Perolehan</span> - <span class="text-dark">Akumulasi Penyusutan</span>
+                </div>
+
+                {{-- Simulasi Kasus --}}
+                <h6 class="mt-4 mb-3 fw-bold text-dark"><i class="bi bi-laptop me-2 text-warning"></i>Contoh Simulasi Kasus</h6>
+                <div class="p-3 bg-white border shadow-sm rounded-3 text-muted">
+                    <div class="pb-2 mb-3 row border-bottom">
+                        <div class="col-6"><strong>Harga Perolehan:</strong> Rp 10.000.000</div>
+                        <div class="col-6"><strong>Kategori:</strong> Kelompok 1 (Masa 4 Tahun / 48 Bulan)</div>
+                        <div class="mt-2 col-6"><strong>Tgl Perolehan (GR/Input):</strong> 01 Jan 2024</div>
+                        <div class="mt-2 col-6 text-danger"><strong>Waktu Pengecekan:</strong> Hari ini (Jeda $\approx$ 30,93 Bulan)</div>
+                    </div>
+
+                    <div class="mb-2">
+                        <span class="badge bg-secondary me-2">Langkah 1</span>
+                        Penyusutan per bulan = Rp 10.000.000 / 48 bulan = <strong>Rp 208.333,33</strong>
+                    </div>
+                    <div class="mb-2">
+                        <span class="badge bg-secondary me-2">Langkah 2</span>
+                        Akumulasi Susut = Rp 208.333,33 × 30,93 bulan = <strong>Rp 6.442.553</strong>
+                    </div>
+                    <div class="p-2 mb-2 border rounded bg-light">
+                        <span class="badge bg-success me-2">Hasil Akhir</span>
+                        Nilai Buku Saat Ini = Rp 10.000.000 - Rp 6.442.553 = <strong class="text-dark fs-6">Rp 3.557.447</strong>
+                    </div>
+                    <div class="mt-3 small text-info"><i class="bi bi-info-circle-fill me-1"></i> Catatan: Jika usia aset sudah melampaui masa manfaatnya (misal sudah lewat 4 tahun), maka sistem akan otomatis mengunci Nilai Buku di angka <strong>Rp 0</strong>.</div>
+                </div>
+
+            </div>
+            <div class="p-3 bg-white modal-footer border-top">
+                <button type="button" class="px-5 shadow-sm btn btn-primary rounded-pill fw-bold" data-bs-dismiss="modal">Saya Mengerti</button>
+            </div>
         </div>
     </div>
 </div>
@@ -345,7 +398,6 @@
 @push('scripts')
 <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
-<script src="https://cdn.ckeditor.com/ckeditor5/39.0.1/classic/ckeditor.js"></script>
 <script>
     $(document).ready(function() {
         $('.main-row').on('click', function(e) {
@@ -353,45 +405,6 @@
             let btn = $(this).find('[data-bs-toggle="collapse"]');
             if(btn.length) { btn.click(); }
         });
-
-        $('.select2-user').select2({ theme: 'bootstrap-5', dropdownParent: $('#editModal') });
-
-        let editorEdit;
-        ClassicEditor.create(document.querySelector('#spesifikasi_editor_edit'), {
-            toolbar: [ 'heading', '|', 'bold', 'italic', 'bulletedList', 'numberedList', 'blockQuote', '|', 'undo', 'redo' ]
-        }).then(editor => {
-            window.editorEdit = editor;
-            editor.model.document.on('change:data', () => { document.querySelector('#spesifikasi_editor_edit').value = editor.getData(); });
-        }).catch(error => { console.error(error); });
-
-        $('#editModal').on('show.bs.modal', function (event) {
-            var button = $(event.relatedTarget);
-            var id = button.data('id');
-            var modal = $(this);
-
-            modal.find('form').attr('action', "{{ url('fixed-assets') }}/" + id);
-            modal.find('#editModalItemName').text(button.data('item-name'));
-            modal.find('#editModalAssetNumber').text(button.data('asset-number'));
-            modal.find('select[name="asset_category_id"]').val(button.data('category-id')).trigger('change');
-            modal.find('input[name="serial_number"]').val(button.data('serial'));
-            modal.find('input[name="accounting_asset_number"]').val(button.data('accounting'));
-            modal.find('textarea[name="notes"]').val(button.data('notes'));
-            modal.find('input[name="purchase_price"]').val(button.data('price'));
-            modal.find('input[name="acquisition_date"]').val(button.data('acquisition-date'));
-            modal.find('select[name="currency_id"]').val(button.data('currency-id'));
-            modal.find('select[name="company_id"]').val(button.data('company-id')).trigger('change');
-            modal.find('select[name="status_id"]').val(button.data('status-id')).trigger('change');
-            modal.find('select[name="assigned_to"]').val(button.data('assigned-to')).trigger('change');
-
-            if (window.editorEdit) { window.editorEdit.setData(button.data('spesifikasi') ? button.data('spesifikasi') : ''); }
-            else { modal.find('textarea[name="spesifikasi_detail"]').val(button.data('spesifikasi')); }
-        });
     });
-
-    function toggleAssignee(tipeModal, slug) {
-        let assignee = $('#assigneeSelect' + tipeModal);
-        if (slug === 'in_use') { assignee.prop('disabled', false); assignee.prop('required', true); }
-        else { assignee.prop('disabled', true); assignee.prop('required', false); assignee.val('').trigger('change'); }
-    }
 </script>
 @endpush

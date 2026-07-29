@@ -12,6 +12,25 @@
     .photo-preview-item { transition: transform 0.2s ease-in-out; }
     .photo-preview-item:hover { transform: scale(1.1); z-index: 10; }
     .btn-dashed { border-style: dashed !important; border-width: 2px !important; }
+
+    /* 🔥 CSS BARU: Tombol Hapus Foto Lama 🔥 */
+    .btn-delete-existing {
+        position: absolute;
+        top: -8px;
+        right: -8px;
+        width: 24px;
+        height: 24px;
+        border-radius: 50%;
+        padding: 0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 14px;
+        z-index: 20;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+        transition: transform 0.2s;
+    }
+    .btn-delete-existing:hover { transform: scale(1.2); }
 </style>
 @endpush
 
@@ -34,7 +53,7 @@
     @endif
 
     <div class="border-0 border-4 shadow-sm card rounded-4 border-top border-info">
-        <form action="{{ route('fixed-assets.update', $asset->id) }}" method="POST" enctype="multipart/form-data">
+        <form action="{{ route('fixed-assets.update', $asset->id) }}" method="POST" enctype="multipart/form-data" id="formEditAsset">
             @csrf
             @method('PUT')
             <div class="p-4 card-body">
@@ -73,15 +92,19 @@
                                 <i class="bi bi-images me-1"></i> Galeri Foto Fisik & Upload Tambahan
                             </label>
 
+                            {{-- 🔥 FOTO SAAT INI (DENGAN TOMBOL HAPUS) 🔥 --}}
                             @if($asset->photos->count() > 0)
-                                <div class="mb-3">
-                                    <div class="mb-2 small text-muted">Foto Saat Ini (Klik untuk memperbesar):</div>
-                                    <div class="flex-wrap gap-2 d-flex">
+                                <div class="mb-3" id="existing-photos-container">
+                                    <div class="mb-2 small text-muted">Foto Saat Ini (Klik X untuk hapus):</div>
+                                    <div class="flex-wrap gap-3 pt-2 d-flex pe-2">
                                         @foreach($asset->photos as $photo)
-                                            <div class="p-1 bg-white border rounded shadow-sm position-relative">
+                                            <div class="p-1 bg-white border rounded shadow-sm position-relative existing-photo-item" id="photo-{{ $photo->id }}">
                                                 <a href="{{ asset('storage/' . $photo->file_path) }}" target="_blank">
                                                     <img src="{{ asset('storage/' . $photo->file_path) }}" class="rounded" style="width: 70px; height: 70px; object-fit: cover;">
                                                 </a>
+                                                <button type="button" class="btn btn-danger btn-delete-existing remove-existing-photo" data-photo-id="{{ $photo->id }}" title="Hapus Foto Ini">
+                                                    <i class="bi bi-x"></i>
+                                                </button>
                                             </div>
                                         @endforeach
                                     </div>
@@ -108,10 +131,14 @@
                     <div class="col-md-6 ps-md-5">
                         <h6 class="pb-2 mb-4 border-bottom text-primary fw-bold"><i class="bi bi-cash-coin me-2"></i>Nilai & Penyusutan</h6>
 
-                        <div class="mb-3">
-                            <label class="form-label fw-bold small text-muted">Tanggal Perolehan <span class="text-danger">*</span></label>
-                            <input type="date" name="acquisition_date" class="shadow-sm form-control border-info" value="{{ old('acquisition_date', $asset->acquisition_date) }}" required>
-                            <div class="form-text" style="font-size: 0.7rem;"><i class="bi bi-info-circle"></i> Memengaruhi perhitungan umur & Nilai Buku Saat Ini.</div>
+                        <div class="p-3 mb-4 border bg-danger-subtle border-danger-subtle rounded-3">
+                            <label class="form-label fw-bold small text-danger"><i class="bi bi-exclamation-triangle-fill me-1"></i> Tanggal Perolehan (Acquisition Date) <span class="text-danger">*</span></label>
+                            <input type="date" name="acquisition_date" class="shadow-sm form-control border-danger fw-bold" value="{{ old('acquisition_date', $asset->acquisition_date) }}" required>
+                            <div class="mt-2 form-text text-dark" style="font-size: 0.75rem; line-height: 1.3;">
+                                <strong>PENTING:</strong> Tanggal ini adalah patokan argometer penyusutan dimulai.
+                                <br>• <strong>Aset Import Excel:</strong> Biarkan sesuai tanggal asli pembelian di masa lalu.
+                                <br>• <strong>Mengubah tanggal ini</strong> akan me-reset total dan merubah secara masif hitungan <strong>Nilai Buku Saat Ini</strong>!
+                            </div>
                         </div>
 
                         <div class="mb-3">
@@ -190,6 +217,9 @@
 <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
 <script src="https://cdn.ckeditor.com/ckeditor5/39.0.1/classic/ckeditor.js"></script>
+{{-- 🔥 TAMBAHKAN SWEETALERT2 UNTUK POPUP MODERN 🔥 --}}
+<script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+
 <script>
     $(document).ready(function() {
         $('.select2-user').select2({ theme: 'bootstrap-5' });
@@ -198,7 +228,44 @@
             toolbar: [ 'heading', '|', 'bold', 'italic', 'bulletedList', 'numberedList', 'blockQuote', '|', 'undo', 'redo' ]
         }).catch(error => { console.error(error); });
 
-        // Tambah Baris Foto
+        // 🔥 LOGIKA HAPUS FOTO LAMA (MENGGUNAKAN SWEETALERT2) 🔥
+        $('.remove-existing-photo').on('click', function(e) {
+            e.preventDefault();
+            let photoId = $(this).data('photo-id');
+            let photoContainer = $('#photo-' + photoId);
+
+            // Pop-up Cantik ala SweetAlert2
+            Swal.fire({
+                title: 'Hapus foto ini?',
+                text: "Foto akan ditandai untuk dihapus saat Anda klik Simpan Perubahan.",
+                icon: 'warning',
+                showCancelButton: true,
+                confirmButtonColor: '#dc3545', // Warna merah Bootstrap muda
+                cancelButtonColor: '#6c757d',  // Warna abu-abu Bootstrap
+                confirmButtonText: '<i class="bi bi-trash"></i> Ya, Hapus!',
+                cancelButtonText: 'Batal',
+                customClass: {
+                    popup: 'rounded-4 shadow-lg border-0'
+                }
+            }).then((result) => {
+                if (result.isConfirmed) {
+                    // Suntikkan input hidden ke dalam form
+                    $('#formEditAsset').append('<input type="hidden" name="delete_photos[]" value="' + photoId + '">');
+
+                    // Animasi menghilangkan foto dari layar
+                    photoContainer.fadeOut(300, function() {
+                        $(this).remove();
+
+                        // Jika semua foto habis dihapus, sembunyikan kotak "Foto Saat Ini"
+                        if($('.existing-photo-item').length === 0) {
+                            $('#existing-photos-container').fadeOut();
+                        }
+                    });
+                }
+            });
+        });
+
+        // Tambah Baris Foto Baru
         $('.add-photo-btn').on('click', function() {
             let container = $('#photo-inputs-container');
             container.append(`
@@ -240,7 +307,7 @@
             });
 
             if (!hasFiles) {
-                previewDiv.html('<span class="text-muted small fst-italic"><i class="bi bi-image me-1"></i> Preview foto baru akan muncul di sini...');
+                previewDiv.html('<span class="text-muted small fst-italic"><i class="bi bi-image me-1"></i> Preview foto baru akan muncul di sini...</span>');
             }
         }
     });
