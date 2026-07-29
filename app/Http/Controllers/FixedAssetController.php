@@ -1193,4 +1193,13 @@ class FixedAssetController extends Controller
         return view('fixed_assets.create_manual', compact('warehouses', 'assetCategories', 'companies', 'statuses', 'currencies'));
     }
 
+
+    // =========================================================================
+    // HALAMAN FORM IMPORT EXCEL ASET
+    // =========================================================================
+    public function createImport()
+    {
+        return view('fixed_assets.create_import');
+    }
+
 }

@@ -382,8 +382,9 @@
                             </div>
 
                             <div class="mb-3">
-                                <label class="mb-1 small text-muted fw-bold">Nama Spesifik / Merk <span class="text-danger">*</span></label>
-                                <input type="text" name="items[${itemId}][details][${i}][specific_name]" class="form-control" value="${itemName}" required>
+                                <label class="mb-1 small text-muted fw-bold">Penamaan Spesifik Aset <span class="text-danger">*</span></label>
+                                <input type="text" name="items[${itemId}][details][${i}][specific_name]" class="form-control border-primary" value="${itemName}" required>
+                                <div class="form-text" style="font-size: 0.7rem;"><i class="bi bi-info-circle"></i> Bisa disesuaikan jika nama unit ini berbeda dari Master.</div>
                             </div>
                             <div class="mb-3 row g-2">
                                 <div class="col-sm-6">
