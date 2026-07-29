@@ -64,7 +64,7 @@ class FixedAssetController extends Controller
     {
         $request->validate([
             'item_id'                 => 'required|exists:items,id',
-            'asset_category_id'       => 'required|exists:asset_categories,id', // 🔥 TAMBAHKAN INI
+            'asset_category_id'       => 'required|exists:asset_categories,id',
             'warehouse_id'            => 'required|exists:warehouses,id',
             'quantity'                => 'required|integer|min:1',
             'status_id'               => 'required|exists:statuses,id',
@@ -78,6 +78,8 @@ class FixedAssetController extends Controller
             'purchase_price'          => 'nullable|numeric|min:0',
             'currency_id'             => 'required|exists:currencies,id',
             'supporting_document'     => 'nullable|file|mimes:pdf,jpg,jpeg,png|max:5120',
+            // 🔥 TAMBAHAN: Validasi foto aset fisik 🔥
+            'photos.*'                => 'nullable|image|mimes:jpeg,png,jpg|max:2048',
         ]);
 
         try {
@@ -111,7 +113,7 @@ class FixedAssetController extends Controller
                     $asset = \App\Models\FixedAsset::create([
                         'asset_number'            => $assetNumber,
                         'item_id'                 => $request->item_id,
-                        'asset_category_id'       => $request->asset_category_id, // 🔥 TAMBAHKAN INI
+                        'asset_category_id'       => $request->asset_category_id,
                         'name'                    => $finalAssetName,
                         'warehouse_id'            => $request->warehouse_id,
                         'company_id'              => $request->company_id,
@@ -136,7 +138,23 @@ class FixedAssetController extends Controller
                         'created_by'     => auth()->id(),
                     ]);
 
-                    // PENCATATAN MUTASI STOK YANG BENAR (HANYA INI, TANPA INVENTORY_STOCKS)
+                    // 🔥 PROSES UPLOAD FOTO FISIK ASET 🔥
+                    if ($request->hasFile('photos')) {
+                        $safeFolderName = str_replace('/', '-', $assetNumber);
+                        $folderPathPhotos = "FixAsset/{$safeFolderName}";
+
+                        foreach ($request->file('photos') as $photoFile) {
+                            $filenamePhoto = time() . '_' . uniqid() . '.' . $photoFile->getClientOriginalExtension();
+                            $pathPhoto = $photoFile->storeAs($folderPathPhotos, $filenamePhoto, 'public');
+
+                            \App\Models\AssetPhoto::create([
+                                'fixed_asset_id' => $asset->id,
+                                'file_path'      => $pathPhoto
+                            ]);
+                        }
+                    }
+
+                    // PENCATATAN MUTASI STOK
                     $balanceBefore = $currentStock;
                     $balanceAfter  = $currentStock + 1;
                     $currentStock  = $balanceAfter;
@@ -154,14 +172,31 @@ class FixedAssetController extends Controller
                     ]);
                 }
 
-                // Update total stok terakhir di Master Barang
                 $itemMaster->update(['current_stock' => $currentStock]);
             });
 
-            return back()->with('success', $request->quantity . ' Unit Aset berhasil didaftarkan beserta Dokumen Pendukungnya!');
+            return redirect()->route('fixed-assets.index')->with('success', $request->quantity . ' Unit Aset (Hibah) berhasil didaftarkan beserta foto fisiknya!');
         } catch (\Exception $e) {
-            return back()->with('error', 'Gagal mendaftarkan aset: ' . $e->getMessage());
+            return back()->withInput()->with('error', 'Gagal mendaftarkan aset: ' . $e->getMessage());
         }
+    }
+
+
+    // =========================================================================
+    // HALAMAN FORM EDIT ASET TERSENDIRI
+    // =========================================================================
+    public function edit($id)
+    {
+        $asset = FixedAsset::with(['photos', 'item', 'company', 'status', 'warehouse', 'assetCategory'])->findOrFail($id);
+
+        $warehouses = \App\Models\Warehouse::orderBy('name', 'asc')->get();
+        $assetCategories = \App\Models\AssetCategory::where('is_active', true)->orderBy('useful_life_years', 'asc')->get();
+        $companies = \App\Models\Company::orderBy('name', 'asc')->get();
+        $statuses = Status::where('type', 'AST')->orderBy('sequence', 'asc')->get();
+        $currencies = \App\Models\Currency::where('is_active', 1)->get();
+        $users = User::with('company')->orderBy('name', 'asc')->get();
+
+        return view('fixed_assets.edit', compact('asset', 'warehouses', 'assetCategories', 'companies', 'statuses', 'currencies', 'users'));
     }
 
 
@@ -212,6 +247,22 @@ class FixedAssetController extends Controller
                     'currency_id'             => $request->currency_id,
                     'company_id'              => $request->company_id,
                 ]);
+
+                // 🔥 PROSES UPLOAD FOTO TAMBAHAN SAAT EDIT 🔥
+                if ($request->hasFile('photos')) {
+                    $safeFolderName = str_replace('/', '-', $asset->asset_number);
+                    $folderPathPhotos = "FixAsset/{$safeFolderName}";
+
+                    foreach ($request->file('photos') as $photoFile) {
+                        $filenamePhoto = time() . '_' . uniqid() . '.' . $photoFile->getClientOriginalExtension();
+                        $pathPhoto = $photoFile->storeAs($folderPathPhotos, $filenamePhoto, 'public');
+
+                        \App\Models\AssetPhoto::create([
+                            'fixed_asset_id' => $asset->id,
+                            'file_path'      => $pathPhoto
+                        ]);
+                    }
+                }
 
                 // 3. Catat Histori Perubahan Status / Assignee
                 if ($isChanged) {
@@ -303,7 +354,7 @@ class FixedAssetController extends Controller
                 }
             });
 
-            return back()->with('success', 'Informasi Aset berhasil diperbarui sepenuhnya!');
+            return redirect()->route('fixed-assets.index')->with('success', 'Informasi Aset berhasil diperbarui sepenuhnya!');
         } catch (\Exception $e) {
             return back()->with('error', 'Gagal memperbarui aset: ' . $e->getMessage());
         }
@@ -1127,5 +1178,19 @@ class FixedAssetController extends Controller
     }
 
 
+
+    // =========================================================================
+    // HALAMAN FORM INPUT MANUAL (HIBAH)
+    // =========================================================================
+    public function createManual()
+    {
+        $warehouses = \App\Models\Warehouse::orderBy('name', 'asc')->get();
+        $assetCategories = \App\Models\AssetCategory::where('is_active', true)->orderBy('useful_life_years', 'asc')->get();
+        $companies = \App\Models\Company::orderBy('name', 'asc')->get();
+        $statuses = \App\Models\Status::where('type', 'AST')->orderBy('sequence', 'asc')->get();
+        $currencies = \App\Models\Currency::where('is_active', 1)->get();
+
+        return view('fixed_assets.create_manual', compact('warehouses', 'assetCategories', 'companies', 'statuses', 'currencies'));
+    }
 
 }

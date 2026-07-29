@@ -152,74 +152,69 @@ Route::middleware('auth')->group(function () {
     // ====================================================
 
 
-    // Aset Tetap
+    // =========================================================================
+    // ASET TETAP (FIXED ASSETS)
+    // =========================================================================
     Route::prefix('fixed-assets')->name('fixed-assets.')->middleware(['can:view_assets'])->group(function () {
 
-        // 🔥 TAMBAHKAN BARIS INI (Jalur AJAX Pencarian Barang) 🔥
-        Route::get('/search-items', [App\Http\Controllers\FixedAssetController::class, 'searchItems'])->name('search-items');
+        // --- 1. ROUTE STATIS & AJAX (Harus Di Atas Wildcard) ---
+        Route::get('/search-items', [FixedAssetController::class, 'searchItems'])->name('search-items');
 
-        Route::get('/', [FixedAssetController::class, 'index'])->name('index');
-        Route::post('/', [FixedAssetController::class, 'store'])->name('store');
-        Route::put('/{id}', [FixedAssetController::class, 'update'])->name('update');
-        Route::get('/{id}/bast', [FixedAssetController::class, 'printBast'])->name('bast');
-        Route::get('/{id}/bapa', [FixedAssetController::class, 'printBapa'])->name('bapa');
-        Route::get('/{id}/bapp', [FixedAssetController::class, 'printBapp'])->name('bapp');
+        // 🔥 FORM BARU (HALAMAN TERSENDIRI TANPA MODAL POP-UP) 🔥
+        Route::get('/create-manual', [FixedAssetController::class, 'createManual'])->name('create_manual');
+        Route::get('/create-import', [FixedAssetController::class, 'createImport'])->name('create_import');
 
-        // Rute Karantina Aset Tetap (Cukup ketik nama akhirnya saja)
-        Route::get('/import-staging/{batch_id}', [\App\Http\Controllers\FixedAssetController::class, 'importStaging'])->name('import_staging');
-        Route::post('/import/submit-approval/{batch_id}', [\App\Http\Controllers\FixedAssetController::class, 'submitApproval'])->name('submit_approval');
-        Route::post('/import/decide/{batch_id}', [\App\Http\Controllers\FixedAssetController::class, 'decide'])->name('decide');
-        Route::delete('/import-staging/{batch_id}/cancel', [\App\Http\Controllers\FixedAssetController::class, 'cancelImport'])->name('cancel_import');
+        // Master List & Export
+        Route::get('/master-list', [FixedAssetController::class, 'masterList'])->name('master_list');
+        Route::get('/master-list/export', [FixedAssetController::class, 'exportMasterList'])->name('master_list_export');
 
-
-        // 🔥 RUTE IMPORT DENGAN PREVIEW (PASTIKAN ADA 3 BARIS INI) 🔥
-        Route::post('/import/preview', [FixedAssetController::class, 'previewImport'])->name('preview_import');
-        Route::post('/import/process', [FixedAssetController::class, 'processImport'])->name('process_import'); // <-- INI YANG TADI HILANG
-        Route::get('/template/download', [FixedAssetController::class, 'downloadTemplate'])->name('download_template');
-
-
-        // Route untuk halaman Riwayat Import
+        // Transaksi & Riwayat
+        Route::get('/transactions', [FixedAssetController::class, 'transactions'])->name('transactions');
+        Route::get('/hibah-history', [FixedAssetController::class, 'hibahHistory'])->name('hibah_history');
         Route::get('/import-history', [FixedAssetController::class, 'importHistory'])->name('import_history');
 
-        // Route untuk Cetak PDF BAST per Batch
-        Route::get('/import-history/{batch_id}/print-bast', [FixedAssetController::class, 'printBastByBatch'])->name('print_bast_batch');
+        // Export & Template
+        Route::get('/template/download', [FixedAssetController::class, 'downloadTemplate'])->name('download_template');
+        Route::post('/import/preview', [FixedAssetController::class, 'previewImport'])->name('preview_import');
+        Route::post('/import/process', [FixedAssetController::class, 'processImport'])->name('process_import');
 
-        // Route untuk halaman Detail Batch Import
+
+        // --- 2. ROUTE BATCH / IMPORT WORKFLOW ---
+        Route::get('/import-staging/{batch_id}', [FixedAssetController::class, 'importStaging'])->name('import_staging');
+        Route::post('/import/submit-approval/{batch_id}', [FixedAssetController::class, 'submitApproval'])->name('submit_approval');
+        Route::post('/import/decide/{batch_id}', [FixedAssetController::class, 'decide'])->name('decide');
+        Route::delete('/import-staging/{batch_id}/cancel', [FixedAssetController::class, 'cancelImport'])->name('cancel_import');
+
+        // History Detail & Print per Batch
         Route::get('/import-history/{batch_id}', [FixedAssetController::class, 'showImportBatch'])->name('show_import_batch');
-
-        // Route untuk Cetak 1 Label QR
-        Route::get('/{id}/print-qr', [FixedAssetController::class, 'printQrLabel'])->name('print_qr');
-
-        // Route untuk Cetak Semua Label QR dalam 1 Batch
+        Route::get('/import-history/{batch_id}/print-bast', [FixedAssetController::class, 'printBastByBatch'])->name('print_bast_batch');
         Route::get('/import-history/{batch_id}/print-qr', [FixedAssetController::class, 'printMassQrLabel'])->name('print_mass_qr');
 
 
-        // Jalur Riwayat Hibah
-        Route::get('/hibah-history', [App\Http\Controllers\FixedAssetController::class, 'hibahHistory'])->name('hibah_history');
-
-        // 🔥 ROUTE BARU: MASTER LIST ASET DENGAN FILTER 🔥
-        Route::get('/master-list', [FixedAssetController::class, 'masterList'])->name('master_list');
-
-        // 🔥 TAMBAHKAN ROUTE EXPORT INI 🔥
-        Route::get('/master-list/export', [FixedAssetController::class, 'exportMasterList'])->name('master_list_export');
+        // --- 3. ROUTE UTAMA INDEX & STORE ---
+        Route::get('/', [FixedAssetController::class, 'index'])->name('index');
+        Route::post('/', [FixedAssetController::class, 'store'])->name('store');
 
 
-        // 🔥 ROUTE BARU: TRANSAKSI & PENGEMBALIAN ASET 🔥
-        // Route untuk Halaman Khusus Transaksi Aset (Serah Terima & Pengembalian)
-        Route::get('/transactions', [App\Http\Controllers\FixedAssetController::class, 'transactions'])->name('transactions');
+        // --- 4. ROUTE WILDCARD ID (Wajib Paling Bawah) ---
+        Route::put('/{id}', [FixedAssetController::class, 'update'])->name('update');
+        Route::get('/{id}/history', [FixedAssetController::class, 'history'])->name('history');
+        Route::post('/{id}/return', [FixedAssetController::class, 'returnAsset'])->name('return');
+        Route::post('/{id}/handover', [FixedAssetController::class, 'handoverAsset'])->name('handover');
 
-        // Route untuk Proses Eksekusi Pengembalian (POST)
-        Route::post('/{id}/return', [App\Http\Controllers\FixedAssetController::class, 'returnAsset'])->name('return');
+        // Cetak Dokumen Spesifik Unit
+        Route::get('/{id}/bast', [FixedAssetController::class, 'printBast'])->name('bast');
+        Route::get('/{id}/bapa', [FixedAssetController::class, 'printBapa'])->name('bapa');
+        Route::get('/{id}/bapp', [FixedAssetController::class, 'printBapp'])->name('bapp');
+        Route::get('/{id}/print-qr', [FixedAssetController::class, 'printQrLabel'])->name('print_qr');
 
 
-        // 🔥 ROUTE BARU: Proses Penyerahan Aset (POST) 🔥
-        Route::post('/{id}/handover', [App\Http\Controllers\FixedAssetController::class, 'handoverAsset'])->name('handover');
-
-
-        // 🔥 ROUTE BARU: Halaman Riwayat / Perjalanan Aset 🔥
-        Route::get('/{id}/history', [App\Http\Controllers\FixedAssetController::class, 'history'])->name('history');
+        // --- ROUTE EDIT HALAMAN TERSENDIRI ---
+        Route::get('/{id}/edit', [FixedAssetController::class, 'edit'])->name('edit');
 
     });
+
+
 
     Route::prefix('assets')->name('assets.')->middleware(['can:view_assets'])->group(function () {
         Route::get('/', [AssetController::class, 'index'])->name('index');
