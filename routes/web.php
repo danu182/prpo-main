@@ -212,6 +212,9 @@ Route::middleware('auth')->group(function () {
         // --- ROUTE EDIT HALAMAN TERSENDIRI ---
         Route::get('/{id}/edit', [FixedAssetController::class, 'edit'])->name('edit');
 
+        // 🔥 Cukup gunakan nama 'destroy', karena sudah otomatis kena prefix 'fixed-assets.' dari group 🔥
+        Route::delete('/{id}', [FixedAssetController::class, 'destroy'])->name('destroy');
+
     });
 
 

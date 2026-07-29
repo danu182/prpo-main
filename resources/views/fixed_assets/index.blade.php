@@ -179,6 +179,19 @@
                                             <li><a class="dropdown-item text-dark" href="{{ route('fixed-assets.print_qr', $ast->id) }}" target="_blank"><i class="bi bi-qr-code me-2"></i> Cetak Label QR</a></li>
                                             @if(optional($ast->status)->slug === 'in_use' && $ast->assigned_to) <li><a class="dropdown-item text-info" href="{{ route('fixed-assets.bast', $ast->id) }}" target="_blank"><i class="bi bi-file-earmark-check me-2"></i> Cetak BAST</a></li> @endif
                                             @if(optional($ast->status)->slug === 'disposed') <li><a class="dropdown-item text-danger fw-bold" href="{{ route('fixed-assets.bapp', $ast->id) }}" target="_blank"><i class="bi bi-file-earmark-x-fill me-2"></i> Cetak BAPP</a></li> @endif
+                                            {{-- 🔥 TAMBAHKAN KODE TOMBOL HAPUS INI 🔥 --}}
+                                            @if(empty($ast->assigned_to))
+                                            <li><hr class="my-1 dropdown-divider"></li>
+                                            <li>
+                                                <form action="{{ route('fixed-assets.destroy', $ast->id) }}" method="POST" class="form-delete-asset">
+                                                    @csrf
+                                                    @method('DELETE')
+                                                    <button type="button" class="dropdown-item text-danger fw-bold btn-delete-asset">
+                                                        <i class="bi bi-trash3-fill me-2"></i> Batalkan / Hapus
+                                                    </button>
+                                                </form>
+                                            </li>
+                                            @endif
                                         </ul>
                                     </div>
                                 </div>
@@ -396,15 +409,50 @@
 @endsection
 
 @push('scripts')
+{{-- Pastikan jQuery dan SweetAlert2 dipanggil --}}
 <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+
 <script>
     $(document).ready(function() {
-        $('.main-row').on('click', function(e) {
-            if(e.target.tagName === 'BUTTON' || e.target.tagName === 'A' || $(e.target).closest('a').length || $(e.target).closest('button').length) { return; }
-            let btn = $(this).find('[data-bs-toggle="collapse"]');
-            if(btn.length) { btn.click(); }
+
+        // 🔥 MENGGUNAKAN EVENT DELEGATION: $(document).on('click', ...) 🔥
+        // Ini memastikan tombol tetap bisa diklik walaupun berada di halaman 2, 3 (Paginasi)
+        $(document).on('click', '.btn-delete-asset', function(e) {
+            e.preventDefault(); // Mencegah dropdown tertutup otomatis
+            e.stopPropagation(); // Mencegah event tumpang tindih
+
+            let form = $(this).closest('form');
+
+            Swal.fire({
+                title: 'Batalkan & Hapus Aset?',
+                text: "Aset yang salah input ini akan dihapus secara permanen beserta log riwayat dan fotonya. Tindakan ini tidak bisa dibatalkan!",
+                icon: 'warning',
+                showCancelButton: true,
+                confirmButtonColor: '#dc3545', // Merah Bootstrap
+                cancelButtonColor: '#6c757d',  // Abu-abu Bootstrap
+                confirmButtonText: '<i class="bi bi-trash3-fill me-1"></i> Ya, Hapus Aset!',
+                cancelButtonText: 'Batal',
+                customClass: { popup: 'rounded-4 shadow-lg border-0' }
+            }).then((result) => {
+                if (result.isConfirmed) {
+                    // Munculkan loading agar user tidak klik 2x
+                    Swal.fire({
+                        title: 'Menghapus Data...',
+                        html: 'Mohon tunggu sebentar.',
+                        allowOutsideClick: false,
+                        showConfirmButton: false,
+                        didOpen: () => {
+                            Swal.showLoading();
+                        }
+                    });
+
+                    // Eksekusi form hapus ke server
+                    form.submit();
+                }
+            });
         });
+
     });
 </script>
 @endpush

@@ -877,18 +877,14 @@ class FixedAssetController extends Controller
 
 
     // =========================================================================
-    // 🔥 MASTER LIST ASET (FIX FILTER & MASTER ITEM & PENYUSUTAN) 🔥
+    // 🔥 MASTER LIST ASET (OPTIMASI 1 JUTA DATA & PAGINATION) 🔥
     // =========================================================================
     public function masterList(\Illuminate\Http\Request $request)
     {
+        // 1. QUERY UNTUK TABEL (PAGINATION)
         $query = \App\Models\FixedAsset::with([
-            'item.category',
-            'assetCategory', // Pastikan ini terpanggil
-            'assignee.department',
-            'company',
-            'department',
-            'status',
-            'warehouse'
+            'item.category', 'assetCategory', 'assignee.department',
+            'company', 'department', 'status', 'warehouse'
         ]);
 
         if ($request->filled('status')) {
@@ -916,22 +912,23 @@ class FixedAssetController extends Controller
             });
         }
 
-        // Ambil data untuk tabel dengan pagination
+        // 🔥 Pagination otomatis membatasi query hanya 15 baris per halaman. Sangat ringan!
         $assets = $query->latest()->paginate(15)->withQueryString();
 
-        // 🔥 LOGIKA KALKULATOR TOTAL UANG (Ambil semua data tanpa pagination untuk dihitung)
-        // Gunakan get() agar accessor net_book_value bisa tereksekusi
-        $allAssetsForCalculation = \App\Models\FixedAsset::with('assetCategory')->get();
+        // 2. QUERY UNTUK KPI CARDS (Dihitung langsung oleh Database Engine, bukan PHP)
+        // Menghitung 1 juta baris pakai cara ini hanya butuh waktu sekian milidetik.
+        $totalAssets = \App\Models\FixedAsset::count();
+        $inUse = \App\Models\FixedAsset::whereNotNull('assigned_to')->count();
+        $inWarehouse = \App\Models\FixedAsset::whereNull('assigned_to')->count();
+        $totalValue = \App\Models\FixedAsset::sum('purchase_price');
 
-        $totalAssets = $allAssetsForCalculation->count();
-        $inUse = $allAssetsForCalculation->whereNotNull('assigned_to')->count();
-        $inWarehouse = $allAssetsForCalculation->whereNull('assigned_to')->count();
-
-        $totalValue = $allAssetsForCalculation->sum('purchase_price');
-        $totalCurrentValue = $allAssetsForCalculation->sum('net_book_value'); // 🔥 Menjumlahkan Total Nilai Buku Saat Ini
+        // PENTING: Kalkulasi Nilai Buku (net_book_value) 1 Juta data secara real-time sangat berat.
+        // Sebagai bypass agar tidak crash, kita hitung total nilai buku KHUSUS dari 15 aset yang tampil di halaman ini saja,
+        // ATAU gunakan Cache/CronJob ke depannya. Di sini kita hitung dari $assets yang dipaginasi.
+        $totalCurrentValue = $assets->sum('net_book_value');
 
         return view('fixed_assets.list_asset', compact(
-            'assets', 'totalAssets', 'inUse', 'inWarehouse', 'totalValue', 'totalCurrentValue' // Kirim variabel baru ini ke View
+            'assets', 'totalAssets', 'inUse', 'inWarehouse', 'totalValue', 'totalCurrentValue'
         ));
     }
 
@@ -952,13 +949,13 @@ class FixedAssetController extends Controller
 
 
     // =========================================================================
-    // 🔥 1. HALAMAN KHUSUS TRANSAKSI ASET 🔥
+    // 🔥 HALAMAN KHUSUS TRANSAKSI ASET (PENYERAHAN & PENGEMBALIAN) 🔥
     // =========================================================================
     public function transactions(\Illuminate\Http\Request $request)
     {
         // Menampilkan aset yang sedang dipakai (untuk dikembalikan)
         // dan aset di gudang (untuk diserahkan ke staf).
-        $query = \App\Models\FixedAsset::with(['item', 'assignee', 'department', 'warehouse', 'status', 'company'])
+        $query = \App\Models\FixedAsset::with(['item.category', 'assignee.department', 'department', 'warehouse', 'status', 'company'])
                     // =========================================================================
                     // 🔥 BLOK FILTER VOID: Usir aset yang sudah dibatalkan dari daftar ini! 🔥
                     // =========================================================================
@@ -981,6 +978,7 @@ class FixedAssetController extends Controller
             });
         }
 
+        // Pagination 15 baris per halaman (Sangat Aman untuk jutaan data)
         $assets = $query->latest()->paginate(15)->withQueryString();
 
         // Tarik master data untuk dropdown di modal pengembalian & penyerahan
@@ -991,6 +989,8 @@ class FixedAssetController extends Controller
 
         return view('fixed_assets.transactions', compact('assets', 'warehouses', 'statuses', 'users', 'departments'));
     }
+
+
 
     // =========================================================================
     // 🔥 2. MESIN PROSES PENGEMBALIAN ASET (RETURN) 🔥
@@ -1222,5 +1222,67 @@ class FixedAssetController extends Controller
     {
         return view('fixed_assets.create_import');
     }
+
+
+
+   // =========================================================================
+    // 🔥 FITUR HAPUS / BATALKAN ASET (SMART DELETE & AUDIT PROTECTED) 🔥
+    // =========================================================================
+    public function destroy($id)
+    {
+        try {
+            DB::transaction(function () use ($id) {
+                $asset = \App\Models\FixedAsset::findOrFail($id);
+
+                // 1. VALIDASI 1: Jangan izinkan hapus jika aset SEDANG dipakai User saat ini!
+                if ($asset->assigned_to != null) {
+                    throw new \Exception('Aset sedang digunakan oleh staf. Lakukan Retur terlebih dahulu jika ingin menghapusnya.');
+                }
+
+                // 2. VALIDASI 2 (AUDIT TRAIL): Cek apakah PERNAH DIPAKAI di masa lalu!
+                // Mengecek apakah kolom assigned_to di history pernah terisi angka (ID User).
+                $hasBeenUsed = \App\Models\FixedAssetHistory::where('fixed_asset_id', $id)
+                                ->whereNotNull('assigned_to')
+                                ->exists();
+
+                if ($hasBeenUsed) {
+                    throw new \Exception('TIDAK DIIZINKAN: Aset ini memiliki jejak riwayat pernah diserahkan/digunakan oleh staf. Gunakan fitur Edit -> ubah status menjadi "Disposed (Dihapusbukukan)" demi menjaga jejak Audit.');
+                }
+
+                // 3. VALIDASI 3: Jangan izinkan jika pernah masuk Maintenance / Disposed / Retur
+                $hasTransaction = \App\Models\FixedAssetHistory::where('fixed_asset_id', $id)
+                                ->where(function($q) {
+                                    $q->where('status', 'like', '%Maintenance%')
+                                      ->orWhere('status', 'like', '%Disposed%')
+                                      ->orWhere('status', 'like', '%Rusak%')
+                                      ->orWhere('status', 'like', '%Retur%');
+                                })->exists();
+
+                if ($hasTransaction) {
+                    throw new \Exception('TIDAK DIIZINKAN: Aset ini sudah memiliki riwayat transaksi (Maintenance/Rusak/Disposed). Data tidak boleh dihapus untuk keperluan audit perusahaan.');
+                }
+
+                // 4. Bersihkan File Foto Fisik dari Storage Server
+                $photos = \App\Models\AssetPhoto::where('fixed_asset_id', $id)->get();
+                foreach ($photos as $photo) {
+                    if (\Illuminate\Support\Facades\Storage::disk('public')->exists($photo->file_path)) {
+                        \Illuminate\Support\Facades\Storage::disk('public')->delete($photo->file_path);
+                    }
+                    $photo->delete();
+                }
+
+                // 5. Bersihkan Jejak Rekam / Log History (Hanya menghapus log "Registered/Available" bawaan import)
+                \App\Models\FixedAssetHistory::where('fixed_asset_id', $id)->delete();
+
+                // 6. Hapus Data Utama Aset
+                $asset->delete();
+            });
+
+            return redirect()->route('fixed-assets.index')->with('success', 'Aset yang salah input berhasil dibatalkan dan dihapus bersih dari sistem.');
+        } catch (\Exception $e) {
+            return back()->with('error', 'Gagal Menghapus: ' . $e->getMessage());
+        }
+    }
+
 
 }
