@@ -1226,7 +1226,7 @@ class FixedAssetController extends Controller
 
 
    // =========================================================================
-    // 🔥 FITUR HAPUS / BATALKAN ASET (SMART DELETE & AUDIT PROTECTED) 🔥
+    // 🔥 FITUR HAPUS / BATALKAN ASET (SMART DELETE & REVERSE ALL STOCK) 🔥
     // =========================================================================
     public function destroy($id)
     {
@@ -1240,13 +1240,12 @@ class FixedAssetController extends Controller
                 }
 
                 // 2. VALIDASI 2 (AUDIT TRAIL): Cek apakah PERNAH DIPAKAI di masa lalu!
-                // Mengecek apakah kolom assigned_to di history pernah terisi angka (ID User).
                 $hasBeenUsed = \App\Models\FixedAssetHistory::where('fixed_asset_id', $id)
                                 ->whereNotNull('assigned_to')
                                 ->exists();
 
                 if ($hasBeenUsed) {
-                    throw new \Exception('TIDAK DIIZINKAN: Aset ini memiliki jejak riwayat pernah diserahkan/digunakan oleh staf. Gunakan fitur Edit -> ubah status menjadi "Disposed (Dihapusbukukan)" demi menjaga jejak Audit.');
+                    throw new \Exception('TIDAK DIIZINKAN: Aset ini memiliki jejak riwayat pernah diserahkan/digunakan oleh staf. Gunakan fitur Edit -> ubah status menjadi "Disposed" demi menjaga jejak Audit.');
                 }
 
                 // 3. VALIDASI 3: Jangan izinkan jika pernah masuk Maintenance / Disposed / Retur
@@ -1259,10 +1258,66 @@ class FixedAssetController extends Controller
                                 })->exists();
 
                 if ($hasTransaction) {
-                    throw new \Exception('TIDAK DIIZINKAN: Aset ini sudah memiliki riwayat transaksi (Maintenance/Rusak/Disposed). Data tidak boleh dihapus untuk keperluan audit perusahaan.');
+                    throw new \Exception('TIDAK DIIZINKAN: Aset ini sudah memiliki riwayat transaksi aktif. Data tidak boleh dihapus untuk keperluan audit perusahaan.');
                 }
 
-                // 4. Bersihkan File Foto Fisik dari Storage Server
+                // =========================================================================
+                // 🔥 4. REVERSE STOK: MASTER ITEM, INVENTORY STOCK & SERIAL NUMBER 🔥
+                // =========================================================================
+                if ($asset->item_id && $asset->warehouse_id) {
+                    $masterItem = \App\Models\Item::lockForUpdate()->find($asset->item_id);
+                    if ($masterItem) {
+                        $currStock = (float) $masterItem->current_stock;
+
+                        // 4A. Tambahkan 1 unit kembali ke stok Master Barang
+                        $masterItem->update(['current_stock' => $currStock + 1]);
+
+                        // 4B. Kembalikan stok fisik ke Gudang Spesifik (Inventory Stock)
+                        $invStock = \App\Models\InventoryStock::where('item_id', $masterItem->id)
+                                        ->where('warehouse_id', $asset->warehouse_id)
+                                        ->first();
+
+                        if ($invStock) {
+                            $invStock->increment('stock_qty', 1);
+                        } else {
+                            \App\Models\InventoryStock::create([
+                                'company_id'       => $asset->company_id,
+                                'warehouse_id'     => $asset->warehouse_id,
+                                'item_id'          => $masterItem->id,
+                                'stock_qty'        => 1,
+                                'reference_number' => 'DEL-AST-' . $asset->asset_number,
+                                'notes'            => 'Pengembalian dari Hapus Aset',
+                            ]);
+                        }
+
+                        // 4C. Catat di Kartu Mutasi Stok bahwa barang kembali masuk (IN)
+                        \App\Models\StockMutation::create([
+                            'item_id'          => $masterItem->id,
+                            'warehouse_id'     => $asset->warehouse_id,
+                            'type'             => 'IN', // Tipe Masuk
+                            'qty'              => 1,
+                            'balance_before'   => $currStock,
+                            'balance_after'    => $currStock + 1,
+                            'reference_number' => 'DEL-AST-' . $asset->asset_number,
+                            'notes'            => "Pengembalian stok (Batal Registrasi/Hapus Aset)",
+                            'created_by'       => auth()->id()
+                        ]);
+
+                        // 4D. Bebaskan Serial Number (SN) agar berstatus AVAILABLE kembali
+                        if (!empty($asset->serial_number)) {
+                            \DB::table('item_serials')
+                                ->where('item_id', $masterItem->id)
+                                ->where('serial_number', $asset->serial_number)
+                                ->update([
+                                    'status' => 'AVAILABLE',
+                                    'updated_at' => now()
+                                ]);
+                        }
+                    }
+                }
+                // =========================================================================
+
+                // 5. Bersihkan File Foto Fisik dari Storage Server
                 $photos = \App\Models\AssetPhoto::where('fixed_asset_id', $id)->get();
                 foreach ($photos as $photo) {
                     if (\Illuminate\Support\Facades\Storage::disk('public')->exists($photo->file_path)) {
@@ -1271,14 +1326,14 @@ class FixedAssetController extends Controller
                     $photo->delete();
                 }
 
-                // 5. Bersihkan Jejak Rekam / Log History (Hanya menghapus log "Registered/Available" bawaan import)
+                // 6. Bersihkan Jejak Rekam / Log History
                 \App\Models\FixedAssetHistory::where('fixed_asset_id', $id)->delete();
 
-                // 6. Hapus Data Utama Aset
+                // 7. Hapus Data Utama Aset
                 $asset->delete();
             });
 
-            return redirect()->route('fixed-assets.index')->with('success', 'Aset yang salah input berhasil dibatalkan dan dihapus bersih dari sistem.');
+            return redirect()->route('fixed-assets.index')->with('success', 'Aset yang salah input berhasil dihapus. Serial Number dan Stok dikembalikan utuh ke gudang.');
         } catch (\Exception $e) {
             return back()->with('error', 'Gagal Menghapus: ' . $e->getMessage());
         }

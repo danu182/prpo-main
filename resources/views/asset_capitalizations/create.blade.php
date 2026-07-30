@@ -3,43 +3,56 @@
 @push('css')
 <link href="https://cdn.quilljs.com/1.3.6/quill.snow.css" rel="stylesheet">
 <style>
+    /* 🔥 UI/UX ENHANCEMENTS 🔥 */
     .asset-card { transition: all 0.3s ease; border-left: 5px solid #0dcaf0; }
-    .asset-card:hover { transform: translateY(-3px); box-shadow: 0 .5rem 1rem rgba(0,0,0,.15)!important; }
+    .asset-card:hover { transform: translateY(-4px); box-shadow: 0 10px 20px rgba(0,0,0,.08)!important; }
     .quill-editor { background: #fff; min-height: 100px; max-height: 200px; overflow-y: auto; border-radius: 0 0 8px 8px; }
-    .ql-toolbar.ql-snow { border-radius: 8px 8px 0 0; background: #f8f9fa; }
-    select option:disabled { background-color: #e9ecef; color: #6c757d; font-style: italic; }
-    .photo-preview-item { transition: transform 0.2s ease-in-out; }
-    .photo-preview-item:hover { transform: scale(1.1); z-index: 10; }
+    .ql-toolbar.ql-snow { border-radius: 8px 8px 0 0; background: #f8f9fa; border-color: #dee2e6; }
+    .ql-container.ql-snow { border-color: #dee2e6; }
 
-    /* Wizard Steps CSS */
-    .step-container { display: none; animation: fadeIn 0.4s ease-in-out; }
+    select option:disabled { background-color: #f1f5f9; color: #94a3b8; font-style: italic; }
+    .photo-preview-item { transition: transform 0.2s ease-in-out; border: 1px solid #e2e8f0; }
+    .photo-preview-item:hover { transform: scale(1.15); z-index: 10; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
+
+    /* Wizard Steps CSS (Smooth Transition) */
+    .step-container { display: none; animation: fadeIn 0.4s cubic-bezier(0.4, 0, 0.2, 1); }
     .step-active { display: block; }
-    @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+    @keyframes fadeIn { from { opacity: 0; transform: translateY(15px); } to { opacity: 1; transform: translateY(0); } }
 
-    .table-hover tbody tr:hover { background-color: #f8f9fa; cursor: pointer; }
+    .table-hover tbody tr { transition: background-color 0.2s; }
+    .table-hover tbody tr:hover { background-color: #f8fafc; cursor: pointer; }
     .btn-dashed { border-style: dashed !important; border-width: 2px !important; }
 </style>
 @endpush
 
 @section('content')
-<div class="px-0 container-fluid text-dark">
-    <div class="mb-4 d-flex justify-content-between align-items-center">
+<div class="px-0 container-fluid text-dark px-md-3">
+    <div class="mb-4 d-flex flex-column flex-md-row justify-content-between align-items-md-center gap-3">
         <div>
-            <h4 class="mb-0 fw-bold text-dark">
-                <i class="bi bi-magic text-info me-2"></i> Pengakuan Aset (Capitalization)
+            <h4 class="mb-0 fw-bold text-dark d-flex align-items-center">
+                <div class="bg-info bg-opacity-10 text-info rounded-3 p-2 me-3 d-inline-flex">
+                    <i class="bi bi-magic fs-4"></i>
+                </div>
+                Pengakuan Aset (Capitalization)
             </h4>
-            <div class="mt-1 text-muted small">Alur kapitalisasi aset bertahap untuk akurasi data yang lebih baik.</div>
+            <div class="mt-2 text-muted small">Alur kapitalisasi aset bertahap untuk akurasi data inventaris yang presisi.</div>
         </div>
-        <button type="button" class="btn btn-sm btn-outline-secondary rounded-pill fw-bold" data-bs-toggle="modal" data-bs-target="#modalAturan">
+        <button type="button" class="btn btn-sm btn-outline-secondary rounded-pill fw-bold bg-white shadow-sm" data-bs-toggle="modal" data-bs-target="#modalAturan">
             <i class="bi bi-info-circle me-1"></i> Dasar Hukum & Akuntansi
         </button>
     </div>
 
     @if(session('success'))
-        <div class="shadow-sm alert alert-success fw-bold rounded-3"><i class="bi bi-check-circle me-2"></i>{{ session('success') }}</div>
+        <div class="shadow-sm alert alert-success fw-bold rounded-4 border-0 border-start border-4 border-success alert-dismissible fade show">
+            <i class="bi bi-check-circle-fill me-2 text-success"></i>{{ session('success') }}
+            <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+        </div>
     @endif
     @if(session('error'))
-        <div class="shadow-sm alert alert-danger fw-bold rounded-3"><i class="bi bi-exclamation-triangle me-2"></i>{{ session('error') }}</div>
+        <div class="shadow-sm alert alert-danger fw-bold rounded-4 border-0 border-start border-4 border-danger alert-dismissible fade show">
+            <i class="bi bi-exclamation-triangle-fill me-2 text-danger"></i>{{ session('error') }}
+            <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+        </div>
     @endif
 
     {{-- ========================================================== --}}
@@ -49,9 +62,9 @@
         <div class="mb-4 border-0 shadow-sm card rounded-4">
             <div class="flex-wrap gap-3 p-4 bg-white card-header border-bottom d-flex justify-content-between align-items-center rounded-top-4">
                 <h5 class="mb-0 fw-bold text-primary"><i class="bi bi-1-circle-fill me-2"></i>Langkah 1: Pilih Dokumen Penerimaan (GR)</h5>
-                <div class="input-group" style="max-width: 350px;">
-                    <span class="bg-white input-group-text border-end-0 text-muted"><i class="bi bi-search"></i></span>
-                    <input type="text" id="search-gr" class="form-control border-start-0 ps-0" placeholder="Cari No GR, PO, atau Vendor...">
+                <div class="input-group rounded-pill shadow-sm" style="max-width: 350px;">
+                    <span class="bg-white input-group-text border-end-0 text-muted rounded-start-pill ps-3"><i class="bi bi-search"></i></span>
+                    <input type="text" id="search-gr" class="form-control border-start-0 rounded-end-pill" placeholder="Cari No GR, PO, atau Vendor...">
                 </div>
             </div>
             <div class="p-0 card-body">
@@ -76,26 +89,27 @@
                                 <tr class="gr-row">
                                     <td class="px-4 py-3">
                                         <div class="fw-bold text-dark fs-6 searchable">{{ $gr->gr_number }}</div>
-                                        <div class="small text-muted">Tgl Terima: {{ date('d M Y', strtotime($gr->received_date)) }}</div>
+                                        <div class="small text-muted font-monospace mt-1"><i class="bi bi-calendar3 me-1"></i>{{ date('d M Y', strtotime($gr->received_date)) }}</div>
                                     </td>
                                     <td class="py-3 searchable">
                                         <div class="fw-bold text-primary">{{ $poNumber }}</div>
-                                        <div class="small text-muted"><i class="bi bi-building me-1"></i>{{ $vendorName }} (Tgl: {{ $poDate }})</div>
+                                        <div class="small text-muted mt-1"><i class="bi bi-building me-1"></i>{{ $vendorName }}</div>
                                     </td>
                                     <td class="py-3 searchable">
-                                        <span class="border badge bg-secondary-subtle text-secondary"><i class="bi bi-box-seam me-1"></i>{{ optional($gr->warehouse)->name ?? 'Gudang Utama' }}</span>
+                                        <span class="border badge bg-secondary-subtle text-secondary px-2 py-1"><i class="bi bi-box-seam me-1"></i>{{ optional($gr->warehouse)->name ?? 'Gudang Utama' }}</span>
                                     </td>
                                     <td class="px-4 py-3 text-end">
                                         <button type="button" class="px-4 shadow-sm btn btn-primary btn-sm rounded-pill fw-bold btn-select-gr" data-id="{{ $gr->id }}" data-gr="{{ $gr->gr_number }}" data-wh="{{ optional($gr->warehouse)->name ?? 'Gudang Utama' }}">
-                                            Pilih <i class="bi bi-arrow-right ms-1"></i>
+                                            Pilih Dokumen <i class="bi bi-arrow-right ms-1"></i>
                                         </button>
                                     </td>
                                 </tr>
                             @empty
                                 <tr>
                                     <td colspan="4" class="py-5 text-center text-muted fw-bold">
-                                        <i class="mb-2 opacity-50 bi bi-inbox fs-1 d-block text-secondary"></i>
-                                        Tidak ada dokumen GR yang memiliki sisa stok untuk dijadikan aset.
+                                        <i class="mb-3 opacity-25 bi bi-inbox display-4 d-block text-secondary"></i>
+                                        <h6 class="text-dark">Tidak ada dokumen GR tersedia.</h6>
+                                        <p class="small fw-normal">Semua dokumen sudah habis dikapitalisasi atau belum ada penerimaan baru.</p>
                                     </td>
                                 </tr>
                             @endforelse
@@ -111,23 +125,28 @@
     {{-- ========================================================== --}}
     <div id="step-2" class="step-container">
         <div class="mb-3 d-flex align-items-center">
-            <button type="button" class="px-3 border shadow-sm btn btn-light rounded-pill fw-bold text-secondary" onclick="goToStep(1)">
-                <i class="bi bi-arrow-left me-1"></i> Kembali ke Daftar GR
+            <button type="button" class="px-4 border shadow-sm btn btn-white rounded-pill fw-bold text-secondary bg-white" onclick="goToStep(1)">
+                <i class="bi bi-arrow-left me-1"></i> Kembali
             </button>
         </div>
-        <div class="mb-4 border-0 shadow-sm card rounded-4">
-            <div class="p-4 bg-white card-header border-bottom rounded-top-4">
-                <h5 class="mb-1 fw-bold text-primary"><i class="bi bi-2-circle-fill me-2"></i>Langkah 2: Pilih Item Barang</h5>
-                <div class="small text-muted">Dokumen: <strong class="text-dark" id="lbl-selected-gr"></strong> | Lokasi: <strong class="text-dark" id="lbl-selected-wh"></strong></div>
+        <div class="mb-4 border-0 shadow-sm card rounded-4 border-top border-4 border-primary">
+            <div class="p-4 bg-white card-header border-bottom rounded-top-4 d-flex justify-content-between align-items-center flex-wrap gap-2">
+                <div>
+                    <h5 class="mb-1 fw-bold text-primary"><i class="bi bi-2-circle-fill me-2"></i>Langkah 2: Pilih Item Barang</h5>
+                    <div class="small text-muted">Dari Dokumen: <strong class="text-dark bg-light px-2 py-1 rounded" id="lbl-selected-gr"></strong></div>
+                </div>
+                <div class="text-end">
+                    <span class="badge bg-light text-dark border"><i class="bi bi-geo-alt me-1"></i> <span id="lbl-selected-wh"></span></span>
+                </div>
             </div>
             <div class="p-0 card-body">
                 <div class="table-responsive">
                     <table class="table mb-0 align-middle table-hover">
                         <thead class="table-light">
                             <tr>
-                                <th class="px-4 py-3 text-muted small text-uppercase fw-bold">Kode & Nama Barang</th>
-                                <th class="py-3 text-center text-muted small text-uppercase fw-bold">Total GR</th>
-                                <th class="py-3 text-center text-muted small text-uppercase fw-bold">Sisa (Siap Aset)</th>
+                                <th class="px-4 py-3 text-muted small text-uppercase fw-bold">Spesifikasi Item</th>
+                                <th class="py-3 text-center text-muted small text-uppercase fw-bold">Total Diterima (GR)</th>
+                                <th class="py-3 text-center text-muted small text-uppercase fw-bold">Sisa Belum Aset</th>
                                 <th class="px-4 py-3 text-muted small text-uppercase fw-bold text-end">Aksi</th>
                             </tr>
                         </thead>
@@ -145,8 +164,8 @@
     {{-- ========================================================== --}}
     <div id="step-3" class="step-container">
         <div class="mb-3 d-flex align-items-center">
-            <button type="button" class="px-3 border shadow-sm btn btn-light rounded-pill fw-bold text-secondary" onclick="goToStep(2)">
-                <i class="bi bi-arrow-left me-1"></i> Kembali Pilih Item
+            <button type="button" class="px-4 border shadow-sm btn btn-white rounded-pill fw-bold text-secondary bg-white" onclick="goToStep(2)">
+                <i class="bi bi-arrow-left me-1"></i> Batal
             </button>
         </div>
 
@@ -157,12 +176,12 @@
 
             <div class="border-0 border-4 shadow-sm card border-top border-info rounded-4">
                 <div class="p-4 bg-white card-header border-bottom rounded-top-4">
-                    <h5 class="mb-0 fw-bold text-info"><i class="bi bi-3-circle-fill me-2"></i>Langkah 3: Detail Pengakuan Aset</h5>
+                    <h5 class="mb-0 fw-bold text-info"><i class="bi bi-3-circle-fill me-2"></i>Langkah 3: Registrasi Rincian Unit Aset</h5>
                 </div>
 
-                <div class="p-4 card-body" style="background-color: #f8f9fa;">
+                <div class="p-4 card-body" style="background-color: #f8fafc;">
                     <!-- Master Item Header & Qty Input -->
-                    <div class="pb-4 mb-4 row align-items-center border-bottom" id="item-header-container">
+                    <div class="pb-4 mb-4 row align-items-center border-bottom border-light" id="item-header-container">
                         <!-- Diisi oleh JS -->
                     </div>
 
@@ -170,9 +189,9 @@
                     <div id="dynamic-spec-container" class="row g-4"></div>
                 </div>
 
-                <div class="p-4 bg-white card-footer text-end border-top rounded-bottom-4">
+                <div class="p-4 bg-white card-footer d-flex justify-content-end align-items-center border-top rounded-bottom-4 gap-2">
                     <button type="submit" class="px-5 text-white shadow-sm btn btn-info fw-bold rounded-pill" id="btn-submit" disabled>
-                        <i class="bi bi-save me-2"></i> Simpan Pengakuan Aset
+                        <i class="bi bi-save me-2"></i> Simpan & Kapitalisasi
                     </button>
                 </div>
             </div>
@@ -183,20 +202,17 @@
 {{-- MODAL EDUKASI --}}
 <div class="modal fade" id="modalAturan" tabindex="-1" aria-hidden="true">
     <div class="modal-dialog modal-dialog-centered modal-lg">
-        <div class="border-0 modal-content rounded-4">
-            <div class="text-white modal-header bg-info rounded-top-4">
-                <h5 class="modal-title fw-bold"><i class="bi bi-book me-2"></i> Standar Pengakuan & Dasar Hukum Aset</h5>
+        <div class="border-0 shadow-lg modal-content rounded-4">
+            <div class="text-white modal-header bg-info rounded-top-4 border-bottom-0">
+                <h5 class="modal-title fw-bold"><i class="bi bi-book me-2"></i> Standar Pengakuan Aset</h5>
                 <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
             </div>
-            <div class="p-4 modal-body text-secondary small">
-                <h6 class="mb-2 fw-bold text-dark"><i class="bi bi-calculator me-1 text-info"></i> 1. Harga Perolehan (PSAK 16 & UU PPh)</h6>
-                <p>Mengacu pada <strong>PSAK 16</strong> dan ditegaskan dalam <strong>Pasal 10 Ayat (1) UU Pajak Penghasilan (UU HPP No. 7 Tahun 2021)</strong>, Harga Perolehan adalah seluruh pengeluaran bersih hingga aset siap digunakan.</p>
-                <div class="p-2 mb-3 border rounded bg-light text-dark fw-bold font-monospace">
-                    Harga Perolehan = (Harga Beli / DPP) - Diskon + Biaya Atribusional
+            <div class="p-4 modal-body text-secondary small bg-light">
+                <h6 class="mb-2 fw-bold text-dark"><i class="bi bi-calculator me-1 text-info"></i> 1. Harga Perolehan (PSAK 16)</h6>
+                <p>Harga Perolehan adalah seluruh pengeluaran bersih hingga aset siap digunakan sesuai kondisi fungsionalnya.</p>
+                <div class="p-3 mb-0 border shadow-sm rounded-3 bg-white text-dark fw-bold font-monospace text-center fs-6">
+                    DPP - Diskon + Biaya Atribusional = Harga Perolehan
                 </div>
-            </div>
-            <div class="modal-footer border-top-0">
-                <button type="button" class="px-4 btn btn-secondary btn-sm rounded-pill" data-bs-dismiss="modal">Saya Mengerti</button>
             </div>
         </div>
     </div>
@@ -222,6 +238,7 @@
     function goToStep(step) {
         $('.step-container').removeClass('step-active');
         $(`#step-${step}`).addClass('step-active');
+        window.scrollTo({ top: 0, behavior: 'smooth' });
     }
 
     $('#search-gr').on('keyup', function() {
@@ -239,7 +256,7 @@
         let btn = $(this);
         let originalText = btn.html();
 
-        btn.html('<span class="spinner-border spinner-border-sm"></span> Memuat...');
+        btn.html('<span class="spinner-border spinner-border-sm me-1"></span> Menarik Data...');
         btn.prop('disabled', true);
 
         $('#form_gr_id').val(grId);
@@ -260,8 +277,8 @@
                 globalSnData = {};
                 globalSpecData = {};
 
-                if (res.items.length === 0) {
-                    tbody.append(`<tr><td colspan="4" class="py-4 text-center text-danger fw-bold"><i class="bi bi-exclamation-circle me-1"></i> Semua item di dokumen ini sudah dikapitalisasi.</td></tr>`);
+                if (!res.items || res.items.length === 0) {
+                    tbody.append(`<tr><td colspan="4" class="py-5 text-center text-danger fw-bold"><i class="bi bi-check-circle display-4 d-block mb-3 text-success opacity-50"></i>Semua item di dokumen GR ini sudah dikapitalisasi 100%.</td></tr>`);
                 } else {
                     res.items.forEach((item, index) => {
                         globalSnData[item.item_id] = item.available_sns || [];
@@ -276,14 +293,14 @@
                                 <td class="px-4 py-3">
                                     <div class="fw-bold text-dark fs-6">${specificName}</div>
                                     ${masterHtml}
-                                    <div class="mt-1 small text-muted">Kode: <span class="badge bg-secondary-subtle text-secondary">${item.item_code}</span></div>
+                                    <div class="mt-1 small text-muted">Kode: <span class="badge bg-secondary-subtle text-secondary border border-secondary-subtle">${item.item_code}</span></div>
                                 </td>
                                 <td class="py-3 text-center fw-bold text-secondary">${item.gr_qty} ${item.base_uom}</td>
                                 <td class="py-3 text-center">
-                                    <span class="px-3 py-2 badge bg-danger fs-6 rounded-pill">${item.max_capitalizable} ${item.base_uom}</span>
+                                    <span class="px-3 py-2 badge bg-danger fs-6 rounded-pill shadow-sm">${item.max_capitalizable} ${item.base_uom}</span>
                                 </td>
                                 <td class="px-4 py-3 text-end">
-                                    <button type="button" class="px-3 btn btn-outline-primary btn-sm rounded-pill fw-bold btn-select-item" data-idx="${index}">
+                                    <button type="button" class="px-4 btn btn-outline-primary btn-sm rounded-pill fw-bold btn-select-item" data-idx="${index}">
                                         Kapitalisasi <i class="bi bi-magic ms-1"></i>
                                     </button>
                                 </td>
@@ -295,7 +312,7 @@
             },
             error: function() {
                 btn.html(originalText).prop('disabled', false);
-                Swal.fire('Error', 'Gagal memuat data item dari server.', 'error');
+                Swal.fire('Koneksi Terputus', 'Gagal memuat data item dari server.', 'error');
             }
         });
     });
@@ -303,29 +320,29 @@
     $(document).on('click', '.btn-select-item', function() {
         let index = $(this).data('idx');
         let item = currentGrItems[index];
-
         let specificName = item.specific_name || item.item_name;
 
         $('#dynamic-spec-container').empty();
         $('#btn-submit').prop('disabled', true);
 
-        // 🔥 PERBAIKAN: Input Group Dilebarkan & Font Diperbesar 🔥
         let headerHtml = `
-            <div class="col-md-7">
+            <div class="col-md-7 mb-3 mb-md-0">
                 <div class="fw-bolder fs-4 text-dark text-uppercase">${specificName}</div>
-                <div class="mt-2 text-muted">Kode Master: <span class="badge bg-secondary-subtle text-secondary fs-6">${item.item_code}</span></div>
+                <div class="mt-2 text-muted d-flex align-items-center gap-2">
+                    <span class="badge bg-secondary-subtle text-secondary border fs-6"><i class="bi bi-upc-scan"></i> ${item.item_code}</span>
+                    <span class="badge bg-light text-danger border border-danger">Maks: ${item.max_capitalizable} Sisa</span>
+                </div>
             </div>
             <div class="col-md-5">
-                <div class="p-3 bg-white border shadow-sm d-flex align-items-center justify-content-between justify-content-md-end border-info rounded-4">
-                    <label class="mb-0 fw-bold text-info me-3 text-nowrap"><i class="bi bi-box-seam me-1"></i> Jadikan Aset :</label>
-                    <div class="input-group input-group-lg" style="width: 250px; flex-wrap: nowrap;">
-                        <input type="number" name="items[${item.item_id}][qty]" class="text-center form-control fw-bolder border-info text-dark qty-input fs-3"
+                <div class="p-3 bg-white border shadow-sm d-flex align-items-center justify-content-between justify-content-md-end border-info border-2 rounded-4">
+                    <label class="mb-0 fw-bold text-info me-3 text-nowrap"><i class="bi bi-boxes me-1"></i> Jadikan Aset :</label>
+                    <div class="input-group input-group-lg" style="width: 200px; flex-wrap: nowrap;">
+                        <input type="number" name="items[${item.item_id}][qty]" class="text-center form-control fw-bolder border-info text-dark qty-input fs-4"
                             data-item="${item.item_id}" data-name="${specificName}" data-price="${item.default_price}" data-date="${item.default_date}"
                             min="0" max="${item.max_capitalizable}" value="0" style="min-width: 80px;">
-                        <span class="text-white input-group-text bg-info fw-bold border-info fs-5">${item.base_uom}</span>
+                        <span class="text-white input-group-text bg-info fw-bold border-info fs-6">${item.base_uom}</span>
                     </div>
                 </div>
-                <div class="mt-2 text-end small text-muted">Maksimal sisa: <strong class="text-danger">${item.max_capitalizable}</strong> unit.</div>
             </div>
         `;
 
@@ -367,46 +384,45 @@
             }
 
             container.append(`
-                <div class="col-md-6">
-                    <div class="shadow-sm card asset-card h-100 rounded-3">
-                        <div class="py-2 bg-white card-header d-flex justify-content-between align-items-center">
-                            <span class="fw-bold text-info"><i class="bi bi-pc-display me-1"></i> Unit #${i+1}</span>
+                <div class="col-lg-6">
+                    <div class="shadow-sm card asset-card h-100 rounded-4 border-0 bg-white">
+                        <div class="py-3 px-4 bg-transparent border-bottom card-header d-flex justify-content-between align-items-center">
+                            <span class="fw-bolder text-info fs-6"><i class="bi bi-pc-display me-1"></i> Registrasi Unit #${i+1}</span>
                         </div>
-                        <div class="p-3 card-body d-flex flex-column">
+                        <div class="p-4 card-body d-flex flex-column">
 
                             <div class="px-3 py-2 mb-3 border bg-info-subtle text-info-emphasis border-info-subtle rounded-3 small">
-                                <div class="mb-1 d-flex justify-content-between align-items-center">
-                                    <span><i class="bi bi-calculator me-1"></i> <strong>Harga Perolehan:</strong></span>
-                                    <span class="fw-bold fs-6 text-dark">Rp ${defaultPrice.toLocaleString('id-ID')}</span>
+                                <div class="d-flex justify-content-between align-items-center">
+                                    <span><i class="bi bi-tag-fill me-1"></i> <strong>Nilai Buku / Perolehan:</strong></span>
+                                    <span class="fw-bolder fs-6 text-dark">Rp ${defaultPrice.toLocaleString('id-ID')}</span>
                                 </div>
                             </div>
 
                             <div class="mb-3">
-                                <label class="mb-1 small text-muted fw-bold">Penamaan Spesifik Aset <span class="text-danger">*</span></label>
-                                <input type="text" name="items[${itemId}][details][${i}][specific_name]" class="form-control border-primary" value="${itemName}" required>
-                                <div class="form-text" style="font-size: 0.7rem;"><i class="bi bi-info-circle"></i> Bisa disesuaikan jika nama unit ini berbeda dari Master.</div>
+                                <label class="mb-1 small text-muted fw-bold">Penamaan Spesifik Unit Aset <span class="text-danger">*</span></label>
+                                <input type="text" name="items[${itemId}][details][${i}][specific_name]" class="form-control border-primary-subtle" value="${itemName}" required>
                             </div>
-                            <div class="mb-3 row g-2">
-                                <div class="col-sm-6">
+                            <div class="mb-3 row g-3">
+                                <div class="col-md-6">
                                     <label class="mb-1 small text-muted fw-bold">No. Akuntansi (FA)</label>
-                                    <input type="text" name="items[${itemId}][details][${i}][accounting_no]" class="form-control form-control-sm acc-no-input" placeholder="Opsional...">
+                                    <input type="text" name="items[${itemId}][details][${i}][accounting_no]" class="form-control form-control-sm acc-no-input border-secondary-subtle" placeholder="Opsional...">
                                 </div>
-                                <div class="col-sm-6">
+                                <div class="col-md-6">
                                     <label class="mb-1 small text-muted fw-bold">Pilih Serial Number (SN)</label>
                                     ${snInputHtml}
                                 </div>
                             </div>
-                            <div class="pt-3 mt-1 mb-3 row g-2 border-top">
-                                <div class="col-sm-4">
-                                    <label class="mb-1 small text-primary-emphasis fw-bold" style="font-size:0.7rem;">Tgl Perolehan</label>
+                            <div class="pt-3 mt-1 mb-3 row g-3 border-top">
+                                <div class="col-md-4">
+                                    <label class="mb-1 small text-primary-emphasis fw-bold" style="font-size:0.75rem;">Tgl Perolehan</label>
                                     <input type="date" name="items[${itemId}][details][${i}][acquisition_date]" class="form-control form-control-sm border-primary-subtle" value="${defaultDate}" required>
                                 </div>
-                                <div class="col-sm-4">
-                                    <label class="mb-1 small text-primary-emphasis fw-bold" style="font-size:0.7rem;">Harga (Rp)</label>
+                                <div class="col-md-4">
+                                    <label class="mb-1 small text-primary-emphasis fw-bold" style="font-size:0.75rem;">Harga Satuan (Rp)</label>
                                     <input type="number" name="items[${itemId}][details][${i}][accounting_value]" class="form-control form-control-sm border-primary-subtle" value="${defaultPrice}">
                                 </div>
-                                <div class="col-sm-4">
-                                    <label class="mb-1 small text-primary-emphasis fw-bold" style="font-size:0.7rem;">Kategori Pajak</label>
+                                <div class="col-md-4">
+                                    <label class="mb-1 small text-primary-emphasis fw-bold" style="font-size:0.75rem;">Kategori Pajak</label>
                                     <select name="items[${itemId}][details][${i}][asset_category_id]" class="form-select form-select-sm border-primary-subtle" required>
                                         ${categoryOptions}
                                     </select>
@@ -414,30 +430,26 @@
                             </div>
 
                             <input type="hidden" name="items[${itemId}][details][${i}][notes]" id="hidden-notes-${itemId}-${i}">
-                            <div class="mb-3">
-                                <label class="mb-1 small text-muted fw-bold">Spesifikasi / Catatan</label>
+                            <div class="mb-4">
+                                <label class="mb-1 small text-muted fw-bold">Spesifikasi Detail / Catatan</label>
                                 <div id="editor-${itemId}-${i}" class="quill-editor"></div>
                             </div>
 
-                            {{-- 🔥 LAYOUT BARU UPLOAD FOTO 🔥 --}}
                             <div class="p-3 mt-auto bg-white border rounded-3 border-primary-subtle">
                                 <label class="pb-2 mb-3 d-block text-primary fw-bold border-bottom" style="font-size:0.85rem;">
                                     <i class="bi bi-images me-1"></i> Lampiran Foto Fisik Aset
                                 </label>
-
                                 <div id="photo-inputs-container-${itemId}-${i}" class="gap-2 mb-3 d-flex flex-column">
                                     <div class="shadow-sm input-group input-group-sm photo-input-row">
                                         <input type="file" name="items[${itemId}][details][${i}][photos][]" class="form-control border-primary-subtle single-photo-input" accept="image/*">
-                                        <button type="button" class="btn btn-danger remove-photo-row" title="Hapus baris ini"><i class="bi bi-trash"></i></button>
+                                        <button type="button" class="btn btn-danger remove-photo-row" title="Hapus"><i class="bi bi-trash"></i></button>
                                     </div>
                                 </div>
-
                                 <button type="button" class="btn btn-sm btn-light border-primary text-primary w-100 fw-bold add-photo-btn btn-dashed" data-item="${itemId}" data-unit="${i}">
-                                    <i class="bi bi-plus-circle me-1"></i> Tambah File Foto Lainnya
+                                    <i class="bi bi-plus-circle me-1"></i> Tambah Foto Lainnya
                                 </button>
-
-                                <div id="preview-${itemId}-${i}" class="flex-wrap gap-2 p-2 mt-3 border rounded bg-light d-flex empty-preview align-items-center justify-content-center" style="min-height: 80px;">
-                                    <span class="text-muted small fst-italic"><i class="bi bi-image me-1"></i> Preview foto akan muncul di sini...</span>
+                                <div id="preview-${itemId}-${i}" class="flex-wrap gap-2 p-3 mt-3 border rounded bg-light d-flex empty-preview align-items-center justify-content-center" style="min-height: 90px;">
+                                    <span class="text-muted small fst-italic"><i class="bi bi-camera me-1"></i> Preview foto muncul di sini...</span>
                                 </div>
                             </div>
 
@@ -491,22 +503,17 @@
             <input type="file" name="items[${itemId}][details][${unitIdx}][photos][]" class="form-control border-primary-subtle single-photo-input" accept="image/*">
             <button type="button" class="btn btn-danger remove-photo-row" title="Hapus baris ini"><i class="bi bi-trash"></i></button>
         </div>`);
-
-        updatePhotoRemoveButtons(container);
+        container.find('.remove-photo-row').prop('disabled', false);
     });
 
     $(document).on('click', '.remove-photo-row', function() {
         let row = $(this).closest('.photo-input-row');
         let container = row.closest('div[id^="photo-inputs-container-"]');
         row.remove();
-        updatePhotoRemoveButtons(container);
+        container.find('.remove-photo-row').prop('disabled', false);
         triggerPhotoPreview(container.closest('.card-body'));
     });
 
-    function updatePhotoRemoveButtons(container) {
-        // 🔥 Biarkan tombol hapus selalu aktif agar user bisa mengosongkan foto
-        container.find('.remove-photo-row').prop('disabled', false);
-    }
     $(document).on('change', '.single-photo-input', function() {
         triggerPhotoPreview($(this).closest('.card-body'));
     });
@@ -533,7 +540,7 @@
             }
         });
 
-        if (!hasFiles) { previewDiv.html('<span class="text-muted small fst-italic"><i class="bi bi-image me-1"></i> Preview foto akan muncul di sini...</span>'); }
+        if (!hasFiles) { previewDiv.html('<span class="text-muted small fst-italic"><i class="bi bi-camera me-1"></i> Preview foto muncul di sini...</span>'); }
     }
 
     $('#form-capitalize').on('submit', function(e) {
@@ -548,7 +555,7 @@
 
         if (hasDuplicateAcc) {
             e.preventDefault();
-            Swal.fire({ icon: 'error', title: 'Peringatan!', text: 'Nomor Akuntansi (FA) ada yang kembar.', confirmButtonColor: '#dc3545' });
+            Swal.fire({ icon: 'error', title: 'Data Kembar!', text: 'Terdapat Nomor Akuntansi (FA) yang dimasukkan berulang.', confirmButtonColor: '#dc3545' });
             return false;
         }
 
@@ -563,11 +570,11 @@
 
         if (hasDuplicateSn) {
             e.preventDefault();
-            Swal.fire({ icon: 'error', title: 'Peringatan Fatal!', text: 'Terdapat Serial Number (SN) yang kembar.', confirmButtonColor: '#dc3545' });
+            Swal.fire({ icon: 'error', title: 'Fatal Error!', text: 'Terdapat Serial Number (SN) yang digunakan lebih dari 1x.', confirmButtonColor: '#dc3545' });
             return false;
         }
 
-        $('#btn-submit').html('<span class="spinner-border spinner-border-sm me-2"></span> Menyimpan Aset...').prop('disabled', true);
+        $('#btn-submit').html('<span class="spinner-border spinner-border-sm me-2"></span> Memproses Data...').prop('disabled', true);
     });
 </script>
 @endpush

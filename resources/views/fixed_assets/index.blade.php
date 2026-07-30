@@ -454,5 +454,96 @@
         });
 
     });
+
+
+    // =========================================================================
+    // 🔥 FUNGSI AJAX: MENGAMBIL ITEM GR UNTUK LANGKAH 2 (FILTER VOID AKTIF) 🔥
+    // =========================================================================
+    public function getItems($id)
+    {
+        $gr = \App\Models\GoodsReceipt::with(['items.item', 'items.uom', 'warehouse'])->findOrFail($id);
+
+        // 1. Kumpulkan ID Status yang berbau "Void" / "Batal"
+        $voidStatusIds = \App\Models\Status::where('type', 'AST')
+            ->where(function($q) {
+                $q->where('slug', 'like', '%void%')
+                  ->orWhere('slug', 'like', '%batal%')
+                  ->orWhere('name', 'like', '%Void%')
+                  ->orWhere('name', 'like', '%Batal%');
+            })->pluck('id')->toArray();
+
+        $items = [];
+
+        foreach ($gr->items as $grItem) {
+            // Hitung konversi satuan (UOM)
+            $grConvRate = 1;
+            $rawUom = $grItem->getRawOriginal('uom') ?: '';
+            if (preg_match('/Isi\s*[:=]?\s*([0-9.]+)/i', $rawUom, $matches)) {
+                $grConvRate = (float) $matches[1];
+            } elseif ($grItem->uom_id) {
+                $uomDb = \App\Models\ItemUom::find($grItem->uom_id);
+                if ($uomDb) $grConvRate = (float) $uomDb->conversion_qty;
+            }
+
+            $baseQtyReceived = ($grItem->qty_received - ($grItem->qty_returned ?? 0)) * $grConvRate;
+
+            // =========================================================================
+            // 🔥 HITUNG ASET YANG SUDAH DIKAPITALISASI (ABAIKAN VOID) 🔥
+            // =========================================================================
+            $queryCap = \App\Models\FixedAsset::where('goods_receipt_id', $gr->id)
+                            ->where('item_id', $grItem->item_id);
+
+            // Filter Lapis 1: Tolak ID Status Void
+            if (!empty($voidStatusIds)) {
+                $queryCap->whereNotIn('status_id', $voidStatusIds);
+            }
+
+            // Filter Lapis 2: Tolak yang punya catatan [DIBATALKAN]
+            $queryCap->where(function($q) {
+                $q->whereNull('notes')
+                  ->orWhere('notes', 'NOT LIKE', '%[DIBATALKAN%');
+            });
+
+            $alreadyCapitalized = $queryCap->count();
+            // =========================================================================
+
+            $maxCapitalizable = $baseQtyReceived - $alreadyCapitalized;
+
+            // Masukkan ke array jika sisa masih ada
+            if ($maxCapitalizable > 0) {
+
+                // (Opsional) Jika sistem Komandan memiliki fitur ambil Serial Number yang tersedia
+                $availableSns = [];
+                if (\Schema::hasTable('item_serials')) {
+                    $availableSns = \DB::table('item_serials')
+                        ->where('item_id', $grItem->item_id)
+                        ->where('goods_receipt_id', $gr->id)
+                        ->where('status', 'AVAILABLE') // Pastikan SN yang Void juga ditarik
+                        ->pluck('serial_number')
+                        ->toArray();
+                }
+
+                $items[] = [
+                    'item_id' => $grItem->item_id,
+                    'item_code' => optional($grItem->item)->code,
+                    'item_name' => optional($grItem->item)->name,
+                    'specific_name' => $grItem->specific_name ?? optional($grItem->item)->name,
+                    'gr_qty' => $baseQtyReceived,
+                    'max_capitalizable' => $maxCapitalizable, // 🔥 INI ANGKA YANG TAMPIL DI LAYAR! 🔥
+                    'base_uom' => optional($grItem->uom)->name ?? 'Pieces',
+                    'default_price' => $grItem->unit_price ?? 0,
+                    'default_date' => date('Y-m-d', strtotime($gr->received_date)),
+                    'default_spec' => $grItem->notes ?? optional($grItem->item)->specification ?? '',
+                    'available_sns' => $availableSns
+                ];
+            }
+        }
+
+        return response()->json([
+            'warehouse_id' => $gr->warehouse_id,
+            'items' => $items
+        ]);
+    }
+
 </script>
 @endpush
