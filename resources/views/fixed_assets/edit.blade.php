@@ -202,6 +202,15 @@
                             <div class="form-text" style="font-size: 0.7rem;"><i class="bi bi-info-circle"></i> Wajib diisi karena status aset adalah In Use (Dipakai).</div>
                         </div>
 
+                        {{-- 🔥 BLOK ALASAN KHUSUS DISPOSAL / MAINTENANCE (MUNCUL OTOMATIS) 🔥 --}}
+                        <div class="p-3 mb-3 border bg-danger-subtle border-danger-subtle rounded-3" id="wrapper-reason" style="display: none;">
+                            <label class="form-label fw-bold small text-danger text-uppercase">Alasan Resmi Perubahan Status <span class="text-danger">*</span></label>
+                            <textarea name="status_change_reason" id="status_change_reason" class="shadow-sm form-control border-danger" rows="2" placeholder="Wajib diisi! Sebutkan alasan detail kenapa aset di-disposed atau diservis..."></textarea>
+                            <div class="mt-2 form-text text-danger" style="font-size: 0.7rem;">
+                                <i class="bi bi-exclamation-triangle-fill me-1"></i> Alasan ini akan dicetak abadi di dalam dokumen Audit / BAPP.
+                            </div>
+                        </div>
+
                         <div class="mb-2">
                             <label class="form-label fw-bold small text-muted">Catatan / Alasan Perubahan Data</label>
                             <textarea name="notes" class="shadow-sm form-control border-warning" rows="2" placeholder="Tulis catatan atau alasan update data...">{{ old('notes', $asset->notes) }}</textarea>
@@ -323,5 +332,31 @@
             }
         }
     });
+
+    // 🔥 LOGIKA SMART TOGGLE UNTUK FORM EDIT (IN_USE, DISPOSED, MAINTENANCE, RETURNED) 🔥
+        $('#status_id').on('change', function() {
+            let slug = $(this).find('option:selected').data('slug');
+
+            // 1. Toggle Kolom User (In Use)
+            if (slug === 'in_use') {
+                $('#wrapper-assigned-to').slideDown();
+                $('#assigned_to').prop('required', true);
+            } else {
+                $('#wrapper-assigned-to').slideUp();
+                $('#assigned_to').val('').trigger('change');
+                $('#assigned_to').prop('required', false);
+            }
+
+            // 2. Toggle Kolom Alasan Khusus (Disposed, Maintenance, & Returned)
+            if (slug === 'disposed' || slug === 'maintenance' || slug === 'returned') {
+                $('#wrapper-reason').slideDown();
+                $('#status_change_reason').prop('required', true);
+            } else {
+                $('#wrapper-reason').slideUp();
+                $('#status_change_reason').val('');
+                $('#status_change_reason').prop('required', false);
+            }
+        });
+
 </script>
 @endpush

@@ -282,13 +282,23 @@ class FixedAssetController extends Controller
                 ]);
 
                 // 🔥 CATAT KE HISTORY 🔥
+                // 🔥 CATAT KE HISTORY 🔥
                 if ($oldStatusId != $request->status_id || $oldAssignee != $assignedTo) {
                     $historyNote = 'Perubahan Data Aset menjadi: ' . optional($selectedStatus)->name . '.';
+
                     if ($assignedTo) {
                         $user = \App\Models\User::find($assignedTo);
-                        $historyNote .= ' [Aset diserahkan kepada: ' . optional($user)->name . ']';
+                        $historyNote .= ' [Diserahkan ke: ' . optional($user)->name . ']';
                     } elseif ($oldAssignee != null && $assignedTo == null) {
-                        $historyNote .= ' [Aset ditarik/dikembalikan ke Gudang]';
+                        $historyNote .= ' [Dikembalikan ke Gudang]';
+                    }
+
+                    // 🔥 TANGKAP ALASAN RESMI DISPOSAL / MAINTENANCE 🔥
+                    if ($request->filled('status_change_reason')) {
+                        $historyNote .= ' | Alasan Resmi: ' . trim($request->status_change_reason);
+                    } elseif ($request->filled('notes') && $oldStatusId == $request->status_id) {
+                        // Jika hanya update catatan biasa
+                        $historyNote .= ' | Catatan: ' . trim($request->notes);
                     }
 
                     \App\Models\FixedAssetHistory::create([
@@ -1019,16 +1029,18 @@ class FixedAssetController extends Controller
                     throw new \Exception('Aset ini sudah berada di gudang dan tidak sedang dipegang oleh siapapun.');
                 }
 
-                // 🔥 SAKTI: Ambil Nama Status dari Database, Bukan Hardcode! 🔥
+                // 🔥 SAKTI: Ambil Nama Status dari Database & Format Catatan 🔥
                 $newStatus = \App\Models\Status::find($request->status_id);
+                $returnReason = $request->return_notes ? trim($request->return_notes) : 'Pengembalian rutin ke gudang.';
 
                 \App\Models\FixedAssetHistory::create([
                     'fixed_asset_id'   => $asset->id,
-                    'status'           => optional($newStatus)->name ?? 'Returned', // Dinamis
+                    'status'           => optional($newStatus)->name ?? 'Returned',
                     'assigned_to'      => null,
-                    'notes'            => 'Dikembalikan ke gudang (ID: ' . $request->warehouse_id . ') oleh User ID: ' . $previousUserId . '. Catatan: ' . $request->return_notes,
+                    'notes'            => 'Dikembalikan ke gudang (ID: ' . $request->warehouse_id . ') oleh User ID: ' . $previousUserId . ' | Alasan Pengembalian: ' . $returnReason,
                     'created_by'       => auth()->id(),
                 ]);
+
 
                 $asset->assigned_to   = null;
                 $asset->department_id = null;
