@@ -135,94 +135,92 @@ class AssetCapitalizationController extends Controller
 
 
     // =========================================================================
-    // 🔥 2. FUNGSI AJAX: MENGAMBIL ITEM GR UNTUK LANGKAH 2 🔥
+    // 🔥 FUNGSI AJAX: MENGAMBIL ITEM GR (FILTER VOID MURNI PHP - 1000% AKURAT) 🔥
     // =========================================================================
-    public function getItems($id)
-    {
-        $gr = \App\Models\GoodsReceipt::with(['items.item', 'items.uom', 'warehouse'])->findOrFail($id);
+    // public function getItems($id)
+    // {
+    //     $gr = \App\Models\GoodsReceipt::with(['items.item', 'items.uom', 'warehouse'])->findOrFail($id);
 
-        // Tarik semua aset yang pernah dikapitalisasi dari GR tersebut
-        $allAssetsInGr = \App\Models\FixedAsset::with('status')
-                            ->where('goods_receipt_id', $gr->id)
-                            ->get();
+    //     $items = [];
 
-        $items = [];
+    //     foreach ($gr->items as $grItem) {
+    //         $grConvRate = 1;
+    //         $rawUom = $grItem->getRawOriginal('uom') ?: '';
 
-        foreach ($gr->items as $grItem) {
-            $grConvRate = 1;
-            $rawUom = $grItem->getRawOriginal('uom') ?: '';
+    //         if (preg_match('/Isi\s*[:=]?\s*([0-9.]+)/i', $rawUom, $matches)) {
+    //             $grConvRate = (float) $matches[1];
+    //         } elseif ($grItem->uom_id) {
+    //             $uomDb = \App\Models\ItemUom::find($grItem->uom_id);
+    //             if ($uomDb) $grConvRate = (float) $uomDb->conversion_qty;
+    //         }
 
-            if (preg_match('/Isi\s*[:=]?\s*([0-9.]+)/i', $rawUom, $matches)) {
-                $grConvRate = (float) $matches[1];
-            } elseif ($grItem->uom_id) {
-                $uomDb = \App\Models\ItemUom::find($grItem->uom_id);
-                if ($uomDb) $grConvRate = (float) $uomDb->conversion_qty;
-            }
+    //         $baseQtyReceived = ($grItem->qty_received - ($grItem->qty_returned ?? 0)) * $grConvRate;
 
-            $baseQtyReceived = ($grItem->qty_received - ($grItem->qty_returned ?? 0)) * $grConvRate;
+    //         // =========================================================================
+    //         // 🔥 TARIK DATA KE PHP & FILTER MANUAL (ANTI-BUG SQL) 🔥
+    //         // =========================================================================
+    //         $capitalizedAssets = \App\Models\FixedAsset::with('status')
+    //             ->where('goods_receipt_id', $gr->id)
+    //             ->where('item_id', $grItem->item_id)
+    //             ->get(); // Tarik dulu semua data asetnya ke PHP!
 
-            // =========================================================================
-            // 🔥 SUPER FILTER VOID MENGGUNAKAN PHP COLLECTION (AKURASI 1000%) 🔥
-            // =========================================================================
-            $alreadyCapitalized = $allAssetsInGr->filter(function($ast) use ($grItem) {
-                // Pastikan barangnya sesuai
-                if ($ast->item_id != $grItem->item_id) {
-                    return false;
-                }
+    //         $alreadyCapitalized = 0; // Mulai dari 0
 
-                $statusName = strtolower(optional($ast->status)->name ?? '');
-                $statusSlug = strtolower(optional($ast->status)->slug ?? '');
-                $notes = strtolower($ast->notes ?? '');
+    //         foreach ($capitalizedAssets as $ast) {
+    //             // Ambil nilai teks dan ubah ke huruf kecil semua agar gampang dicek
+    //             $statusString = strtolower(optional($ast->status)->name . ' ' . optional($ast->status)->slug);
+    //             $notesString  = strtolower($ast->notes ?? '');
 
-                $isVoid = false;
-                // Deteksi dari Status
-                if (str_contains($statusName, 'void') || str_contains($statusName, 'batal')) $isVoid = true;
-                if (str_contains($statusSlug, 'void') || str_contains($statusSlug, 'batal')) $isVoid = true;
-                // Deteksi dari Catatan
-                if (str_contains($notes, '[dibatalkan')) $isVoid = true;
+    //             // JIKA ASET MENGANDUNG KATA VOID / BATAL -> ABAIKAN!
+    //             if (str_contains($statusString, 'void') ||
+    //                 str_contains($statusString, 'batal') ||
+    //                 str_contains($notesString, '[dibatalkan')) {
+    //                 continue; // Lewati, JANGAN DIHITUNG!
+    //             }
 
-                // Kembalikan TRUE (Dihitung) HANYA JIKA BUKAN VOID
-                return !$isVoid;
-            })->count();
-            // =========================================================================
+    //             // Jika aset normal/valid, tambahkan ke hitungan
+    //             $alreadyCapitalized++;
+    //         }
+    //         // =========================================================================
 
-            $maxCapitalizable = $baseQtyReceived - $alreadyCapitalized;
+    //         $maxCapitalizable = $baseQtyReceived - $alreadyCapitalized;
 
-            // Masukkan ke array jika sisa masih ada
-            if ($maxCapitalizable > 0) {
+    //         // Masukkan ke array jika sisa masih ada
+    //         if ($maxCapitalizable > 0) {
 
-                // Tarik Serial Number jika ada
-                $availableSns = [];
-                if (\Schema::hasTable('item_serials')) {
-                    $availableSns = \DB::table('item_serials')
-                        ->where('item_id', $grItem->item_id)
-                        ->where('goods_receipt_id', $gr->id)
-                        ->where('status', 'AVAILABLE') // Pastikan SN yang Void juga ditarik (karena statusnya dikembalikan ke AVAILABLE)
-                        ->pluck('serial_number')
-                        ->toArray();
-                }
+    //             $availableSns = [];
+    //             if (\Schema::hasTable('item_serials')) {
+    //                 $availableSns = \DB::table('item_serials')
+    //                     ->where('item_id', $grItem->item_id)
+    //                     ->where('goods_receipt_id', $gr->id)
+    //                     ->where('status', 'AVAILABLE') // Pastikan SN yang di-Void bisa ditarik lagi
+    //                     ->pluck('serial_number')
+    //                     ->toArray();
+    //             }
 
-                $items[] = [
-                    'item_id' => $grItem->item_id,
-                    'item_code' => optional($grItem->item)->code,
-                    'item_name' => optional($grItem->item)->name,
-                    'specific_name' => $grItem->specific_name ?? optional($grItem->item)->name,
-                    'gr_qty' => $baseQtyReceived,
-                    'max_capitalizable' => $maxCapitalizable, // 🔥 INI ANGKA YANG AKAN TAMPIL DI LAYAR (Langkah 2) 🔥
-                    'base_uom' => optional($grItem->uom)->name ?? 'Pieces',
-                    'default_price' => $grItem->unit_price ?? 0,
-                    'default_date' => date('Y-m-d', strtotime($gr->received_date)),
-                    'default_spec' => $grItem->notes ?? optional($grItem->item)->specification ?? '',
-                    'available_sns' => $availableSns
-                ];
-            }
-        }
+    //             $items[] = [
+    //                 'item_id' => $grItem->item_id,
+    //                 'item_code' => optional($grItem->item)->code,
+    //                 'item_name' => optional($grItem->item)->name,
+    //                 'specific_name' => $grItem->specific_name ?? optional($grItem->item)->name,
+    //                 'gr_qty' => $baseQtyReceived,
+    //                 'max_capitalizable' => $maxCapitalizable, // 🔥 PASTI KEMBALI KE 8! 🔥
+    //                 'base_uom' => optional($grItem->uom)->name ?? 'Pieces',
+    //                 'default_price' => $grItem->unit_price ?? 0,
+    //                 'default_date' => date('Y-m-d', strtotime($gr->received_date)),
+    //                 'default_spec' => $grItem->notes ?? optional($grItem->item)->specification ?? '',
+    //                 'available_sns' => $availableSns
+    //             ];
+    //         }
+    //     }
 
-        return response()->json([
-            'warehouse_id' => $gr->warehouse_id,
-            'items' => $items
-        ]);
-    }
+    //     return response()->json([
+    //         'warehouse_id' => $gr->warehouse_id,
+    //         'items' => $items
+    //     ]);
+    // }
+
+
 
 
     public function getGrItems($gr_id)
@@ -306,9 +304,31 @@ class AssetCapitalizationController extends Controller
 
                 $currentStock = \App\Models\InventoryStock::where('item_id', $masterItem->id)->sum('stock_qty');
 
-                $alreadyCapitalized = \App\Models\FixedAsset::where('goods_receipt_id', $gr->id)
-                                                ->where('item_id', $masterItem->id)
-                                                ->count();
+                // =========================================================================
+                // 🔥 JURUS SNIPER PHP: FILTER VOID ASET (MENGGANTIKAN COUNT BAWAAN) 🔥
+                // =========================================================================
+                $capitalizedAssets = \App\Models\FixedAsset::with('status')
+                    ->where('goods_receipt_id', $gr->id)
+                    ->where('item_id', $masterItem->id)
+                    ->get(); // Tarik semua aset ke memori PHP
+
+                $alreadyCapitalized = 0;
+
+                foreach ($capitalizedAssets as $ast) {
+                    $statusString = strtolower(optional($ast->status)->name . ' ' . optional($ast->status)->slug);
+                    $notesString  = strtolower($ast->notes ?? '');
+
+                    // JIKA ASET MENGANDUNG KATA VOID / BATAL -> ABAIKAN!
+                    if (str_contains($statusString, 'void') ||
+                        str_contains($statusString, 'batal') ||
+                        str_contains($notesString, '[dibatalkan')) {
+                        continue;
+                    }
+
+                    // Jika aset normal/valid, tambahkan ke hitungan
+                    $alreadyCapitalized++;
+                }
+                // =========================================================================
 
                 $maxCapitalizable = $baseQtyReceived - $alreadyCapitalized;
 
@@ -334,7 +354,7 @@ class AssetCapitalizationController extends Controller
                         'base_uom'          => optional($masterItem->uom)->name ?? 'Unit',
                         'gr_qty'            => $baseQtyReceived,
                         'current_stock'     => $currentStock,
-                        'max_capitalizable' => floor($maxCapitalizable),
+                        'max_capitalizable' => floor($maxCapitalizable), // 🔥 PASTI KEMBALI JADI 8! 🔥
                         'available_sns'     => $availableSns,
                         'default_price'     => round($hargaPerolehan, 2),
                         'default_date'      => date('Y-m-d', strtotime($grDate)),
@@ -657,5 +677,93 @@ class AssetCapitalizationController extends Controller
             return back()->with('error', $e->getMessage());
         }
     }
+
+
+     // =========================================================================
+    // 🔥 FUNGSI AJAX: MENGAMBIL ITEM GR (FILTER VOID MURNI PHP - 1000% AKURAT) 🔥
+    // =========================================================================
+    public function getItems($id)
+    {
+        $gr = \App\Models\GoodsReceipt::with(['items.item', 'items.uom', 'warehouse'])->findOrFail($id);
+
+        $items = [];
+
+        foreach ($gr->items as $grItem) {
+            $grConvRate = 1;
+            $rawUom = $grItem->getRawOriginal('uom') ?: '';
+
+            if (preg_match('/Isi\s*[:=]?\s*([0-9.]+)/i', $rawUom, $matches)) {
+                $grConvRate = (float) $matches[1];
+            } elseif ($grItem->uom_id) {
+                $uomDb = \App\Models\ItemUom::find($grItem->uom_id);
+                if ($uomDb) $grConvRate = (float) $uomDb->conversion_qty;
+            }
+
+            $baseQtyReceived = ($grItem->qty_received - ($grItem->qty_returned ?? 0)) * $grConvRate;
+
+            // =========================================================================
+            // 🔥 TARIK DATA KE PHP & FILTER MANUAL (ANTI-BUG SQL) 🔥
+            // =========================================================================
+            $capitalizedAssets = \App\Models\FixedAsset::with('status')
+                ->where('goods_receipt_id', $gr->id)
+                ->where('item_id', $grItem->item_id)
+                ->get(); // Tarik dulu semua data asetnya ke PHP!
+
+            $alreadyCapitalized = 0; // Mulai dari 0
+
+            foreach ($capitalizedAssets as $ast) {
+                // Ambil nilai teks dan ubah ke huruf kecil semua agar gampang dicek
+                $statusString = strtolower(optional($ast->status)->name . ' ' . optional($ast->status)->slug);
+                $notesString  = strtolower($ast->notes ?? '');
+
+                // JIKA ASET MENGANDUNG KATA VOID / BATAL -> ABAIKAN!
+                if (str_contains($statusString, 'void') ||
+                    str_contains($statusString, 'batal') ||
+                    str_contains($notesString, '[dibatalkan')) {
+                    continue; // Lewati, JANGAN DIHITUNG!
+                }
+
+                // Jika aset normal/valid, tambahkan ke hitungan
+                $alreadyCapitalized++;
+            }
+            // =========================================================================
+
+            $maxCapitalizable = $baseQtyReceived - $alreadyCapitalized;
+
+            // Masukkan ke array jika sisa masih ada
+            if ($maxCapitalizable > 0) {
+
+                $availableSns = [];
+                if (\Schema::hasTable('item_serials')) {
+                    $availableSns = \DB::table('item_serials')
+                        ->where('item_id', $grItem->item_id)
+                        ->where('goods_receipt_id', $gr->id)
+                        ->where('status', 'AVAILABLE') // Pastikan SN yang di-Void bisa ditarik lagi
+                        ->pluck('serial_number')
+                        ->toArray();
+                }
+
+                $items[] = [
+                    'item_id' => $grItem->item_id,
+                    'item_code' => optional($grItem->item)->code,
+                    'item_name' => optional($grItem->item)->name,
+                    'specific_name' => $grItem->specific_name ?? optional($grItem->item)->name,
+                    'gr_qty' => $baseQtyReceived,
+                    'max_capitalizable' => $maxCapitalizable, // 🔥 PASTI KEMBALI KE 8! 🔥
+                    'base_uom' => optional($grItem->uom)->name ?? 'Pieces',
+                    'default_price' => $grItem->unit_price ?? 0,
+                    'default_date' => date('Y-m-d', strtotime($gr->received_date)),
+                    'default_spec' => $grItem->notes ?? optional($grItem->item)->specification ?? '',
+                    'available_sns' => $availableSns
+                ];
+            }
+        }
+
+        return response()->json([
+            'warehouse_id' => $gr->warehouse_id,
+            'items' => $items
+        ]);
+    }
+
 
 }
