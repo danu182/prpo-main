@@ -77,7 +77,20 @@
                 <div>
                     <div class="mb-1 tracking-wide small text-muted fw-bold text-uppercase">Nomor Batch Import</div>
                     <h4 class="mb-2 fw-bold text-dark">{{ $batch->batch_number }}</h4>
-                    <span class="badge bg-{{ $batch->statusInfo->color }} px-3 py-2 rounded-pill shadow-sm"><i class="bi bi-info-circle me-1"></i> Status: {{ $batch->statusInfo->name }}</span>
+
+                    {{-- 🔥 LOGIKA AMAN: Mencegah error jika statusInfo tidak ada 🔥 --}}
+                    @php
+                        $badgeColor = 'secondary';
+                        $badgeText = strtoupper($batch->status);
+
+                        if (strtolower($batch->status) == 'draft') { $badgeColor = 'dark'; $badgeText = 'DRAFT (KARANTINA)'; }
+                        elseif (strtolower($batch->status) == 'waiting_approval') { $badgeColor = 'warning'; $badgeText = 'MENUNGGU APPROVAL'; }
+                        elseif (strtolower($batch->status) == 'approved') { $badgeColor = 'success'; $badgeText = 'DISETUJUI (SAH)'; }
+                        elseif (strtolower($batch->status) == 'rejected') { $badgeColor = 'danger'; $badgeText = 'DITOLAK'; }
+                    @endphp
+                    <span class="badge bg-{{ $badgeColor }} px-3 py-2 rounded-pill shadow-sm">
+                        <i class="bi bi-info-circle me-1"></i> Status: {{ $badgeText }}
+                    </span>
                 </div>
             </div>
         </div>
@@ -228,9 +241,7 @@
 </div>
 @endsection
 
-
 @push('scripts')
-{{-- Panggil Library SweetAlert2 --}}
 <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
 
 <script>
@@ -247,7 +258,7 @@
                     text: "Dokumen ini akan masuk ke daftar persetujuan (Approval Matrix). Anda tidak dapat mengubah data ini lagi saat dalam proses persetujuan.",
                     icon: 'question',
                     showCancelButton: true,
-                    confirmButtonColor: '#f59e0b', // Kuning Warning
+                    confirmButtonColor: '#f59e0b',
                     cancelButtonColor: '#64748b',
                     confirmButtonText: '<i class="bi bi-send-check me-1"></i> Ya, Ajukan!',
                     cancelButtonText: 'Batal',
@@ -279,7 +290,7 @@
                     text: "Semua data yang telah diunggah di draft ini akan dihapus secara permanen dari sistem karantina.",
                     icon: 'warning',
                     showCancelButton: true,
-                    confirmButtonColor: '#dc2626', // Merah Danger
+                    confirmButtonColor: '#dc2626',
                     cancelButtonColor: '#64748b',
                     confirmButtonText: '<i class="bi bi-trash-fill me-1"></i> Ya, Hapus!',
                     cancelButtonText: 'Batal',
@@ -312,7 +323,7 @@
                     text: "Aset akan resmi masuk ke Buku Utama. Sistem otomatis membuat Master Barang baru jika kode dikosongkan.",
                     icon: 'success',
                     showCancelButton: true,
-                    confirmButtonColor: '#10b981', // Hijau Sukses
+                    confirmButtonColor: '#10b981',
                     cancelButtonColor: '#64748b',
                     confirmButtonText: '<i class="bi bi-check-circle-fill me-1"></i> Ya, Sahkan Aset!',
                     cancelButtonText: 'Batal',
@@ -345,7 +356,7 @@
                     text: "Berkas Karantina ini akan dikembalikan ke status Draft untuk diperbaiki oleh staf.",
                     icon: 'error',
                     showCancelButton: true,
-                    confirmButtonColor: '#dc2626', // Merah Danger
+                    confirmButtonColor: '#dc2626',
                     cancelButtonColor: '#64748b',
                     confirmButtonText: '<i class="bi bi-x-circle me-1"></i> Ya, Tolak!',
                     cancelButtonText: 'Batal',

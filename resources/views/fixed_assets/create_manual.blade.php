@@ -12,6 +12,25 @@
     .photo-preview-item { transition: transform 0.2s ease-in-out; }
     .photo-preview-item:hover { transform: scale(1.1); z-index: 10; }
     .btn-dashed { border-style: dashed !important; border-width: 2px !important; }
+
+    /* 🔥 CSS BARU: Tombol Hapus Foto Lama 🔥 */
+    .btn-delete-existing {
+        position: absolute;
+        top: -8px;
+        right: -8px;
+        width: 24px;
+        height: 24px;
+        border-radius: 50%;
+        padding: 0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 14px;
+        z-index: 20;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+        transition: transform 0.2s;
+    }
+    .btn-delete-existing:hover { transform: scale(1.2); }
 </style>
 @endpush
 
@@ -45,13 +64,16 @@
                             <label class="form-label fw-bold small text-muted text-uppercase">Gudang Penerima <span class="text-danger">*</span></label>
                             <select name="warehouse_id" class="shadow-sm form-select" required>
                                 <option value="">-- Pilih Gudang Lokasi Aset --</option>
-                                @foreach($warehouses as $wh) <option value="{{ $wh->id }}">{{ $wh->name }}</option> @endforeach
+                                @foreach($warehouses as $wh)
+                                    <option value="{{ $wh->id }}" {{ old('warehouse_id') == $wh->id ? 'selected' : '' }}>{{ $wh->name }}</option>
+                                @endforeach
                             </select>
                         </div>
 
                         <div class="mb-3">
                             <label class="form-label fw-bold small text-muted text-uppercase">Pilih Barang (Master) <span class="text-danger">*</span></label>
                             <select name="item_id" class="form-select select2-item-ajax" style="width: 100%;" required>
+                                {{-- Jika ada error, item lama akan dimuat via JS / atau ketik ulang --}}
                                 <option value="">-- Ketik Nama / Kode Barang --</option>
                             </select>
                         </div>
@@ -60,30 +82,32 @@
                             <label class="form-label fw-bold small text-muted text-uppercase">Kategori Penyusutan <span class="text-danger">*</span></label>
                             <select name="asset_category_id" class="shadow-sm form-select border-primary" required>
                                 <option value="">-- Pilih Kategori Aset --</option>
-                                @foreach($assetCategories as $category) <option value="{{ $category->id }}">{{ $category->name }} (Umur: {{ $category->useful_life_years }} Thn)</option> @endforeach
+                                @foreach($assetCategories as $category)
+                                    <option value="{{ $category->id }}" {{ old('asset_category_id') == $category->id ? 'selected' : '' }}>{{ $category->name }} (Umur: {{ $category->useful_life_years }} Thn)</option>
+                                @endforeach
                             </select>
                         </div>
 
                         <div class="mb-3">
                             <label class="form-label fw-bold small text-muted">Penamaan Spesifik Aset</label>
-                            <input type="text" name="asset_name" class="shadow-sm form-control border-primary" placeholder="Cth: Laptop Core i7 Direksi...">
+                            <input type="text" name="asset_name" class="shadow-sm form-control border-primary" value="{{ old('asset_name') }}" placeholder="Cth: Laptop Core i7 Direksi...">
                             <div class="form-text" style="font-size: 0.7rem;"><i class="bi bi-info-circle"></i> Kosongkan jika ingin menggunakan nama bawaan Master Barang.</div>
                         </div>
 
                         <div class="row">
                             <div class="mb-3 col-6">
                                 <label class="form-label fw-bold small text-muted">Tgl Diterima / Beli <span class="text-danger">*</span></label>
-                                <input type="date" name="acquisition_date" class="shadow-sm form-control border-info" value="{{ date('Y-m-d') }}" required>
+                                <input type="date" name="acquisition_date" class="shadow-sm form-control border-info" value="{{ old('acquisition_date', date('Y-m-d')) }}" required>
                             </div>
                             <div class="mb-3 col-6">
                                 <label class="form-label fw-bold small text-muted">Jumlah Unit <span class="text-danger">*</span></label>
-                                <input type="number" name="quantity" class="shadow-sm form-control border-warning" value="1" min="1" required>
+                                <input type="number" name="quantity" class="shadow-sm form-control border-warning" value="{{ old('quantity', 1) }}" min="1" required>
                             </div>
                         </div>
 
                         <div class="mb-3">
                             <label class="form-label fw-bold small text-muted">Spesifikasi Detail / Merek <span class="text-danger">*</span></label>
-                            <textarea name="spesifikasi_detail" id="spesifikasi_editor_add" class="shadow-sm form-control" rows="4"></textarea>
+                            <textarea name="spesifikasi_detail" id="spesifikasi_editor_add" class="shadow-sm form-control" rows="4">{{ old('spesifikasi_detail') }}</textarea>
                         </div>
 
                         {{-- 🔥 AREA UPLOAD FOTO FISIK ASET 🔥 --}}
@@ -117,18 +141,20 @@
                             <label class="form-label fw-bold small text-muted text-uppercase">Aset Milik PT <span class="text-danger">*</span></label>
                             <select name="company_id" class="shadow-sm form-select" required>
                                 <option value="">-- Pilih Pemilik Aset --</option>
-                                @foreach($companies as $company) <option value="{{ $company->id }}">{{ $company->name }}</option> @endforeach
+                                @foreach($companies as $company)
+                                    <option value="{{ $company->id }}" {{ old('company_id') == $company->id ? 'selected' : '' }}>{{ $company->name }}</option>
+                                @endforeach
                             </select>
                         </div>
 
                         <div class="mb-3">
                             <label class="form-label fw-bold small text-muted text-uppercase">Status <span class="text-danger">*</span></label>
-                            {{-- 🔥 ID status_id HARUS ADA DI SINI 🔥 --}}
                             <select name="status_id" id="status_id" class="shadow-sm form-select" required>
                                 <option value="">-- Pilih Status Aset --</option>
                                 @foreach($statuses as $status)
                                     @if(in_array($status->slug, ['available', 'in_use']))
-                                        <option value="{{ $status->id }}">{{ $status->name }}</option>
+                                        {{-- 🔥 Lengkap dengan data-slug dan fungsi OLD 🔥 --}}
+                                        <option value="{{ $status->id }}" data-slug="{{ $status->slug }}" {{ old('status_id') == $status->id ? 'selected' : '' }}>{{ $status->name }}</option>
                                     @endif
                                 @endforeach
                             </select>
@@ -141,8 +167,7 @@
                                 <option value="">-- Pilih Karyawan Pemakai --</option>
                                 @if(isset($users))
                                     @foreach($users as $user)
-                                        {{-- 🔥 Tambahkan Departemen di dalam kurung 🔥 --}}
-                                        <option value="{{ $user->id }}">
+                                        <option value="{{ $user->id }}" {{ old('assigned_to') == $user->id ? 'selected' : '' }}>
                                             {{ $user->name }} — {{ optional($user->company)->name ?? 'Tanpa PT' }} ({{ optional($user->department)->name ?? 'Tanpa Dept' }})
                                         </option>
                                     @endforeach
@@ -157,12 +182,14 @@
                             <div class="mb-3 col-4 pe-1">
                                 <label class="form-label fw-bold small text-muted">Mata Uang <span class="text-danger">*</span></label>
                                 <select name="currency_id" class="shadow-sm form-select border-success" required>
-                                    @foreach($currencies as $currency) <option value="{{ $currency->id }}" {{ $currency->code == 'IDR' ? 'selected' : '' }}>{{ $currency->code }}</option> @endforeach
+                                    @foreach($currencies as $currency)
+                                        <option value="{{ $currency->id }}" {{ old('currency_id', ($currency->code == 'IDR' ? $currency->id : '')) == $currency->id ? 'selected' : '' }}>{{ $currency->code }}</option>
+                                    @endforeach
                                 </select>
                             </div>
                             <div class="mb-3 col-8 ps-1">
                                 <label class="form-label fw-bold small text-muted">Nilai Wajar / Harga</label>
-                                <input type="number" name="purchase_price" class="shadow-sm form-control border-success" placeholder="Estimasi harga hibah..." min="0">
+                                <input type="number" name="purchase_price" class="shadow-sm form-control border-success" value="{{ old('purchase_price') }}" placeholder="Estimasi harga hibah..." min="0">
                             </div>
                         </div>
 
@@ -170,18 +197,18 @@
                             <div class="mb-2 col-12"><span class="mb-2 badge bg-secondary">Hanya Berlaku Jika Qty = 1</span></div>
                             <div class="mb-3 col-md-6 pe-md-3">
                                 <label class="form-label fw-bold small text-muted">Serial Number (S/N)</label>
-                                <input type="text" name="serial_number" class="form-control" placeholder="Kosongkan jika massal">
+                                <input type="text" name="serial_number" class="form-control" value="{{ old('serial_number') }}" placeholder="Kosongkan jika massal">
                             </div>
                             <div class="mb-3 col-md-6 ps-md-3">
                                 <label class="form-label fw-bold small text-muted">Label Akuntansi</label>
-                                <input type="text" name="accounting_asset_number" class="form-control" placeholder="FA-XXX...">
+                                <input type="text" name="accounting_asset_number" class="form-control" value="{{ old('accounting_asset_number') }}" placeholder="FA-XXX...">
                             </div>
                         </div>
 
                         <div class="mt-4 row">
                             <div class="mb-3 col-md-6 pe-md-3">
                                 <label class="form-label fw-bold small text-muted">Catatan Asal Usul / Hibah</label>
-                                <textarea name="notes" class="shadow-sm form-control" rows="2" placeholder="Cth: Hibah dari CSR..."></textarea>
+                                <textarea name="notes" class="shadow-sm form-control" rows="2" placeholder="Cth: Hibah dari CSR...">{{ old('notes') }}</textarea>
                             </div>
                             <div class="mb-3 col-md-6 ps-md-3">
                                 <label class="form-label fw-bold small text-muted">Dokumen Pendukung</label>
@@ -222,30 +249,32 @@
             }
         });
 
-        // 🔥 LOGIKA BARU: Init Select2 untuk Karyawan 🔥
+        // 🔥 Init Select2 untuk Karyawan 🔥
         $('.select2-user').select2({
             theme: 'bootstrap-5',
             placeholder: '-- Ketik / Pilih Nama Karyawan --'
         });
 
-        // 🔥 LOGIKA BARU: Smart Toggle Tampilkan/Sembunyikan Kolom Karyawan 🔥
+        // 🔥 Smart Toggle Menggunakan SLUG 🔥
         $('#status_id').on('change', function() {
-            let statusText = $(this).find('option:selected').text().toLowerCase();
+            // Ambil data-slug dari option yang dipilih
+            let slug = $(this).find('option:selected').data('slug');
 
-            // Jika nama status mengandung kata "use" atau "pakai"
-            if (statusText.includes('use') || statusText.includes('pakai')) {
+            if (slug === 'in_use') {
                 $('#wrapper-assigned-to').slideDown(); // Munculkan Animasi
                 $('#assigned_to').prop('required', true); // Jadikan Wajib
             } else {
                 $('#wrapper-assigned-to').slideUp(); // Sembunyikan Animasi
-                $('#assigned_to').val('').trigger('change'); // Kosongkan Pilihan
+                // Jangan kosongkan user langsung jika ini trigger saat Load form error (agar old input tidak hilang)
+                if(e.originalEvent !== undefined) {
+                    $('#assigned_to').val('').trigger('change');
+                }
                 $('#assigned_to').prop('required', false); // Batal Wajib
             }
         });
 
-        // Panggil saat pertama kali load (jaga-jaga kalau error validasi dan kembali ke halaman)
+        // Panggil saat pertama kali load (menjalankan Old Binding jika ada error)
         $('#status_id').trigger('change');
-
 
         // Init CKEditor
         ClassicEditor.create(document.querySelector('#spesifikasi_editor_add'), {

@@ -165,22 +165,23 @@
                             </td>
 
                             {{-- KOLOM 5: STATUS ASET --}}
+                            {{-- KOLOM 5: STATUS ASET --}}
                             <td>
                                 @php
                                     $statusName = optional($asset->status)->name ?? 'Normal';
-                                    $statusLower = strtolower($statusName);
+                                    $statusSlug = optional($asset->status)->slug;
 
-                                    // 🔥 Logika pengecekan Disposed
-                                    $isDisposedOrVoid = str_contains($statusLower, 'dispose') || str_contains($statusLower, 'rusak') || str_contains($statusLower, 'jual') || str_contains($statusLower, 'void') || str_contains($statusLower, 'batal');
+                                    // 🔥 Logika Murni Menggunakan SLUG 🔥
+                                    $isDisposedOrVoid = in_array($statusSlug, ['disposed', 'void', 'batal', 'canceled', 'cancelled']);
 
-                                    if(str_contains($statusLower, 'use') || str_contains($statusLower, 'pakai')) {
+                                    if($statusSlug === 'in_use') {
                                         $badgeClass = 'bg-success-subtle text-success border border-success-subtle';
                                     } elseif($isDisposedOrVoid) {
                                         $badgeClass = 'bg-danger text-white shadow-sm';
-                                    } elseif(str_contains($statusLower, 'available') || str_contains($statusLower, 'gudang')) {
+                                    } elseif($statusSlug === 'available' || $statusSlug === 'returned') {
                                         $badgeClass = 'bg-warning-subtle text-warning-emphasis border border-warning-subtle';
                                     } else {
-                                        $badgeClass = 'bg-secondary-subtle text-secondary';
+                                        $badgeClass = 'bg-secondary-subtle text-secondary'; // Untuk Maintenance, dll
                                     }
                                 @endphp
                                 <span class="badge {{ $badgeClass }} px-2 py-1" style="font-size: 0.7rem;">

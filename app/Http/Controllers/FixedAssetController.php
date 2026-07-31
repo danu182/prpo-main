@@ -20,17 +20,16 @@ class FixedAssetController extends Controller
         $warehouseId = $request->input('warehouse_id');
 
         $assets = FixedAsset::with([
-                'item', 'company', 'status', 'assignee.company', 'warehouse', 'goodsReceipt','assetCategory', // 🔥 TAMBAHKAN INI
+                'item', 'company', 'status', 'assignee.company', 'warehouse', 'goodsReceipt','assetCategory',
                 'histories' => function($q) { $q->orderBy('created_at', 'desc'); },
                 'histories.assignee', 'histories.creator'
             ])
             // =========================================================================
-            // 🔥 BLOK FILTER VOID: Usir aset yang sudah dibatalkan dari daftar ini! 🔥
+            // 🔥 BLOK FILTER VOID (Menggunakan SLUG yang dinamis & bersih)
             // =========================================================================
             ->where('notes', 'not like', '%[DIBATALKAN%')
             ->whereHas('status', function($q) {
-                $q->where('slug', 'not like', '%void%')
-                  ->where('slug', 'not like', '%batal%');
+                $q->whereNotIn('slug', ['void', 'batal', 'canceled', 'cancelled']);
             })
             // =========================================================================
             ->when($warehouseId, function ($query) use ($warehouseId) {
@@ -52,17 +51,15 @@ class FixedAssetController extends Controller
         $statuses = Status::where('type', 'AST')->orderBy('sequence', 'asc')->get();
         $warehouses = \App\Models\Warehouse::orderBy('name', 'asc')->get();
         $currencies = \App\Models\Currency::where('is_active', 1)->get();
-
-        // Tambahkan baris ini di atas return view(...)
         $assetCategories = \App\Models\AssetCategory::where('is_active', true)->orderBy('useful_life_years', 'asc')->get();
 
-        // Tambahkan variabelnya ke dalam compact()
         return view('fixed_assets.index', compact('assets', 'search', 'users', 'items', 'companies', 'statuses', 'warehouses', 'currencies', 'assetCategories'));
     }
 
 
-    // 🔥 PROSES SIMPAN ASET MANUAL (DENGAN SMART MUTATION IN & OUT) 🔥
-
+    // =========================================================================
+    // 🔥 PROSES SIMPAN ASET MANUAL (CLEAN CODE & SMART MUTATION) 🔥
+    // =========================================================================
     public function store(Request $request)
     {
         $request->validate([
@@ -85,11 +82,11 @@ class FixedAssetController extends Controller
         ]);
 
         $selectedStatus = \App\Models\Status::find($request->status_id);
-        $statusSlug = strtolower(optional($selectedStatus)->slug ?? '');
+        $statusSlug = optional($selectedStatus)->slug; // Menggunakan slug murni
 
         // BLOKIR JIKA STATUS "IN USE" TAPI TIDAK ADA KARYAWAN
-        if (str_contains($statusSlug, 'use') && empty($request->assigned_to)) {
-            return back()->withInput()->with('error', 'VALIDASI GAGAL: Anda mengatur status aset menjadi "In Use (Dipakai)", maka Anda WAJIB memilih Karyawan/User pada kolom Penanggung Jawab!');
+        if ($statusSlug === 'in_use' && empty($request->assigned_to)) {
+            return back()->withInput()->with('error', 'VALIDASI GAGAL: Anda mengatur status aset menjadi "In Use", maka Anda WAJIB memilih Karyawan/User pada kolom Penanggung Jawab!');
         }
 
         try {
@@ -117,7 +114,7 @@ class FixedAssetController extends Controller
                     $nextSeq = $lastAsset ? ((int) substr($lastAsset->asset_number, -4)) + 1 : 1;
                     $assetNumber = "AST/{$yearMonth}/" . str_pad($nextSeq, 4, '0', STR_PAD_LEFT);
 
-                    $assignedTo = in_array($statusSlug, ['available', 'disposed', 'maintenance', 'returned']) ? null : $request->assigned_to;
+                    $assignedTo = ($statusSlug !== 'in_use') ? null : $request->assigned_to;
 
                     $asset = \App\Models\FixedAsset::create([
                         'asset_number'            => $assetNumber,
@@ -168,13 +165,10 @@ class FixedAssetController extends Controller
                         }
                     }
 
-                    // =========================================================================
-                    // 🔥 PENCATATAN MUTASI STOK (SMART IN & OUT) 🔥
-                    // =========================================================================
+                    // PENCATATAN MUTASI STOK (SMART IN & OUT)
                     $balanceBefore = $currentStock;
                     $balanceAfter  = $currentStock + 1;
 
-                    // 1. Catat Barang Masuk (IN) dari Hibah
                     \App\Models\StockMutation::create([
                         'item_id'          => $request->item_id,
                         'warehouse_id'     => $request->warehouse_id,
@@ -187,7 +181,6 @@ class FixedAssetController extends Controller
                         'created_by'       => auth()->id(),
                     ]);
 
-                    // 2. Jika Aset langsung 'In Use', Catat Barang Keluar (OUT) ke User
                     if ($assignedTo) {
                         \App\Models\StockMutation::create([
                             'item_id'          => $request->item_id,
@@ -200,14 +193,10 @@ class FixedAssetController extends Controller
                             'notes'            => "Aset langsung diserahkan ke pengguna (Input Manual)",
                             'created_by'       => auth()->id(),
                         ]);
-
-                        // Karena masuk lalu langsung keluar, saldonya kembali seperti awal
                         $currentStock = $balanceAfter - 1;
                     } else {
-                        // Jika tidak In Use, saldo gudang bertambah
                         $currentStock = $balanceAfter;
                     }
-                    // =========================================================================
                 }
 
                 $itemMaster->update(['current_stock' => $currentStock]);
@@ -226,14 +215,11 @@ class FixedAssetController extends Controller
     public function edit($id)
     {
         $asset = FixedAsset::with(['photos', 'item', 'company', 'status', 'warehouse', 'assetCategory'])->findOrFail($id);
-
         $warehouses = \App\Models\Warehouse::orderBy('name', 'asc')->get();
         $assetCategories = \App\Models\AssetCategory::where('is_active', true)->orderBy('useful_life_years', 'asc')->get();
         $companies = \App\Models\Company::orderBy('name', 'asc')->get();
         $statuses = Status::where('type', 'AST')->orderBy('sequence', 'asc')->get();
         $currencies = \App\Models\Currency::where('is_active', 1)->get();
-
-        // 🔥 PERBAIKAN: Tambahkan relasi 'department' agar bisa dipanggil di Blade 🔥
         $users = User::with(['company', 'department'])->orderBy('name', 'asc')->get();
 
         return view('fixed_assets.edit', compact('asset', 'warehouses', 'assetCategories', 'companies', 'statuses', 'currencies', 'users'));
@@ -241,7 +227,7 @@ class FixedAssetController extends Controller
 
 
     // =========================================================================
-    // 🔥 PROSES SIMPAN EDIT ASET (SMART UPDATE, VALIDASI IN USE & DISPOSAL) 🔥
+    // 🔥 PROSES SIMPAN EDIT ASET (CLEAN CODE & ENTERPRISE MUTATION) 🔥
     // =========================================================================
     public function update(Request $request, $id)
     {
@@ -263,11 +249,11 @@ class FixedAssetController extends Controller
 
         $asset = \App\Models\FixedAsset::findOrFail($id);
         $selectedStatus = \App\Models\Status::find($request->status_id);
-        $statusSlug = strtolower(optional($selectedStatus)->slug ?? '');
+        $statusSlug = optional($selectedStatus)->slug;
 
-        // 🔥 BLOKIR JIKA STATUS "IN USE" TAPI TIDAK ADA KARYAWAN 🔥
-        if (str_contains($statusSlug, 'use') && empty($request->assigned_to)) {
-            return back()->withInput()->with('error', 'VALIDASI GAGAL: Anda mengubah status aset menjadi "In Use (Dipakai)", maka Anda WAJIB memilih Karyawan/User pada kolom Penanggung Jawab!');
+        // BLOKIR JIKA STATUS "IN USE" TAPI TIDAK ADA KARYAWAN
+        if ($statusSlug === 'in_use' && empty($request->assigned_to)) {
+            return back()->withInput()->with('error', 'VALIDASI GAGAL: Anda mengubah status aset menjadi "In Use", maka Anda WAJIB memilih Karyawan pada kolom Penanggung Jawab!');
         }
 
         try {
@@ -276,8 +262,8 @@ class FixedAssetController extends Controller
                 $oldStatusId = $asset->status_id;
                 $oldAssignee = $asset->assigned_to;
 
-                // Kosongkan assigned_to jika statusnya kembali ke Gudang/Disposed
-                $assignedTo = in_array($statusSlug, ['available', 'disposed', 'maintenance', 'returned']) ? null : $request->assigned_to;
+                // Kosongkan nama user jika statusnya BUKAN in_use (Otomatis & Dinamis)
+                $assignedTo = ($statusSlug !== 'in_use') ? null : $request->assigned_to;
 
                 $asset->update([
                     'asset_category_id'       => $request->asset_category_id,
@@ -295,14 +281,14 @@ class FixedAssetController extends Controller
                     'currency_id'             => $request->currency_id,
                 ]);
 
-                // 🔥 CATAT KE HISTORY JIKA STATUS ATAU PEMEGANG BERUBAH 🔥
+                // 🔥 CATAT KE HISTORY 🔥
                 if ($oldStatusId != $request->status_id || $oldAssignee != $assignedTo) {
-                    $historyNote = 'Perubahan Data Aset (Edit Profil).';
+                    $historyNote = 'Perubahan Data Aset menjadi: ' . optional($selectedStatus)->name . '.';
                     if ($assignedTo) {
                         $user = \App\Models\User::find($assignedTo);
                         $historyNote .= ' [Aset diserahkan kepada: ' . optional($user)->name . ']';
                     } elseif ($oldAssignee != null && $assignedTo == null) {
-                        $historyNote .= ' [Aset dikembalikan ke Gudang]';
+                        $historyNote .= ' [Aset ditarik/dikembalikan ke Gudang]';
                     }
 
                     \App\Models\FixedAssetHistory::create([
@@ -315,18 +301,16 @@ class FixedAssetController extends Controller
                 }
 
                 // =========================================================================
-                // 🔥 MESIN SMART MUTASI STOK KELAS ENTERPRISE 🔥
+                // 🔥 MESIN SMART MUTASI STOK KELAS ENTERPRISE MENGGUNAKAN SLUG 🔥
                 // =========================================================================
                 $oldStatus = \App\Models\Status::find($oldStatusId);
-                $oldStatusSlug = strtolower(optional($oldStatus)->slug ?? '');
+                $oldStatusSlug = optional($oldStatus)->slug;
 
-                // Identifikasi Kondisi Sebelumnya
-                $wasDisposed = str_contains($oldStatusSlug, 'dispose') || str_contains($oldStatusSlug, 'rusak') || str_contains($oldStatusSlug, 'jual');
-                $wasInWarehouse = !$wasDisposed && empty($oldAssignee); // Fisik nganggur di gudang
+                $wasDisposed = ($oldStatusSlug === 'disposed');
+                $wasInWarehouse = (!$wasDisposed && empty($oldAssignee));
 
-                // Identifikasi Kondisi Sekarang
-                $isNowDisposed = str_contains($statusSlug, 'dispose') || str_contains($statusSlug, 'rusak') || str_contains($statusSlug, 'jual');
-                $isNowInWarehouse = !$isNowDisposed && empty($assignedTo); // Fisik nganggur di gudang
+                $isNowDisposed = ($statusSlug === 'disposed');
+                $isNowInWarehouse = (!$isNowDisposed && empty($assignedTo));
 
                 if ($asset->item_id && $asset->warehouse_id) {
                     $masterItem = \App\Models\Item::lockForUpdate()->find($asset->item_id);
@@ -338,7 +322,6 @@ class FixedAssetController extends Controller
                                         ->first();
 
                         // KASUS A: BARANG KELUAR DARI GUDANG (-1 OUT)
-                        // (Tadinya di gudang, sekarang Diserahkan ke user ATAU dibuang/Disposed)
                         if ($wasInWarehouse && !$isNowInWarehouse) {
                             if ($currStock > 0) {
                                 $masterItem->decrement('current_stock', 1);
@@ -347,7 +330,7 @@ class FixedAssetController extends Controller
                                 }
 
                                 $mutationNote = $isNowDisposed
-                                    ? 'Penghapusan Aset (Disposed / Rusak / Dijual)'
+                                    ? 'Penghapusan Aset (Status: ' . optional($selectedStatus)->name . ')'
                                     : 'Aset diserahkan ke pengguna (via Edit Form)';
 
                                 \App\Models\StockMutation::create([
@@ -364,7 +347,6 @@ class FixedAssetController extends Controller
                             }
                         }
                         // KASUS B: BARANG MASUK KEMBALI KE GUDANG (+1 IN)
-                        // (Tadinya dipegang user ATAU dibuang, sekarang batal dan kembali ke rak gudang)
                         elseif (!$wasInWarehouse && $isNowInWarehouse) {
                             $masterItem->increment('current_stock', 1);
                             if ($invStock) {
@@ -382,7 +364,7 @@ class FixedAssetController extends Controller
 
                             $mutationNote = $wasDisposed
                                 ? 'Pembatalan Disposal (Barang Aktif Kembali)'
-                                : 'Pengembalian Aset ke Gudang (via Edit Form)';
+                                : 'Pengembalian Aset ke Gudang (Status: ' . optional($selectedStatus)->name . ')';
 
                             \App\Models\StockMutation::create([
                                 'item_id'          => $masterItem->id,
@@ -396,8 +378,6 @@ class FixedAssetController extends Controller
                                 'created_by'       => auth()->id()
                             ]);
                         }
-                        // CATATAN KASUS C: Dari "In Use" jadi "Disposed".
-                        // Barangnya kan sedang di luar, jadi mutasinya tidak bergerak (tetap 0 di gudang). Sistem mendiamkannya. INI SANGAT CERDAS!
 
                         // KUNCI STATUS SERIAL NUMBER (S/N)
                         if (!empty($asset->serial_number)) {
@@ -418,9 +398,8 @@ class FixedAssetController extends Controller
                         }
                     }
                 }
-                // =========================================================================
 
-                // 🔥 PROSES UPLOAD FOTO TAMBAHAN JIKA ADA 🔥
+                // PROSES UPLOAD FOTO TAMBAHAN
                 if ($request->hasFile('photos')) {
                     $safeFolderName = str_replace('/', '-', $asset->asset_number);
                     $folderPathPhotos = "FixAsset/{$safeFolderName}";
@@ -530,35 +509,22 @@ class FixedAssetController extends Controller
         }
     }
 
-    // =========================================================================
-    // 2. TAMPILKAN HALAMAN KARANTINA
-    // =========================================================================
     public function importStaging($batch_id)
     {
         $batch = \App\Models\FixedAssetImportBatch::with('details')->findOrFail($batch_id);
         return view('fixed_assets.import_staging', compact('batch'));
     }
 
-    // =========================================================================
-    // 3. AJUKAN KE ATASAN (WORKFLOW)
-    // =========================================================================
-
-
-    // =========================================================================
-    // 3. WORKFLOW: AJUKAN PERSETUJUAN
-    // =========================================================================
     public function submitApproval($batch_id)
     {
         DB::beginTransaction();
         try {
             $batch = \App\Models\FixedAssetImportBatch::findOrFail($batch_id);
 
-            // 1. Validasi Baris Error
             if ($batch->details->where('is_valid', 0)->count() > 0) {
                 throw new \Exception("Ada baris data yang error. Harap perbaiki form Excel Anda dan upload ulang.");
             }
 
-            // 2. Generate Workflow Menggunakan Service
             $needsApproval = \App\Services\ApprovalService::generateWorkflow($batch);
 
             if ($needsApproval) {
@@ -566,7 +532,6 @@ class FixedAssetController extends Controller
                 DB::commit();
                 return back()->with('success', 'Draft berhasil diajukan ke Atasan!');
             } else {
-                // AUTO APPROVE: Langsung pindah ke Buku Aset & Generate Item
                 $this->processAssetImport($batch);
                 $batch->update(['status' => 'approved']);
 
@@ -579,9 +544,6 @@ class FixedAssetController extends Controller
         }
     }
 
-    // =========================================================================
-    // 4. KEPUTUSAN ATASAN & 🔥 SMART AUTO-CREATE ITEM 🔥
-    // =========================================================================
     public function decide(Request $request, $batch_id)
     {
         DB::beginTransaction();
@@ -596,7 +558,6 @@ class FixedAssetController extends Controller
                 return back()->with('error', 'Tidak menunggu persetujuan Anda.');
             }
 
-            // JIKA REJECT
             if ($action === 'REJECT') {
                 $currentApproval->update(['status' => 'REJECTED', 'approved_by' => auth()->id(), 'approved_at' => now()]);
                 $batch->update(['status' => 'draft']);
@@ -604,7 +565,6 @@ class FixedAssetController extends Controller
                 return back()->with('error', 'Pengajuan dikembalikan ke Draft.');
             }
 
-            // JIKA APPROVE
             $currentApproval->update(['status' => 'APPROVED', 'approved_by' => auth()->id(), 'approved_at' => now()]);
             $nextApproval = \App\Models\DocumentApproval::where('document_id', $batch->id)->where('document_type', get_class($batch))
                 ->where('status', 'PENDING')->orderBy('step_order', 'asc')->first();
@@ -613,9 +573,6 @@ class FixedAssetController extends Controller
                 DB::commit();
                 return back()->with('success', 'Disetujui. Diteruskan ke atasan berikutnya.');
             } else {
-                // ===========================================================
-                // FINAL APPROVAL: PINDAH DATA KE BUKU ASET MENGGUNAKAN HELPER
-                // ===========================================================
                 $this->processAssetImport($batch);
                 $batch->update(['status' => 'approved']);
 
@@ -628,9 +585,6 @@ class FixedAssetController extends Controller
         }
     }
 
-    // =========================================================================
-    // HELPER METHOD: PINDAH DATA KE BUKU ASET & BUAT ITEM OTOMATIS
-    // =========================================================================
     private function processAssetImport($batch)
     {
         $yearMonth = date('Y/m');
@@ -639,12 +593,10 @@ class FixedAssetController extends Controller
         foreach ($details as $row) {
             $item = null;
 
-            // A. Cari by Kode
             if (!empty($row->kode_barang)) {
                 $item = \App\Models\Item::lockForUpdate()->where('code', $row->kode_barang)->first();
             }
 
-            // B. Jika Item Belum Ada, Eksekusi Smart Auto-Create Item
             if (!$item) {
                 $namaAsetBaru = $row->nama_spesifik_aset;
                 $item = \App\Models\Item::lockForUpdate()->where('name', $namaAsetBaru)->first();
@@ -679,12 +631,13 @@ class FixedAssetController extends Controller
                 }
             }
 
-            // C. Tarik Data Relasi
             $company = \App\Models\Company::where('name', 'like', "%{$row->nama_pt}%")->first();
             $warehouse = \App\Models\Warehouse::where('name', 'like', "%{$row->nama_gudang}%")->first();
+
+            // Perbaikan pencarian status menggunakan Like masih diperlukan disini krn dari excel string bebas,
+            // Namun fallback-nya menggunakan Slug jika bisa
             $status = \App\Models\Status::where('type', 'AST')->where('name', 'like', "%".explode('(', $row->status_aset)[0]."%")->first();
 
-            // PENCARIAN KATEGORI ASET YANG AMAN
             $assetCategory = \App\Models\AssetCategory::where('name', 'like', "%{$row->kategori_aset}%")->first();
             $defaultCategory = \App\Models\AssetCategory::first();
             $assetCategoryId = $assetCategory ? $assetCategory->id : ($defaultCategory ? $defaultCategory->id : null);
@@ -720,12 +673,10 @@ class FixedAssetController extends Controller
 
             $currency = \App\Models\Currency::where('code', strtoupper($row->mata_uang))->first();
 
-            // D. Bikin Nomor Aset
             $lastAsset = \App\Models\FixedAsset::where('asset_number', 'like', "AST/{$yearMonth}/%")->orderBy('id', 'desc')->lockForUpdate()->first();
             $nextSeq = $lastAsset ? ((int) substr($lastAsset->asset_number, -4)) + 1 : 1;
             $assetNumber = "AST/{$yearMonth}/" . str_pad($nextSeq, 4, '0', STR_PAD_LEFT);
 
-            // FORMAT TANGGAL
             $rawDate = $row->tanggal_perolehan;
             $formattedDate = null;
 
@@ -751,7 +702,6 @@ class FixedAssetController extends Controller
                 $formattedDate = date('Y-m-d');
             }
 
-            // E. Simpan ke Buku Besar Aset
             $asset = \App\Models\FixedAsset::create([
                 'asset_number'            => $assetNumber,
                 'item_id'                 => $item->id,
@@ -781,7 +731,6 @@ class FixedAssetController extends Controller
                 'created_by'     => auth()->id()
             ]);
 
-            // F. Mutasi Stok
             $currStock = (float) $item->current_stock;
             $balanceAfter = $currStock + 1;
 
@@ -816,20 +765,16 @@ class FixedAssetController extends Controller
         }
     }
 
-
     public function cancelImport($batch_id)
     {
-        // 🔥 JURUS ANTI-404: Cari berdasarkan ID urut ATAU berdasarkan Nomor Batch 🔥
         $batch = \App\Models\FixedAssetImportBatch::where('id', $batch_id)
                     ->orWhere('batch_number', $batch_id)
                     ->firstOrFail();
 
-        // Bersihkan file PDF/Bukti
         if (!empty($batch->support_doc) && \Illuminate\Support\Facades\Storage::disk('public')->exists($batch->support_doc)) {
             \Illuminate\Support\Facades\Storage::disk('public')->delete($batch->support_doc);
         }
 
-        // Bersihkan file Excel sisa
         if (!empty($batch->file_path) && \Illuminate\Support\Facades\Storage::disk('local')->exists($batch->file_path)) {
             \Illuminate\Support\Facades\Storage::disk('local')->delete($batch->file_path);
         }
@@ -839,8 +784,6 @@ class FixedAssetController extends Controller
 
         return redirect()->route('fixed-assets.index')->with('success', 'Draft Import Aset berhasil dibatalkan dan file dibersihkan.');
     }
-
-
 
     public function downloadTemplate()
     {
@@ -936,41 +879,26 @@ class FixedAssetController extends Controller
         return view('fixed_assets.hibah_history', compact('hibahs'));
     }
 
-
-
     // =========================================================================
-    // 🔥 MASTER LIST ASET (OPTIMASI 1 JUTA DATA & FILTER AKUNTANSI) 🔥
+    // 🔥 MASTER LIST ASET (PENGGUNAAN SLUG MURNI) 🔥
     // =========================================================================
     public function masterList(\Illuminate\Http\Request $request)
     {
-        // 1. Kumpulkan ID Status yang berbau "Void" / "Batal" (Dihapus Total)
         $voidStatusIds = \App\Models\Status::where('type', 'AST')
-            ->where(function($q) {
-                $q->where('slug', 'like', '%void%')
-                  ->orWhere('slug', 'like', '%batal%')
-                  ->orWhere('name', 'like', '%Void%')
-                  ->orWhere('name', 'like', '%Batal%');
-            })->pluck('id')->toArray();
+            ->whereIn('slug', ['void', 'batal', 'canceled', 'cancelled'])
+            ->pluck('id')->toArray();
 
-        // 2. Kumpulkan ID Status yang berbau "Disposed" (Dikeluarkan dari Neraca)
         $disposedStatusIds = \App\Models\Status::where('type', 'AST')
-            ->where(function($q) {
-                $q->where('slug', 'like', '%dispose%')
-                  ->orWhere('name', 'like', '%Dispose%')
-                  ->orWhere('name', 'like', '%Rusak%')
-                  ->orWhere('name', 'like', '%Dijual%');
-            })->pluck('id')->toArray();
+            ->where('slug', 'disposed')
+            ->pluck('id')->toArray();
 
-        // ==================================================================
-        // QUERY UNTUK TABEL (Menampilkan Aset Aktif & Disposed, tapi Void disembunyikan)
-        // ==================================================================
         $query = \App\Models\FixedAsset::with([
             'item.category', 'assetCategory', 'assignee.department',
             'company', 'department', 'status', 'warehouse'
         ]);
 
         if (!empty($voidStatusIds)) {
-            $query->whereNotIn('status_id', $voidStatusIds); // Buang Void dari Tabel
+            $query->whereNotIn('status_id', $voidStatusIds);
         }
         $query->where(function($q) {
             $q->whereNull('notes')
@@ -1004,12 +932,8 @@ class FixedAssetController extends Controller
 
         $assets = $query->latest()->paginate(15)->withQueryString();
 
-        // ==================================================================
-        // QUERY UNTUK KPI CARDS (HANYA MENGHITUNG ASET AKTIF / BUKAN DISPOSED & VOID)
-        // ==================================================================
         $kpiQuery = \App\Models\FixedAsset::query();
-
-        $excludeKpiIds = array_merge($voidStatusIds, $disposedStatusIds); // Gabungkan Void & Disposed
+        $excludeKpiIds = array_merge($voidStatusIds, $disposedStatusIds);
 
         if (!empty($excludeKpiIds)) {
             $kpiQuery->whereNotIn('status_id', $excludeKpiIds);
@@ -1024,7 +948,6 @@ class FixedAssetController extends Controller
         $inWarehouse = (clone $kpiQuery)->whereNull('assigned_to')->count();
         $totalValue = (clone $kpiQuery)->sum('purchase_price');
 
-        // Kalkulasi Nilai Buku untuk halaman ini (Kecuali yang Disposed)
         $totalCurrentValue = $assets->reject(function ($asset) use ($disposedStatusIds) {
             return in_array($asset->status_id, $disposedStatusIds);
         })->sum(function ($asset) {
@@ -1036,39 +959,22 @@ class FixedAssetController extends Controller
         ));
     }
 
-
-
-    // =========================================================================
-    // 🔥 FUNGSI EXPORT MASTER LIST KE EXCEL 🔥
-    // =========================================================================
     public function exportMasterList(\Illuminate\Http\Request $request)
     {
         $namaFile = 'Laporan_Master_Data_Aset_' . date('Y-m-d_H-i-s') . '.xlsx';
-
-        // request()->all() dikirim ke Export Class agar Excel mengunduh data yang difilter saja
         return \Maatwebsite\Excel\Facades\Excel::download(new \App\Exports\MasterAssetExport($request->all()), $namaFile);
     }
 
-
-
-
     // =========================================================================
-    // 🔥 HALAMAN KHUSUS TRANSAKSI ASET (PENYERAHAN & PENGEMBALIAN) 🔥
+    // 🔥 TRANSAKSI ASET (PENGGUNAAN SLUG MURNI) 🔥
     // =========================================================================
     public function transactions(\Illuminate\Http\Request $request)
     {
-        // Menampilkan aset yang sedang dipakai (untuk dikembalikan)
-        // dan aset di gudang (untuk diserahkan ke staf).
         $query = \App\Models\FixedAsset::with(['item.category', 'assignee.department', 'department', 'warehouse', 'status', 'company'])
-                    // =========================================================================
-                    // 🔥 BLOK FILTER VOID: Usir aset yang sudah dibatalkan dari daftar ini! 🔥
-                    // =========================================================================
                     ->where('notes', 'not like', '%[DIBATALKAN%')
                     ->whereHas('status', function($q) {
-                        $q->where('slug', 'not like', '%void%')
-                          ->where('slug', 'not like', '%batal%');
+                        $q->whereNotIn('slug', ['void', 'batal', 'canceled', 'cancelled']);
                     });
-                    // =========================================================================
 
         if ($request->filled('search')) {
             $search = $request->search;
@@ -1082,10 +988,8 @@ class FixedAssetController extends Controller
             });
         }
 
-        // Pagination 15 baris per halaman (Sangat Aman untuk jutaan data)
         $assets = $query->latest()->paginate(15)->withQueryString();
 
-        // Tarik master data untuk dropdown di modal pengembalian & penyerahan
         $warehouses  = \App\Models\Warehouse::orderBy('name')->get();
         $statuses    = \App\Models\Status::where('type', 'AST')->orderBy('sequence')->get();
         $users       = \App\Models\User::with(['department', 'company'])->orderBy('name')->get();
@@ -1094,14 +998,11 @@ class FixedAssetController extends Controller
         return view('fixed_assets.transactions', compact('assets', 'warehouses', 'statuses', 'users', 'departments'));
     }
 
-
-
     // =========================================================================
-    // 🔥 2. MESIN PROSES PENGEMBALIAN ASET (RETURN) 🔥
+    // 🔥 2. MESIN PROSES PENGEMBALIAN ASET (RETURN) DINAMIS 🔥
     // =========================================================================
     public function returnAsset(\Illuminate\Http\Request $request, $id)
     {
-        // 1. Validasi input dari form modal pengembalian
         $request->validate([
             'warehouse_id' => 'required|exists:warehouses,id',
             'status_id'    => 'required|exists:statuses,id',
@@ -1110,10 +1011,7 @@ class FixedAssetController extends Controller
         ]);
 
         try {
-            // Gunakan DB Transaction agar data aman
             \Illuminate\Support\Facades\DB::transaction(function () use ($request, $id) {
-
-                // Cari data asetnya
                 $asset = \App\Models\FixedAsset::findOrFail($id);
                 $previousUserId = $asset->assigned_to;
 
@@ -1121,35 +1019,33 @@ class FixedAssetController extends Controller
                     throw new \Exception('Aset ini sudah berada di gudang dan tidak sedang dipegang oleh siapapun.');
                 }
 
-                // 2. CATAT HISTORI PENGEMBALIAN (Sesuai dengan kolom tabel Anda yang asli)
+                // 🔥 SAKTI: Ambil Nama Status dari Database, Bukan Hardcode! 🔥
+                $newStatus = \App\Models\Status::find($request->status_id);
+
                 \App\Models\FixedAssetHistory::create([
                     'fixed_asset_id'   => $asset->id,
-                    'status'           => 'RETURNED',
+                    'status'           => optional($newStatus)->name ?? 'Returned', // Dinamis
                     'assigned_to'      => null,
                     'notes'            => 'Dikembalikan ke gudang (ID: ' . $request->warehouse_id . ') oleh User ID: ' . $previousUserId . '. Catatan: ' . $request->return_notes,
                     'created_by'       => auth()->id(),
                 ]);
 
-                // 3. UPDATE DATA ASET INDUK (Lepas ikatan dari User)
                 $asset->assigned_to   = null;
                 $asset->department_id = null;
                 $asset->warehouse_id  = $request->warehouse_id;
                 $asset->status_id     = $request->status_id;
                 $asset->save();
 
-                // 4. UPDATE KARTU STOK MASTER ITEM (+1)
                 $item = \App\Models\Item::find($asset->item_id);
                 if ($item) {
-                    $balanceBefore = $item->current_stock; // Catat stok sebelum ditambah
-
+                    $balanceBefore = $item->current_stock;
                     $item->current_stock += 1;
                     $item->save();
 
-                    // 🔥 5. CATAT KE KARTU MUTASI STOK (RETUR MASUK) 🔥
                     \App\Models\StockMutation::create([
                         'item_id'          => $item->id,
                         'warehouse_id'     => $request->warehouse_id,
-                        'type'             => 'IN',  // Sesuai ENUM di database
+                        'type'             => 'IN',
                         'qty'              => 1,
                         'balance_before'   => $balanceBefore,
                         'balance_after'    => $item->current_stock,
@@ -1168,12 +1064,12 @@ class FixedAssetController extends Controller
     }
 
 
+
     // =========================================================================
-    // 🔥 3. MESIN PROSES PENYERAHAN ASET (HANDOVER) 🔥
+    // 🔥 3. MESIN PROSES PENYERAHAN ASET (HANDOVER) DINAMIS 🔥
     // =========================================================================
     public function handoverAsset(\Illuminate\Http\Request $request, $id)
     {
-        // 1. Hapus validasi department_id karena form-nya kita buang
         $request->validate([
             'assigned_to'   => 'required|exists:users,id',
             'status_id'     => 'required|exists:statuses,id',
@@ -1186,50 +1082,46 @@ class FixedAssetController extends Controller
                 $asset = \App\Models\FixedAsset::findOrFail($id);
                 $previousWarehouseId = $asset->warehouse_id;
 
-                // 🔥 SAKTI: Ambil profil lengkap Staf Penerima dari database 🔥
                 $userPenerima = \App\Models\User::findOrFail($request->assigned_to);
 
                 if (!empty($asset->assigned_to)) {
                     throw new \Exception('Aset ini sedang dipakai dan belum dikembalikan ke gudang.');
                 }
 
-                // 1. CATAT HISTORI PENYERAHAN
+                // 🔥 SAKTI: Ambil Nama Status dari Database, Bukan Hardcode! 🔥
+                $newStatus = \App\Models\Status::find($request->status_id);
+
                 \App\Models\FixedAssetHistory::create([
                     'fixed_asset_id'   => $asset->id,
-                    'status'           => 'HANDOVER',
+                    'status'           => optional($newStatus)->name ?? 'Handover', // Dinamis
                     'assigned_to'      => $request->assigned_to,
                     'notes'            => 'Diserahkan ke User ID: ' . $request->assigned_to . '. Catatan: ' . $request->handover_notes,
                     'created_by'       => auth()->id(),
                 ]);
 
-                // 2. UPDATE DATA ASET INDUK
                 $asset->assigned_to   = $request->assigned_to;
-                $asset->department_id = $userPenerima->department_id; // 🔥 OTOMATIS TERISI DARI PROFIL USER 🔥
+                $asset->department_id = $userPenerima->department_id;
                 $asset->warehouse_id  = null;
                 $asset->status_id     = $request->status_id;
                 $asset->save();
 
-                // 3. UPDATE KARTU STOK MASTER ITEM (-1 KELUAR)
                 $item = \App\Models\Item::find($asset->item_id);
                 if ($item) {
-                    $balanceBefore = $item->current_stock; // Catat stok sebelum dikurangi
-
+                    $balanceBefore = $item->current_stock;
                     $item->current_stock -= 1;
                     $item->save();
 
-                    // 🔥 4. CATAT MUTASI KELUAR (HANDOVER) 🔥
                     \App\Models\StockMutation::create([
                         'item_id'          => $item->id,
                         'warehouse_id'     => $previousWarehouseId,
-                        'type'             => 'OUT', // Sesuai ENUM di database
-                        'qty'              => 1,     // Tetap 1 karena tipe-nya sudah 'OUT'
+                        'type'             => 'OUT',
+                        'qty'              => 1,
                         'balance_before'   => $balanceBefore,
                         'balance_after'    => $item->current_stock,
                         'reference_number' => 'GI-AST/' . date('Y/m/d') . '/' . $asset->asset_number,
                         'notes'            => 'Penyerahan Aset (' . $asset->asset_number . ') ke User ID: ' . $request->assigned_to,
                         'created_by'       => auth()->id(),
                     ]);
-
                 }
             });
 
@@ -1242,17 +1134,10 @@ class FixedAssetController extends Controller
 
 
 
-
-
-    // =========================================================================
-    // 🔥 4. HALAMAN RIWAYAT PERJALANAN ASET (LIFECYCLE) 🔥
-    // =========================================================================
     public function history($id)
     {
-        // Tarik data aset beserta relasinya
         $asset = \App\Models\FixedAsset::with(['item', 'company', 'warehouse', 'assignee'])->findOrFail($id);
 
-        // Tarik histori dan urutkan dari yang PALING LAMA ke TERBARU untuk menghitung durasi
         $histories = \App\Models\FixedAssetHistory::where('fixed_asset_id', $id)
             ->orderBy('created_at', 'asc')
             ->get();
@@ -1261,23 +1146,20 @@ class FixedAssetController extends Controller
         $lastHandoverDate = null;
 
         foreach ($histories as $history) {
-            // Ambil nama Admin yang melakukan transaksi
             $adminName = \App\Models\User::where('id', $history->created_by)->value('name') ?? 'System';
             $history->admin_name = $adminName;
 
-            // Logika Penghitungan Durasi
             if ($history->status === 'HANDOVER') {
                 $lastHandoverDate = $history->created_at;
                 $history->durasi = null;
             } elseif ($history->status === 'RETURNED') {
                 if ($lastHandoverDate) {
-                    // 🔥 PERBAIKAN: Gunakan startOfDay() agar perhitungannya murni selisih tanggal (bilangan bulat)
                     $startDate = \Carbon\Carbon::parse($lastHandoverDate)->startOfDay();
                     $endDate = \Carbon\Carbon::parse($history->created_at)->startOfDay();
                     $days = $startDate->diffInDays($endDate);
 
                     $history->durasi = ($days == 0 ? 1 : $days) . ' Hari Dipakai';
-                    $lastHandoverDate = null; // Reset setelah dikembalikan
+                    $lastHandoverDate = null;
                 }
             } else {
                 $history->durasi = null;
@@ -1286,9 +1168,7 @@ class FixedAssetController extends Controller
             $processedHistories->push($history);
         }
 
-        // Hitung durasi pemakaian saat ini (jika aset sedang dipakai dan belum dikembalikan)
         if ($lastHandoverDate && $asset->assigned_to) {
-            // 🔥 PERBAIKAN: Gunakan startOfDay() untuk perhitungan hari ini
             $startDate = \Carbon\Carbon::parse($lastHandoverDate)->startOfDay();
             $today = now()->startOfDay();
             $days = $startDate->diffInDays($today);
@@ -1296,17 +1176,11 @@ class FixedAssetController extends Controller
             $asset->current_usage_duration = ($days == 0 ? 1 : $days) . ' Hari';
         }
 
-        // Balikkan urutannya menjadi TERBARU ke LAMA untuk ditampilkan di halaman
         $historiesDesc = $processedHistories->sortByDesc('created_at')->values();
 
         return view('fixed_assets.history', compact('asset', 'historiesDesc'));
     }
 
-
-
-    // =========================================================================
-    // HALAMAN FORM INPUT MANUAL (HIBAH)
-    // =========================================================================
     public function createManual()
     {
         $warehouses = \App\Models\Warehouse::orderBy('name', 'asc')->get();
@@ -1314,26 +1188,18 @@ class FixedAssetController extends Controller
         $companies = \App\Models\Company::orderBy('name', 'asc')->get();
         $statuses = \App\Models\Status::where('type', 'AST')->orderBy('sequence', 'asc')->get();
         $currencies = \App\Models\Currency::where('is_active', 1)->get();
-
-        // 🔥 TAMBAHKAN BARIS INI: Tarik data User/Karyawan 🔥
         $users = \App\Models\User::with(['company', 'department'])->orderBy('name', 'asc')->get();
 
-        // Lempar variabel $users ke compact
         return view('fixed_assets.create_manual', compact('warehouses', 'assetCategories', 'companies', 'statuses', 'currencies', 'users'));
     }
 
-    // =========================================================================
-    // HALAMAN FORM IMPORT EXCEL ASET
-    // =========================================================================
     public function createImport()
     {
         return view('fixed_assets.create_import');
     }
 
-
-
-   // =========================================================================
-    // 🔥 FITUR HAPUS / BATALKAN ASET (SMART DELETE & AUTO-REVERSE STOCK) 🔥
+    // =========================================================================
+    // 🔥 FITUR HAPUS / BATALKAN ASET (PENGGUNAAN SLUG MURNI & REVERSE STOK) 🔥
     // =========================================================================
     public function destroy($id)
     {
@@ -1341,7 +1207,6 @@ class FixedAssetController extends Controller
             DB::transaction(function () use ($id) {
                 $asset = \App\Models\FixedAsset::findOrFail($id);
 
-                // 1. VALIDASI
                 if ($asset->assigned_to != null) {
                     throw new \Exception('Aset sedang digunakan oleh staf. Lakukan Retur terlebih dahulu jika ingin menghapusnya.');
                 }
@@ -1354,6 +1219,7 @@ class FixedAssetController extends Controller
                     throw new \Exception('TIDAK DIIZINKAN: Aset ini memiliki jejak riwayat pernah diserahkan/digunakan oleh staf. Gunakan fitur Edit -> ubah status menjadi "Disposed".');
                 }
 
+                // Cek history pakai nama yang tersimpan sebelumnya
                 $hasTransaction = \App\Models\FixedAssetHistory::where('fixed_asset_id', $id)
                                 ->where(function($q) {
                                     $q->where('status', 'like', '%Maintenance%')
@@ -1366,9 +1232,6 @@ class FixedAssetController extends Controller
                     throw new \Exception('TIDAK DIIZINKAN: Aset ini sudah memiliki riwayat transaksi aktif. Data tidak boleh dihapus.');
                 }
 
-                // =========================================================================
-                // 🔥 4. REVERSE STOK: LOGIKA CABANG (MANUAL VS GR) 🔥
-                // =========================================================================
                 if ($asset->item_id && $asset->warehouse_id) {
                     $masterItem = \App\Models\Item::lockForUpdate()->find($asset->item_id);
                     if ($masterItem) {
@@ -1378,9 +1241,6 @@ class FixedAssetController extends Controller
                                         ->first();
 
                         if ($asset->goods_receipt_id) {
-                            // -------------------------------------------------------------
-                            // KASUS A: ASET DARI PO/GR (KAPITALISASI) => KEMBALIKAN (IN)
-                            // -------------------------------------------------------------
                             $masterItem->update(['current_stock' => $currStock + 1]);
 
                             if ($invStock) {
@@ -1399,7 +1259,7 @@ class FixedAssetController extends Controller
                             \App\Models\StockMutation::create([
                                 'item_id'          => $masterItem->id,
                                 'warehouse_id'     => $asset->warehouse_id,
-                                'type'             => 'IN', // MASUK
+                                'type'             => 'IN',
                                 'qty'              => 1,
                                 'balance_before'   => $currStock,
                                 'balance_after'    => $currStock + 1,
@@ -1409,9 +1269,6 @@ class FixedAssetController extends Controller
                             ]);
 
                         } else {
-                            // -------------------------------------------------------------
-                            // KASUS B: ASET DARI INPUT MANUAL / HIBAH => MUSNAHKAN (OUT)
-                            // -------------------------------------------------------------
                             $masterItem->update(['current_stock' => max(0, $currStock - 1)]);
 
                             if ($invStock && $invStock->stock_qty > 0) {
@@ -1421,7 +1278,7 @@ class FixedAssetController extends Controller
                             \App\Models\StockMutation::create([
                                 'item_id'          => $masterItem->id,
                                 'warehouse_id'     => $asset->warehouse_id,
-                                'type'             => 'OUT', // KELUAR / DIMUSNAHKAN
+                                'type'             => 'OUT',
                                 'qty'              => 1,
                                 'balance_before'   => $currStock,
                                 'balance_after'    => max(0, $currStock - 1),
@@ -1431,7 +1288,6 @@ class FixedAssetController extends Controller
                             ]);
                         }
 
-                        // Bebaskan Serial Number (SN) agar berstatus AVAILABLE kembali
                         if (!empty($asset->serial_number)) {
                             \DB::table('item_serials')
                                 ->where('item_id', $masterItem->id)
@@ -1443,9 +1299,7 @@ class FixedAssetController extends Controller
                         }
                     }
                 }
-                // =========================================================================
 
-                // 5. Bersihkan File Foto Fisik dari Storage Server
                 $photos = \App\Models\AssetPhoto::where('fixed_asset_id', $id)->get();
                 foreach ($photos as $photo) {
                     if (\Illuminate\Support\Facades\Storage::disk('public')->exists($photo->file_path)) {
@@ -1454,10 +1308,7 @@ class FixedAssetController extends Controller
                     $photo->delete();
                 }
 
-                // 6. Bersihkan Jejak Rekam / Log History
                 \App\Models\FixedAssetHistory::where('fixed_asset_id', $id)->delete();
-
-                // 7. Hapus Data Utama Aset
                 $asset->delete();
             });
 
@@ -1466,9 +1317,4 @@ class FixedAssetController extends Controller
             return back()->with('error', 'Gagal Menghapus: ' . $e->getMessage());
         }
     }
-
-
-
-
 }
-

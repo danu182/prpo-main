@@ -68,13 +68,20 @@
                         <div class="position-relative" style="border-left: 3px dashed #dee2e6; margin-left: 15px; padding-left: 30px;">
 
                             @foreach($historiesDesc as $history)
+                                @php
+                                    // 🔥 SMART DETECTOR: Cek histori berdasarkan Note atau Status lama 🔥
+                                    $noteLower = strtolower($history->notes);
+                                    $isHandover = $history->status == 'HANDOVER' || str_contains($noteLower, 'diserahkan');
+                                    $isReturned = $history->status == 'RETURNED' || str_contains($noteLower, 'dikembalikan') || str_contains($noteLower, 'ditarik');
+                                @endphp
+
                                 <div class="mb-5 position-relative">
                                     {{-- Ikon Bulat Timeline --}}
-                                    @if($history->status == 'HANDOVER')
+                                    @if($isHandover)
                                         <div class="text-white border border-4 border-white shadow-sm position-absolute bg-primary rounded-circle d-flex align-items-center justify-content-center" style="width: 40px; height: 40px; left: -52px; top: -5px;">
                                             <i class="bi bi-person-plus-fill"></i>
                                         </div>
-                                    @elseif($history->status == 'RETURNED')
+                                    @elseif($isReturned)
                                         <div class="text-white border border-4 border-white shadow-sm position-absolute bg-danger rounded-circle d-flex align-items-center justify-content-center" style="width: 40px; height: 40px; left: -52px; top: -5px;">
                                             <i class="bi bi-arrow-return-left"></i>
                                         </div>
@@ -88,9 +95,9 @@
                                     <div class="p-3 border shadow-sm bg-light rounded-4">
                                         <div class="mb-2 d-flex justify-content-between align-items-start">
                                             <div>
-                                                @if($history->status == 'HANDOVER')
+                                                @if($isHandover)
                                                     <span class="mb-1 badge bg-primary">Aset Diserahkan</span>
-                                                @elseif($history->status == 'RETURNED')
+                                                @elseif($isReturned)
                                                     <span class="mb-1 badge bg-danger">Aset Dikembalikan</span>
                                                 @else
                                                     <span class="mb-1 badge bg-secondary">{{ $history->status }}</span>

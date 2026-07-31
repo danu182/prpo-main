@@ -179,7 +179,6 @@
 
                         <div class="mb-3">
                             <label class="form-label fw-bold small text-muted">Status Aset <span class="text-danger">*</span></label>
-                            {{-- 🔥 HAPUS onchange lama, Tambahkan id="status_id" 🔥 --}}
                             <select name="status_id" id="status_id" class="shadow-sm form-select" required>
                                 <option value="">-- Pilih Status Aset --</option>
                                 @foreach($statuses as $status)
@@ -230,7 +229,7 @@
         // Init Select2 untuk Karyawan
         $('.select2-user').select2({ theme: 'bootstrap-5' });
 
-        // 🔥 LOGIKA SMART TOGGLE UNTUK FORM EDIT 🔥
+        // 🔥 LOGIKA SMART TOGGLE UNTUK FORM EDIT MENGGUNAKAN SLUG 🔥
         $('#status_id').on('change', function() {
             // Ambil slug dari option yang dipilih agar akurat
             let slug = $(this).find('option:selected').data('slug');

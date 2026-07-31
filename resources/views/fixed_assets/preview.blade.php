@@ -1,7 +1,42 @@
 @extends('layouts.app')
 
+@push('css')
+<style>
+    /* 🔥 KUSTOMISASI TABEL SAAS MODERN 🔥 */
+    .card-table-wrapper {
+        border-radius: 16px;
+        overflow: hidden;
+        border: 1px solid #e2e8f0;
+        box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05);
+        background: #fff;
+    }
+    .table-modern { margin-bottom: 0; }
+    .table-modern thead th {
+        background-color: #f8fafc;
+        color: #64748b;
+        font-size: 0.75rem;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        padding: 1.2rem 1.5rem;
+        border-bottom: 1px solid #e2e8f0;
+        font-weight: 700;
+        border-top: none;
+    }
+    .table-modern tbody td {
+        padding: 1.25rem 1.5rem;
+        vertical-align: middle;
+        border-bottom: 1px solid #f1f5f9;
+        color: #334155;
+        font-size: 0.85rem;
+    }
+    .table-modern tbody tr { transition: all 0.2s ease; background-color: #ffffff; }
+    .table-modern tbody tr:hover:not(.table-danger) { background-color: #f8fafc !important; }
+</style>
+@endpush
+
 @section('content')
-<div class="container pb-5 text-dark">
+{{-- 🔥 DIUBAH MENJADI FULL WIDTH (CONTAINER-FLUID) 🔥 --}}
+<div class="pb-5 container-fluid text-dark px-md-4">
 
     {{-- HEADER --}}
     <div class="mb-4">
@@ -30,95 +65,95 @@
         </div>
     @endif
 
-    {{-- TABEL PREVIEW DATA --}}
-    <div class="card border-0 shadow-sm rounded-4 border-top border-primary border-4">
-        <div class="card-body p-0 table-responsive">
-            <table class="table table-hover align-middle mb-0" style="min-width: 1300px;">
-                <thead class="bg-light fw-bold text-muted small border-bottom text-uppercase">
+    {{-- TABEL PREVIEW DATA MODERN --}}
+    <div class="mb-4 border-4 card-table-wrapper border-top border-primary">
+        <div class="p-0 table-responsive">
+            <table class="table align-middle table-modern" style="min-width: 1300px;">
+                <thead>
                     <tr>
-                        <th class="py-3 ps-4" width="4%">No</th>
-                        <th class="py-3" width="16%">Identitas Barang</th>
-                        <th class="py-3" width="13%">PT & Gudang</th>
-                        <th class="py-3" width="15%">Spesifikasi Aset</th>
-                        <th class="py-3" width="11%">Info Perolehan</th>
-                        <th class="py-3" width="10%">Status</th>
-                        <th class="py-3" width="10%">Pemegang</th>
-                        <th class="py-3" width="9%">Catatan</th>
-                        <th class="py-3 pe-4" width="12%">Status Validasi</th>
+                        <th class="ps-4" width="4%">No</th>
+                        <th width="16%">Identitas Barang</th>
+                        <th width="13%">PT & Gudang</th>
+                        <th width="15%">Spesifikasi Aset</th>
+                        <th width="11%">Info Perolehan</th>
+                        <th width="10%">Status</th>
+                        <th width="10%">Pemegang</th>
+                        <th width="9%">Catatan</th>
+                        <th class="pe-4" width="12%">Status Validasi</th>
                     </tr>
                 </thead>
                 <tbody>
                     @forelse($previewData as $index => $row)
                         <tr class="{{ !$row['is_row_valid'] ? 'table-danger' : '' }}">
-                            <td class="py-3 ps-4 text-muted small">{{ $loop->iteration }}</td>
+                            <td class="ps-4 text-muted fw-bold">{{ $loop->iteration }}</td>
 
                             {{-- 🔥 Kolom Identitas Barang (Kode, Nama, SN, LABEL AKUNTANSI) 🔥 --}}
-                            <td class="py-3">
+                            <td>
                                 <div class="fw-bold {{ !$row['item_valid'] ? 'text-danger' : 'text-dark' }}">
                                     {{ $row['kode_barang'] }}
                                 </div>
-                                <div class="small fw-bold text-primary mt-1">
+                                <div class="mt-1 fw-bold text-primary" style="font-size: 0.8rem;">
                                     {{ $row['nama_custom'] !== '-' ? $row['nama_custom'] : $row['nama_barang'] }}
                                 </div>
-                                <div class="small text-muted mt-2 font-monospace" style="font-size: 0.7rem;">
+                                <div class="mt-2 text-muted font-monospace" style="font-size: 0.7rem;">
                                     <div class="{{ !$row['serial_valid'] ? 'text-danger fw-bold' : '' }}">
-                                        <i class="bi bi-upc-scan me-1"></i> S/N: {{ $row['serial'] }}
+                                        <i class="bi bi-upc-scan me-1"></i> S/N: <span class="text-dark fw-bold">{{ $row['serial'] }}</span>
                                     </div>
                                     <div class="mt-1 {{ !$row['accounting_valid'] ? 'text-danger fw-bold' : '' }}">
-                                        <i class="bi bi-tags me-1"></i> AKT: {{ $row['akuntansi'] }}
+                                        <i class="bi bi-tags me-1"></i> AKT: <span class="text-info fw-bold">{{ $row['akuntansi'] }}</span>
                                     </div>
                                 </div>
                             </td>
 
                             {{-- Kolom PT & Gudang --}}
-                            <td class="py-3 small">
-                                <div class="fw-bold {{ !$row['company_valid'] ? 'text-danger' : 'text-dark' }}">
+                            <td>
+                                <div class="fw-bold {{ !$row['company_valid'] ? 'text-danger' : 'text-dark' }} small">
                                     <i class="bi bi-building me-1 text-muted"></i>{{ $row['nama_pt'] }}
                                 </div>
-                                <div class="mt-1 fw-bold {{ !$row['warehouse_valid'] ? 'text-danger' : 'text-info' }}">
+                                <div class="mt-1 fw-bold {{ !$row['warehouse_valid'] ? 'text-danger' : 'text-info' }} small">
                                     <i class="bi bi-geo-alt-fill me-1"></i>{{ $row['nama_gudang'] }}
                                 </div>
                             </td>
 
                             {{-- Kolom Spesifikasi --}}
-                            <td class="py-3 small text-muted" style="font-size: 0.75rem; line-height: 1.3;">
+                            <td class="text-muted" style="font-size: 0.75rem; line-height: 1.3;">
                                 {!! nl2br(e($row['spesifikasi'])) !!}
                             </td>
 
                             {{-- Kolom Info Perolehan --}}
-                            <td class="py-3 small">
+                            <td>
                                 @if($row['tanggal'])
-                                    <div class="text-dark"><i class="bi bi-calendar-event me-1 text-muted"></i>{{ \Carbon\Carbon::parse($row['tanggal'])->format('d M Y') }}</div>
+                                    <div class="text-dark small fw-medium"><i class="bi bi-calendar-event me-1 text-muted"></i>{{ \Carbon\Carbon::parse($row['tanggal'])->format('d M Y') }}</div>
                                 @else
-                                    <div class="text-muted fst-italic"><i class="bi bi-calendar-event me-1"></i>Tgl Kosong</div>
+                                    <div class="text-muted fst-italic small"><i class="bi bi-calendar-event me-1"></i>Tgl Kosong</div>
                                 @endif
 
-                                <div class="mt-1 fw-bold {{ $row['currency_valid'] ? 'text-success' : 'text-danger' }}">
+                                <div class="mt-1 fw-bold small {{ $row['currency_valid'] ? 'text-success' : 'text-danger' }}">
                                     {{ $row['currency_symbol'] }} {{ number_format((float)$row['harga'], 0, ',', '.') }}
                                 </div>
                             </td>
 
-                            {{-- Kolom Status --}}
-                            <td class="py-3 small text-muted">
+                            {{-- Kolom Status (Raw Data Excel) --}}
+                            <td>
                                 <span class="badge {{ !$row['status_valid'] ? 'bg-danger' : 'bg-secondary-subtle text-secondary border border-secondary-subtle' }} rounded-pill text-wrap lh-sm">
                                     {{ $row['status'] }}
                                 </span>
                             </td>
 
                             {{-- Kolom Peminjam --}}
-                            <td class="py-3 small fw-bold {{ !$row['user_valid'] ? 'text-danger' : 'text-dark' }}">
+                            <td class="fw-bold small {{ !$row['user_valid'] ? 'text-danger' : 'text-dark' }}">
                                 {{ $row['peminjam'] }}
                             </td>
 
                             {{-- Kolom Catatan --}}
-                            <td class="py-3 small text-muted fst-italic">
+                            <td class="text-muted fst-italic" style="font-size: 0.75rem; line-height: 1.3;">
                                 {{ $row['catatan'] }}
                             </td>
 
                             {{-- Kolom Validasi --}}
-                            <td class="py-3 pe-4 small">
+                            <td class="pe-4">
                                 @if($row['is_row_valid'])
-                                    <span class="badge bg-success rounded-pill px-3 shadow-sm"><i class="bi bi-check-circle-fill me-1"></i> OK</span>
+                                    <span class="px-3 shadow-sm badge bg-success rounded-pill"><i class="bi bi-check-circle-fill me-1"></i> OK</span>
                                 @else
                                     <div class="text-danger fw-bold lh-sm" style="font-size: 0.75rem;">
                                         @foreach($row['error_messages'] as $errorMsg)
@@ -131,7 +166,7 @@
                     @empty
                         <tr>
                             <td colspan="9" class="py-5 text-center text-muted">
-                                <i class="bi bi-file-earmark-x display-4 d-block mb-3 opacity-50"></i>
+                                <i class="mb-3 opacity-50 bi bi-file-earmark-x display-4 d-block"></i>
                                 Tidak ada data yang terbaca dari file Excel. Pastikan Anda mengisi data mulai dari baris ke-2.
                             </td>
                         </tr>
@@ -140,8 +175,7 @@
             </table>
         </div>
 
-       <div class="card-footer bg-white border-top p-3 d-flex flex-column flex-md-row justify-content-between align-items-md-end rounded-bottom-4 gap-3">
-
+        <div class="p-3 bg-white card-footer border-top d-flex flex-column flex-md-row justify-content-between align-items-md-end rounded-bottom-4 gap-3">
             <div class="pb-md-2">
                 <span class="text-muted small fw-bold">Total Data Terbaca: <span class="text-primary fs-6">{{ count($previewData) }}</span> Baris</span>
             </div>
@@ -153,23 +187,22 @@
 
                 <div class="d-flex flex-column align-items-end">
                     @if($docPath)
-                        <div class="badge bg-info text-dark rounded-pill px-3 py-1 mb-2 shadow-sm border border-info">
+                        <div class="px-3 py-1 mb-2 border shadow-sm badge bg-info-subtle text-info-emphasis rounded-pill border-info-subtle">
                             <i class="bi bi-paperclip me-1"></i> Dokumen Pendukung Terlampir
                         </div>
                     @endif
 
-                    <div class="d-flex gap-2">
-                        <a href="{{ route('fixed-assets.index') }}" class="btn btn-light border fw-bold rounded-pill px-4 shadow-sm">
+                    <div class="gap-2 d-flex">
+                        <a href="{{ route('fixed-assets.index') }}" class="px-4 shadow-sm btn btn-light border-secondary-subtle fw-bold rounded-pill text-dark">
                             <i class="bi bi-x-lg me-1"></i> Batal & Kembali
                         </a>
 
-                        <button type="submit" class="btn btn-primary fw-bold rounded-pill px-4 shadow-sm" {{ $hasError || empty($previewData) ? 'disabled' : '' }}>
+                        <button type="submit" class="px-4 shadow-sm btn btn-primary fw-bold rounded-pill" {{ $hasError || empty($previewData) ? 'disabled' : '' }}>
                             <i class="bi bi-cloud-check-fill me-1"></i> Konfirmasi & Eksekusi Import
                         </button>
                     </div>
                 </div>
             </form>
-
         </div>
     </div>
 </div>

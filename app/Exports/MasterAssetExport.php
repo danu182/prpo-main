@@ -25,22 +25,17 @@ class MasterAssetExport implements FromQuery, WithHeadings, WithMapping, ShouldA
 
     public function query()
     {
-        // 1. Kumpulkan ID Status Void agar tidak ikut ke-Export
+        // =========================================================================
+        // 🔥 FILTER ANTI-VOID: Menggunakan SLUG Murni (Anti-Hardcode) 🔥
+        // =========================================================================
         $voidStatusIds = \App\Models\Status::where('type', 'AST')
-            ->where(function($q) {
-                $q->where('slug', 'like', '%void%')
-                  ->orWhere('slug', 'like', '%batal%')
-                  ->orWhere('name', 'like', '%Void%')
-                  ->orWhere('name', 'like', '%Batal%');
-            })->pluck('id')->toArray();
+            ->whereIn('slug', ['void', 'batal', 'canceled', 'cancelled'])
+            ->pluck('id')->toArray();
 
         $query = FixedAsset::query()->with([
             'item', 'assetCategory', 'company', 'warehouse', 'status', 'assignee', 'currency'
         ]);
 
-        // =========================================================================
-        // 🔥 FILTER ANTI-VOID: Buang aset yang batal/void dari laporan Excel 🔥
-        // =========================================================================
         if (!empty($voidStatusIds)) {
             $query->whereNotIn('status_id', $voidStatusIds);
         }
@@ -82,19 +77,17 @@ class MasterAssetExport implements FromQuery, WithHeadings, WithMapping, ShouldA
     {
         $umurTahun = optional($asset->assetCategory)->useful_life_years ?? 4;
 
-        // 🔥 PEMBERSIH TEKS EKSTREM: Menghapus Enter, Tab, dan Tag HTML agar baris Excel tidak hancur
+        // Pembersih teks agar baris Excel tidak hancur
         $rawSpesifikasi = $asset->spesifikasi_detail ? strip_tags($asset->spesifikasi_detail) : '-';
         $spesifikasi = trim(preg_replace('/\s+/', ' ', str_replace(["\r", "\n", "\t"], ' ', $rawSpesifikasi)));
 
         $rawNama = $asset->name ?? optional($asset->item)->name ?? '-';
         $namaAset = trim(preg_replace('/\s+/', ' ', str_replace(["\r", "\n", "\t"], ' ', $rawNama)));
 
-        // 🔥 FORMAT UANG LANGSUNG DI PHP: Mencegah Excel menyembunyikan angka 0
+        // Format uang langsung di PHP
         $mataUang = optional($asset->currency)->code ?? 'IDR';
         $hargaBeli = number_format((float)($asset->purchase_price ?? 0), 0, ',', '.');
         $bebanBulan = number_format((float)($asset->monthly_depreciation ?? 0), 0, ',', '.');
-
-        // PENTING: Aset yang di-Disposed nilainya tetap Rp 0 atau mengikuti nilai sisa terakhirnya.
         $nilaiBuku = number_format((float)($asset->net_book_value ?? 0), 0, ',', '.');
 
         return [
@@ -106,7 +99,9 @@ class MasterAssetExport implements FromQuery, WithHeadings, WithMapping, ShouldA
             optional($asset->company)->name ?? '-',
             optional($asset->warehouse)->name ?? '-',
             optional($asset->assignee)->name ?? 'Di Gudang',
-            optional($asset->status)->name ?? '-', // Akan otomatis mencetak "Disposed" jika rusak/dijual
+
+            // 🔥 Akan mencetak nama status otomatis dari Database (misal: In Use (Dipakai)) 🔥
+            optional($asset->status)->name ?? '-',
 
             optional($asset->assetCategory)->name ?? 'Kelompok 1 (Default)',
             $umurTahun . ' Tahun',
@@ -115,9 +110,9 @@ class MasterAssetExport implements FromQuery, WithHeadings, WithMapping, ShouldA
             now()->format('F Y'),
 
             $mataUang,
-            $mataUang . ' ' . $hargaBeli,   // Output: IDR 10.000.000
-            $mataUang . ' ' . $bebanBulan,  // Output: IDR 208.333
-            $mataUang . ' ' . $nilaiBuku,   // Output: IDR 7.083.338
+            $mataUang . ' ' . $hargaBeli,
+            $mataUang . ' ' . $bebanBulan,
+            $mataUang . ' ' . $nilaiBuku,
 
             $spesifikasi,
         ];
@@ -150,7 +145,7 @@ class MasterAssetExport implements FromQuery, WithHeadings, WithMapping, ShouldA
     }
 
     // =======================================================
-    // 3. STYLING HEADER SAJA (Disederhanakan agar tidak bentrok)
+    // 3. STYLING HEADER SAJA
     // =======================================================
     public function styles(Worksheet $sheet)
     {
