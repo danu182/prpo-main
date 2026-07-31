@@ -123,7 +123,9 @@
 
                         <div class="mb-3">
                             <label class="form-label fw-bold small text-muted text-uppercase">Status <span class="text-danger">*</span></label>
-                            <select name="status_id" class="shadow-sm form-select" required>
+                            {{-- 🔥 ID status_id HARUS ADA DI SINI 🔥 --}}
+                            <select name="status_id" id="status_id" class="shadow-sm form-select" required>
+                                <option value="">-- Pilih Status Aset --</option>
                                 @foreach($statuses as $status)
                                     @if(in_array($status->slug, ['available', 'in_use']))
                                         <option value="{{ $status->id }}">{{ $status->name }}</option>
@@ -131,6 +133,25 @@
                                 @endforeach
                             </select>
                         </div>
+
+                        {{-- 🔥 BLOK KOLOM USER / PEMEGANG ASET 🔥 --}}
+                        <div class="mb-3" id="wrapper-assigned-to" style="display: none;">
+                            <label class="form-label fw-bold small text-muted text-uppercase text-primary">Ditugaskan Kepada (User) <span class="text-danger">*</span></label>
+                            <select name="assigned_to" id="assigned_to" class="shadow-sm form-select select2-user" style="width: 100%;">
+                                <option value="">-- Pilih Karyawan Pemakai --</option>
+                                @if(isset($users))
+                                    @foreach($users as $user)
+                                        {{-- 🔥 Tambahkan Departemen di dalam kurung 🔥 --}}
+                                        <option value="{{ $user->id }}">
+                                            {{ $user->name }} — {{ optional($user->company)->name ?? 'Tanpa PT' }} ({{ optional($user->department)->name ?? 'Tanpa Dept' }})
+                                        </option>
+                                    @endforeach
+                                @endif
+                            </select>
+                            <div class="form-text" style="font-size: 0.7rem;"><i class="bi bi-info-circle"></i> Wajib diisi karena status aset adalah In Use (Dipakai).</div>
+                        </div>
+                        {{-- 🔥 END BLOK KOLOM USER 🔥 --}}
+
 
                         <div class="row">
                             <div class="mb-3 col-4 pe-1">
@@ -186,7 +207,7 @@
 <script src="https://cdn.ckeditor.com/ckeditor5/39.0.1/classic/ckeditor.js"></script>
 <script>
     $(document).ready(function() {
-        // Init Select2
+        // Init Select2 untuk Barang
         $('.select2-item-ajax').select2({
             theme: 'bootstrap-5',
             placeholder: '-- Ketik minimal 2 huruf --',
@@ -200,6 +221,31 @@
                 cache: true
             }
         });
+
+        // 🔥 LOGIKA BARU: Init Select2 untuk Karyawan 🔥
+        $('.select2-user').select2({
+            theme: 'bootstrap-5',
+            placeholder: '-- Ketik / Pilih Nama Karyawan --'
+        });
+
+        // 🔥 LOGIKA BARU: Smart Toggle Tampilkan/Sembunyikan Kolom Karyawan 🔥
+        $('#status_id').on('change', function() {
+            let statusText = $(this).find('option:selected').text().toLowerCase();
+
+            // Jika nama status mengandung kata "use" atau "pakai"
+            if (statusText.includes('use') || statusText.includes('pakai')) {
+                $('#wrapper-assigned-to').slideDown(); // Munculkan Animasi
+                $('#assigned_to').prop('required', true); // Jadikan Wajib
+            } else {
+                $('#wrapper-assigned-to').slideUp(); // Sembunyikan Animasi
+                $('#assigned_to').val('').trigger('change'); // Kosongkan Pilihan
+                $('#assigned_to').prop('required', false); // Batal Wajib
+            }
+        });
+
+        // Panggil saat pertama kali load (jaga-jaga kalau error validasi dan kembali ke halaman)
+        $('#status_id').trigger('change');
+
 
         // Init CKEditor
         ClassicEditor.create(document.querySelector('#spesifikasi_editor_add'), {

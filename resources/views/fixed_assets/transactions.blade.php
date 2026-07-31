@@ -169,9 +169,13 @@
                                 @php
                                     $statusName = optional($asset->status)->name ?? 'Normal';
                                     $statusLower = strtolower($statusName);
+
+                                    // 🔥 Logika pengecekan Disposed
+                                    $isDisposedOrVoid = str_contains($statusLower, 'dispose') || str_contains($statusLower, 'rusak') || str_contains($statusLower, 'jual') || str_contains($statusLower, 'void') || str_contains($statusLower, 'batal');
+
                                     if(str_contains($statusLower, 'use') || str_contains($statusLower, 'pakai')) {
                                         $badgeClass = 'bg-success-subtle text-success border border-success-subtle';
-                                    } elseif(str_contains($statusLower, 'rusak') || str_contains($statusLower, 'hilang')) {
+                                    } elseif($isDisposedOrVoid) {
                                         $badgeClass = 'bg-danger text-white shadow-sm';
                                     } elseif(str_contains($statusLower, 'available') || str_contains($statusLower, 'gudang')) {
                                         $badgeClass = 'bg-warning-subtle text-warning-emphasis border border-warning-subtle';
@@ -186,26 +190,34 @@
 
                             {{-- KOLOM 6: AKSI TRANSAKSI --}}
                             <td class="text-end pe-4">
-                                <div class="gap-2 d-flex justify-content-end">
-                                    @if(!empty($asset->assigned_to))
-                                        {{-- Jika sedang dipakai: Bisa Retur & Cetak BAST --}}
-                                        <a href="{{ route('fixed-assets.bast', $asset->id) }}" target="_blank" class="shadow-sm btn btn-sm btn-dark fw-bold rounded-pill" title="Cetak BAST">
-                                            <i class="bi bi-printer"></i>
-                                        </a>
-                                        <button type="button" class="px-3 shadow-sm btn btn-sm btn-danger fw-bold rounded-pill" data-bs-toggle="modal" data-bs-target="#returnModal{{ $asset->id }}">
-                                            <i class="bi bi-arrow-return-left me-1"></i> Retur Aset
-                                        </button>
+                                <div class="gap-2 d-flex justify-content-end align-items-center">
+                                    {{-- 🔥 LOGIKA ANTI-DISPOSED DITERAPKAN DI SINI 🔥 --}}
+                                    @if(!$isDisposedOrVoid)
+
+                                        @if(!empty($asset->assigned_to))
+                                            {{-- Jika sedang dipakai: Bisa Retur & Cetak BAST --}}
+                                            <a href="{{ route('fixed-assets.bast', $asset->id) }}" target="_blank" class="shadow-sm btn btn-sm btn-dark fw-bold rounded-pill" title="Cetak BAST">
+                                                <i class="bi bi-printer"></i>
+                                            </a>
+                                            <button type="button" class="px-3 shadow-sm btn btn-sm btn-danger fw-bold rounded-pill" data-bs-toggle="modal" data-bs-target="#returnModal{{ $asset->id }}">
+                                                <i class="bi bi-arrow-return-left me-1"></i> Retur Aset
+                                            </button>
+                                        @else
+                                            {{-- Jika di gudang: Bisa Serahkan & Cetak BAPA --}}
+                                            <a href="{{ route('fixed-assets.bapa', $asset->id) }}" target="_blank" class="shadow-sm btn btn-sm btn-outline-dark fw-bold rounded-pill" title="Cetak BAPA">
+                                                <i class="bi bi-printer"></i>
+                                            </a>
+                                            <button type="button" class="px-3 shadow-sm btn btn-sm btn-primary fw-bold rounded-pill" data-bs-toggle="modal" data-bs-target="#handoverModal{{ $asset->id }}">
+                                                <i class="bi bi-person-plus me-1"></i> Serahkan
+                                            </button>
+                                        @endif
+
                                     @else
-                                        {{-- Jika di gudang: Bisa Serahkan & Cetak BAPA --}}
-                                        <a href="{{ route('fixed-assets.bapa', $asset->id) }}" target="_blank" class="shadow-sm btn btn-sm btn-outline-dark fw-bold rounded-pill" title="Cetak BAPA">
-                                            <i class="bi bi-printer"></i>
-                                        </a>
-                                        <button type="button" class="px-3 shadow-sm btn btn-sm btn-primary fw-bold rounded-pill" data-bs-toggle="modal" data-bs-target="#handoverModal{{ $asset->id }}">
-                                            <i class="bi bi-person-plus me-1"></i> Serahkan
-                                        </button>
+                                        {{-- Jika Disposed, sembunyikan tombol transaksi --}}
+                                        <span class="badge bg-secondary bg-opacity-25 text-secondary border border-secondary-subtle"><i class="bi bi-slash-circle me-1"></i> Aset Nonaktif</span>
                                     @endif
 
-                                    {{-- Tombol Riwayat --}}
+                                    {{-- Tombol Riwayat (Selalu Muncul) --}}
                                     <a href="{{ route('fixed-assets.history', $asset->id) }}" class="shadow-sm btn btn-sm btn-warning text-dark fw-bold rounded-pill" title="Lihat Riwayat">
                                         <i class="bi bi-clock-history"></i>
                                     </a>

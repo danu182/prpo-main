@@ -60,6 +60,9 @@ class FixedAssetController extends Controller
         return view('fixed_assets.index', compact('assets', 'search', 'users', 'items', 'companies', 'statuses', 'warehouses', 'currencies', 'assetCategories'));
     }
 
+
+    // 🔥 PROSES SIMPAN ASET MANUAL (DENGAN SMART MUTATION IN & OUT) 🔥
+
     public function store(Request $request)
     {
         $request->validate([
@@ -81,16 +84,13 @@ class FixedAssetController extends Controller
             'photos.*'                => 'nullable|image|mimes:jpeg,png,jpg|max:2048',
         ]);
 
-        // =========================================================================
-        // 🔥 PERBAIKAN: BLOKIR JIKA STATUS "IN USE" TAPI TIDAK ADA KARYAWAN 🔥
-        // =========================================================================
         $selectedStatus = \App\Models\Status::find($request->status_id);
         $statusSlug = strtolower(optional($selectedStatus)->slug ?? '');
 
+        // BLOKIR JIKA STATUS "IN USE" TAPI TIDAK ADA KARYAWAN
         if (str_contains($statusSlug, 'use') && empty($request->assigned_to)) {
             return back()->withInput()->with('error', 'VALIDASI GAGAL: Anda mengatur status aset menjadi "In Use (Dipakai)", maka Anda WAJIB memilih Karyawan/User pada kolom Penanggung Jawab!');
         }
-        // =========================================================================
 
         try {
             DB::transaction(function () use ($request, $selectedStatus, $statusSlug) {
@@ -139,7 +139,6 @@ class FixedAssetController extends Controller
                         'supporting_document'     => $documentPath,
                     ]);
 
-                    // 🔥 PERBAIKAN HISTORY: Perjelas catatan jika langsung diserahkan 🔥
                     $historyNote = 'Registrasi Manual/Hibah (Unit ke-' . $i . ' dari ' . $qty . '). ' . $request->notes;
                     if ($assignedTo) {
                         $user = \App\Models\User::find($assignedTo);
@@ -154,7 +153,6 @@ class FixedAssetController extends Controller
                         'created_by'     => auth()->id(),
                     ]);
 
-                    // 🔥 PROSES UPLOAD FOTO FISIK ASET 🔥
                     if ($request->hasFile('photos')) {
                         $safeFolderName = str_replace('/', '-', $assetNumber);
                         $folderPathPhotos = "FixAsset/{$safeFolderName}";
@@ -170,11 +168,13 @@ class FixedAssetController extends Controller
                         }
                     }
 
-                    // PENCATATAN MUTASI STOK
+                    // =========================================================================
+                    // 🔥 PENCATATAN MUTASI STOK (SMART IN & OUT) 🔥
+                    // =========================================================================
                     $balanceBefore = $currentStock;
                     $balanceAfter  = $currentStock + 1;
-                    $currentStock  = $balanceAfter;
 
+                    // 1. Catat Barang Masuk (IN) dari Hibah
                     \App\Models\StockMutation::create([
                         'item_id'          => $request->item_id,
                         'warehouse_id'     => $request->warehouse_id,
@@ -186,12 +186,34 @@ class FixedAssetController extends Controller
                         'notes'            => "Penerimaan Hibah/Manual Aset",
                         'created_by'       => auth()->id(),
                     ]);
+
+                    // 2. Jika Aset langsung 'In Use', Catat Barang Keluar (OUT) ke User
+                    if ($assignedTo) {
+                        \App\Models\StockMutation::create([
+                            'item_id'          => $request->item_id,
+                            'warehouse_id'     => $request->warehouse_id,
+                            'type'             => 'OUT',
+                            'qty'              => 1,
+                            'balance_before'   => $balanceAfter,
+                            'balance_after'    => $balanceAfter - 1,
+                            'reference_number' => 'GI-' . $assetNumber,
+                            'notes'            => "Aset langsung diserahkan ke pengguna (Input Manual)",
+                            'created_by'       => auth()->id(),
+                        ]);
+
+                        // Karena masuk lalu langsung keluar, saldonya kembali seperti awal
+                        $currentStock = $balanceAfter - 1;
+                    } else {
+                        // Jika tidak In Use, saldo gudang bertambah
+                        $currentStock = $balanceAfter;
+                    }
+                    // =========================================================================
                 }
 
                 $itemMaster->update(['current_stock' => $currentStock]);
             });
 
-            return redirect()->route('fixed-assets.index')->with('success', $request->quantity . ' Unit Aset (Hibah) berhasil didaftarkan beserta foto fisiknya!');
+            return redirect()->route('fixed-assets.index')->with('success', $request->quantity . ' Unit Aset berhasil didaftarkan dan kartu stok disesuaikan!');
         } catch (\Exception $e) {
             return back()->withInput()->with('error', 'Gagal mendaftarkan aset: ' . $e->getMessage());
         }
@@ -210,24 +232,25 @@ class FixedAssetController extends Controller
         $companies = \App\Models\Company::orderBy('name', 'asc')->get();
         $statuses = Status::where('type', 'AST')->orderBy('sequence', 'asc')->get();
         $currencies = \App\Models\Currency::where('is_active', 1)->get();
-        $users = User::with('company')->orderBy('name', 'asc')->get();
+
+        // 🔥 PERBAIKAN: Tambahkan relasi 'department' agar bisa dipanggil di Blade 🔥
+        $users = User::with(['company', 'department'])->orderBy('name', 'asc')->get();
 
         return view('fixed_assets.edit', compact('asset', 'warehouses', 'assetCategories', 'companies', 'statuses', 'currencies', 'users'));
     }
 
 
     // =========================================================================
-    // 🔥 PROSES SIMPAN EDIT ASET (SMART UPDATE & VALIDASI KETAT "IN USE") 🔥
+    // 🔥 PROSES SIMPAN EDIT ASET (SMART UPDATE, VALIDASI IN USE & DISPOSAL) 🔥
     // =========================================================================
     public function update(Request $request, $id)
     {
-        // 1. Validasi disesuaikan dengan form UI (Name & Warehouse tidak lagi wajib)
         $request->validate([
             'asset_category_id'       => 'required|exists:asset_categories,id',
             'status_id'               => 'required|exists:statuses,id',
-            'warehouse_id'            => 'nullable|exists:warehouses,id', // Dibuat nullable
-            'company_id'              => 'nullable|exists:companies,id',  // Dibuat nullable (jaga-jaga jika form disabled)
-            'name'                    => 'nullable|string|max:255',       // Dibuat nullable
+            'warehouse_id'            => 'nullable|exists:warehouses,id',
+            'company_id'              => 'nullable|exists:companies,id',
+            'name'                    => 'nullable|string|max:255',
             'serial_number'           => 'nullable|string|max:255',
             'accounting_asset_number' => 'nullable|string|max:255',
             'spesifikasi_detail'      => 'nullable|string',
@@ -242,13 +265,10 @@ class FixedAssetController extends Controller
         $selectedStatus = \App\Models\Status::find($request->status_id);
         $statusSlug = strtolower(optional($selectedStatus)->slug ?? '');
 
-        // =========================================================================
-        // 🔥 VALIDASI: BLOKIR JIKA STATUS "IN USE" TAPI TIDAK ADA KARYAWAN 🔥
-        // =========================================================================
+        // 🔥 BLOKIR JIKA STATUS "IN USE" TAPI TIDAK ADA KARYAWAN 🔥
         if (str_contains($statusSlug, 'use') && empty($request->assigned_to)) {
             return back()->withInput()->with('error', 'VALIDASI GAGAL: Anda mengubah status aset menjadi "In Use (Dipakai)", maka Anda WAJIB memilih Karyawan/User pada kolom Penanggung Jawab!');
         }
-        // =========================================================================
 
         try {
             DB::transaction(function () use ($request, $asset, $selectedStatus, $statusSlug) {
@@ -256,16 +276,14 @@ class FixedAssetController extends Controller
                 $oldStatusId = $asset->status_id;
                 $oldAssignee = $asset->assigned_to;
 
-                // Pastikan kolom assigned_to dikosongkan jika status aset kembali ke Gudang/Rusak/Disposed
+                // Kosongkan assigned_to jika statusnya kembali ke Gudang/Disposed
                 $assignedTo = in_array($statusSlug, ['available', 'disposed', 'maintenance', 'returned']) ? null : $request->assigned_to;
 
                 $asset->update([
                     'asset_category_id'       => $request->asset_category_id,
-                    // 🔥 Gunakan data lama ($asset->...) jika form tidak mengirimkannya 🔥
                     'name'                    => $request->name ?? $asset->name,
                     'warehouse_id'            => $request->warehouse_id ?? $asset->warehouse_id,
                     'company_id'              => $request->company_id ?? $asset->company_id,
-                    // ------------------------------------------------------------------
                     'serial_number'           => $request->serial_number,
                     'accounting_asset_number' => $request->accounting_asset_number,
                     'status_id'               => $request->status_id,
@@ -296,6 +314,112 @@ class FixedAssetController extends Controller
                     ]);
                 }
 
+                // =========================================================================
+                // 🔥 MESIN SMART MUTASI STOK KELAS ENTERPRISE 🔥
+                // =========================================================================
+                $oldStatus = \App\Models\Status::find($oldStatusId);
+                $oldStatusSlug = strtolower(optional($oldStatus)->slug ?? '');
+
+                // Identifikasi Kondisi Sebelumnya
+                $wasDisposed = str_contains($oldStatusSlug, 'dispose') || str_contains($oldStatusSlug, 'rusak') || str_contains($oldStatusSlug, 'jual');
+                $wasInWarehouse = !$wasDisposed && empty($oldAssignee); // Fisik nganggur di gudang
+
+                // Identifikasi Kondisi Sekarang
+                $isNowDisposed = str_contains($statusSlug, 'dispose') || str_contains($statusSlug, 'rusak') || str_contains($statusSlug, 'jual');
+                $isNowInWarehouse = !$isNowDisposed && empty($assignedTo); // Fisik nganggur di gudang
+
+                if ($asset->item_id && $asset->warehouse_id) {
+                    $masterItem = \App\Models\Item::lockForUpdate()->find($asset->item_id);
+
+                    if ($masterItem) {
+                        $currStock = (float) $masterItem->current_stock;
+                        $invStock = \App\Models\InventoryStock::where('item_id', $masterItem->id)
+                                        ->where('warehouse_id', $asset->warehouse_id)
+                                        ->first();
+
+                        // KASUS A: BARANG KELUAR DARI GUDANG (-1 OUT)
+                        // (Tadinya di gudang, sekarang Diserahkan ke user ATAU dibuang/Disposed)
+                        if ($wasInWarehouse && !$isNowInWarehouse) {
+                            if ($currStock > 0) {
+                                $masterItem->decrement('current_stock', 1);
+                                if ($invStock && $invStock->stock_qty > 0) {
+                                    $invStock->decrement('stock_qty', 1);
+                                }
+
+                                $mutationNote = $isNowDisposed
+                                    ? 'Penghapusan Aset (Disposed / Rusak / Dijual)'
+                                    : 'Aset diserahkan ke pengguna (via Edit Form)';
+
+                                \App\Models\StockMutation::create([
+                                    'item_id'          => $masterItem->id,
+                                    'warehouse_id'     => $asset->warehouse_id,
+                                    'type'             => 'OUT',
+                                    'qty'              => 1,
+                                    'balance_before'   => $currStock,
+                                    'balance_after'    => $currStock - 1,
+                                    'reference_number' => 'UPD-OUT-' . $asset->asset_number,
+                                    'notes'            => $mutationNote,
+                                    'created_by'       => auth()->id()
+                                ]);
+                            }
+                        }
+                        // KASUS B: BARANG MASUK KEMBALI KE GUDANG (+1 IN)
+                        // (Tadinya dipegang user ATAU dibuang, sekarang batal dan kembali ke rak gudang)
+                        elseif (!$wasInWarehouse && $isNowInWarehouse) {
+                            $masterItem->increment('current_stock', 1);
+                            if ($invStock) {
+                                $invStock->increment('stock_qty', 1);
+                            } else {
+                                \App\Models\InventoryStock::create([
+                                    'company_id'       => $asset->company_id,
+                                    'warehouse_id'     => $asset->warehouse_id,
+                                    'item_id'          => $masterItem->id,
+                                    'stock_qty'        => 1,
+                                    'reference_number' => 'UPD-IN-' . $asset->asset_number,
+                                    'notes'            => 'Stok Diciptakan via Pengembalian',
+                                ]);
+                            }
+
+                            $mutationNote = $wasDisposed
+                                ? 'Pembatalan Disposal (Barang Aktif Kembali)'
+                                : 'Pengembalian Aset ke Gudang (via Edit Form)';
+
+                            \App\Models\StockMutation::create([
+                                'item_id'          => $masterItem->id,
+                                'warehouse_id'     => $asset->warehouse_id,
+                                'type'             => 'IN',
+                                'qty'              => 1,
+                                'balance_before'   => $currStock,
+                                'balance_after'    => $currStock + 1,
+                                'reference_number' => 'UPD-IN-' . $asset->asset_number,
+                                'notes'            => $mutationNote,
+                                'created_by'       => auth()->id()
+                            ]);
+                        }
+                        // CATATAN KASUS C: Dari "In Use" jadi "Disposed".
+                        // Barangnya kan sedang di luar, jadi mutasinya tidak bergerak (tetap 0 di gudang). Sistem mendiamkannya. INI SANGAT CERDAS!
+
+                        // KUNCI STATUS SERIAL NUMBER (S/N)
+                        if (!empty($asset->serial_number)) {
+                            $snStatus = 'AVAILABLE';
+                            if ($isNowDisposed) {
+                                $snStatus = 'DISPOSED';
+                            } elseif (!empty($assignedTo)) {
+                                $snStatus = 'IN_USE';
+                            }
+
+                            \DB::table('item_serials')
+                                ->where('item_id', $asset->item_id)
+                                ->where('serial_number', $asset->serial_number)
+                                ->update([
+                                    'status'     => $snStatus,
+                                    'updated_at' => now()
+                                ]);
+                        }
+                    }
+                }
+                // =========================================================================
+
                 // 🔥 PROSES UPLOAD FOTO TAMBAHAN JIKA ADA 🔥
                 if ($request->hasFile('photos')) {
                     $safeFolderName = str_replace('/', '-', $asset->asset_number);
@@ -313,13 +437,12 @@ class FixedAssetController extends Controller
                 }
             });
 
-            return redirect()->route('fixed-assets.index')->with('success', 'Data Aset ' . $asset->asset_number . ' berhasil diperbarui!');
+            return redirect()->route('fixed-assets.index')->with('success', 'Data Aset ' . $asset->asset_number . ' berhasil diperbarui dan mutasi stok telah disesuaikan!');
 
         } catch (\Exception $e) {
             return back()->withInput()->with('error', 'Gagal memperbarui aset: ' . $e->getMessage());
         }
     }
-
 
     public function printBast($id)
     {
@@ -816,11 +939,11 @@ class FixedAssetController extends Controller
 
 
     // =========================================================================
-    // 🔥 MASTER LIST ASET (OPTIMASI 1 JUTA DATA & BEBAS VOID) 🔥
+    // 🔥 MASTER LIST ASET (OPTIMASI 1 JUTA DATA & FILTER AKUNTANSI) 🔥
     // =========================================================================
     public function masterList(\Illuminate\Http\Request $request)
     {
-        // 1. Kumpulkan ID Status yang berbau "Void" / "Batal"
+        // 1. Kumpulkan ID Status yang berbau "Void" / "Batal" (Dihapus Total)
         $voidStatusIds = \App\Models\Status::where('type', 'AST')
             ->where(function($q) {
                 $q->where('slug', 'like', '%void%')
@@ -829,15 +952,25 @@ class FixedAssetController extends Controller
                   ->orWhere('name', 'like', '%Batal%');
             })->pluck('id')->toArray();
 
-        // 2. QUERY UNTUK TABEL (PAGINATION)
+        // 2. Kumpulkan ID Status yang berbau "Disposed" (Dikeluarkan dari Neraca)
+        $disposedStatusIds = \App\Models\Status::where('type', 'AST')
+            ->where(function($q) {
+                $q->where('slug', 'like', '%dispose%')
+                  ->orWhere('name', 'like', '%Dispose%')
+                  ->orWhere('name', 'like', '%Rusak%')
+                  ->orWhere('name', 'like', '%Dijual%');
+            })->pluck('id')->toArray();
+
+        // ==================================================================
+        // QUERY UNTUK TABEL (Menampilkan Aset Aktif & Disposed, tapi Void disembunyikan)
+        // ==================================================================
         $query = \App\Models\FixedAsset::with([
             'item.category', 'assetCategory', 'assignee.department',
             'company', 'department', 'status', 'warehouse'
         ]);
 
-        // 🔥 FILTER VOID: Buang aset yang berstatus Void atau punya catatan Dibatalkan
         if (!empty($voidStatusIds)) {
-            $query->whereNotIn('status_id', $voidStatusIds);
+            $query->whereNotIn('status_id', $voidStatusIds); // Buang Void dari Tabel
         }
         $query->where(function($q) {
             $q->whereNull('notes')
@@ -871,11 +1004,15 @@ class FixedAssetController extends Controller
 
         $assets = $query->latest()->paginate(15)->withQueryString();
 
-        // 3. QUERY UNTUK KPI CARDS (Dihitung langsung oleh Database Engine)
-        // 🔥 Buat Base Query khusus KPI agar tidak menghitung aset Void!
+        // ==================================================================
+        // QUERY UNTUK KPI CARDS (HANYA MENGHITUNG ASET AKTIF / BUKAN DISPOSED & VOID)
+        // ==================================================================
         $kpiQuery = \App\Models\FixedAsset::query();
-        if (!empty($voidStatusIds)) {
-            $kpiQuery->whereNotIn('status_id', $voidStatusIds);
+
+        $excludeKpiIds = array_merge($voidStatusIds, $disposedStatusIds); // Gabungkan Void & Disposed
+
+        if (!empty($excludeKpiIds)) {
+            $kpiQuery->whereNotIn('status_id', $excludeKpiIds);
         }
         $kpiQuery->where(function($q) {
             $q->whereNull('notes')
@@ -887,11 +1024,15 @@ class FixedAssetController extends Controller
         $inWarehouse = (clone $kpiQuery)->whereNull('assigned_to')->count();
         $totalValue = (clone $kpiQuery)->sum('purchase_price');
 
-        // Kalkulasi Nilai Buku untuk 15 baris yang tampil
-        $totalCurrentValue = $assets->sum('net_book_value');
+        // Kalkulasi Nilai Buku untuk halaman ini (Kecuali yang Disposed)
+        $totalCurrentValue = $assets->reject(function ($asset) use ($disposedStatusIds) {
+            return in_array($asset->status_id, $disposedStatusIds);
+        })->sum(function ($asset) {
+            return $asset->net_book_value ?? $asset->purchase_price ?? 0;
+        });
 
         return view('fixed_assets.list_asset', compact(
-            'assets', 'totalAssets', 'inUse', 'inWarehouse', 'totalValue', 'totalCurrentValue'
+            'assets', 'totalAssets', 'inUse', 'inWarehouse', 'totalValue', 'totalCurrentValue', 'disposedStatusIds'
         ));
     }
 
@@ -1174,9 +1315,12 @@ class FixedAssetController extends Controller
         $statuses = \App\Models\Status::where('type', 'AST')->orderBy('sequence', 'asc')->get();
         $currencies = \App\Models\Currency::where('is_active', 1)->get();
 
-        return view('fixed_assets.create_manual', compact('warehouses', 'assetCategories', 'companies', 'statuses', 'currencies'));
-    }
+        // 🔥 TAMBAHKAN BARIS INI: Tarik data User/Karyawan 🔥
+        $users = \App\Models\User::with(['company', 'department'])->orderBy('name', 'asc')->get();
 
+        // Lempar variabel $users ke compact
+        return view('fixed_assets.create_manual', compact('warehouses', 'assetCategories', 'companies', 'statuses', 'currencies', 'users'));
+    }
 
     // =========================================================================
     // HALAMAN FORM IMPORT EXCEL ASET
@@ -1189,7 +1333,7 @@ class FixedAssetController extends Controller
 
 
    // =========================================================================
-    // 🔥 FITUR HAPUS / BATALKAN ASET (SMART DELETE & REVERSE ALL STOCK) 🔥
+    // 🔥 FITUR HAPUS / BATALKAN ASET (SMART DELETE & AUTO-REVERSE STOCK) 🔥
     // =========================================================================
     public function destroy($id)
     {
@@ -1197,21 +1341,19 @@ class FixedAssetController extends Controller
             DB::transaction(function () use ($id) {
                 $asset = \App\Models\FixedAsset::findOrFail($id);
 
-                // 1. VALIDASI 1: Jangan izinkan hapus jika aset SEDANG dipakai User saat ini!
+                // 1. VALIDASI
                 if ($asset->assigned_to != null) {
                     throw new \Exception('Aset sedang digunakan oleh staf. Lakukan Retur terlebih dahulu jika ingin menghapusnya.');
                 }
 
-                // 2. VALIDASI 2 (AUDIT TRAIL): Cek apakah PERNAH DIPAKAI di masa lalu!
                 $hasBeenUsed = \App\Models\FixedAssetHistory::where('fixed_asset_id', $id)
                                 ->whereNotNull('assigned_to')
                                 ->exists();
 
                 if ($hasBeenUsed) {
-                    throw new \Exception('TIDAK DIIZINKAN: Aset ini memiliki jejak riwayat pernah diserahkan/digunakan oleh staf. Gunakan fitur Edit -> ubah status menjadi "Disposed" demi menjaga jejak Audit.');
+                    throw new \Exception('TIDAK DIIZINKAN: Aset ini memiliki jejak riwayat pernah diserahkan/digunakan oleh staf. Gunakan fitur Edit -> ubah status menjadi "Disposed".');
                 }
 
-                // 3. VALIDASI 3: Jangan izinkan jika pernah masuk Maintenance / Disposed / Retur
                 $hasTransaction = \App\Models\FixedAssetHistory::where('fixed_asset_id', $id)
                                 ->where(function($q) {
                                     $q->where('status', 'like', '%Maintenance%')
@@ -1221,52 +1363,75 @@ class FixedAssetController extends Controller
                                 })->exists();
 
                 if ($hasTransaction) {
-                    throw new \Exception('TIDAK DIIZINKAN: Aset ini sudah memiliki riwayat transaksi aktif. Data tidak boleh dihapus untuk keperluan audit perusahaan.');
+                    throw new \Exception('TIDAK DIIZINKAN: Aset ini sudah memiliki riwayat transaksi aktif. Data tidak boleh dihapus.');
                 }
 
                 // =========================================================================
-                // 🔥 4. REVERSE STOK: MASTER ITEM, INVENTORY STOCK & SERIAL NUMBER 🔥
+                // 🔥 4. REVERSE STOK: LOGIKA CABANG (MANUAL VS GR) 🔥
                 // =========================================================================
                 if ($asset->item_id && $asset->warehouse_id) {
                     $masterItem = \App\Models\Item::lockForUpdate()->find($asset->item_id);
                     if ($masterItem) {
                         $currStock = (float) $masterItem->current_stock;
-
-                        // 4A. Tambahkan 1 unit kembali ke stok Master Barang
-                        $masterItem->update(['current_stock' => $currStock + 1]);
-
-                        // 4B. Kembalikan stok fisik ke Gudang Spesifik (Inventory Stock)
                         $invStock = \App\Models\InventoryStock::where('item_id', $masterItem->id)
                                         ->where('warehouse_id', $asset->warehouse_id)
                                         ->first();
 
-                        if ($invStock) {
-                            $invStock->increment('stock_qty', 1);
-                        } else {
-                            \App\Models\InventoryStock::create([
-                                'company_id'       => $asset->company_id,
-                                'warehouse_id'     => $asset->warehouse_id,
+                        if ($asset->goods_receipt_id) {
+                            // -------------------------------------------------------------
+                            // KASUS A: ASET DARI PO/GR (KAPITALISASI) => KEMBALIKAN (IN)
+                            // -------------------------------------------------------------
+                            $masterItem->update(['current_stock' => $currStock + 1]);
+
+                            if ($invStock) {
+                                $invStock->increment('stock_qty', 1);
+                            } else {
+                                \App\Models\InventoryStock::create([
+                                    'company_id'       => $asset->company_id,
+                                    'warehouse_id'     => $asset->warehouse_id,
+                                    'item_id'          => $masterItem->id,
+                                    'stock_qty'        => 1,
+                                    'reference_number' => 'DEL-AST-' . $asset->asset_number,
+                                    'notes'            => 'Pengembalian dari Hapus Aset GR',
+                                ]);
+                            }
+
+                            \App\Models\StockMutation::create([
                                 'item_id'          => $masterItem->id,
-                                'stock_qty'        => 1,
+                                'warehouse_id'     => $asset->warehouse_id,
+                                'type'             => 'IN', // MASUK
+                                'qty'              => 1,
+                                'balance_before'   => $currStock,
+                                'balance_after'    => $currStock + 1,
                                 'reference_number' => 'DEL-AST-' . $asset->asset_number,
-                                'notes'            => 'Pengembalian dari Hapus Aset',
+                                'notes'            => "Pengembalian stok (Batal Kapitalisasi GR)",
+                                'created_by'       => auth()->id()
+                            ]);
+
+                        } else {
+                            // -------------------------------------------------------------
+                            // KASUS B: ASET DARI INPUT MANUAL / HIBAH => MUSNAHKAN (OUT)
+                            // -------------------------------------------------------------
+                            $masterItem->update(['current_stock' => max(0, $currStock - 1)]);
+
+                            if ($invStock && $invStock->stock_qty > 0) {
+                                $invStock->decrement('stock_qty', 1);
+                            }
+
+                            \App\Models\StockMutation::create([
+                                'item_id'          => $masterItem->id,
+                                'warehouse_id'     => $asset->warehouse_id,
+                                'type'             => 'OUT', // KELUAR / DIMUSNAHKAN
+                                'qty'              => 1,
+                                'balance_before'   => $currStock,
+                                'balance_after'    => max(0, $currStock - 1),
+                                'reference_number' => 'DEL-AST-' . $asset->asset_number,
+                                'notes'            => "Pengurangan stok (Batal Input Manual/Hibah)",
+                                'created_by'       => auth()->id()
                             ]);
                         }
 
-                        // 4C. Catat di Kartu Mutasi Stok bahwa barang kembali masuk (IN)
-                        \App\Models\StockMutation::create([
-                            'item_id'          => $masterItem->id,
-                            'warehouse_id'     => $asset->warehouse_id,
-                            'type'             => 'IN', // Tipe Masuk
-                            'qty'              => 1,
-                            'balance_before'   => $currStock,
-                            'balance_after'    => $currStock + 1,
-                            'reference_number' => 'DEL-AST-' . $asset->asset_number,
-                            'notes'            => "Pengembalian stok (Batal Registrasi/Hapus Aset)",
-                            'created_by'       => auth()->id()
-                        ]);
-
-                        // 4D. Bebaskan Serial Number (SN) agar berstatus AVAILABLE kembali
+                        // Bebaskan Serial Number (SN) agar berstatus AVAILABLE kembali
                         if (!empty($asset->serial_number)) {
                             \DB::table('item_serials')
                                 ->where('item_id', $masterItem->id)
@@ -1296,11 +1461,14 @@ class FixedAssetController extends Controller
                 $asset->delete();
             });
 
-            return redirect()->route('fixed-assets.index')->with('success', 'Aset yang salah input berhasil dihapus. Serial Number dan Stok dikembalikan utuh ke gudang.');
+            return redirect()->route('fixed-assets.index')->with('success', 'Aset berhasil dihapus. Mutasi stok telah dikoreksi secara otomatis.');
         } catch (\Exception $e) {
             return back()->with('error', 'Gagal Menghapus: ' . $e->getMessage());
         }
     }
 
 
+
+
 }
+

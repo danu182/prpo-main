@@ -25,9 +25,30 @@ class MasterAssetExport implements FromQuery, WithHeadings, WithMapping, ShouldA
 
     public function query()
     {
+        // 1. Kumpulkan ID Status Void agar tidak ikut ke-Export
+        $voidStatusIds = \App\Models\Status::where('type', 'AST')
+            ->where(function($q) {
+                $q->where('slug', 'like', '%void%')
+                  ->orWhere('slug', 'like', '%batal%')
+                  ->orWhere('name', 'like', '%Void%')
+                  ->orWhere('name', 'like', '%Batal%');
+            })->pluck('id')->toArray();
+
         $query = FixedAsset::query()->with([
             'item', 'assetCategory', 'company', 'warehouse', 'status', 'assignee', 'currency'
         ]);
+
+        // =========================================================================
+        // 🔥 FILTER ANTI-VOID: Buang aset yang batal/void dari laporan Excel 🔥
+        // =========================================================================
+        if (!empty($voidStatusIds)) {
+            $query->whereNotIn('status_id', $voidStatusIds);
+        }
+        $query->where(function($q) {
+            $q->whereNull('notes')
+              ->orWhere('notes', 'not like', '%[DIBATALKAN%');
+        });
+        // =========================================================================
 
         if (!empty($this->filters['search'])) {
             $search = $this->filters['search'];
@@ -41,6 +62,14 @@ class MasterAssetExport implements FromQuery, WithHeadings, WithMapping, ShouldA
 
         if (!empty($this->filters['warehouse_id'])) {
             $query->where('warehouse_id', $this->filters['warehouse_id']);
+        }
+
+        if (!empty($this->filters['status'])) {
+            if ($this->filters['status'] === 'in_use') {
+                $query->whereNotNull('assigned_to');
+            } elseif ($this->filters['status'] === 'in_warehouse') {
+                $query->whereNull('assigned_to');
+            }
         }
 
         return $query->latest();
@@ -64,6 +93,8 @@ class MasterAssetExport implements FromQuery, WithHeadings, WithMapping, ShouldA
         $mataUang = optional($asset->currency)->code ?? 'IDR';
         $hargaBeli = number_format((float)($asset->purchase_price ?? 0), 0, ',', '.');
         $bebanBulan = number_format((float)($asset->monthly_depreciation ?? 0), 0, ',', '.');
+
+        // PENTING: Aset yang di-Disposed nilainya tetap Rp 0 atau mengikuti nilai sisa terakhirnya.
         $nilaiBuku = number_format((float)($asset->net_book_value ?? 0), 0, ',', '.');
 
         return [
@@ -75,7 +106,7 @@ class MasterAssetExport implements FromQuery, WithHeadings, WithMapping, ShouldA
             optional($asset->company)->name ?? '-',
             optional($asset->warehouse)->name ?? '-',
             optional($asset->assignee)->name ?? 'Di Gudang',
-            optional($asset->status)->name ?? '-',
+            optional($asset->status)->name ?? '-', // Akan otomatis mencetak "Disposed" jika rusak/dijual
 
             optional($asset->assetCategory)->name ?? 'Kelompok 1 (Default)',
             $umurTahun . ' Tahun',
@@ -84,9 +115,9 @@ class MasterAssetExport implements FromQuery, WithHeadings, WithMapping, ShouldA
             now()->format('F Y'),
 
             $mataUang,
-            $mataUang . ' ' . $hargaBeli,   // Output: IDR 10.000.000 (Pasti muncul)
-            $mataUang . ' ' . $bebanBulan,  // Output: IDR 208.333 (Pasti muncul)
-            $mataUang . ' ' . $nilaiBuku,   // Output: IDR 7.083.338 (Pasti muncul)
+            $mataUang . ' ' . $hargaBeli,   // Output: IDR 10.000.000
+            $mataUang . ' ' . $bebanBulan,  // Output: IDR 208.333
+            $mataUang . ' ' . $nilaiBuku,   // Output: IDR 7.083.338
 
             $spesifikasi,
         ];
@@ -113,10 +144,7 @@ class MasterAssetExport implements FromQuery, WithHeadings, WithMapping, ShouldA
             'Mata Uang',
             'Nilai Perolehan (Harga Beli)',
             'Beban Penyusutan / Bulan',
-
-            // 🔥 CUKUP TAMBAHKAN date() DI SINI 🔥
             'Nilai Buku Saat Ini per ' . date('d M Y'),
-
             'Spesifikasi',
         ];
     }

@@ -179,7 +179,8 @@
 
                         <div class="mb-3">
                             <label class="form-label fw-bold small text-muted">Status Aset <span class="text-danger">*</span></label>
-                            <select name="status_id" class="shadow-sm form-select" onchange="toggleAssignee(this.options[this.selectedIndex].getAttribute('data-slug'))" required>
+                            {{-- 🔥 HAPUS onchange lama, Tambahkan id="status_id" 🔥 --}}
+                            <select name="status_id" id="status_id" class="shadow-sm form-select" required>
                                 <option value="">-- Pilih Status Aset --</option>
                                 @foreach($statuses as $status)
                                     <option value="{{ $status->id }}" data-slug="{{ $status->slug }}" {{ $asset->status_id == $status->id ? 'selected' : '' }}>{{ $status->name }}</option>
@@ -187,14 +188,19 @@
                             </select>
                         </div>
 
-                        <div class="mb-3">
-                            <label class="form-label fw-bold small text-muted">Ditugaskan Kepada (User)</label>
-                            <select name="assigned_to" id="assigneeSelect" class="shadow-sm form-select select2-user" style="width: 100%;" {{ optional($asset->status)->slug !== 'in_use' ? 'disabled' : '' }}>
-                                <option value="">-- Cari Nama Karyawan --</option>
+                        {{-- 🔥 BLOK KOLOM USER / PEMEGANG ASET DENGAN ANIMASI 🔥 --}}
+                        <div class="mb-3" id="wrapper-assigned-to" style="display: {{ optional($asset->status)->slug === 'in_use' ? 'block' : 'none' }};">
+                            <label class="form-label fw-bold small text-muted text-uppercase text-primary">Ditugaskan Kepada (User) <span class="text-danger">*</span></label>
+                            <select name="assigned_to" id="assigned_to" class="shadow-sm form-select select2-user" style="width: 100%;" {{ optional($asset->status)->slug === 'in_use' ? 'required' : '' }}>
+                                <option value="">-- Pilih Karyawan Pemakai --</option>
                                 @foreach($users as $user)
-                                    <option value="{{ $user->id }}" {{ $asset->assigned_to == $user->id ? 'selected' : '' }}>{{ $user->name }} • {{ optional($user->company)->name ?? 'Kantor Pusat' }}</option>
+                                    {{-- 🔥 Menampilkan Nama Karyawan — Nama PT (Nama Departemen) 🔥 --}}
+                                    <option value="{{ $user->id }}" {{ $asset->assigned_to == $user->id ? 'selected' : '' }}>
+                                        {{ $user->name }} — {{ optional($user->company)->name ?? 'Tanpa PT' }} ({{ optional($user->department)->name ?? 'Tanpa Dept' }})
+                                    </option>
                                 @endforeach
                             </select>
+                            <div class="form-text" style="font-size: 0.7rem;"><i class="bi bi-info-circle"></i> Wajib diisi karena status aset adalah In Use (Dipakai).</div>
                         </div>
 
                         <div class="mb-2">
@@ -217,46 +223,53 @@
 <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
 <script src="https://cdn.ckeditor.com/ckeditor5/39.0.1/classic/ckeditor.js"></script>
-{{-- 🔥 TAMBAHKAN SWEETALERT2 UNTUK POPUP MODERN 🔥 --}}
 <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
 
 <script>
     $(document).ready(function() {
+        // Init Select2 untuk Karyawan
         $('.select2-user').select2({ theme: 'bootstrap-5' });
+
+        // 🔥 LOGIKA SMART TOGGLE UNTUK FORM EDIT 🔥
+        $('#status_id').on('change', function() {
+            // Ambil slug dari option yang dipilih agar akurat
+            let slug = $(this).find('option:selected').data('slug');
+
+            if (slug === 'in_use') {
+                $('#wrapper-assigned-to').slideDown();
+                $('#assigned_to').prop('required', true);
+            } else {
+                $('#wrapper-assigned-to').slideUp();
+                $('#assigned_to').val('').trigger('change');
+                $('#assigned_to').prop('required', false);
+            }
+        });
 
         ClassicEditor.create(document.querySelector('#spesifikasi_editor_edit'), {
             toolbar: [ 'heading', '|', 'bold', 'italic', 'bulletedList', 'numberedList', 'blockQuote', '|', 'undo', 'redo' ]
         }).catch(error => { console.error(error); });
 
-        // 🔥 LOGIKA HAPUS FOTO LAMA (MENGGUNAKAN SWEETALERT2) 🔥
+        // LOGIKA HAPUS FOTO LAMA (MENGGUNAKAN SWEETALERT2)
         $('.remove-existing-photo').on('click', function(e) {
             e.preventDefault();
             let photoId = $(this).data('photo-id');
             let photoContainer = $('#photo-' + photoId);
 
-            // Pop-up Cantik ala SweetAlert2
             Swal.fire({
                 title: 'Hapus foto ini?',
                 text: "Foto akan ditandai untuk dihapus saat Anda klik Simpan Perubahan.",
                 icon: 'warning',
                 showCancelButton: true,
-                confirmButtonColor: '#dc3545', // Warna merah Bootstrap muda
-                cancelButtonColor: '#6c757d',  // Warna abu-abu Bootstrap
+                confirmButtonColor: '#dc3545',
+                cancelButtonColor: '#6c757d',
                 confirmButtonText: '<i class="bi bi-trash"></i> Ya, Hapus!',
                 cancelButtonText: 'Batal',
-                customClass: {
-                    popup: 'rounded-4 shadow-lg border-0'
-                }
+                customClass: { popup: 'rounded-4 shadow-lg border-0' }
             }).then((result) => {
                 if (result.isConfirmed) {
-                    // Suntikkan input hidden ke dalam form
                     $('#formEditAsset').append('<input type="hidden" name="delete_photos[]" value="' + photoId + '">');
-
-                    // Animasi menghilangkan foto dari layar
                     photoContainer.fadeOut(300, function() {
                         $(this).remove();
-
-                        // Jika semua foto habis dihapus, sembunyikan kotak "Foto Saat Ini"
                         if($('.existing-photo-item').length === 0) {
                             $('#existing-photos-container').fadeOut();
                         }
@@ -311,17 +324,5 @@
             }
         }
     });
-
-    function toggleAssignee(slug) {
-        let assignee = $('#assigneeSelect');
-        if (slug === 'in_use') {
-            assignee.prop('disabled', false);
-            assignee.prop('required', true);
-        } else {
-            assignee.prop('disabled', true);
-            assignee.prop('required', false);
-            assignee.val('').trigger('change');
-        }
-    }
 </script>
 @endpush
