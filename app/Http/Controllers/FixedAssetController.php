@@ -1078,12 +1078,13 @@ class FixedAssetController extends Controller
 
 
     // =========================================================================
-    // 🔥 3. MESIN PROSES PENYERAHAN ASET (HANDOVER) DINAMIS 🔥
+    // 🔥 MESIN PROSES PENYERAHAN / UPDATE STATUS ASET (DINAMIS) 🔥
     // =========================================================================
     public function handoverAsset(\Illuminate\Http\Request $request, $id)
     {
+        // 1. Ubah validasi assigned_to menjadi NULLABLE
         $request->validate([
-            'assigned_to'   => 'required|exists:users,id',
+            'assigned_to'   => 'nullable|exists:users,id',
             'status_id'     => 'required|exists:statuses,id',
             'handover_date' => 'required|date',
             'handover_notes'=> 'nullable|string'
@@ -1094,53 +1095,79 @@ class FixedAssetController extends Controller
                 $asset = \App\Models\FixedAsset::findOrFail($id);
                 $previousWarehouseId = $asset->warehouse_id;
 
-                $userPenerima = \App\Models\User::findOrFail($request->assigned_to);
-
                 if (!empty($asset->assigned_to)) {
                     throw new \Exception('Aset ini sedang dipakai dan belum dikembalikan ke gudang.');
                 }
 
-                // 🔥 SAKTI: Ambil Nama Status dari Database, Bukan Hardcode! 🔥
                 $newStatus = \App\Models\Status::find($request->status_id);
+
+                // 2. Proteksi Ganda: Jika status In Use, User HARUS ada!
+                if (optional($newStatus)->slug === 'in_use' && empty($request->assigned_to)) {
+                    throw new \Exception('Staf penerima WAJIB diisi jika status diubah menjadi Dipakai (In Use).');
+                }
+
+                $userPenerima = $request->assigned_to ? \App\Models\User::find($request->assigned_to) : null;
+
+                // 3. Catat di History
+                $historyNotes = '';
+                if ($userPenerima) {
+                    $historyNotes = 'Diserahkan ke User: ' . $userPenerima->name . ' | Catatan: ' . $request->handover_notes;
+                } else {
+                    $historyNotes = 'Update Status via Transaksi | Alasan Resmi: ' . $request->handover_notes;
+                }
 
                 \App\Models\FixedAssetHistory::create([
                     'fixed_asset_id'   => $asset->id,
-                    'status'           => optional($newStatus)->name ?? 'Handover', // Dinamis
+                    'status'           => optional($newStatus)->name ?? 'Handover / Update',
                     'assigned_to'      => $request->assigned_to,
-                    'notes'            => 'Diserahkan ke User ID: ' . $request->assigned_to . '. Catatan: ' . $request->handover_notes,
+                    'notes'            => $historyNotes,
                     'created_by'       => auth()->id(),
                 ]);
 
+                // 4. Update Aset
                 $asset->assigned_to   = $request->assigned_to;
-                $asset->department_id = $userPenerima->department_id;
-                $asset->warehouse_id  = null;
+                $asset->department_id = $userPenerima ? $userPenerima->department_id : null;
                 $asset->status_id     = $request->status_id;
+
+                // Jika aset diserahkan ke user ATAU dibuang (disposed), maka dia hilang dari Gudang
+                if ($userPenerima || in_array(optional($newStatus)->slug, ['disposed', 'void'])) {
+                    $asset->warehouse_id = null;
+                }
+
+                // Catat alasan di tabel utama juga
+                if ($request->filled('handover_notes')) {
+                    $asset->notes = trim($request->handover_notes);
+                }
+
                 $asset->save();
 
-                $item = \App\Models\Item::find($asset->item_id);
-                if ($item) {
-                    $balanceBefore = $item->current_stock;
-                    $item->current_stock -= 1;
-                    $item->save();
+                // 5. Mutasi Stok (Hanya potong stok jika barang benar-benar KELUAR dari gudang)
+                if ($asset->warehouse_id === null && $previousWarehouseId) {
+                    $item = \App\Models\Item::find($asset->item_id);
+                    if ($item) {
+                        $balanceBefore = $item->current_stock;
+                        $item->current_stock -= 1;
+                        $item->save();
 
-                    \App\Models\StockMutation::create([
-                        'item_id'          => $item->id,
-                        'warehouse_id'     => $previousWarehouseId,
-                        'type'             => 'OUT',
-                        'qty'              => 1,
-                        'balance_before'   => $balanceBefore,
-                        'balance_after'    => $item->current_stock,
-                        'reference_number' => 'GI-AST/' . date('Y/m/d') . '/' . $asset->asset_number,
-                        'notes'            => 'Penyerahan Aset (' . $asset->asset_number . ') ke User ID: ' . $request->assigned_to,
-                        'created_by'       => auth()->id(),
-                    ]);
+                        \App\Models\StockMutation::create([
+                            'item_id'          => $item->id,
+                            'warehouse_id'     => $previousWarehouseId,
+                            'type'             => 'OUT',
+                            'qty'              => 1,
+                            'balance_before'   => $balanceBefore,
+                            'balance_after'    => $item->current_stock,
+                            'reference_number' => 'GI-AST/' . date('Y/m/d') . '/' . $asset->asset_number,
+                            'notes'            => 'Pengeluaran Aset (' . $asset->asset_number . ') ' . ($userPenerima ? 'ke User: ' . $userPenerima->name : 'Status: ' . optional($newStatus)->name),
+                            'created_by'       => auth()->id(),
+                        ]);
+                    }
                 }
             });
 
-            return redirect()->back()->with('success', 'Aset berhasil diserahkan ke pengguna dan Stok Mutasi Gudang (-1) telah tercatat.');
+            return redirect()->back()->with('success', 'Transaksi / Update status aset berhasil diproses secara otomatis.');
 
         } catch (\Exception $e) {
-            return redirect()->back()->with('error', 'Gagal menyerahkan aset: ' . $e->getMessage());
+            return redirect()->back()->with('error', 'Gagal memproses transaksi: ' . $e->getMessage());
         }
     }
 

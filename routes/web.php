@@ -358,6 +358,22 @@ Route::middleware('auth')->group(function () {
         // 🔥 RUTE BARU UNTUK DOWNLOAD ERROR EXCEL 🔥
         Route::post('/import/errors', [InventoryController::class, 'downloadErrors'])->name('download_errors');
 
+
+       // 1. Laporan Mutasi Stok (Hanya Qty - Untuk Gudang)
+        Route::get('/stock-as-of', [\App\Http\Controllers\InventoryController::class, 'stockAsOf'])->name('stock-as-of');
+        Route::get('/stock-as-of/print', [\App\Http\Controllers\InventoryController::class, 'printStockAsOf'])->name('stock-as-of.print');
+        Route::get('/stock-as-of/export', [\App\Http\Controllers\InventoryController::class, 'exportStockAsOf'])->name('stock-as-of.export');
+
+        // 2. 🔥 Laporan Valuasi Stok (Qty & Uang - Khusus Finance/Manajemen) 🔥
+        Route::get('/valuation', [\App\Http\Controllers\InventoryController::class, 'valuation'])->name('valuation');
+        Route::get('/valuation/print', [\App\Http\Controllers\InventoryController::class, 'printValuation'])->name('valuation.print');
+        Route::get('/valuation/export', [\App\Http\Controllers\InventoryController::class, 'exportValuation'])->name('valuation.export');
+
+
+        // 🔥 INI WILDCARD (LUBANG HITAM), WAJIB DI POSISI PALING BAWAH! 🔥
+        // Route::get('/{inventory}', [InventoryController::class, 'show'])->name('show');
+
+
         // 🔥 INI WILDCARD (LUBANG HITAM), WAJIB DI POSISI PALING BAWAH! 🔥
         Route::get('/{inventory}', [InventoryController::class, 'show'])->name('show');
 

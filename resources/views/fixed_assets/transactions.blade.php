@@ -165,13 +165,11 @@
                             </td>
 
                             {{-- KOLOM 5: STATUS ASET --}}
-                            {{-- KOLOM 5: STATUS ASET --}}
                             <td>
                                 @php
                                     $statusName = optional($asset->status)->name ?? 'Normal';
                                     $statusSlug = optional($asset->status)->slug;
 
-                                    // 🔥 Logika Murni Menggunakan SLUG 🔥
                                     $isDisposedOrVoid = in_array($statusSlug, ['disposed', 'void', 'batal', 'canceled', 'cancelled']);
 
                                     if($statusSlug === 'in_use') {
@@ -181,7 +179,7 @@
                                     } elseif($statusSlug === 'available' || $statusSlug === 'returned') {
                                         $badgeClass = 'bg-warning-subtle text-warning-emphasis border border-warning-subtle';
                                     } else {
-                                        $badgeClass = 'bg-secondary-subtle text-secondary'; // Untuk Maintenance, dll
+                                        $badgeClass = 'bg-secondary-subtle text-secondary border border-secondary-subtle';
                                     }
                                 @endphp
                                 <span class="badge {{ $badgeClass }} px-2 py-1" style="font-size: 0.7rem;">
@@ -192,9 +190,7 @@
                             {{-- KOLOM 6: AKSI TRANSAKSI --}}
                             <td class="text-end pe-4">
                                 <div class="gap-2 d-flex justify-content-end align-items-center">
-                                    {{-- 🔥 LOGIKA ANTI-DISPOSED DITERAPKAN DI SINI 🔥 --}}
                                     @if(!$isDisposedOrVoid)
-
                                         @if(!empty($asset->assigned_to))
                                             {{-- Jika sedang dipakai: Bisa Retur & Cetak BAST --}}
                                             <a href="{{ route('fixed-assets.bast', $asset->id) }}" target="_blank" class="shadow-sm btn btn-sm btn-dark fw-bold rounded-pill" title="Cetak BAST">
@@ -209,13 +205,12 @@
                                                 <i class="bi bi-printer"></i>
                                             </a>
                                             <button type="button" class="px-3 shadow-sm btn btn-sm btn-primary fw-bold rounded-pill" data-bs-toggle="modal" data-bs-target="#handoverModal{{ $asset->id }}">
-                                                <i class="bi bi-person-plus me-1"></i> Serahkan
+                                                <i class="bi bi-person-plus me-1"></i> Serahkan / Update
                                             </button>
                                         @endif
-
                                     @else
                                         {{-- Jika Disposed, sembunyikan tombol transaksi --}}
-                                        <span class="badge bg-secondary bg-opacity-25 text-secondary border border-secondary-subtle"><i class="bi bi-slash-circle me-1"></i> Aset Nonaktif</span>
+                                        <span class="bg-opacity-25 border badge bg-secondary text-secondary border-secondary-subtle"><i class="bi bi-slash-circle me-1"></i> Aset Nonaktif</span>
                                     @endif
 
                                     {{-- Tombol Riwayat (Selalu Muncul) --}}
@@ -272,13 +267,13 @@
                                             </div>
 
                                             <div class="mb-1">
-                                                <label class="form-label fw-bold text-dark small">Catatan Minus / Kerusakan</label>
-                                                <textarea name="return_notes" class="form-control border-danger-subtle" rows="2" placeholder="Contoh: Lecet pemakaian, charger hilang..."></textarea>
+                                                <label class="form-label fw-bold text-dark small">Catatan / Alasan Retur</label>
+                                                <textarea name="return_notes" class="form-control border-danger-subtle" rows="2" placeholder="Contoh: Lecet pemakaian, user resign..."></textarea>
                                             </div>
                                         </div>
                                         <div class="bg-white modal-footer border-top-0 rounded-bottom-4">
                                             <button type="button" class="px-4 btn btn-light fw-bold rounded-pill" data-bs-dismiss="modal">Batal</button>
-                                            <button type="submit" class="px-4 shadow-sm btn btn-danger fw-bold rounded-pill"><i class="bi bi-save me-1"></i> Update Stok</button>
+                                            <button type="submit" class="px-4 shadow-sm btn btn-danger fw-bold rounded-pill"><i class="bi bi-save me-1"></i> Proses Retur</button>
                                         </div>
                                     </form>
                                 </div>
@@ -286,13 +281,13 @@
                         </div>
                         @endif
 
-                        {{-- MODAL PROSES PENYERAHAN ASET (HANDOVER) --}}
+                        {{-- MODAL PROSES PENYERAHAN / UPDATE STATUS (HANDOVER) --}}
                         @if(empty($asset->assigned_to))
                         <div class="modal fade" id="handoverModal{{ $asset->id }}" tabindex="-1" aria-hidden="true">
                             <div class="modal-dialog modal-dialog-centered">
                                 <div class="border-0 shadow-lg modal-content rounded-4">
                                     <div class="text-white modal-header bg-primary border-bottom-0 rounded-top-4">
-                                        <h6 class="modal-title fw-bold"><i class="bi bi-person-plus me-2"></i> Form Penyerahan Aset</h6>
+                                        <h6 class="modal-title fw-bold"><i class="bi bi-person-plus me-2"></i> Penyerahan / Update Status Aset</h6>
                                         <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
                                     </div>
                                     <form action="{{ route('fixed-assets.handover', $asset->id) }}" method="POST">
@@ -302,12 +297,30 @@
                                                 <div class="mb-1 fw-bold text-primary fs-6"><i class="bi bi-qr-code-scan me-1"></i> {{ $asset->asset_number }}</div>
                                                 <div class="small text-dark fw-bold">{{ $asset->name ?? optional($asset->item)->name }}</div>
                                                 <hr class="my-2 opacity-25 border-primary">
-                                                <div class="small text-primary fw-bold"><i class="bi bi-shop me-1"></i> Dari: {{ optional($asset->warehouse)->name }}</div>
+                                                <div class="small text-primary fw-bold"><i class="bi bi-shop me-1"></i> Posisi Saat Ini: {{ optional($asset->warehouse)->name }}</div>
                                             </div>
 
-                                            <div class="mb-3">
+                                            <div class="row">
+                                                <div class="mb-3 col-md-6">
+                                                    <label class="form-label fw-bold text-dark small">Pilih Status Baru <span class="text-danger">*</span></label>
+                                                    <select name="status_id" class="form-select border-primary-subtle status-select-handover" data-asset-id="{{ $asset->id }}" required>
+                                                        <option value="">-- Pilih Status --</option>
+                                                        @foreach($statuses as $st)
+                                                            {{-- 🔥 WAJIB ADA DATA-SLUG AGAR JS BERFUNGSI 🔥 --}}
+                                                            <option value="{{ $st->id }}" data-slug="{{ $st->slug }}" {{ $st->slug === 'in_use' ? 'selected' : '' }}>{{ $st->name }}</option>
+                                                        @endforeach
+                                                    </select>
+                                                </div>
+                                                <div class="mb-3 col-md-6">
+                                                    <label class="form-label fw-bold text-dark small">Tgl. Proses <span class="text-danger">*</span></label>
+                                                    <input type="date" name="handover_date" class="form-control border-primary-subtle" value="{{ date('Y-m-d') }}" required>
+                                                </div>
+                                            </div>
+
+                                            {{-- 🔥 WRAPPER USER (BISA DI-HIDE OLEH JS) 🔥 --}}
+                                            <div class="mb-3" id="wrapper-assigned-to-{{ $asset->id }}">
                                                 <label class="form-label fw-bold text-dark small">Pilih Staf Penerima <span class="text-danger">*</span></label>
-                                                <select name="assigned_to" class="form-select select2-user border-primary-subtle" required style="width: 100%;">
+                                                <select name="assigned_to" id="assigned_to_{{ $asset->id }}" class="form-select select2-user border-primary-subtle" required style="width: 100%;">
                                                     <option value="">-- Ketik Nama Karyawan --</option>
                                                     @foreach($users as $user)
                                                         <option value="{{ $user->id }}">{{ $user->name }} (Dept: {{ optional($user->department)->name ?? '-' }})</option>
@@ -315,30 +328,14 @@
                                                 </select>
                                             </div>
 
-                                            <div class="row">
-                                                <div class="mb-3 col-md-6">
-                                                    <label class="form-label fw-bold text-dark small">Update Status <span class="text-danger">*</span></label>
-                                                    <select name="status_id" class="form-select border-primary-subtle" required>
-                                                        <option value="">-- Pilih Status --</option>
-                                                        @foreach($statuses as $st)
-                                                            <option value="{{ $st->id }}" {{ str_contains(strtolower($st->name), 'use') || str_contains(strtolower($st->name), 'pakai') ? 'selected' : '' }}>{{ $st->name }}</option>
-                                                        @endforeach
-                                                    </select>
-                                                </div>
-                                                <div class="mb-3 col-md-6">
-                                                    <label class="form-label fw-bold text-dark small">Tgl. Serah Terima <span class="text-danger">*</span></label>
-                                                    <input type="date" name="handover_date" class="form-control border-primary-subtle" value="{{ date('Y-m-d') }}" required>
-                                                </div>
-                                            </div>
-
                                             <div class="mb-1">
-                                                <label class="form-label fw-bold text-dark small">Catatan (Kelengkapan)</label>
-                                                <textarea name="handover_notes" class="form-control border-primary-subtle" rows="2" placeholder="Contoh: Lengkap dengan tas & charger..."></textarea>
+                                                <label class="form-label fw-bold text-dark small">Catatan / Alasan Proses</label>
+                                                <textarea name="handover_notes" class="form-control border-primary-subtle" rows="2" placeholder="Contoh: Diserahkan lengkap / Rusak berat dan dijual..."></textarea>
                                             </div>
                                         </div>
                                         <div class="bg-white modal-footer border-top-0 rounded-bottom-4">
                                             <button type="button" class="px-4 btn btn-light fw-bold rounded-pill" data-bs-dismiss="modal">Batal</button>
-                                            <button type="submit" class="px-4 shadow-sm btn btn-primary fw-bold rounded-pill"><i class="bi bi-send-check me-1"></i> Serahkan Aset</button>
+                                            <button type="submit" class="px-4 shadow-sm btn btn-primary fw-bold rounded-pill"><i class="bi bi-send-check me-1"></i> Proses Aset</button>
                                         </div>
                                     </form>
                                 </div>
@@ -379,12 +376,32 @@
 <script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
 <script>
     $(document).ready(function() {
-        // Inisialisasi Select2 pada Modal Saat Modal Dibuka (Menghindari masalah Z-Index)
+        // Init Select2 saat Modal Terbuka
         $('.modal').on('shown.bs.modal', function () {
             $(this).find('.select2-user').select2({
                 theme: 'bootstrap-5',
-                dropdownParent: $(this) // Memastikan list dropdown select2 berada di dalam modal
+                dropdownParent: $(this)
             });
+            // Jalankan toggle pertama kali agar defaultnya benar
+            $(this).find('.status-select-handover').trigger('change');
+        });
+
+        // 🔥 LOGIKA SMART TOGGLE UNTUK HIDE/SHOW FORM USER 🔥
+        $('.status-select-handover').on('change', function() {
+            let assetId = $(this).data('asset-id');
+            let slug = $(this).find('option:selected').data('slug');
+            let wrapperUser = $('#wrapper-assigned-to-' + assetId);
+            let selectUser = $('#assigned_to_' + assetId);
+
+            // Jika status In Use, User WAJIB. Selain itu, User dihilangkan.
+            if (slug === 'in_use') {
+                wrapperUser.slideDown();
+                selectUser.prop('required', true);
+            } else {
+                wrapperUser.slideUp();
+                selectUser.val('').trigger('change');
+                selectUser.prop('required', false);
+            }
         });
     });
 </script>

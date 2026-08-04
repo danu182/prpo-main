@@ -636,4 +636,143 @@ class InventoryController extends Controller
 
 
 
+    // =========================================================================
+    // 🔥 1. LAPORAN MUTASI STOK (QTY SAJA - UNTUK GUDANG) 🔥
+    // =========================================================================
+    public function stockAsOf(\Illuminate\Http\Request $request)
+    {
+        $data = $this->calculateStockAsOfData($request, false); // false = gunakan paginasi
+        return view('inventory.stock_as_of', $data);
+    }
+
+    public function printStockAsOf(\Illuminate\Http\Request $request)
+    {
+        $data = $this->calculateStockAsOfData($request, true); // true = tarik semua data
+        $pdf = \Barryvdh\DomPDF\Facade\Pdf::loadView('inventory.print_stock_as_of', $data)->setPaper('A4', 'landscape');
+        return $pdf->stream('Laporan_Mutasi_Inventory_' . date('Ymd_His') . '.pdf');
+    }
+
+    public function exportStockAsOf(\Illuminate\Http\Request $request)
+    {
+        $data = $this->calculateStockAsOfData($request, true);
+        $fileName = 'Laporan_Mutasi_Inventory_' . date('Ymd_His') . '.xls';
+
+        header("Content-Type: application/vnd.ms-excel");
+        header("Content-Disposition: attachment; filename=\"$fileName\"");
+        header("Pragma: no-cache");
+        header("Expires: 0");
+
+        return view('inventory.print_stock_as_of', $data)->with('isExcel', true);
+    }
+
+    // =========================================================================
+    // 🔥 2. LAPORAN VALUASI STOK (QTY + RUPIAH - UNTUK FINANCE) 🔥
+    // =========================================================================
+    public function valuation(\Illuminate\Http\Request $request)
+    {
+        $data = $this->calculateStockAsOfData($request, false);
+        return view('inventory.valuation', $data);
+    }
+
+    public function printValuation(\Illuminate\Http\Request $request)
+    {
+        $data = $this->calculateStockAsOfData($request, true);
+        $pdf = \Barryvdh\DomPDF\Facade\Pdf::loadView('inventory.print_valuation', $data)->setPaper('A4', 'landscape');
+        return $pdf->stream('Laporan_Valuasi_Inventory_' . date('Ymd_His') . '.pdf');
+    }
+
+    public function exportValuation(\Illuminate\Http\Request $request)
+    {
+        $data = $this->calculateStockAsOfData($request, true);
+        $fileName = 'Laporan_Valuasi_Inventory_' . date('Ymd_His') . '.xls';
+
+        header("Content-Type: application/vnd.ms-excel");
+        header("Content-Disposition: attachment; filename=\"$fileName\"");
+        header("Pragma: no-cache");
+        header("Expires: 0");
+
+        return view('inventory.print_valuation', $data)->with('isExcel', true);
+    }
+
+    // =========================================================================
+    // 🔥 3. MESIN HITUNG SAKTI (DIGUNAKAN OLEH SEMUA LAPORAN DI ATAS) 🔥
+    // =========================================================================
+    private function calculateStockAsOfData(\Illuminate\Http\Request $request, $isPrint = false)
+    {
+        $startDate = $request->input('start_date', now()->startOfMonth()->format('Y-m-d'));
+        $endDate = $request->input('end_date', now()->format('Y-m-d'));
+        $warehouseId = $request->input('warehouse_id');
+        $search = $request->input('search');
+
+        $start = \Carbon\Carbon::parse($startDate)->startOfDay();
+        $end = \Carbon\Carbon::parse($endDate)->endOfDay();
+
+        // 🔥 WAJIB ADA: Data Master untuk Dropdown dan Kop Surat Cetakan 🔥
+        $warehouses = \App\Models\Warehouse::orderBy('name')->get();
+        $warehouse = $warehouseId ? \App\Models\Warehouse::find($warehouseId) : null;
+
+        $query = \App\Models\Item::with('category')->whereHas('category', function($q) {
+            $q->where('code', '!=', 'AST');
+        });
+
+        if ($search) {
+            $query->where(function($q) use ($search) {
+                $q->where('code', 'like', "%{$search}%")
+                  ->orWhere('name', 'like', "%{$search}%");
+            });
+        }
+
+        // 🔥 LOGIKA PINTAR: Jika cetak, ambil semua (get). Jika tampilan web, gunakan paginasi (paginate) 🔥
+        if ($isPrint) {
+            $items = $query->orderBy('name', 'asc')->get();
+        } else {
+            $items = $query->orderBy('name', 'asc')->paginate(20)->withQueryString();
+        }
+
+        foreach ($items as $item) {
+            $mutations = \App\Models\StockMutation::where('item_id', $item->id);
+            if ($warehouseId) {
+                $mutations->where('warehouse_id', $warehouseId);
+            }
+
+            // 1. QTY CALCULATIONS
+            $inBefore = (clone $mutations)->where('type', 'IN')->where('created_at', '<', $start)->sum('qty');
+            $outBefore = (clone $mutations)->where('type', 'OUT')->where('created_at', '<', $start)->sum('qty');
+            $item->saldo_awal = $inBefore - $outBefore;
+
+            $item->mutasi_in = (clone $mutations)->where('type', 'IN')->whereBetween('created_at', [$start, $end])->sum('qty');
+            $item->mutasi_out = (clone $mutations)->where('type', 'OUT')->whereBetween('created_at', [$start, $end])->sum('qty');
+
+            $item->saldo_akhir = $item->saldo_awal + $item->mutasi_in - $item->mutasi_out;
+
+            // =================================================================
+            // 2. RUPIAH VALUATION (DINAMIS & AMAN)
+            // =================================================================
+
+            // Cari harga beli TERAKHIR dari riwayat PO
+            $latestPOItem = \Illuminate\Support\Facades\DB::table('purchase_order_items')
+                                ->where('item_id', $item->id)
+                                ->orderBy('created_at', 'desc')
+                                ->first();
+
+            // 🔥 LOGIKA CERDAS: Gunakan harga PO terakhir.
+            // JIKA belum pernah di-PO (misal barang Saldo Awal), ambil harga dari tabel items
+            $hargaSatuan = $latestPOItem
+                            ? $latestPOItem->unit_price
+                            : ($item->purchase_price ?? ($item->price ?? 0));
+
+            $item->harga_satuan = $hargaSatuan;
+
+            $item->nilai_awal = $item->saldo_awal * $hargaSatuan;
+            $item->nilai_in = $item->mutasi_in * $hargaSatuan;
+            $item->nilai_out = $item->mutasi_out * $hargaSatuan;
+            $item->nilai_akhir = $item->saldo_akhir * $hargaSatuan;
+        }
+
+        // Lempar semua data yang dibutuhkan View
+        return compact('items', 'startDate', 'endDate', 'warehouseId', 'warehouse', 'warehouses', 'search');
+    }
+
+
+
 }
