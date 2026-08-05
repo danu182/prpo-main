@@ -370,6 +370,10 @@ Route::middleware('auth')->group(function () {
         Route::get('/valuation/export', [\App\Http\Controllers\InventoryController::class, 'exportValuation'])->name('valuation.export');
 
 
+        // 🔥 Laporan Analisis Harga Pembelian (Khusus Tim Procurement/Purchasing)
+        Route::get('/price-analysis', [\App\Http\Controllers\InventoryController::class, 'priceAnalysis'])->name('price-analysis');
+
+
         // 🔥 INI WILDCARD (LUBANG HITAM), WAJIB DI POSISI PALING BAWAH! 🔥
         // Route::get('/{inventory}', [InventoryController::class, 'show'])->name('show');
 

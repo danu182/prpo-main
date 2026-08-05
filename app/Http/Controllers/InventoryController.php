@@ -775,4 +775,65 @@ class InventoryController extends Controller
 
 
 
+    // =========================================================================
+    // 🔥 LAPORAN ANALISIS HARGA PEMBELIAN (MIN, MAX, AVG, LATEST) 🔥
+    // =========================================================================
+    public function priceAnalysis(\Illuminate\Http\Request $request)
+    {
+        $search = $request->input('search');
+
+        // Ambil Item Inventory (Abaikan Aset Tetap)
+        $query = \App\Models\Item::with('category')->whereHas('category', function($q) {
+            $q->where('code', '!=', 'AST');
+        });
+
+        if ($search) {
+            $query->where(function($q) use ($search) {
+                $q->where('code', 'like', "%{$search}%")
+                  ->orWhere('name', 'like', "%{$search}%");
+            });
+        }
+
+        $items = $query->paginate(20)->withQueryString();
+
+        foreach ($items as $item) {
+            // 1. Ambil agregat harga dari riwayat PO (Termahal, Termurah, Rata-rata)
+            $poStats = \Illuminate\Support\Facades\DB::table('purchase_order_items')
+                ->selectRaw('
+                    MAX(unit_price) as max_price,
+                    MIN(unit_price) as min_price,
+                    AVG(unit_price) as avg_price,
+                    SUM(qty_ordered) as total_qty
+                ')
+                ->where('item_id', $item->id)
+                ->first();
+
+            // 2. Ambil harga pembelian paling akhir (Latest)
+            $latestPO = \Illuminate\Support\Facades\DB::table('purchase_order_items')
+                ->where('item_id', $item->id)
+                ->orderBy('created_at', 'desc')
+                ->first();
+
+            // 3. Masukkan ke dalam objek item
+            if ($latestPO) {
+                $item->harga_termahal = $poStats->max_price;
+                $item->harga_termurah = $poStats->min_price;
+                $item->harga_rata = $poStats->avg_price;
+                $item->harga_terakhir = $latestPO->unit_price;
+                $item->total_dibeli = $poStats->total_qty;
+            } else {
+                // Fallback jika belum pernah ada PO
+                $basePrice = $item->purchase_price ?? ($item->price ?? 0);
+                $item->harga_termahal = $basePrice;
+                $item->harga_termurah = $basePrice;
+                $item->harga_rata = $basePrice;
+                $item->harga_terakhir = $basePrice;
+                $item->total_dibeli = 0;
+            }
+        }
+
+        return view('inventory.price_analysis', compact('items', 'search'));
+    }
+
+
 }
