@@ -370,6 +370,10 @@ Route::middleware('auth')->group(function () {
         Route::get('/valuation/export', [\App\Http\Controllers\InventoryController::class, 'exportValuation'])->name('valuation.export');
 
 
+        // 🔥 Laporan Riwayat Harga Beli (Purchase History)
+        Route::get('/purchase-history', [\App\Http\Controllers\InventoryController::class, 'purchaseHistory'])->name('purchase-history');
+
+
         // 🔥 Laporan Analisis Harga Pembelian (Khusus Tim Procurement/Purchasing)
         Route::get('/price-analysis', [\App\Http\Controllers\InventoryController::class, 'priceAnalysis'])->name('price-analysis');
 

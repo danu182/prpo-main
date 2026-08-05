@@ -836,4 +836,56 @@ class InventoryController extends Controller
     }
 
 
+
+    // =========================================================================
+    // 🔥 LAPORAN RIWAYAT HARGA BELI (UPDATE FIELD VENDOR_ID) 🔥
+    // =========================================================================
+    public function purchaseHistory(\Illuminate\Http\Request $request)
+    {
+        $startDate = $request->input('start_date', now()->startOfMonth()->format('Y-m-d'));
+        $endDate = $request->input('end_date', now()->format('Y-m-d'));
+        $search = $request->input('search');
+
+        $start = \Carbon\Carbon::parse($startDate)->startOfDay();
+        $end = \Carbon\Carbon::parse($endDate)->endOfDay();
+
+        $query = \Illuminate\Support\Facades\DB::table('purchase_order_items as poi')
+            ->join('items as i', 'poi.item_id', '=', 'i.id')
+            ->join('purchase_orders as po', 'poi.purchase_order_id', '=', 'po.id')
+
+            // 🔥 REVISI: Menggunakan vendor_id (Asumsi nama tabel adalah 'vendors')
+            ->leftJoin('vendors as v', 'po.vendor_id', '=', 'v.id')
+
+            ->select(
+                'poi.id',
+                'poi.created_at',
+                'po.po_number',
+                'v.name as supplier_name',
+                'i.code as item_code',
+                'i.name as item_name', // Nama dari Master Barang
+                'poi.item_name as po_item_name', // 🔥 TAMBAHAN: Nama spesifik yang diketik saat PO
+                'poi.qty_received',
+                'poi.unit_price',
+                'poi.subtotal'
+            )
+            ->where('poi.qty_received', '>', 0)
+            ->whereBetween('poi.created_at', [$start, $end]);
+
+        if ($search) {
+            $query->where(function($q) use ($search) {
+                $q->where('i.name', 'like', "%{$search}%")
+                  ->orWhere('i.code', 'like', "%{$search}%")
+                  ->orWhere('po.po_number', 'like', "%{$search}%")
+                  ->orWhere('v.name', 'like', "%{$search}%"); // 🔥 Pencarian berdasarkan nama vendor (v.name)
+            });
+        }
+
+        $histories = $query->orderBy('poi.created_at', 'desc')->paginate(20)->withQueryString();
+
+        return view('inventory.purchase_history', compact('histories', 'startDate', 'endDate', 'search'));
+    }
+
+
+
+
 }
