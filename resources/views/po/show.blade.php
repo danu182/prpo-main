@@ -55,11 +55,10 @@
 
         <div class="flex-wrap gap-2 d-flex">
             {{-- 🔥 1. TOMBOL CETAK PO 🔥 --}}
-            @if(in_array($statusSlug, ['approved', 'issued', 'partial_receipt', 'fully_received', 'completed']))
+            @if(in_array($statusSlug, ['approved', 'issued', 'partial_receipt', 'partial_received', 'fully_received', 'completed']))
                 <a href="{{ route('po.print', $po->po_number) }}" target="_blank" class="px-4 shadow-sm btn btn-dark rounded-pill fw-bold">
                     <i class="bi bi-printer-fill me-1"></i> Cetak PO
                 </a>
-                {{-- TOMBOL 2: CETAK BPR PO LENGKAP + LAMPIRAN GAMBAR/PDF --}}
                 <a href="{{ route('po.print_bpr_attachments', $po->po_number) }}" target="_blank" class="shadow-sm btn btn-success rounded-pill fw-bold">
                     <i class="bi bi-bank me-1"></i> Cetak Form BPR + Lampiran
                 </a>
@@ -128,7 +127,7 @@
             @endif
 
             {{-- 5. TOMBOL TERIMA BARANG (GOODS RECEIPT) --}}
-            @if(in_array($statusSlug, ['issued', 'approved', 'partial_receipt']))
+            @if(in_array($statusSlug, ['issued', 'approved', 'partial_receipt', 'partial_received']))
                 @can('create_gr')
                 <a href="{{ route('gr.create', $po->id) }}" class="px-4 shadow-sm btn btn-success rounded-pill fw-bold">
                     <i class="bi bi-box-seam me-1"></i> Terima Barang
@@ -143,6 +142,17 @@
                     <input type="hidden" name="cancel_reason" id="cancelReasonInput">
                     <button type="button" onclick="confirmCancelWithReason()" class="px-4 shadow-sm btn btn-outline-danger rounded-pill fw-bold">
                         <i class="bi bi-slash-circle me-1"></i> Batalkan PO
+                    </button>
+                </form>
+            @endif
+
+            {{-- 🔥 7. TOMBOL FORCE CLOSE PO 🔥 --}}
+            @if(in_array($statusSlug, ['issued', 'approved', 'partial_receipt', 'partial_received']))
+                <form action="{{ route('po.force_close', $po->po_number) }}" method="POST" class="d-inline" id="formForceClose">
+                    @csrf
+                    <input type="hidden" name="reason" id="forceCloseReasonInput">
+                    <button type="button" onclick="confirmForceClose()" class="px-4 shadow-sm btn btn-warning text-dark rounded-pill fw-bold">
+                        <i class="bi bi-exclamation-triangle-fill me-1"></i> Tutup Paksa PO
                     </button>
                 </form>
             @endif
@@ -228,48 +238,54 @@
                 $calcTotalTax = 0;
             @endphp
 
-            {{-- TABEL ITEM --}}
+            {{-- 🔥 TABEL ITEM: DIDESAIN KHUSUS UNTUK MEMANTAU SISA QTY 🔥 --}}
             <div class="mb-4 table-responsive">
                 <table class="table mb-0 align-middle border table-hover">
                     <thead class="bg-primary bg-opacity-10 text-primary">
                         <tr>
                             <th width="5%" class="py-3 text-center">NO</th>
-                            <th width="15%" class="py-3">KODE ITEM</th>
-                            <th width="35%" class="py-3">NAMA BARANG & SPESIFIKASI</th>
-                            <th width="10%" class="py-3 text-center">QTY & UOM</th>
-                            <th width="15%" class="py-3 text-end">HARGA SATUAN</th>
-                            <th width="10%" class="py-3 text-center">DISKON/PAJAK</th>
-                            <th width="10%" class="py-3 text-end pe-3">SUBTOTAL</th>
+                            <th width="32%" class="py-3">IDENTITAS BARANG</th>
+                            <th width="10%" class="py-3 text-center bg-white border-start">QTY PESAN</th>
+                            <th width="10%" class="py-3 text-center bg-success-subtle text-success">SUDAH GR</th>
+                            <th width="10%" class="py-3 text-center bg-danger-subtle text-danger border-end">SISA PENDING</th>
+                            <th width="11%" class="py-3 text-end">HARGA SAT.</th>
+                            <th width="10%" class="py-3 text-center">DISC/TAX</th>
+                            <th width="12%" class="py-3 text-end pe-3">SUBTOTAL</th>
                         </tr>
                     </thead>
                     <tbody>
                         @forelse($po->items as $index => $item)
-                            {{-- 🔥 LOGIKA CERDAS ANTI-NOL & UOM MASTER 🔥 --}}
                             @php
-                                $qty = (float) ($item->qty ?? $item->qty_ordered ?? 0);
-                                if ($qty <= 0) $qty = 1;
+                                // --- LOGIKA PERHITUNGAN QTY ---
+                                $qtyPesan = (float) ($item->qty ?? $item->qty_ordered ?? 0);
+                                if ($qtyPesan <= 0) $qtyPesan = 1;
 
+                                $qtyTerima = (float) ($item->qty_received ?? 0);
+                                $qtySisa = $qtyPesan - $qtyTerima;
+                                if($qtySisa < 0) $qtySisa = 0; // Cegah minus jika penerimaan lebih
+
+                                // --- LOGIKA HARGA & PAJAK ---
                                 $hargaSatuan = (float) ($item->unit_price ?? $item->price ?? 0);
                                 $subtotalDB = (float) ($item->subtotal ?? $item->total_price ?? 0);
 
                                 if ($hargaSatuan == 0 && $subtotalDB > 0) {
-                                    $hargaSatuan = $subtotalDB / $qty;
+                                    $hargaSatuan = $subtotalDB / $qtyPesan;
                                 }
 
                                 $diskon = (float) ($item->discount_amount ?? 0);
                                 $pajak = (float) ($item->tax_amount ?? 0);
 
-                                if ($pajak >= ($qty * $hargaSatuan) && ($qty * $hargaSatuan) > 0) {
+                                if ($pajak >= ($qtyPesan * $hargaSatuan) && ($qtyPesan * $hargaSatuan) > 0) {
                                     $pajak = 0;
                                 }
 
-                                $subtotalItem = ($qty * $hargaSatuan) - $diskon + $pajak;
+                                $subtotalItem = ($qtyPesan * $hargaSatuan) - $diskon + $pajak;
 
-                                $calcSubtotalGross += ($qty * $hargaSatuan);
+                                $calcSubtotalGross += ($qtyPesan * $hargaSatuan);
                                 $calcTotalDiscount += $diskon;
                                 $calcTotalTax += $pajak;
 
-                                // 🔥 LOGIKA UOM DARI DATABASE MASTER 🔥
+                                // --- LOGIKA UOM DARI DATABASE MASTER ---
                                 $masterItem = $item->item;
                                 $baseUomName = optional(optional($masterItem)->uom)->name ?? 'UNIT';
 
@@ -283,71 +299,63 @@
 
                                 $tampilanSatuanLengkap = strtoupper(trim($uomStr));
                                 if (empty($tampilanSatuanLengkap)) $tampilanSatuanLengkap = strtoupper($baseUomName);
-
-                                $convQty = 1;
-                                $savedUomId = $item->uom_id ?? $item->item_uom_id ?? null;
-
-                                if (!empty($savedUomId) && optional($masterItem)->itemUoms) {
-                                    $altUom = collect($masterItem->itemUoms)->where('id', $savedUomId)->first();
-                                    if ($altUom) {
-                                        $convQty = (float) $altUom->conversion_qty;
-                                        $tampilanSatuanLengkap = strtoupper($altUom->uom_name) . ' (Isi: ' . $convQty . ' ' . $baseUomName . ')';
-                                    }
-                                }
-                                $totalBaseQty = $qty * $convQty;
                             @endphp
 
                             <tr>
                                 <td class="text-center fw-bold text-muted">{{ $index + 1 }}</td>
 
-                                {{-- KOLOM 1: KODE BARANG --}}
+                                {{-- IDENTITAS BARANG --}}
                                 <td>
-                                    <span class="p-2 border badge bg-secondary-subtle text-secondary border-secondary-subtle">
+                                    <span class="px-2 py-1 mb-2 border badge bg-secondary-subtle text-secondary border-secondary-subtle font-monospace d-inline-block">
                                         {{ optional($item->item)->code ?? 'SKU-UNKNOWN' }}
                                     </span>
-                                </td>
-
-                                {{-- KOLOM 2: NAMA BARANG + SPESIFIKASI + LAMPIRAN ITEM --}}
-                                <td>
-                                    {{-- 🔥 PERBAIKAN: MENAMPILKAN SHORT TEXT OVERRIDE JIKA ADA 🔥 --}}
-                                    <div class="mb-2 fw-bolder text-dark" style="font-size: 0.95rem;">
-                                        {{ $item->item_name ?? optional($item->item)->name ?? 'Item Terhapus / Tidak Ditemukan' }}
+                                    <div class="mb-1 fw-bolder text-dark" style="font-size: 0.95rem;">
+                                        {{ $item->item_name ?? optional($item->item)->name ?? 'Item Tidak Ditemukan' }}
                                     </div>
-
-                                    <div class="p-2 border rounded text-muted bg-light border-light" style="font-size: 0.85rem;">
-                                        {!! $item->description ?? '-' !!}
+                                    <div class="text-muted fst-italic" style="font-size: 0.80rem;">
+                                        {!! strip_tags($item->description ?? '') !!}
                                     </div>
 
                                     @if(isset($item->raw_attachments) && count($item->raw_attachments) > 0)
-                                        <div class="flex-wrap gap-2 pt-2 mt-2 border-top border-light d-flex d-print-none">
+                                        <div class="flex-wrap gap-2 pt-1 mt-1 d-flex d-print-none">
                                             @foreach($item->raw_attachments as $idx => $vFile)
-                                                <a href="{{ asset('storage/' . $vFile->file_path) }}" target="_blank" class="px-2 py-1 border badge bg-info-subtle text-info-emphasis text-decoration-none border-info-subtle" title="{{ $vFile->file_name }}">
-                                                    <i class="bi bi-paperclip"></i> Lampiran {{ $idx + 1 }}
+                                                <a href="{{ asset('storage/' . $vFile->file_path) }}" target="_blank" class="px-2 py-0 border badge bg-info-subtle text-info-emphasis text-decoration-none border-info-subtle">
+                                                    <i class="bi bi-paperclip"></i> Dok
                                                 </a>
                                             @endforeach
                                         </div>
                                     @endif
                                 </td>
 
-                                {{-- KOLOM 3: QTY & UOM --}}
-                                <td class="text-center">
-                                    <div class="fw-bolder text-dark fs-6">{{ $qty }}</div>
-                                    <div class="mt-1 badge bg-primary-subtle text-primary text-wrap lh-sm" style="font-size: 0.70rem; max-width: 100px;">
+                                {{-- KOLOM QTY PESAN --}}
+                                <td class="text-center bg-white border-start">
+                                    <div class="fw-bolder text-dark fs-6">{{ $qtyPesan }}</div>
+                                    <div class="mt-1 badge bg-primary-subtle text-primary text-wrap lh-sm" style="font-size: 0.70rem;">
                                         {{ $tampilanSatuanLengkap }}
                                     </div>
-                                    @if($convQty > 1)
-                                        <div class="mt-1 text-danger fw-bold" style="font-size: 0.65rem;">
-                                            <i class="bi bi-info-circle"></i> Setara {{ $totalBaseQty }} {{ strtoupper($baseUomName) }}
-                                        </div>
+                                </td>
+
+                                {{-- KOLOM SUDAH DITERIMA (GR) --}}
+                                <td class="text-center bg-success-subtle text-success">
+                                    <div class="fw-bolder fs-5">{{ $qtyTerima }}</div>
+                                </td>
+
+                                {{-- KOLOM SISA GANTUNG --}}
+                                <td class="text-center bg-danger-subtle text-danger border-end border-danger">
+                                    <div class="fw-bolder fs-5">{{ $qtySisa }}</div>
+                                    @if($qtySisa > 0)
+                                        <div class="small fw-bold" style="font-size: 0.65rem;">Pending</div>
+                                    @else
+                                        <div class="text-success small fw-bold" style="font-size: 0.65rem;"><i class="bi bi-check2-all"></i> Genap</div>
                                     @endif
                                 </td>
 
-                                {{-- KOLOM 4: HARGA --}}
+                                {{-- KOLOM HARGA SATUAN --}}
                                 <td class="text-end fw-bold text-secondary">
                                     {{ number_format($hargaSatuan, 2, '.', ',') }}
                                 </td>
 
-                                {{-- KOLOM 5: DISKON & PAJAK --}}
+                                {{-- KOLOM DISKON & PAJAK --}}
                                 <td class="text-center" style="font-size: 0.75rem;">
                                     <div class="mb-1 text-danger fw-bold">
                                         Disc: {{ number_format($diskon, 2, '.', ',') }}
@@ -359,14 +367,14 @@
                                     </div>
                                 </td>
 
-                                {{-- KOLOM 6: SUBTOTAL --}}
+                                {{-- KOLOM SUBTOTAL --}}
                                 <td class="text-end fw-bolder text-dark pe-3" style="font-size: 1rem;">
                                     {{ number_format($subtotalItem, 2, '.', ',') }}
                                 </td>
                             </tr>
                         @empty
                             <tr>
-                                <td colspan="7" class="py-4 text-center text-muted fst-italic">Tidak ada item barang dalam PO ini.</td>
+                                <td colspan="8" class="py-4 text-center text-muted fst-italic">Tidak ada item barang dalam PO ini.</td>
                             </tr>
                         @endforelse
                     </tbody>
@@ -386,11 +394,9 @@
                     @php
                         $sumSubtotal = (float)($po->subtotal ?? 0) > 0 ? (float)$po->subtotal : $calcSubtotalGross;
 
-                        // Perbaiki pemanggilan nama variabel diskon
                         $dbDiscount = (float)($po->discount_total ?? $po->discount_amount ?? 0);
                         $sumDiscount = $dbDiscount > 0 ? $dbDiscount : $calcTotalDiscount;
 
-                        // Perbaiki pemanggilan nama variabel pajak
                         $dbTax = (float)($po->tax_total ?? $po->tax_amount ?? 0);
                         $sumTax = $dbTax > 0 ? $dbTax : $calcTotalTax;
 
@@ -399,7 +405,6 @@
                             foreach($charges as $c) { $sumCharges += (float)$c->amount; }
                         }
 
-                        // Menggunakan grand_total asli jika sudah tersimpan, atau dikalkulasi manual jika gagal
                         $sumGrandTotal = (float)($po->grand_total ?? 0);
                         if ($sumGrandTotal <= 0) {
                             $sumGrandTotal = $sumSubtotal - $sumDiscount + $sumTax + $sumCharges;
@@ -773,6 +778,33 @@
             if (result.isConfirmed) {
                 document.getElementById('cancelReasonInput').value = result.value;
                 document.getElementById('formCancel').submit();
+            }
+        });
+    }
+
+    // 🔥 SCRIPT UNTUK FORCE CLOSE PO 🔥
+    function confirmForceClose() {
+        Swal.fire({
+            title: 'Tutup Paksa (Force Close)?',
+            text: "Sisa penerimaan barang akan dihentikan dan PO ini dianggap selesai. Berikan alasan:",
+            input: 'textarea',
+            inputPlaceholder: 'Cth: Vendor tidak sanggup kirim sisa pesanan...',
+            icon: 'warning',
+            showCancelButton: true,
+            confirmButtonColor: '#ffc107',
+            cancelButtonColor: '#6c757d',
+            confirmButtonText: '<i class="bi bi-check-circle-fill"></i> Ya, Tutup Paksa!',
+            cancelButtonText: 'Batal',
+            preConfirm: (reason) => {
+                if (!reason || reason.trim() === '') {
+                    Swal.showValidationMessage('Alasan tutup paksa wajib diisi!')
+                }
+                return reason;
+            }
+        }).then((result) => {
+            if (result.isConfirmed) {
+                document.getElementById('forceCloseReasonInput').value = result.value;
+                document.getElementById('formForceClose').submit();
             }
         });
     }

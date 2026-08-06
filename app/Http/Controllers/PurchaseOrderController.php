@@ -1402,4 +1402,130 @@ class PurchaseOrderController extends Controller
         }
         return back()->with('success', 'File Lampiran Item berhasil dihapus.');
     }
+
+
+
+    // =========================================================================
+    // 🔥 1. HALAMAN LAPORAN OUTSTANDING PO (FIXED STATUS_ID) 🔥
+    // =========================================================================
+    public function outstanding(\Illuminate\Http\Request $request)
+    {
+        $startDate = $request->input('start_date', now()->subDays(30)->format('Y-m-d'));
+        $endDate = $request->input('end_date', now()->format('Y-m-d'));
+        $companyId = $request->input('company_id');
+        $vendorId = $request->input('vendor_id');
+        $search = $request->input('search');
+
+        $start = \Carbon\Carbon::parse($startDate)->startOfDay();
+        $end = \Carbon\Carbon::parse($endDate)->endOfDay();
+
+        $companies = \App\Models\Company::orderBy('name')->get();
+        $vendors = \App\Models\Vendor::orderBy('name')->get();
+
+        // 🔥 PERBAIKAN: Ambil ID dari tabel 'statuses' untuk status PO yang masih menggantung
+        // Mengacu pada gambar, slug yang menggantung adalah: issued, partial_received, partial_receipt
+        $outstandingStatusIds = \Illuminate\Support\Facades\DB::table('statuses')
+            ->where('type', 'PO')
+            ->whereIn('slug', ['issued', 'partial_received', 'partial_receipt'])
+            ->pluck('id')
+            ->toArray();
+
+        // 🔥 PERBAIKAN: Gunakan whereIn('status_id', ...) bukan whereIn('status', ...)
+        $query = \App\Models\PurchaseOrder::with(['items.item', 'vendor', 'company'])
+                    ->whereIn('status_id', $outstandingStatusIds)
+                    ->whereBetween('created_at', [$start, $end]);
+
+        if ($companyId) {
+            $query->where('company_id', $companyId);
+        }
+
+        if ($vendorId) {
+            $query->where('vendor_id', $vendorId);
+        }
+
+        if ($search) {
+            $query->where(function($q) use ($search) {
+                $q->where('po_number', 'like', "%{$search}%")
+                  ->orWhereHas('items', function($qItems) use ($search) {
+                      $qItems->where('item_name', 'like', "%{$search}%")
+                             ->orWhereHas('item', function($qMaster) use ($search) {
+                                 $qMaster->where('name', 'like', "%{$search}%")
+                                         ->orWhere('code', 'like', "%{$search}%");
+                             });
+                  });
+            });
+        }
+
+        $outstandingPos = $query->orderBy('created_at', 'asc')->paginate(20)->withQueryString();
+
+        foreach ($outstandingPos as $po) {
+            $po->total_qty_ordered = $po->items->sum('qty_ordered');
+            $po->total_qty_received = $po->items->sum('qty_received');
+            $po->qty_sisa = $po->total_qty_ordered - $po->total_qty_received;
+        }
+
+        return view('po.outstanding', compact('outstandingPos', 'startDate', 'endDate', 'companyId', 'vendorId', 'search', 'companies', 'vendors'));
+    }
+
+
+
+    // =========================================================================
+    // 🔥 2. FUNGSI EKSEKUSI FORCE CLOSE (DENGAN LOG RIWAYAT/HISTORY) 🔥
+    // =========================================================================
+    public function forceClose(\Illuminate\Http\Request $request, $slug)
+    {
+        $po = \App\Models\PurchaseOrder::where('po_number', $slug)->firstOrFail();
+
+        // Cek apakah PO sudah memiliki status final
+        $finalStatusIds = \Illuminate\Support\Facades\DB::table('statuses')
+            ->where('type', 'PO')
+            ->whereIn('slug', ['completed', 'rejected', 'cancelled', 'canceled', 'fully_received', 'closed_short'])
+            ->pluck('id')
+            ->toArray();
+
+        if (in_array($po->status_id, $finalStatusIds)) {
+            return redirect()->back()->with('error', 'Gagal! Purchase Order ini sudah memiliki status Final.');
+        }
+
+        // Cari ID status khusus 'closed_short'
+        $closedShortStatus = \Illuminate\Support\Facades\DB::table('statuses')
+            ->where('type', 'PO')
+            ->where('slug', 'closed_short')
+            ->first();
+
+        // Update status_id ke ID Closed Short (Jika belum buat di DB, fallback ke completed)
+        if ($closedShortStatus) {
+            $po->status_id = $closedShortStatus->id;
+        } else {
+            // Fallback darurat jika Komandan belum sempat input di database
+            $fallbackStatus = \Illuminate\Support\Facades\DB::table('statuses')->where('type', 'PO')->where('slug', 'completed')->first();
+            if ($fallbackStatus) $po->status_id = $fallbackStatus->id;
+        }
+
+        $alasan = $request->input('reason', 'Ditutup paksa tanpa alasan.');
+
+        // 1. Menambahkan log ke teks Catatan PO
+        $catatan = "\n\n=== FORCE CLOSED PADA " . now()->translatedFormat('d M Y H:i') . " ===\n";
+        $catatan .= "Oleh: " . (auth()->user()->name ?? 'Sistem') . "\n";
+        $catatan .= "Alasan: " . $alasan;
+        $po->notes = $po->notes . $catatan;
+
+        // Simpan perubahan ke tabel PO
+        $po->save();
+
+        // 🔥 2. TAMBAHAN BARU: MENYUNTIKKAN LOG KE TABEL RIWAYAT (TIMELINE) 🔥
+        if (method_exists($po, 'histories')) {
+            $po->histories()->create([
+                'user_id' => auth()->id(),
+                'action'  => 'Force Close PO',
+                'note'    => "Dokumen ditutup paksa (Closed Short).\n**Alasan:** " . $alasan
+            ]);
+        }
+
+        return redirect()->back()->with('success', "Purchase Order {$po->po_number} berhasil ditutup paksa (Closed Short)!");
+    }
+
+
+
+
 }

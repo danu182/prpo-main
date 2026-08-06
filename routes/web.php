@@ -82,6 +82,9 @@ Route::middleware('auth')->group(function () {
     Route::prefix('po')->name('po.')->group(function () {
         Route::get('/', [PurchaseOrderController::class, 'index'])->name('index')->middleware('can:view_po');
 
+        // 🔥 HALAMAN BARU: LAPORAN OUTSTANDING PO (LETAKKAN DI SINI, PALING ATAS!) 🔥
+        Route::get('/outstanding', [\App\Http\Controllers\PurchaseOrderController::class, 'outstanding'])->name('outstanding')->middleware('can:view_po');
+
         // Memproses dari PR
         Route::get('/process-pr/{slug}', [PurchaseOrderController::class, 'processPr'])->name('process_pr')->middleware('can:view_po');
         Route::post('/store-from-pr/{slug}', [PurchaseOrderController::class, 'storeFromPr'])->name('store_from_pr')->middleware('can:view_po');
@@ -91,11 +94,11 @@ Route::middleware('auth')->group(function () {
         Route::get('/edit/{slug}', [PurchaseOrderController::class, 'edit'])->name('edit')->middleware('can:view_po');
         Route::post('/update/{slug}', [PurchaseOrderController::class, 'update'])->name('update')->middleware('can:view_po');
 
-        // 🔥 TAMBAHKAN ROUTE PRINT DI SINI 🔥
+        // 🔥 RUTE PRINT 🔥
         Route::get('/print/{slug}', [PurchaseOrderController::class, 'printPdf'])->name('print')->middleware('can:view_po');
-        Route::get('/po/{slug}/print-complete', [PurchaseOrderController::class, 'printCompletePdf'])->name('po.print_complete');
 
-        // Route::get('/{slug}/print-bpr-attachments', [\App\Http\Controllers\PurchaseOrderController::class, 'printBprWithAttachments'])->name('po.print_bpr_attachments')->where('slug', '.*'); // <-- Pakai regex .* agar bisa membaca garis miring di nomor PO
+        // 💡 PERBAIKAN: Hapus awalan '/po' di sini karena sudah otomatis dari prefix grup
+        Route::get('/{slug}/print-complete', [PurchaseOrderController::class, 'printCompletePdf'])->name('print_complete');
 
         Route::get('/{slug}/print-bpr-attachments', [\App\Http\Controllers\PurchaseOrderController::class, 'printBprWithAttachments'])->name('print_bpr_attachments')->where('slug', '.*');
 
@@ -106,14 +109,14 @@ Route::middleware('auth')->group(function () {
         Route::get('/delete-attachment/{id}', [PurchaseOrderController::class, 'deleteAttachment'])->name('delete_attachment');
         Route::post('/submit-approval/{slug}', [PurchaseOrderController::class, 'submitApproval'])->name('submit_approval');
 
-        // Cancel PO pakai Slug
+        // Aksi Batal & Force Close (Aman ditaruh di bawah)
         Route::post('/{slug}/cancel', [PurchaseOrderController::class, 'cancel'])->name('cancel')->middleware('can:view_po');
-        Route::get('/po/attachment/item/{id}/delete', [\App\Http\Controllers\PurchaseOrderController::class, 'deleteItemAttachment'])->name('po.delete_item_attachment');
-        Route::get('/po/attachment/header/{id}/delete', [\App\Http\Controllers\PurchaseOrderController::class, 'deleteHeaderAttachment'])->name('po.delete_header_attachment');
+        Route::post('/{slug}/force-close', [\App\Http\Controllers\PurchaseOrderController::class, 'forceClose'])->name('force_close')->middleware('can:view_po');
 
+        // Hapus Attachment
+        Route::get('/attachment/header/delete/{id}', [App\Http\Controllers\PurchaseOrderController::class, 'deleteHeaderAttachment'])->name('delete_header_attachment');
+        Route::get('/attachment/item/delete/{id}', [App\Http\Controllers\PurchaseOrderController::class, 'deleteItemAttachment'])->name('delete_item_attachment');
 
-        Route::get('/attachment/header/delete/{id}', [App\Http\Controllers\PurchaseOrderController::class, 'deleteHeaderAttachment'])->name('po.delete_header_attachment');
-        Route::get('/attachment/item/delete/{id}', [App\Http\Controllers\PurchaseOrderController::class, 'deleteItemAttachment'])->name('po.delete_item_attachment');
     });
 
 

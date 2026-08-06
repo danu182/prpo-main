@@ -138,6 +138,14 @@ class StatusSeeder extends Seeder
                 'color' => 'success',
                 'sequence' => 9,
             ],
+            // 🔥 STATUS BARU UNTUK FORCE CLOSE PO 🔥
+            [
+                'type' => 'PO',
+                'name' => 'Ditutup Paksa (Closed Short)',
+                'slug' => 'closed_short',
+                'color' => 'dark',
+                'sequence' => 10,
+            ],
 
             // ==========================================================
             // 3. STATUS UNTUK VENDOR INVOICE (INV)
