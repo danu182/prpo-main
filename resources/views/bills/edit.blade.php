@@ -99,6 +99,29 @@
                                 <label class="form-label fw-bold small text-muted text-uppercase">Catatan Tagihan</label>
                                 <textarea name="note" class="form-control rounded-3" rows="2">{{ $bill->description }}</textarea>
                             </div>
+
+                            {{-- ========================================================= --}}
+                            {{-- 🔥 TAMBAHAN BARU: DROPDOWN JALUR TIKUS (OVERRIDE) 🔥 --}}
+                            {{-- ========================================================= --}}
+                            <div class="pt-3 mt-3 col-md-12 border-top">
+                                <label class="form-label fw-bold small text-warning-emphasis text-uppercase">
+                                    <i class="bi bi-shuffle me-1"></i> Pilih Jalur Persetujuan Khusus (Opsional)
+                                </label>
+                                <select name="custom_workflow_id" class="form-select select2-single border-warning-subtle bg-warning bg-opacity-10">
+                                    <option value="">-- Ikuti Standar Departemen (Default) --</option>
+                                    @if(isset($customWorkflows) && count($customWorkflows) > 0)
+                                        @foreach($customWorkflows as $cw)
+                                            <option value="{{ $cw->id }}">{{ $cw->name }}</option>
+                                        @endforeach
+                                    @endif
+                                </select>
+                                <div class="mt-1 form-text small text-muted">
+                                    <i class="bi bi-info-circle me-1"></i>Biarkan kosong jika ingin menggunakan rute standar departemen.
+                                    <br><span class="text-danger fw-bold"><i class="bi bi-exclamation-triangle"></i> Perhatian:</span> Mengubah formasi di sini akan me-reset seluruh persetujuan yang sudah berjalan!
+                                </div>
+                            </div>
+                            {{-- ========================================================= --}}
+
                         </div>
                     </div>
                 </div>
@@ -536,7 +559,6 @@ $(document).ready(function() {
         else $('#recurring_setup').addClass('d-none');
     });
 
-    // 🔥 9. KALKULATOR UTAMA DIPERBARUI 🔥
     function calculate() {
         let totalGross = 0, totalItemDisc = 0, totalTax = 0, totalCharge = 0, totalExtDiscount = 0;
 
@@ -545,13 +567,11 @@ $(document).ready(function() {
             const price = parseFloat($(this).find('.price-real').val()) || 0;
             const gross = qty * price;
 
-            // Diskon
             const discVal = parseFloat($(this).find('.disc-val-real').val()) || 0;
             const discType = $(this).find('.disc-type').val();
             const itemDisc = (discType === 'fixed') ? discVal : (gross * discVal / 100);
             const dpp = gross - itemDisc;
 
-            // Pajak (Baru) -> Pajak biasanya dihitung dari DPP (setelah diskon)
             const taxVal = parseFloat($(this).find('.tax-val-real').val()) || 0;
             const taxType = $(this).find('.tax-type').val();
             const itemTax = (taxType === 'fixed') ? taxVal : (dpp * taxVal / 100);
@@ -576,7 +596,6 @@ $(document).ready(function() {
 
     $(document).on('input', '.qty', calculate);
 
-    // 🔥 10. TERAPKAN PAJAK MASSAL (BARU) 🔥
     $('#btnApplyGlobalTax').click(function() {
         let globalVal = $('#global_tax_val').val();
         let globalRealVal = unformatNumber(globalVal);

@@ -102,28 +102,6 @@
                                 <label class="form-label fw-bold small text-muted text-uppercase">Catatan Tagihan</label>
                                 <textarea name="note" class="form-control rounded-3" rows="2" placeholder="Tuliskan keterangan jika ada..."></textarea>
                             </div>
-
-                            {{-- ========================================================= --}}
-                            {{-- 🔥 JALUR TIKUS (OVERRIDE WORKFLOW) 🔥 --}}
-                            {{-- ========================================================= --}}
-                            <div class="pt-3 mt-3 col-md-12 border-top">
-                                <label class="form-label fw-bold small text-primary text-uppercase">
-                                    <i class="bi bi-shuffle me-1"></i> Pilih Jalur Persetujuan Khusus (Opsional)
-                                </label>
-                                <select name="custom_workflow_id" class="form-select select2-single border-primary-subtle bg-primary bg-opacity-10">
-                                    <option value="">-- Ikuti Standar Departemen (Default) --</option>
-                                    @if(isset($customWorkflows) && count($customWorkflows) > 0)
-                                        @foreach($customWorkflows as $cw)
-                                            <option value="{{ $cw->id }}">{{ $cw->name }}</option>
-                                        @endforeach
-                                    @endif
-                                </select>
-                                <div class="mt-1 form-text small text-muted">
-                                    <i class="bi bi-info-circle me-1"></i>Biarkan kosong jika ingin menggunakan rute standar departemen Anda. Pilih rute jika tagihan ini bersifat khusus (misal: Hosting/IT).
-                                </div>
-                            </div>
-                            {{-- ========================================================= --}}
-
                         </div>
                     </div>
                 </div>
@@ -163,6 +141,7 @@
 
                 {{-- CARD 3: RINCIAN ITEM --}}
                 <div class="mb-4 border-0 shadow-sm card rounded-4">
+                    {{-- 🔥 HEADER DENGAN FITUR SET PAJAK MASSAL (BARU) 🔥 --}}
                     <div class="py-3 bg-white card-header border-bottom-0 rounded-top-4 d-flex justify-content-between align-items-center">
                         <h6 class="mb-0 fw-bold text-primary"><i class="bi bi-list-check me-2"></i>Rincian Barang / Jasa Opex</h6>
                         <div class="input-group input-group-sm" style="width: 320px;">
@@ -211,6 +190,7 @@
                                         </div>
                                     </td>
                                     <td class="pt-3">
+                                        {{-- 🔥 INPUT PAJAK BARU (Bisa Nominal/Persen) 🔥 --}}
                                         <div class="mb-1 input-group input-group-sm" title="Pajak per-item">
                                             <span class="input-group-text bg-info bg-opacity-10 text-info fw-bold" style="font-size: 0.7rem;">+Pajak</span>
                                             <input type="text" class="form-control tax-val-display" value="0">
@@ -221,6 +201,7 @@
                                             </select>
                                         </div>
 
+                                        {{-- Input Diskon --}}
                                         <div class="input-group input-group-sm" title="Diskon per-item">
                                             <span class="input-group-text bg-danger bg-opacity-10 text-danger fw-bold" style="font-size: 0.7rem;">-Disc&nbsp;&nbsp;</span>
                                             <input type="text" class="form-control disc-val-display" value="0">
@@ -387,6 +368,7 @@ $(document).ready(function() {
     function formatNumber(num) { return num.toString().replace(/\B(?=(\d{3})+(?!\d))/g, "."); }
     function unformatNumber(str) { return parseInt(str.toString().replace(/[^0-9]/g, '')) || 0; }
 
+    // 🔥 Update pemicu KeyUp untuk memproses Pajak & Diskon 🔥
     $(document).on('keyup', '.price-display, .disc-val-display, .tax-val-display, .charge-display, .ext-disc-display', function() {
         let isPercent = false;
 
@@ -534,6 +516,7 @@ $(document).ready(function() {
         else $('#recurring_setup').addClass('d-none');
     });
 
+    // 🔥 9. KALKULATOR UTAMA DIPERBARUI 🔥
     function calculate() {
         let totalGross = 0, totalItemDisc = 0, totalTax = 0, totalCharge = 0, totalExtDiscount = 0;
 
@@ -548,7 +531,7 @@ $(document).ready(function() {
             const itemDisc = (discType === 'fixed') ? discVal : (gross * discVal / 100);
             const dpp = gross - itemDisc;
 
-            // Pajak
+            // Pajak (Baru) -> Pajak biasanya dihitung dari DPP (setelah diskon)
             const taxVal = parseFloat($(this).find('.tax-val-real').val()) || 0;
             const taxType = $(this).find('.tax-type').val();
             const itemTax = (taxType === 'fixed') ? taxVal : (dpp * taxVal / 100);
@@ -573,6 +556,7 @@ $(document).ready(function() {
 
     $(document).on('input', '.qty', calculate);
 
+    // 🔥 10. TERAPKAN PAJAK MASSAL (BARU) 🔥
     $('#btnApplyGlobalTax').click(function() {
         let globalVal = $('#global_tax_val').val();
         let globalRealVal = unformatNumber(globalVal);

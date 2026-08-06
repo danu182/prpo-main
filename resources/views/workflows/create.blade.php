@@ -8,8 +8,22 @@
         <p class="mb-0 text-muted">Tambahkan aturan persetujuan untuk modul dokumen baru.</p>
     </div>
 
+    {{-- ALARM ERROR SYSTEM --}}
     @if(session('error'))
         <div class="border-0 shadow-sm alert alert-danger rounded-4"><i class="bi bi-exclamation-triangle-fill me-2"></i>{{ session('error') }}</div>
+    @endif
+
+    {{-- 🔥 ALARM ERROR VALIDASI (TAMBAHAN BARU) 🔥 --}}
+    @if ($errors->any())
+        <div class="mb-4 border-0 shadow-sm alert alert-danger alert-dismissible fade show rounded-4">
+            <div class="mb-1 fw-bold"><i class="bi bi-exclamation-triangle-fill me-2"></i>Terdapat Kesalahan Input:</div>
+            <ul class="mb-0 small">
+                @foreach ($errors->all() as $error)
+                    <li>{{ $error }}</li>
+                @endforeach
+            </ul>
+            <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+        </div>
     @endif
 
     <form action="{{ route('workflows.store') }}" method="POST" id="workflowForm">
@@ -35,7 +49,6 @@
                             </select>
                         </div>
 
-                        {{-- 🔥 FITUR BARU: PILIHAN DEPARTEMEN SPESIFIK / UMUM 🔥 --}}
                         <div class="mb-3">
                             <label class="form-label fw-bold small text-muted">Berlaku Untuk</label>
                             <select name="department_id" class="form-select border-info text-dark fw-bold">
@@ -60,8 +73,9 @@
                             {{-- Container Kosong, akan diisi via JS --}}
                         </div>
 
+                        {{-- KLIK TOMBOL INI UNTUK MENAMBAH TINGKATAN APPROVAL --}}
                         <button type="button" class="py-3 mt-2 mb-4 border-dashed btn btn-outline-primary fw-bold w-100" id="btn-add-step">
-                            <i class="mb-1 bi bi-plus-circle fs-5 d-block"></i> Tambah Lapis Persetujuan (Ke Atas)
+                            <i class="mb-1 bi bi-plus-circle fs-5 d-block"></i> Klik di Sini Untuk Tambah Tingkatan Persetujuan
                         </button>
 
                         <div class="text-end">
@@ -88,7 +102,6 @@
             @endforeach
         `;
 
-        // 🔥 TAMBAHAN HYBRID
         let deptOptions = `
             <option value="">[Atasan Langsung / Satu Departemen]</option>
             <option value="all">[Lintas Batas / Semua Departemen]</option>
@@ -103,7 +116,7 @@
             let newRow = `
                 <div class="p-3 mb-3 bg-white border shadow-sm step-row d-flex align-items-center rounded-3" style="display:none;">
                     <div class="me-3">
-                        <span class="px-2 py-2 badge bg-dark rounded-circle step-number">X</span>
+                        <span class="px-3 py-2 badge bg-dark rounded-circle step-number fs-6">X</span>
                     </div>
                     <div class="flex-grow-1 me-3">
                         <label class="mb-1 small text-muted fw-bold">Pilih Jabatan (Role)</label>
@@ -116,10 +129,6 @@
                         <select name="steps[${stepIndex}][target_department_id]" class="form-select border-info text-dark fw-bold">
                             ${deptOptions}
                         </select>
-                    </div>
-                    <div class="flex-grow-1 me-3">
-                        <label class="mb-1 small text-muted fw-bold">Minimal Nominal (Rp)</label>
-                        <input type="number" name="steps[${stepIndex}][min_amount]" class="form-control border-warning fw-bold text-dark" value="0" min="0" required>
                     </div>
                     <div class="mt-4">
                         <button type="button" class="btn btn-outline-danger btn-remove-step rounded-circle" title="Hapus Lapis Ini"><i class="bi bi-trash"></i></button>
@@ -146,7 +155,6 @@
                 // Update indeks array agar selalu berurutan
                 $(this).find('select').eq(0).attr('name', 'steps[' + index + '][role_id]');
                 $(this).find('select').eq(1).attr('name', 'steps[' + index + '][target_department_id]');
-                $(this).find('input[type="number"]').attr('name', 'steps[' + index + '][min_amount]');
             });
         }
     });
