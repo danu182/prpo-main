@@ -389,12 +389,19 @@ Route::middleware('auth')->group(function () {
         // Route::get('/{inventory}', [InventoryController::class, 'show'])->name('show');
 
 
-        // 🔥 INI WILDCARD (LUBANG HITAM), WAJIB DI POSISI PALING BAWAH! 🔥
-        Route::get('/{inventory}', [InventoryController::class, 'show'])->name('show');
+
+
+        // Fitur Smart Restock (Auto Mass PR)
+        Route::get('/smart-restock', [\App\Http\Controllers\InventoryController::class, 'smartRestock'])->name('smart_restock');
+        Route::post('/smart-restock/generate-pr', [\App\Http\Controllers\InventoryController::class, 'generateMassPr'])->name('generate_mass_pr');
 
 
         Route::get('/capitalize/{slug}', [App\Http\Controllers\InventoryController::class, 'capitalizeForm'])->name('capitalize.form');
         Route::post('/capitalize/{slug}', [App\Http\Controllers\InventoryController::class, 'capitalizeStore'])->name('capitalize.store');
+
+
+         // 🔥 INI WILDCARD (LUBANG HITAM), WAJIB DI POSISI PALING BAWAH! 🔥
+        Route::get('/{inventory}', [InventoryController::class, 'show'])->name('show');
 
     });
 

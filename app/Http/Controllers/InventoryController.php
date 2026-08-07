@@ -886,6 +886,125 @@ class InventoryController extends Controller
     }
 
 
+    // =========================================================================
+    // 🔥 1. HALAMAN SMART RESTOCK MULTI-GUDANG (Saran Pengadaan) 🔥
+    // =========================================================================
+    public function smartRestock()
+    {
+        // Radar kini melacak tabel InventoryStock, bukan Item
+        $criticalItems = \App\Models\InventoryStock::with(['item.uom', 'warehouse'])
+            ->whereHas('item', function($q) {
+                // Abaikan Jasa & Non-Stok
+                $q->whereNotIn('item_type_code', ['JSA', 'NST'])
+                  ->orWhereNull('item_type_code');
+            })
+            ->whereNotNull('min_stock')
+            ->where('min_stock', '>', 0)
+            ->whereColumn('stock_qty', '<=', 'min_stock')
+            ->get()
+            ->sortBy(function($stock) {
+                // Urutkan berdasarkan Nama Gudang dulu, baru Nama Barang
+                return optional($stock->warehouse)->name . '-' . optional($stock->item)->name;
+            });
+
+        return view('inventory.smart_restock', compact('criticalItems'));
+    }
+
+    // =========================================================================
+    // 🔥 2. PROSES GENERATE MASS PR 🔥
+    // =========================================================================
+    public function generateMassPr(\Illuminate\Http\Request $request)
+    {
+        $request->validate([
+            'items' => 'required|array',
+        ]);
+
+        \Illuminate\Support\Facades\DB::beginTransaction();
+        try {
+            $selectedItems = collect($request->items)->filter(function ($item) {
+                return isset($item['is_selected']) && $item['qty'] > 0;
+            });
+
+            if ($selectedItems->isEmpty()) {
+                throw new \Exception('Gagal: Anda harus mencentang minimal 1 barang untuk dibuatkan PR!');
+            }
+
+            $companyId = auth()->user()->company_id ?? 1; // Sesuaikan dengan logika PT Anda
+            $prNumber = $this->generatePrNumber($companyId);
+            $statusDraftId = \App\Models\Status::where('type', 'PR')->whereIn('slug', ['draft', 'pending'])->first()->id ?? 1;
+
+            // 1. Buat Induk Dokumen PR
+            $pr = \App\Models\PurchaseRequest::create([
+                'pr_number'     => $prNumber,
+                'request_date'  => now(),
+                'need_date'     => now()->addDays(14), // Asumsi target selesai 2 minggu
+                'department_id' => auth()->user()->department_id ?? null,
+                'company_id'    => $companyId,
+                'requester_id'  => auth()->id(),
+                'purpose'       => 'Auto-Restock Gudang (Smart Restock System)',
+                'status_id'     => $statusDraftId,
+                'notes'         => 'Dokumen PR ini digenerate secara otomatis oleh sistem karena stok barang mencapai batas minimum.',
+            ]);
+
+            // 2. Masukkan Item Rombongan ke dalam PR
+            foreach ($selectedItems as $itemData) {
+                $masterItem = \App\Models\Item::find($itemData['item_id']);
+                if (!$masterItem) continue;
+
+                \App\Models\PurchaseRequestItem::create([
+                    'purchase_request_id' => $pr->id,
+                    'item_id'             => $masterItem->id,
+                    'item_name'           => $masterItem->name,
+                    'qty'                 => $itemData['qty'],
+                    'uom'                 => $masterItem->unit ?? 'PCS',
+                    'status'              => 'PENDING',
+                    'description'         => 'Auto-Restock (Current: ' . ($masterItem->current_stock ?? 0) . ', Min: ' . $masterItem->min_qty . ')',
+                ]);
+            }
+
+            // 3. Catat ke History
+            if (class_exists('\App\Models\History')) {
+                \App\Models\History::create([
+                    'record_id'   => $pr->id,
+                    'record_type' => get_class($pr),
+                    'user_id'     => auth()->id(),
+                    'action'      => 'CREATED',
+                    'note'        => 'Dokumen PR dibuat masal melalui fitur Smart Restock.'
+                ]);
+            }
+
+            \Illuminate\Support\Facades\DB::commit();
+
+            // Arahkan langsung ke halaman Edit PR agar user bisa melengkapi jika perlu
+            return redirect()->route('pr.edit', $pr->pr_number)->with('success', 'Hore! Mass PR berhasil di-generate secara otomatis. Silakan periksa kembali dan ajukan persetujuan.');
+
+        } catch (\Exception $e) {
+            \Illuminate\Support\Facades\DB::rollback();
+            return back()->with('error', $e->getMessage());
+        }
+    }
+
+    // =========================================================================
+    // HELPER: GENERATOR NOMOR PR OTOMATIS
+    // =========================================================================
+    private function generatePrNumber($companyId)
+    {
+        $company = \App\Models\Company::find($companyId);
+        $companyCode = $company ? strtoupper($company->code ?? 'PT') : 'PT';
+        $dateStr = date('Ym');
+        $prefix = "PR-{$companyCode}-{$dateStr}-";
+
+        $latestPr = \App\Models\PurchaseRequest::where('pr_number', 'like', $prefix . '%')->orderBy('id', 'desc')->lockForUpdate()->first();
+
+        $newSequence = 1;
+        if ($latestPr && $latestPr->pr_number) {
+            $parts = explode('-', $latestPr->pr_number);
+            $newSequence = ((int) end($parts)) + 1;
+        }
+
+        return $prefix . str_pad($newSequence, 4, '0', STR_PAD_LEFT);
+    }
+
 
 
 }
