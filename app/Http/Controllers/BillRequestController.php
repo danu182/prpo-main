@@ -630,6 +630,7 @@ class BillRequestController extends Controller
                         ]);
                     }
                     $needsApproval = true;
+                    // Logika di fungsi store sebelumnya:
                     $this->logHistory($bill, 'SYSTEM', "Menggunakan Rute Persetujuan Khusus: " . $workflow->name);
                 }
             } else {
@@ -659,7 +660,6 @@ class BillRequestController extends Controller
         }
     }
 
-
     // =========================================================================
     // 5. EDIT (FORM EDIT BERBASIS SLUG)
     // =========================================================================
@@ -683,18 +683,117 @@ class BillRequestController extends Controller
         // 🔥 TARIK DATA LAMPIRAN DARI TABEL BARU 🔥
         $attachments = \DB::table('bill_attachments')->where('bill_request_id', $bill->id)->get();
 
-        // 🔥 TARIK DATA MATRIKS KHUSUS (WORKFLOW) 🔥
+        // =========================================================================
+        // 🔥 1. TARIK HANYA MATRIKS OPEX (Abaikan PR, PO, dll) 🔥
+        // =========================================================================
         $customWorkflows = [];
+        $selectedWorkflowId = null;
+
         if (class_exists('\App\Models\ApprovalWorkflow')) {
-            $customWorkflows = \App\Models\ApprovalWorkflow::where('document_type', 'App\Models\BillRequest')
-                                ->orWhere('document_type', 'OPEX')
-                                ->where('is_active', true)
-                                ->get();
+            $customWorkflows = \App\Models\ApprovalWorkflow::with('steps')
+                ->where('is_active', true)
+                ->where(function($q) {
+                    $q->where('document_type', 'like', '%BillRequest%')
+                      ->orWhere('document_type', 'like', '%OPEX%')
+                      ->orWhere('document_type', 'like', '%bill%');
+                })
+                ->get();
+
+            // =========================================================================
+            // 🔥 2. LOGIKA DETEKTIF SUPER AKURAT (Baca dari Jejak Rekam / History) 🔥
+            // =========================================================================
+            $selectedWorkflowId = null;
+
+            // CARA A: Cari jejak nama matriks dari tabel History tagihan ini
+            $historyLog = \App\Models\History::where('record_id', $bill->id)
+                ->whereIn('record_type', [get_class($bill), 'App\Models\BillRequest', 'OPEX'])
+                ->where('action', 'SYSTEM')
+                ->where('note', 'like', 'Menggunakan Rute Persetujuan Khusus:%')
+                ->orderBy('id', 'desc')
+                ->first();
+
+            // 🔥 PELACAKAN SILSILAH UNTUK TAGIHAN ANAK (RECURRING) 🔥
+            // Jika tidak ketemu di tagihan ini, cek apakah ini tagihan anak hasil generate otomatis
+            if (!$historyLog) {
+                $recurringLog = \App\Models\History::where('record_id', $bill->id)
+                    ->whereIn('record_type', [get_class($bill), 'App\Models\BillRequest', 'OPEX'])
+                    ->where('action', 'CREATED')
+                    ->where('note', 'like', '%Recurring dari:%')
+                    ->first();
+
+                if ($recurringLog) {
+                    // Ekstrak Nomor Tagihan Induk dari teks (Misal: "...Recurring dari: BILL/OPX/0001)...")
+                    preg_match('/Recurring dari:\s*([^)]+)/', $recurringLog->note, $matches);
+
+                    if (!empty($matches[1])) {
+                        $parentBillNumber = trim($matches[1]);
+                        $parentBill = \App\Models\BillRequest::where('bill_number', $parentBillNumber)->first();
+
+                        if ($parentBill) {
+                            // Baca history milik Tagihan Induk!
+                            $historyLog = \App\Models\History::where('record_id', $parentBill->id)
+                                ->whereIn('record_type', [get_class($parentBill), 'App\Models\BillRequest', 'OPEX'])
+                                ->where('action', 'SYSTEM')
+                                ->where('note', 'like', 'Menggunakan Rute Persetujuan Khusus:%')
+                                ->orderBy('id', 'desc')
+                                ->first();
+                        }
+                    }
+                }
+            }
+
+            // Jika log berhasil ditemukan (baik dari tagihan ini atau dari Induknya)
+            if ($historyLog) {
+                // Ekstrak nama matriks dari teks
+                $workflowName = trim(str_replace('Menggunakan Rute Persetujuan Khusus:', '', $historyLog->note));
+
+                // Cari ID-nya berdasarkan nama tersebut
+                $matchedWorkflow = $customWorkflows->where('name', $workflowName)->first();
+                if ($matchedWorkflow) {
+                    $selectedWorkflowId = $matchedWorkflow->id;
+                }
+            }
+
+            // CARA B: Fallback ... (Tetap biarkan kode Cara B di bawah ini seperti aslinya)
+
+            // CARA B: Fallback (Jika tagihan lama tidak punya log history, gunakan pencocokan jabatan)
+            if (!$selectedWorkflowId) {
+                $currentApprovals = \App\Models\DocumentApproval::where('document_id', $bill->id)
+                    ->whereIn('document_type', [get_class($bill), 'App\Models\BillRequest', 'OPEX'])
+                    ->orderBy('step_order', 'asc')
+                    ->get();
+
+                if ($currentApprovals->count() > 0 && $customWorkflows->count() > 0) {
+                    foreach ($customWorkflows as $cw) {
+                        $cwSteps = $cw->steps->sortBy('step_order')->values();
+
+                        if ($cwSteps->count() === $currentApprovals->count() && $cwSteps->count() > 0) {
+                            $isMatch = true;
+                            foreach ($cwSteps as $index => $step) {
+                                if ($step->role_id != $currentApprovals[$index]->role_id) {
+                                    $isMatch = false;
+                                    break;
+                                }
+                            }
+
+                            if ($isMatch) {
+                                $selectedWorkflowId = $cw->id;
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
         }
 
-        // 🔥 PASTIKAN $customWorkflows MASUK KE DALAM compact() 🔥
-        return view('bills.edit', compact('bill', 'companies', 'taxes', 'currencies', 'vendors', 'opexItems', 'chargeTypes', 'discountTypes', 'attachments', 'customWorkflows'));
+        return view('bills.edit', compact(
+            'bill', 'companies', 'taxes', 'currencies', 'vendors',
+            'opexItems', 'chargeTypes', 'discountTypes', 'attachments',
+            'customWorkflows', 'selectedWorkflowId'
+        ));
     }
+
+
 
     // =========================================================================
     // 5. EDIT (FORM EDIT BERBASIS SLUG)

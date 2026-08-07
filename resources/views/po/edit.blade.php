@@ -355,10 +355,34 @@
 
                             <label class="mt-3 form-label fw-bold text-dark"><i class="bi bi-cloud-upload me-1 text-primary"></i>Upload Tambahan Header PO</label>
                             <input type="file" name="header_attachments[]" class="form-control form-control-sm border-secondary-subtle" multiple accept=".pdf,.jpg,.jpeg,.png,.xls,.xlsx,.doc,.docx">
+
+
                         </div>
                     </div>
                 </div>
             </div>
+            {{-- 🔥 PENGATURAN PERSETUJUAN (WORKFLOW) 🔥 --}}
+                            <div class="mb-4 border-0 shadow-sm card rounded-4 border-start border-warning">
+                                <div class="py-3 bg-white card-header border-bottom d-flex align-items-center">
+                                    <div class="p-2 bg-warning bg-opacity-10 text-warning rounded-circle me-3 d-flex align-items-center justify-content-center" style="width: 35px; height: 35px;">
+                                        <i class="bi bi-diagram-3-fill"></i>
+                                    </div>
+                                    <h6 class="mb-0 fw-bold">Jalur Persetujuan Khusus (Opsional)</h6>
+                                </div>
+                                <div class="p-4 card-body bg-light rounded-bottom-4">
+                                    <select name="custom_workflow_id" class="form-select select2-init border-warning-subtle fw-bold text-dark">
+                                        <option value="">-- Ikuti Standar Departemen (Default) --</option>
+                                        @if(isset($customWorkflows) && count($customWorkflows) > 0)
+                                            @foreach($customWorkflows as $cw)
+                                                <option value="{{ $cw->id }}" {{ (isset($selectedWorkflowId) && $selectedWorkflowId == $cw->id) ? 'selected' : '' }}>{{ $cw->name }}</option>
+                                            @endforeach
+                                        @endif
+                                    </select>
+                                    <div class="mt-2 form-text text-muted" style="font-size: 0.75rem;">
+                                        <i class="bi bi-info-circle me-1"></i> Biarkan kosong jika ingin menggunakan rute standar departemen. <strong class="text-danger">Perhatian: Mengubah rute di sini saat Edit akan me-reset persetujuan atasan dari awal!</strong>
+                                    </div>
+                                </div>
+                            </div>
 
         </div>
 

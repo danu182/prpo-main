@@ -111,7 +111,9 @@
                                     <option value="">-- Ikuti Standar Departemen (Default) --</option>
                                     @if(isset($customWorkflows) && count($customWorkflows) > 0)
                                         @foreach($customWorkflows as $cw)
-                                            <option value="{{ $cw->id }}">{{ $cw->name }}</option>
+                                            <option value="{{ $cw->id }}" {{ (isset($selectedWorkflowId) && $selectedWorkflowId == $cw->id) ? 'selected' : '' }}>
+                                                {{ $cw->name }}
+                                            </option>
                                         @endforeach
                                     @endif
                                 </select>
