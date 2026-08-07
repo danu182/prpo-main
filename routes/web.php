@@ -94,6 +94,10 @@ Route::middleware('auth')->group(function () {
         Route::get('/edit/{slug}', [PurchaseOrderController::class, 'edit'])->name('edit')->middleware('can:view_po');
         Route::post('/update/{slug}', [PurchaseOrderController::class, 'update'])->name('update')->middleware('can:view_po');
 
+        // PO Manual
+        Route::get('/create-direct', [PurchaseOrderController::class, 'createDirect'])->name('create_direct');
+        Route::post('/store-direct', [PurchaseOrderController::class, 'storeDirect'])->name('store_direct');
+
         // 🔥 RUTE PRINT 🔥
         Route::get('/print/{slug}', [PurchaseOrderController::class, 'printPdf'])->name('print')->middleware('can:view_po');
 

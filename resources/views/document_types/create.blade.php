@@ -1,7 +1,7 @@
 @extends('layouts.app')
 
 @section('content')
-<div class="container pb-5">
+<div class="container-fluid pb-5">
     <div class="mb-4">
         <a href="{{ route('document-types.index') }}" class="btn btn-light border rounded-pill fw-bold mb-3"><i class="bi bi-arrow-left me-1"></i> Kembali</a>
         <h4 class="fw-bold text-dark"><i class="bi bi-plus-circle-fill me-2 text-primary"></i>Daftarkan Dokumen Baru</h4>

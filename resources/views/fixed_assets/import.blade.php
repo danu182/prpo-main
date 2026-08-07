@@ -1,7 +1,7 @@
 @extends('layouts.app')
 
 @section('content')
-<div class="container">
+<div class="container-fluid">
     <div class="card shadow-sm">
         <div class="card-header bg-primary text-white">Upload Data Aset Lama</div>
         <div class="card-body">

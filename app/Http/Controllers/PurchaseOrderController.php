@@ -2026,4 +2026,255 @@ class PurchaseOrderController extends Controller
 
 
 
+    // =========================================================================
+    // 🔥 FUNGSI BARU: HALAMAN CREATE DIRECT PO (TANPA PR) 🔥
+    // =========================================================================
+    public function createDirect()
+    {
+        $vendors = \App\Models\Vendor::orderBy('name')->get();
+        $companies = \App\Models\Company::orderBy('name')->get();
+        $paymentTerms = \App\Models\PaymentTerm::orderBy('days')->get();
+        $taxes = \App\Models\Tax::where('is_active', true)->orderBy('percent')->get();
+        $chargeTypes = \App\Models\ChargeType::where('is_active', true)->get();
+        $currencies = \App\Models\Currency::where('is_active', true)->get();
+        $discountTypes = \App\Models\DiscountType::where('is_active', true)->get();
+
+        // Tarik Master Item beserta konversi UOM-nya
+        $masterItems = \App\Models\Item::with('itemUoms')->orderBy('name')->get();
+
+        $headOffice = \App\Models\Company::where('is_head_office', true)->first();
+        $defaultShippingAddress = $headOffice ? $headOffice->address : '';
+
+        // Tarik Matriks Khusus PO
+        $customWorkflows = [];
+        if (class_exists('\App\Models\ApprovalWorkflow')) {
+            $customWorkflows = \App\Models\ApprovalWorkflow::with('steps')
+                ->where('is_active', true)
+                ->whereIn('document_type', ['PO', 'App\Models\PurchaseOrder', 'PurchaseOrder'])
+                ->get();
+        }
+
+        return view('po.create_direct', compact(
+            'vendors', 'companies', 'paymentTerms', 'taxes', 'chargeTypes',
+            'currencies', 'discountTypes', 'masterItems', 'defaultShippingAddress', 'customWorkflows'
+        ));
+    }
+
+    // =========================================================================
+    // 🔥 FUNGSI BARU: PROSES SIMPAN DIRECT PO (TANPA PR) 🔥
+    // =========================================================================
+    public function storeDirect(\Illuminate\Http\Request $request)
+    {
+        $request->validate([
+            'vendor_id'          => 'required|exists:vendors,id',
+            'billing_company_id' => 'required|exists:companies,id',
+            'payment_term_id'    => 'required|exists:payment_terms,id',
+            'po_date'            => 'required|date',
+            'delivery_date'      => 'required|date',
+            'po_items'           => 'required|array|min:1',
+        ]);
+
+        try {
+            \Illuminate\Support\Facades\DB::transaction(function () use ($request) {
+
+                $newPoNumber = $this->generatePoNumber($request->billing_company_id);
+                $storagePath = (\Illuminate\Support\Facades\DB::table('system_settings')->where('setting_key', 'path_po_attachment')->value('setting_value') ?: 'attachments/purchase_orders') . '/' . str_replace(['/', '\\'], '-', $newPoNumber);
+                $paymentTermName = \App\Models\PaymentTerm::find($request->payment_term_id)->name ?? null;
+
+                $poSubtotalGross = 0; $poTotalItemDiscount = 0; $poTotalTaxItem = 0;
+                $processedLineItems = [];
+
+                // 1. HITUNG BARIS ITEM
+                foreach ($request->po_items as $index => $itemData) {
+                    $qty = (float) ($itemData['qty'] ?? 0);
+                    $price = (float) ($itemData['unit_price'] ?? 0);
+                    if ($qty <= 0) continue;
+
+                    $gross = $qty * $price;
+                    $discVal = (float) ($itemData['discount_value'] ?? 0);
+                    $discType = strtoupper($itemData['discount_type'] ?? 'FIXED');
+                    $discAmt = ($discType === 'PERCENT') ? ($gross * $discVal / 100) : $discVal;
+                    $dpp = $gross - $discAmt;
+
+                    $taxVal = (float) ($itemData['tax_value'] ?? 0);
+                    $taxType = strtoupper($itemData['tax_type'] ?? 'FIXED');
+                    $taxAmt = ($taxType === 'PERCENT') ? ($dpp * $taxVal / 100) : $taxVal;
+
+                    $poSubtotalGross += $gross;
+                    $poTotalItemDiscount += $discAmt;
+                    $poTotalTaxItem += $taxAmt;
+
+                    $processedLineItems[] = [
+                        'itemData' => $itemData, 'discAmt' => $discAmt, 'dpp' => $dpp,
+                        'taxType' => $taxType, 'taxVal' => $taxVal, 'taxAmt' => $taxAmt, 'qty' => $qty, 'price' => $price,
+                        'discType' => $discType, 'discVal' => $discVal, 'originalIndex' => $index
+                    ];
+                }
+
+                if (empty($processedLineItems)) throw new \Exception('Minimal harus ada 1 barang yang valid (Kuantitas > 0).');
+
+                // 2. HITUNG GLOBAL DISKON, PAJAK & BIAYA TAMBAHAN
+                $globalDiscType = strtoupper($request->global_discount_type ?? 'FIXED');
+                $globalDiscVal = (float) ($request->global_discount_value ?? 0);
+                $poGlobalDiscount = ($globalDiscType === 'PERCENT') ? (($poSubtotalGross - $poTotalItemDiscount) * ($globalDiscVal / 100)) : $globalDiscVal;
+
+                $dppAfterGlobalDisc = ($poSubtotalGross - $poTotalItemDiscount) - $poGlobalDiscount;
+
+                $globalTaxType = strtoupper($request->global_tax_type ?? 'FIXED');
+                $globalTaxVal = (float) ($request->global_tax_value ?? 0);
+                $poGlobalTax = ($globalTaxType === 'PERCENT') ? ($dppAfterGlobalDisc * ($globalTaxVal / 100)) : $globalTaxVal;
+
+                $poChargeTotal = 0; $appliedCharges = [];
+                if ($request->has('charges')) {
+                    foreach ($request->charges as $charge) {
+                        if (!empty($charge['amount'])) {
+                            $poChargeTotal += (float)$charge['amount'];
+                            $appliedCharges[] = $charge;
+                        }
+                    }
+                }
+
+                $poExtraDiscountTotal = 0; $appliedExtraDiscs = [];
+                if ($request->has('extra_discounts')) {
+                    foreach ($request->extra_discounts as $disc) {
+                        if (!empty($disc['amount'])) {
+                            $poExtraDiscountTotal += (float)$disc['amount'];
+                            $appliedExtraDiscs[] = $disc;
+                        }
+                    }
+                }
+
+                $totalAllDiscounts = $poTotalItemDiscount + $poGlobalDiscount;
+                $totalAllTaxes = $poTotalTaxItem + $poGlobalTax;
+                $poGrandTotal = $dppAfterGlobalDisc + $totalAllTaxes + $poChargeTotal - $poExtraDiscountTotal;
+
+                // 3. SIMPAN HEADER PO (Tanpa due_date)
+                $po = \App\Models\PurchaseOrder::create([
+                    'po_number'             => $newPoNumber,
+                    'purchase_request_id'   => null, // Murni Direct PO
+                    'vendor_id'             => $request->vendor_id,
+                    'bill_to_company_id'    => $request->billing_company_id,
+                    'status_id'             => 1,
+                    'po_date'               => $request->po_date ?? now(),
+                    'created_by'            => auth()->id(),
+                    'currency'              => $request->currency ?? 'IDR',
+                    'shipping_address'      => $request->shipping_address,
+                    'payment_terms'         => $paymentTermName,
+                    'notes'                 => $request->notes,
+                    'delivery_date'         => $request->delivery_date,
+                    'global_discount_type'  => $globalDiscType,
+                    'global_discount_value' => $globalDiscVal,
+                    'global_tax_type'       => $globalTaxType,
+                    'global_tax_value'      => $globalTaxVal,
+                    'subtotal'              => $poSubtotalGross,
+                    'discount_total'        => $totalAllDiscounts,
+                    'tax_total'             => $totalAllTaxes,
+                    'charge_total'          => $poChargeTotal,
+                    'grand_total'           => $poGrandTotal,
+                ]);
+
+                // 4. SIMPAN BIAYA & DISKON EXTRA
+                foreach ($appliedCharges as $charge) {
+                    \Illuminate\Support\Facades\DB::table('purchase_order_charges')->insert([
+                        'purchase_order_id' => $po->id, 'name' => $charge['charge_type_id'], 'amount' => $charge['amount'], 'created_at' => now(), 'updated_at' => now()
+                    ]);
+                }
+                foreach ($appliedExtraDiscs as $disc) {
+                    \Illuminate\Support\Facades\DB::table('purchase_order_discounts')->insert([
+                        'purchase_order_id' => $po->id, 'name' => $disc['discount_type_id'], 'amount' => $disc['amount'], 'created_at' => now(), 'updated_at' => now()
+                    ]);
+                }
+
+                // 5. SIMPAN LAMPIRAN HEADER
+                if ($request->hasFile('header_attachments')) {
+                    foreach ($request->file('header_attachments') as $file) {
+                        if ($file instanceof \Illuminate\Http\UploadedFile) {
+                            $path = $file->storeAs($storagePath, time() . '_' . uniqid() . '_' . str_replace(' ', '_', $file->getClientOriginalName()), 'public');
+                            \Illuminate\Support\Facades\DB::table('purchase_order_attachments')->insert([
+                                'purchase_order_id' => $po->id, 'file_name' => $file->getClientOriginalName(), 'file_path' => str_replace('\\', '/', $path), 'created_at' => now(), 'updated_at' => now()
+                            ]);
+                        }
+                    }
+                }
+
+                // 6. SIMPAN BARIS ITEM
+                foreach ($processedLineItems as $line) {
+                    $itemData = $line['itemData'];
+                    $masterItem = \App\Models\Item::find($itemData['item_id']);
+
+                    $newPoItem = \App\Models\PurchaseOrderItem::create([
+                        'purchase_order_id'        => $po->id,
+                        'item_id'                  => $itemData['item_id'],
+                        'item_name'                => $itemData['item_name_override'] ?? ($masterItem->name ?? '-'),
+                        'purchase_request_item_id' => null,
+                        'uom_id'                   => $itemData['uom_id'] ?? null,
+                        'uom'                      => $itemData['uom'] ?? ($masterItem->unit ?? 'PCS'),
+                        'description'              => $itemData['notes'] ?? '-',
+                        'tax_id'                   => null,
+                        'qty_ordered'              => $line['qty'],
+                        'unit_price'               => $line['price'],
+                        'discount_type'            => $line['discType'],
+                        'discount_value'           => $line['discVal'],
+                        'discount_amount'          => $line['discAmt'],
+                        'tax_type'                 => $line['taxType'],
+                        'tax_value'                => $line['taxVal'],
+                        'tax_amount'               => $line['taxAmt'],
+                        'subtotal'                 => $line['dpp'],
+                    ]);
+
+                    $files = $request->file("po_items.{$line['originalIndex']}.attachments");
+                    if (!empty($files)) {
+                        foreach (is_array($files) ? $files : [$files] as $file) {
+                            if ($file instanceof \Illuminate\Http\UploadedFile) {
+                                $path = $file->storeAs($storagePath, "item_{$itemData['item_id']}_" . uniqid() . time() . "." . $file->extension(), 'public');
+                                \Illuminate\Support\Facades\DB::table('purchase_order_item_attachments')->insert([
+                                    'purchase_order_item_id' => $newPoItem->id, 'file_name' => $file->getClientOriginalName(), 'file_path' => str_replace('\\', '/', $path), 'created_at' => now(), 'updated_at' => now()
+                                ]);
+                            }
+                        }
+                    }
+                }
+
+                $this->logHistory($po->id, 'CREATED', "Direct PO (Tanpa PR) berhasil dibuat.");
+
+                // 7. JALANKAN MATRIKS APPROVAL
+                $customWorkflowId = $request->input('custom_workflow_id');
+                $needsApproval = false;
+
+                if ($customWorkflowId) {
+                    $workflow = \App\Models\ApprovalWorkflow::with('steps')->find($customWorkflowId);
+                    if ($workflow && $workflow->steps->count() > 0) {
+                        foreach ($workflow->steps as $step) {
+                            \App\Models\DocumentApproval::create([
+                                'document_id' => $po->id, 'document_type' => get_class($po), 'role_id' => $step->role_id, 'step_order' => $step->step_order, 'status' => 'PENDING'
+                            ]);
+                        }
+                        $needsApproval = true;
+                        $this->logHistory($po->id, 'SYSTEM', "Menggunakan Rute Persetujuan Khusus: " . $workflow->name);
+                    }
+                } else {
+                    $needsApproval = \App\Services\ApprovalService::generateWorkflow($po);
+                    if ($needsApproval) {
+                        $this->logHistory($po->id, 'SYSTEM', 'Masuk antrean persetujuan (Workflow Standar).');
+                    }
+                }
+
+                if ($needsApproval) {
+                    $pendingStatusId = \App\Models\Status::where('type', 'PO')->whereIn('slug', ['pending_approval', 'pending'])->first()->id ?? 1;
+                    $po->update(['status_id' => $pendingStatusId]);
+                } else {
+                    $approvedStatusId = \App\Models\Status::where('type', 'PO')->where('slug', 'approved')->first()->id ?? 3;
+                    $po->update(['status_id' => $approvedStatusId]);
+                    $this->logHistory($po->id, 'APPROVED', 'PO Auto-Approved karena tidak ada aturan matriks aktif.');
+                }
+            });
+
+            return redirect()->route('po.index')->with('success', 'Direct PO berhasil diterbitkan!');
+        } catch (\Exception $e) {
+            return back()->withInput()->with('error', 'Gagal memproses pembuatan PO: ' . $e->getMessage());
+        }
+    }
+
+
+
 }

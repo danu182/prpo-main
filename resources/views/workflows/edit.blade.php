@@ -1,7 +1,7 @@
 @extends('layouts.app')
 
 @section('content')
-<div class="container pb-5">
+<div class="container-fluid pb-5">
     <div class="mb-4">
         <a href="{{ route('workflows.index') }}" class="mb-3 border btn btn-light rounded-pill fw-bold"><i class="bi bi-arrow-left me-1"></i> Kembali</a>
         <h4 class="mb-1 fw-bold text-dark"><i class="bi bi-sliders me-2 text-warning"></i>Ubah Formasi Persetujuan</h4>

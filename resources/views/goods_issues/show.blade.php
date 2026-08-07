@@ -36,7 +36,7 @@
 
 @section('content')
 {{-- Tambahkan class 'is-void' jika statusnya void --}}
-<div class="container pb-5 text-dark position-relative {{ optional($gi->status)->slug === 'void' ? 'is-void' : '' }}">
+<div class="container-fluid pb-5 text-dark position-relative {{ optional($gi->status)->slug === 'void' ? 'is-void' : '' }}">
 
     {{-- Elemen Stempel --}}
     <div class="void-stamp-container">

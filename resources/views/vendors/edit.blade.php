@@ -5,7 +5,7 @@
 @endpush
 
 @section('content')
-<div class="container pb-5 text-dark">
+<div class="container-fluid pb-5 text-dark">
     <div class="mb-4">
         <a href="{{ route('vendors.index') }}" class="mb-2 text-decoration-none text-muted small fw-bold d-inline-block">
             <i class="bi bi-arrow-left me-1"></i> Batal & Kembali

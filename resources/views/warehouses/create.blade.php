@@ -1,7 +1,7 @@
 @extends('layouts.app')
 
 @section('content')
-<div class="container pb-5 text-dark" style="max-width: 700px;">
+<div class="container-fluid pb-5 text-dark" style="max-width: 700px;">
     <div class="d-flex justify-content-between align-items-center mb-4">
         <h4 class="fw-bold mb-0"><i class="bi bi-plus-circle text-primary me-2"></i> Tambah Gudang</h4>
         <a href="{{ route('warehouses.index') }}" class="btn btn-outline-secondary rounded-pill px-3"><i class="bi bi-arrow-left me-1"></i> Kembali</a>

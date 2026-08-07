@@ -35,7 +35,7 @@
 @endpush
 
 @section('content')
-<div class="container pb-5 text-dark">
+<div class="container-fluid pb-5 text-dark">
 
     {{-- HEADER HALAMAN & TOMBOL AKSI --}}
     <div class="flex-wrap gap-3 mb-4 d-flex justify-content-between align-items-center">

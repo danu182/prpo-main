@@ -10,7 +10,7 @@
 @endpush
 
 @section('content')
-<div class="container py-2">
+<div class="container-fluid py-2">
 
     {{-- HEADER --}}
     <div class="mb-4 d-flex align-items-center justify-content-between">

@@ -1,7 +1,7 @@
 @extends('layouts.app')
 
 @section('content')
-<div class="container pb-5 text-dark">
+<div class="container-fluid pb-5 text-dark">
     <div class="mb-4 d-flex justify-content-between align-items-center">
         <div>
             <a href="{{ route('goods-issue-returns.index') }}" class="mb-2 text-decoration-none text-muted small fw-bold d-inline-block">

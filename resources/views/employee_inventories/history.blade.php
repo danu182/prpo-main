@@ -48,7 +48,7 @@
 @endpush
 
 @section('content')
-<div class="container pb-5 text-dark">
+<div class="container-fluid pb-5 text-dark">
 
     {{-- HEADER: PROFILE BANNER --}}
     <div class="p-4 mb-4 text-white border-0 shadow-sm card rounded-4 profile-banner">

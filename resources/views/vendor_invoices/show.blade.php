@@ -13,7 +13,7 @@
 @endpush
 
 @section('content')
-<div class="container pb-5 text-dark">
+<div class="container-fluid pb-5 text-dark">
 
     @php
         $statusSlug = strtolower(optional($invoice->status)->slug ?? 'draft');

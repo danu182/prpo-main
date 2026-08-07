@@ -121,8 +121,8 @@
         }
     @endphp
 
-    {{-- HEADER HALAMAN & PENCARIAN --}}
-    <div class="mb-4 gap-3 d-flex flex-column flex-lg-row justify-content-between align-items-lg-center">
+    {{-- HEADER HALAMAN, PENCARIAN & TOMBOL DIRECT PO --}}
+    <div class="mb-4 gap-3 d-flex flex-column flex-xl-row justify-content-between align-items-xl-center">
         <div>
             <h3 class="mb-1 fw-bolder text-dark" style="letter-spacing: -0.5px;">
                 <span class="text-primary me-2"><i class="bi bi-cart-check-fill"></i></span>Kelola Purchase Order
@@ -130,19 +130,26 @@
             <div class="text-muted small fw-medium">Pusat kendali konversi PR menjadi dokumen pesanan (PO) resmi ke vendor.</div>
         </div>
 
-        {{-- FITUR PENCARIAN --}}
-        <form action="{{ route('po.index') }}" method="GET" class="m-0">
-            <div class="po-search-box d-flex align-items-center shadow-sm" style="min-width: 350px;">
-                <span class="ps-3 pe-2 text-muted"><i class="bi bi-search"></i></span>
-                <input type="text" name="search" class="form-control border-0 shadow-none bg-transparent fw-medium" placeholder="Cari PR, PO, Vendor, PT..." value="{{ request('search') }}">
-                @if(request('search'))
-                    <a href="{{ route('po.index') }}" class="btn btn-link text-danger p-1 me-1 text-decoration-none" title="Reset Pencarian">
-                        <i class="bi bi-x-circle-fill fs-5"></i>
-                    </a>
-                @endif
-                <button class="btn btn-primary rounded-pill px-4 fw-bold shadow-sm" type="submit">Cari</button>
-            </div>
-        </form>
+        {{-- FITUR PENCARIAN & TOMBOL ACTION --}}
+        <div class="d-flex flex-column flex-md-row align-items-md-center gap-3">
+            <form action="{{ route('po.index') }}" method="GET" class="m-0 w-100">
+                <div class="po-search-box d-flex align-items-center shadow-sm" style="min-width: 320px;">
+                    <span class="ps-3 pe-2 text-muted"><i class="bi bi-search"></i></span>
+                    <input type="text" name="search" class="form-control border-0 shadow-none bg-transparent fw-medium" placeholder="Cari PR, PO, Vendor, PT..." value="{{ request('search') }}">
+                    @if(request('search'))
+                        <a href="{{ route('po.index') }}" class="btn btn-link text-danger p-1 me-1 text-decoration-none" title="Reset Pencarian">
+                            <i class="bi bi-x-circle-fill fs-5"></i>
+                        </a>
+                    @endif
+                    <button class="btn btn-primary rounded-pill px-4 fw-bold shadow-sm" type="submit">Cari</button>
+                </div>
+            </form>
+
+            {{-- 🔥 TOMBOL BUAT PO LANGSUNG (DIRECT PO) 🔥 --}}
+            <a href="{{ route('po.create_direct') }}" class="btn btn-success rounded-pill fw-bold shadow-sm px-4 py-2 btn-hover-lift d-flex align-items-center justify-content-center" style="white-space: nowrap; height: 46px;">
+                <i class="bi bi-lightning-charge-fill me-2 fs-5"></i> Buat PO Langsung
+            </a>
+        </div>
     </div>
 
     {{-- QUICK STATS CARD --}}
@@ -324,7 +331,11 @@
                                     <td class="py-3 ps-4">
                                         <div class="fw-bolder text-dark fs-6">{{ $po->po_number }}</div>
                                         <div class="text-muted mt-1 fw-medium d-flex align-items-center" style="font-size: 0.75rem;">
-                                            <i class="bi bi-link-45deg me-1"></i> {{ $po->purchaseRequest->pr_number ?? 'PR Ref Tdk Ditemukan' }}
+                                            @if($po->purchaseRequest)
+                                                <i class="bi bi-link-45deg me-1"></i> {{ $po->purchaseRequest->pr_number }}
+                                            @else
+                                                <span class="badge bg-success-subtle text-success border border-success-subtle px-2 py-1"><i class="bi bi-lightning-charge-fill"></i> Direct PO</span>
+                                            @endif
                                         </div>
                                     </td>
                                     <td class="py-3">

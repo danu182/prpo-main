@@ -1,7 +1,7 @@
 @extends('layouts.app')
 
 @section('content')
-<div class="container pb-5 text-dark">
+<div class="container-fluid pb-5 text-dark">
     <div class="mb-4">
         <a href="{{ route('inventory.index') }}" class="text-decoration-none text-muted small fw-bold"><i class="bi bi-arrow-left me-1"></i> Kembali</a>
         <h4 class="mt-2 fw-bold text-dark"><i class="bi bi-magic text-warning me-2"></i> Kapitalisasi Stok Menjadi Aset Kantor</h4>
@@ -17,10 +17,10 @@
 
     <form action="{{ route('inventory.capitalize.store', $item->code) }}" method="POST" id="capitalizeForm">
         @csrf
-        
+
         {{-- UBAH LAYOUT MENJADI ATAS-BAWAH (FULL WIDTH) AGAR TABEL SANGAT LEBAR --}}
         <div class="d-flex flex-column gap-4">
-            
+
             {{-- KOTAK 1: PILIH GUDANG & QTY (DI ATAS) --}}
             <div class="card border-0 shadow-sm rounded-4 p-4">
                 <h6 class="fw-bold text-dark mb-3"><i class="bi bi-geo-alt text-danger me-2"></i>1. Pilih Gudang & Kuantitas</h6>
@@ -47,7 +47,7 @@
             <div class="card border-0 shadow-sm rounded-4 p-4 d-none" id="sn-card">
                 <h6 class="fw-bold text-dark mb-2"><i class="bi bi-upc-scan text-success me-2"></i>2. Registrasi Serial Number Aset</h6>
                 <div class="alert alert-warning py-2 small border-0 shadow-sm mb-3"><i class="bi bi-info-circle-fill me-1"></i> Ketikkan Nomor Seri aktual fisik barang yang akan ditempeli stiker *Asset Tag* internal. Spesifikasi sudah ditarik otomatis, silakan edit jika perlu.</div>
-                
+
                 <div id="sn-inputs-container">
                     {{-- Input Tabel digenerate via JS --}}
                 </div>
@@ -95,10 +95,10 @@
 
             if (val > 0) {
                 snCard.classList.remove('d-none');
-                
+
                 // 🔥 TARIK SPESIFIKASI BAWAAN DARI MASTER BARANG 🔥
                 let defaultSpec = document.getElementById('default-spec').value;
-                
+
                 // 🔥 TABEL DENGAN TEXTAREA AGAR TEKS PANJANG TERBACA FULL 🔥
                 let tableHtml = `
                     <div class="table-responsive border rounded-3 custom-scrollbar" style="max-height: 500px;">
@@ -126,12 +126,12 @@
                                     <td><span class="badge bg-secondary-subtle text-secondary border border-secondary-subtle py-2 px-3 w-100">Auto-Generate</span></td>
                                     <td><input type="text" name="acc_asset_number[]" class="form-control border-primary fw-bold" placeholder="Cth: ACC-00${i+1}" required></td>
                                     <td><input type="text" name="sn[]" class="form-control border-success fw-bold text-success" placeholder="Scan SN / Ketik ID Unik..." required></td>
-                                    
+
                                     {{-- 🔥 UBAH MENJADI TEXTAREA AGAR LEGA 🔥 --}}
                                     <td>
                                         <textarea name="specs[]" class="form-control custom-scrollbar" rows="2" style="font-size: 0.85rem;" placeholder="Warna/Plat/Spek lain...">${defaultSpec}</textarea>
                                     </td>
-                                    
+
                                     {{-- 🔥 CATATAN JUGA DIUBAH JADI TEXTAREA BIAR SIMETRIS 🔥 --}}
                                     <td>
                                         <textarea name="notes[]" class="form-control custom-scrollbar" rows="2" style="font-size: 0.85rem;" placeholder="Opsional..."></textarea>
@@ -145,7 +145,7 @@
                         </table>
                     </div>
                 `;
-                
+
                 snContainer.innerHTML = tableHtml;
             } else {
                 snCard.classList.add('d-none');

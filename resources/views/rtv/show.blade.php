@@ -13,7 +13,7 @@
 @endpush
 
 @section('content')
-<div class="container pb-5 text-dark">
+<div class="container-fluid pb-5 text-dark">
 
     <div class="gap-3 mb-4 d-flex flex-column flex-md-row justify-content-between align-items-md-end">
         <div>

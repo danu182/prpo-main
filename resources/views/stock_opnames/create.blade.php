@@ -1,7 +1,7 @@
 @extends('layouts.app')
 
 @section('content')
-<div class="container pb-5">
+<div class="container-fluid pb-5">
     <div class="mb-4">
         <h4 class="fw-bold text-dark"><i class="bi bi-play-circle me-2 text-primary"></i> Buka Sesi Stock Opname</h4>
         <p class="text-muted">Sistem akan memotret saldo saat ini dan membekukan gudang sementara.</p>

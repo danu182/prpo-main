@@ -12,7 +12,7 @@
     </div>
 @endif
 
-<div class="container pb-5">
+<div class="container-fluid pb-5">
     <div class="mb-4">
         <a href="{{ route('users.index') }}" class="btn btn-outline-secondary rounded-pill fw-bold">
             <i class="bi bi-arrow-left me-1"></i> Kembali ke Daftar

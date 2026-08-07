@@ -1,7 +1,7 @@
 @extends('layouts.app')
 
 @section('content')
-<div class="container pb-5">
+<div class="container-fluid pb-5">
     <div class="mb-4 d-flex justify-content-between align-items-center">
         <div>
             <h4 class="mb-1 fw-bold text-dark"><i class="bi bi-file-earmark-medical-fill me-2 text-primary"></i>Master Jenis Dokumen</h4>
