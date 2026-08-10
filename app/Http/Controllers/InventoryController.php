@@ -894,6 +894,11 @@ class InventoryController extends Controller
     // =========================================================================
     public function smartRestock()
     {
+
+
+        // 🔥 TAMBAHKAN INI: Tarik daftar PT untuk dropdown
+        $companies = \App\Models\Company::orderBy('name')->get();
+
         // Radar kini melacak tabel InventoryStock, bukan Item
         $criticalItems = \App\Models\InventoryStock::with(['item.uom', 'warehouse'])
             ->whereHas('item', function($q) {
@@ -910,11 +915,11 @@ class InventoryController extends Controller
                 return optional($stock->warehouse)->name . '-' . optional($stock->item)->name;
             });
 
-        return view('inventory.smart_restock', compact('criticalItems'));
+        return view('inventory.smart_restock', compact('criticalItems','companies'));
     }
 
     // =========================================================================
-    // 🔥 2. PROSES GENERATE MASS PR 🔥
+    // 🔥 2. PROSES GENERATE MASS PR (KONSEP AKUMULASI/CONSOLIDATED) 🔥
     // =========================================================================
     public function generateMassPr(\Illuminate\Http\Request $request)
     {
@@ -932,36 +937,65 @@ class InventoryController extends Controller
                 throw new \Exception('Gagal: Anda harus mencentang minimal 1 barang untuk dibuatkan PR!');
             }
 
-            $companyId = auth()->user()->company_id ?? 1; // Sesuaikan dengan logika PT Anda
+            // ===============================================================
+            // 🔥 LOGIKA PENGGABUNGAN (CONSOLIDATION) 🔥
+            // Jika ada barang yang sama dari 2 gudang berbeda, jumlahkan!
+            // ===============================================================
+            $consolidatedItems = [];
+            foreach ($selectedItems as $item) {
+                $itemId = $item['item_id'];
+                $qty = (float)$item['qty'];
+                $warehouseName = $item['warehouse_name'] ?? 'Gudang Pusat';
+
+                if (!isset($consolidatedItems[$itemId])) {
+                    $consolidatedItems[$itemId] = [
+                        'item_id'   => $itemId,
+                        'total_qty' => 0,
+                        'notes'     => []
+                    ];
+                }
+
+                $consolidatedItems[$itemId]['total_qty'] += $qty;
+                $consolidatedItems[$itemId]['notes'][] = "- {$qty} Pcs dialokasikan untuk {$warehouseName}";
+            }
+
+            $companyId = $request->company_id;
+
             $prNumber = $this->generatePrNumber($companyId);
+
+            // $prNumber = $this->generatePrNumber($companyId);
             $statusDraftId = \App\Models\Status::where('type', 'PR')->whereIn('slug', ['draft', 'pending'])->first()->id ?? 1;
 
             // 1. Buat Induk Dokumen PR
             $pr = \App\Models\PurchaseRequest::create([
                 'pr_number'     => $prNumber,
                 'request_date'  => now(),
-                'need_date'     => now()->addDays(14), // Asumsi target selesai 2 minggu
+                'need_date'     => now()->addDays(14),
                 'department_id' => auth()->user()->department_id ?? null,
                 'company_id'    => $companyId,
+                'user_id'       => auth()->id(),
                 'requester_id'  => auth()->id(),
-                'purpose'       => 'Auto-Restock Gudang (Smart Restock System)',
+                'purpose'       => 'Auto-Restock Rombongan (Multi-Gudang)',
                 'status_id'     => $statusDraftId,
-                'notes'         => 'Dokumen PR ini digenerate secara otomatis oleh sistem karena stok barang mencapai batas minimum.',
+                'notes'         => 'Dokumen PR ini digenerate secara otomatis oleh sistem Smart Restock.',
             ]);
 
-            // 2. Masukkan Item Rombongan ke dalam PR
-            foreach ($selectedItems as $itemData) {
-                $masterItem = \App\Models\Item::find($itemData['item_id']);
+            // 2. Masukkan Item yang Sudah Digabung (Consolidated) ke dalam PR
+            foreach ($consolidatedItems as $data) {
+                $masterItem = \App\Models\Item::find($data['item_id']);
                 if (!$masterItem) continue;
+
+                // Gabungkan rincian gudang menjadi teks
+                $combinedNotes = "Rincian Alokasi:\n" . implode("\n", $data['notes']);
 
                 \App\Models\PurchaseRequestItem::create([
                     'purchase_request_id' => $pr->id,
                     'item_id'             => $masterItem->id,
                     'item_name'           => $masterItem->name,
-                    'qty'                 => $itemData['qty'],
+                    'qty'                 => $data['total_qty'], // 👈 Qty sudah dijumlahkan (65 Pcs)
                     'uom'                 => $masterItem->unit ?? 'PCS',
                     'status'              => 'PENDING',
-                    'description'         => 'Auto-Restock (Current: ' . ($masterItem->current_stock ?? 0) . ', Min: ' . $masterItem->min_qty . ')',
+                    'description'         => $combinedNotes,     // 👈 Penjelasan alokasi gudang
                 ]);
             }
 
@@ -972,14 +1006,12 @@ class InventoryController extends Controller
                     'record_type' => get_class($pr),
                     'user_id'     => auth()->id(),
                     'action'      => 'CREATED',
-                    'note'        => 'Dokumen PR dibuat masal melalui fitur Smart Restock.'
+                    'note'        => 'Dokumen PR dibuat masal dan diakumulasikan melalui fitur Smart Restock.'
                 ]);
             }
 
             \Illuminate\Support\Facades\DB::commit();
-
-            // Arahkan langsung ke halaman Edit PR agar user bisa melengkapi jika perlu
-            return redirect()->route('pr.edit', $pr->pr_number)->with('success', 'Hore! Mass PR berhasil di-generate secara otomatis. Silakan periksa kembali dan ajukan persetujuan.');
+            return redirect()->route('pr.edit', $pr->pr_number)->with('success', 'Hore! Mass PR berhasil di-generate secara otomatis. Barang dari gudang yang berbeda telah diakumulasikan.');
 
         } catch (\Exception $e) {
             \Illuminate\Support\Facades\DB::rollback();
@@ -994,7 +1026,10 @@ class InventoryController extends Controller
     {
         $company = \App\Models\Company::find($companyId);
         $companyCode = $company ? strtoupper($company->code ?? 'PT') : 'PT';
-        $dateStr = date('Ym');
+
+        // 🔥 UBAH DI SINI: Gunakan 'Ymd' (TahunBulanTanggal) agar seragam dengan PR Bawaan
+        $dateStr = date('Ymd');
+
         $prefix = "PR-{$companyCode}-{$dateStr}-";
 
         $latestPr = \App\Models\PurchaseRequest::where('pr_number', 'like', $prefix . '%')->orderBy('id', 'desc')->lockForUpdate()->first();

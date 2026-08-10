@@ -412,6 +412,14 @@ class PurchaseRequestController extends Controller
 
                     if (isset($itemData['vendors'])) {
                         foreach ($itemData['vendors'] as $vIdx => $vData) {
+
+                            // =========================================================================
+                            // 🔥 PENJAGA PINTU: JIKA VENDOR KOSONG, LANGSUNG LOMPATI (SKIP) 🔥
+                            // =========================================================================
+                            if (empty($vData['vendor_id'])) {
+                                continue;
+                            }
+
                             $currencyObj = \App\Models\Currency::where('code', $vData['currency'] ?? 'IDR')->first();
 
                             $quoteId = DB::table('purchase_request_item_vendors')->insertGetId([
@@ -483,7 +491,6 @@ class PurchaseRequestController extends Controller
             return back()->withInput()->with('error', 'Gagal Update: ' . $e->getMessage());
         }
     }
-
     public function show(string $slug)
     {
         $pr = \App\Models\PurchaseRequest::with([

@@ -23,7 +23,7 @@
 @section('content')
 <div class="px-0 container-fluid">
 
-    <div class="mb-4 gap-3 d-flex flex-column flex-md-row justify-content-between align-items-md-center">
+    <div class="gap-3 mb-4 d-flex flex-column flex-md-row justify-content-between align-items-md-center">
         <div>
             <h3 class="mb-1 fw-bolder text-dark"><span class="text-danger me-2"><i class="bi bi-exclamation-triangle-fill"></i></span>Smart Restock Gudang</h3>
             <div class="text-muted small fw-medium">Sistem pintar yang mendeteksi barang di bawah batas minimum dan menyarankan pembuatan PR massal.</div>
@@ -31,16 +31,16 @@
     </div>
 
     @if(session('error'))
-        <div class="alert alert-danger rounded-4 shadow-sm border-0 d-flex align-items-center mb-4"><i class="bi bi-x-circle-fill fs-5 me-3"></i>{{ session('error') }}</div>
+        <div class="mb-4 border-0 shadow-sm alert alert-danger rounded-4 d-flex align-items-center"><i class="bi bi-x-circle-fill fs-5 me-3"></i>{{ session('error') }}</div>
     @endif
 
-    <div class="row g-4 mb-4">
+    <div class="mb-4 row g-4">
         <div class="col-md-6">
-            <div class="card stat-card shadow-sm h-100">
-                <div class="card-body p-4 d-flex align-items-center">
+            <div class="shadow-sm card stat-card h-100">
+                <div class="p-4 card-body d-flex align-items-center">
                     <div class="bg-danger bg-opacity-10 text-danger rounded-circle d-flex align-items-center justify-content-center me-3" style="width: 56px; height: 56px;"><i class="bi bi-box-seam-fill fs-3"></i></div>
                     <div>
-                        <div class="text-muted small fw-bold text-uppercase mb-1">Item Berstatus Kritis</div>
+                        <div class="mb-1 text-muted small fw-bold text-uppercase">Item Berstatus Kritis</div>
                         <h3 class="mb-0 fw-bolder text-dark">{{ $criticalItems->count() }} <span class="fs-6 text-muted fw-normal">Barang</span></h3>
                     </div>
                 </div>
@@ -51,18 +51,30 @@
     <form action="{{ route('inventory.generate_mass_pr') }}" method="POST" id="restockForm">
         @csrf
 
-        <div class="d-flex justify-content-between align-items-center mb-3">
+        <div class="p-3 mb-3 bg-white border shadow-sm d-flex justify-content-between align-items-center rounded-4">
             <div class="form-check form-switch ms-2">
                 <input class="form-check-input" type="checkbox" id="checkAll" checked style="cursor:pointer; transform: scale(1.2);">
-                <label class="form-check-label fw-bold ms-2 text-dark" for="checkAll">Pilih Semua untuk di-PR-kan</label>
+                <label class="form-check-label fw-bold ms-2 text-dark" for="checkAll">Pilih Semua</label>
             </div>
-            <button type="submit" class="btn btn-primary fw-bold rounded-pill px-4 shadow-sm" id="btnSubmit">
-                <i class="bi bi-magic me-1"></i> Generate Mass PR Sekarang
-            </button>
+
+            <div class="gap-2 d-flex align-items-center">
+                <label class="mb-0 small fw-bold text-muted text-nowrap">Bebankan Ke:</label>
+                <select name="company_id" class="shadow-sm form-select fw-bold border-primary-subtle text-primary" required style="min-width: 250px; cursor: pointer;">
+                    <option value="">-- Pilih PT Penanggung --</option>
+                    @foreach($companies as $company)
+                        <option value="{{ $company->id }}" {{ (auth()->user()->company_id == $company->id) ? 'selected' : '' }}>
+                            {{ $company->name }}
+                        </option>
+                    @endforeach
+                </select>
+                <button type="submit" class="px-4 shadow-sm btn btn-primary fw-bold rounded-pill text-nowrap" id="btnSubmit">
+                    <i class="bi bi-magic me-1"></i> Generate Mass PR
+                </button>
+            </div>
         </div>
 
         @if($criticalItems->count() > 0)
-            <div class="table-responsive px-1 pb-4">
+            <div class="px-1 pb-4 table-responsive">
                 <table class="table align-middle restock-table w-100">
                     <thead>
                         <tr>
@@ -94,27 +106,29 @@
                                 <td class="ps-4">
                                     <input class="form-check-input row-check" type="checkbox" name="items[{{ $index }}][is_selected]" value="1" checked style="transform: scale(1.3); cursor: pointer;">
                                     <input type="hidden" name="items[{{ $index }}][item_id]" value="{{ $itemMaster->id }}">
+                                    <!-- 🔥 TAMBAHKAN BARIS INI: Kirim Nama Gudang ke Controller 🔥 -->
+                                    <input type="hidden" name="items[{{ $index }}][warehouse_name]" value="{{ optional($warehouse)->name ?? 'Gudang Pusat' }}">
                                 </td>
                                 <td class="py-3">
                                     <div class="fw-bolder text-dark">{{ optional($itemMaster)->name }}</div>
-                                    <div class="small text-muted mt-1">
-                                        <span class="badge bg-secondary-subtle text-secondary border border-secondary-subtle me-1">{{ optional($itemMaster)->code ?? 'NO-SKU' }}</span>
-                                        <span class="badge bg-primary-subtle text-primary border border-primary-subtle"><i class="bi bi-shop me-1"></i> {{ optional($warehouse)->name ?? 'Gudang Pusat' }}</span>
+                                    <div class="mt-1 small text-muted">
+                                        <span class="border badge bg-secondary-subtle text-secondary border-secondary-subtle me-1">{{ optional($itemMaster)->code ?? 'NO-SKU' }}</span>
+                                        <span class="border badge bg-primary-subtle text-primary border-primary-subtle"><i class="bi bi-shop me-1"></i> {{ optional($warehouse)->name ?? 'Gudang Pusat' }}</span>
                                     </div>
                                 </td>
                                 <td class="py-3 text-center">
                                     <h5 class="mb-1 fw-bolder text-{{ $color }}">{{ $current }} <span class="fs-6 fw-normal text-muted">{{ optional($itemMaster)->unit ?? 'PCS' }}</span></h5>
-                                    <div class="progress progress-thin w-75 mx-auto mt-2">
+                                    <div class="mx-auto mt-2 progress progress-thin w-75">
                                         <div class="progress-bar bg-{{ $color }}" style="width: {{ $pct }}%"></div>
                                     </div>
                                     @if($current <= 0)
-                                        <div class="small text-danger fw-bold mt-1">Stok Habis / Minus!</div>
+                                        <div class="mt-1 small text-danger fw-bold">Stok Habis / Minus!</div>
                                     @endif
                                 </td>
                                 <td class="py-3 text-center small fw-bold text-secondary">
                                     Min: <span class="text-dark">{{ $min }}</span> &nbsp;|&nbsp; Max: <span class="text-dark">{{ $max }}</span>
                                 </td>
-                                <td class="py-3 pe-4 text-center">
+                                <td class="py-3 text-center pe-4">
                                     <div class="d-flex justify-content-center align-items-center">
                                         <input type="number" name="items[{{ $index }}][qty]" class="qty-input" value="{{ $suggestedQty }}" min="1" step="any" required>
                                         <span class="ms-2 small fw-bold text-muted">{{ optional($itemMaster)->unit ?? 'PCS' }}</span>
@@ -126,11 +140,11 @@
                 </table>
             </div>
         @else
-            <div class="card border-0 shadow-sm rounded-4 text-center py-5 mt-3">
-                <div class="card-body py-5">
-                    <i class="bi bi-shield-check text-success opacity-50 mb-3 d-block" style="font-size: 4rem;"></i>
+            <div class="py-5 mt-3 text-center border-0 shadow-sm card rounded-4">
+                <div class="py-5 card-body">
+                    <i class="mb-3 opacity-50 bi bi-shield-check text-success d-block" style="font-size: 4rem;"></i>
                     <h4 class="fw-bolder text-dark">Stok Gudang Aman!</h4>
-                    <p class="text-muted mb-0">Luar biasa! Saat ini tidak ada satupun barang yang menyentuh batas minimum.<br>Gudang Anda dalam kondisi sangat sehat.</p>
+                    <p class="mb-0 text-muted">Luar biasa! Saat ini tidak ada satupun barang yang menyentuh batas minimum.<br>Gudang Anda dalam kondisi sangat sehat.</p>
                 </div>
             </div>
         @endif
