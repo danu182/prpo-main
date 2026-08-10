@@ -34,15 +34,19 @@ class InventoryController extends Controller
               ->orWhereNull('item_type_code');
         })->orderBy('name')->get();
 
-        // 🔥 RADAR BARANG KRITIS
-        $criticalStocks = \App\Models\Item::with('uom')
-            ->where(function($q) {
+        // =====================================================================
+        // 🔥 RADAR BARANG KRITIS (SUDAH MULTI-GUDANG) 🔥
+        // Membaca tabel InventoryStock, bukan lagi tabel Items
+        // =====================================================================
+        $criticalStocks = \App\Models\InventoryStock::with(['item.uom', 'warehouse'])
+            ->whereHas('item', function($q) {
+                // Abaikan Jasa & Non-Stok
                 $q->whereNotIn('item_type_code', ['JSA', 'NST'])
                   ->orWhereNull('item_type_code');
             })
             ->whereNotNull('min_stock')
             ->where('min_stock', '>', 0)
-            ->whereColumn('current_stock', '<=', 'min_stock')
+            ->whereColumn('stock_qty', '<=', 'min_stock')
             ->get();
 
         // 🔥 QUERY DAFTAR INVENTORY
@@ -72,7 +76,6 @@ class InventoryController extends Controller
 
         return view('inventory.index', compact('stocks', 'warehouses', 'search', 'warehouseId', 'allItems', 'criticalStocks'));
     }
-
 
     // ==========================================
     // 2. Pemakaian Stok (Usage) Spesifik dari Gudang Tertentu
@@ -1005,6 +1008,80 @@ class InventoryController extends Controller
         return $prefix . str_pad($newSequence, 4, '0', STR_PAD_LEFT);
     }
 
+
+
+    // =========================================================================
+    // 🔥 AMBIL DATA LIMIT STOK UNTUK MODAL (AJAX) - VERSI AMAN 🔥
+    // =========================================================================
+    public function getStockLimits($itemId)
+    {
+        $item = \App\Models\Item::findOrFail($itemId);
+        $warehouses = \App\Models\Warehouse::orderBy('name')->get();
+
+        // Ambil semua stok untuk item ini (sekali query)
+        $existingStocks = \App\Models\InventoryStock::where('item_id', $item->id)->get()->keyBy('warehouse_id');
+
+        $stockData = [];
+        foreach ($warehouses as $warehouse) {
+            $stock = $existingStocks->get($warehouse->id);
+
+            $stockData[] = [
+                'warehouse_id' => $warehouse->id,
+                'warehouse'    => $warehouse->name,
+                'current_qty'  => $stock ? (float)$stock->stock_qty : 0,
+                'min_stock'    => $stock ? (float)$stock->min_stock : 0,
+                'max_stock'    => $stock ? (float)$stock->max_stock : 0,
+            ];
+        }
+
+        return response()->json([
+            'item_name' => $item->name,
+            'uom'       => $item->unit ?? 'PCS',
+            'stocks'    => $stockData
+        ]);
+    }
+
+
+
+    // =========================================================================
+    // 🔥 SIMPAN PERUBAHAN LIMIT STOK MULTI-GUDANG - VERSI AMAN 🔥
+    // =========================================================================
+    public function updateStockLimits(\Illuminate\Http\Request $request)
+    {
+        $request->validate([
+            'item_id'               => 'required|exists:items,id',
+            'limits'                => 'required|array',
+            'limits.*.warehouse_id' => 'required|exists:warehouses,id',
+            'limits.*.min_stock'    => 'nullable|numeric|min:0',
+            'limits.*.max_stock'    => 'nullable|numeric|min:0',
+        ]);
+
+        // Tangkap ID Perusahaan dari user yang sedang login (Fallback ke 1 jika kosong)
+        $companyId = auth()->user()->company_id ?? 1;
+
+        \Illuminate\Support\Facades\DB::beginTransaction();
+        try {
+            foreach ($request->limits as $limit) {
+                // Update jika ada, Create jika belum ada!
+                \App\Models\InventoryStock::updateOrCreate(
+                    [
+                        'item_id'      => $request->item_id,
+                        'warehouse_id' => $limit['warehouse_id']
+                    ],
+                    [
+                        'min_stock'    => $limit['min_stock'] ?? 0,
+                        'max_stock'    => $limit['max_stock'] ?? 0,
+                        'company_id'   => $companyId, // 🔥 SUNTIKAN WAJIB UNTUK DATABASE KOMANDAN 🔥
+                    ]
+                );
+            }
+            \Illuminate\Support\Facades\DB::commit();
+            return back()->with('success', 'Batas Minimum dan Maksimum Stok per Gudang berhasil diperbarui!');
+        } catch (\Exception $e) {
+            \Illuminate\Support\Facades\DB::rollback();
+            return back()->with('error', 'Gagal memperbarui batas stok: ' . $e->getMessage());
+        }
+    }
 
 
 }

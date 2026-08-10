@@ -68,8 +68,8 @@ class ItemController extends Controller
             'category_id'    => 'required|exists:categories,id',
             'uom_id'         => 'required|exists:uoms,id',
             'item_type_code' => 'required|exists:item_types,code',
-            'min_stock'      => 'nullable|numeric|min:0',
-            'max_stock'      => 'nullable|numeric|min:0',
+            // 'min_stock'      => 'nullable|numeric|min:0',
+            // 'max_stock'      => 'nullable|numeric|min:0',
             'specification'  => 'nullable|string',
             'uoms'           => 'nullable|array',
         ]);
@@ -103,8 +103,8 @@ class ItemController extends Controller
                     'slug'           => $slug,
                     'name'           => $request->name,
                     'current_stock'  => 0,
-                    'min_stock'      => $request->min_stock ?? 0,
-                    'max_stock'      => $request->max_stock ?? 0,
+                    // 'min_stock'      => $request->min_stock ?? 0,
+                    // 'max_stock'      => $request->max_stock ?? 0,
                     'is_trackable'   => $request->has('is_trackable') ? 1 : 0,
 
                     // 🔥 TAMBAHKAN BARIS INI: Paksa jadi 0 (Bukan Aset)
@@ -170,8 +170,8 @@ class ItemController extends Controller
             'category_id'    => 'required|exists:categories,id',
             'uom_id'         => 'required|exists:uoms,id',
             'item_type_code' => 'required|exists:item_types,code',
-            'min_stock'      => 'nullable|numeric|min:0',
-            'max_stock'      => 'nullable|numeric|min:0',
+            // 'min_stock'      => 'nullable|numeric|min:0',
+            // 'max_stock'      => 'nullable|numeric|min:0',
             'specification'  => 'nullable|string',
             'uoms'           => 'nullable|array',
         ]);
@@ -186,8 +186,8 @@ class ItemController extends Controller
                     'category_id'    => $request->category_id,
                     'name'           => $request->name,
                     'slug'           => $item->slug,
-                    'min_stock'      => $request->min_stock ?? 0,
-                    'max_stock'      => $request->max_stock ?? 0,
+                    // 'min_stock'      => $request->min_stock ?? 0,
+                    // 'max_stock'      => $request->max_stock ?? 0,
 
                     'is_trackable'   => $request->has('is_trackable') ? 1 : 0,
 

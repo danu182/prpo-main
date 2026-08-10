@@ -29,6 +29,13 @@
             <button type="button" class="px-4 shadow-sm btn btn-dark fw-bold rounded-pill" data-bs-toggle="modal" data-bs-target="#modalRegisterStok">
                 <i class="bi bi-plus-lg me-1"></i> Register Stok
             </button>
+            <a href="{{ route('inventory.smart_restock') }}" class="shadow-sm btn btn-danger fw-bold rounded-pill d-flex align-items-center me-2 btn-hover-lift">
+                <i class="bi bi-exclamation-triangle-fill me-2"></i>
+                Smart Restock
+                @if(isset($criticalStocks) && $criticalStocks->count() > 0)
+                    <span class="bg-white shadow-sm badge text-danger rounded-pill ms-2">{{ $criticalStocks->count() }}</span>
+                @endif
+            </a>
         </div>
     </div>
 
@@ -46,50 +53,65 @@
         </div>
     @endif
 
-    {{-- 🔥 WIDGET ALARM STOK KRITIS (EARLY WARNING SYSTEM) 🔥 --}}
+    {{-- 🔥 ALERT BARANG KRITIS (MULTI-GUDANG) 🔥 --}}
     @if(isset($criticalStocks) && $criticalStocks->count() > 0)
-    <div class="mb-4 border-0 border-4 shadow-sm alert alert-danger border-start border-danger rounded-4">
-        <div class="mb-3 d-flex align-items-center">
-            <i class="bg-white shadow-sm bi bi-exclamation-octagon-fill fs-3 me-3 text-danger rounded-circle"></i>
-            <div>
-                <h6 class="mb-0 fw-bold text-danger">PERHATIAN KOMANDAN!</h6>
-                <div class="small text-dark">Terdapat <strong>{{ $criticalStocks->count() }} barang</strong> yang telah mencapai atau melewati batas minimum. Segera lakukan pengadaan (PR)!</div>
+        <div class="p-4 mb-4 border-0 shadow-sm alert alert-danger rounded-4">
+            <div class="mb-3 d-flex align-items-center">
+                <i class="bi bi-exclamation-triangle-fill fs-3 me-3 text-danger"></i>
+                <div>
+                    <h5 class="mb-1 fw-bolder text-danger">PERHATIAN KOMANDAN!</h5>
+                    <div class="text-dark small">
+                        Terdapat <strong class="text-danger">{{ $criticalStocks->count() }} kasus stok</strong> yang telah mencapai atau melewati batas minimum gudang. Segera lakukan pengadaan (PR)!
+                    </div>
+                </div>
+            </div>
+
+            <div class="bg-white border shadow-sm table-responsive rounded-3 border-danger-subtle">
+                <table class="table mb-0 align-middle table-hover table-sm">
+                    <thead class="bg-danger bg-opacity-10 text-danger" style="font-size: 0.75rem;">
+                        <tr>
+                            <th class="py-2 ps-3">NAMA BARANG & GUDANG</th>
+                            <th class="py-2 text-center">SISA FISIK</th>
+                            <th class="py-2 text-center">BATAS MIN</th>
+                            <th class="py-2 text-center pe-3">SARAN ORDER (PR)</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach($criticalStocks as $stock)
+                            @php
+                                $itemMaster = $stock->item;
+                                $warehouse = $stock->warehouse;
+                                $currentQty = (float)($stock->stock_qty ?? 0);
+                                $minQty = (float)($stock->min_stock ?? 0);
+                                $maxQty = (float)($stock->max_stock ?? ($minQty * 3));
+                                $suggestedOrder = max(1, $maxQty - $currentQty);
+                                $uom = $itemMaster->unit ?? 'PCS';
+                            @endphp
+                            <tr class="border-bottom border-danger-subtle">
+                                <td class="py-2 ps-3">
+                                    <div class="fw-bolder text-dark">{{ optional($itemMaster)->name ?? 'Item Terhapus' }}</div>
+                                    <div class="mt-1 d-flex align-items-center" style="font-size: 0.7rem;">
+                                        <span class="badge bg-secondary-subtle text-secondary me-1">{{ optional($itemMaster)->code }}</span>
+                                        <span class="badge bg-danger-subtle text-danger"><i class="bi bi-shop me-1"></i>{{ optional($warehouse)->name ?? 'Gudang Pusat' }}</span>
+                                    </div>
+                                </td>
+                                <td class="py-2 text-center fw-bolder text-danger">
+                                    {{ $currentQty }} <span class="fw-normal small text-muted">{{ $uom }}</span>
+                                </td>
+                                <td class="py-2 text-center text-dark fw-bold small">
+                                    {{ $minQty }} <span class="fw-normal text-muted">{{ $uom }}</span>
+                                </td>
+                                <td class="py-2 text-center pe-3">
+                                    <a href="{{ route('inventory.smart_restock') }}" class="btn btn-sm btn-outline-primary rounded-pill fw-bold" style="font-size: 0.75rem;">
+                                        <i class="bi bi-cart-plus me-1"></i> {{ $suggestedOrder }} {{ $uom }}
+                                    </a>
+                                </td>
+                            </tr>
+                        @endforeach
+                    </tbody>
+                </table>
             </div>
         </div>
-        <div class="bg-white border shadow-sm table-responsive rounded-3">
-            <table class="table mb-0 align-middle table-sm table-hover">
-                <thead class="bg-light text-muted small text-uppercase">
-                    <tr>
-                        <th class="py-2 ps-3">Nama Barang</th>
-                        <th class="py-2 text-center">Sisa Fisik (Total)</th>
-                        <th class="py-2 text-center">Batas Min</th>
-                        <th class="py-2 text-center bg-primary-subtle text-primary border-start border-end">Saran Order (PR)</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    @foreach($criticalStocks as $crit)
-                    @php
-                        // Menghitung saran order = Max Stock - Current Stock
-                        $saranOrder = ($crit->max_stock ?? 0) > $crit->current_stock
-                                      ? ((float)$crit->max_stock - (float)$crit->current_stock)
-                                      : 'Set Max Stok!';
-                    @endphp
-                    <tr>
-                        <td class="py-2 ps-3 fw-bold text-dark">
-                            {{ $crit->name }}
-                            <span class="border badge bg-secondary-subtle text-secondary ms-1">{{ $crit->code }}</span>
-                        </td>
-                        <td class="py-2 text-center fw-bold fs-6 text-danger">{{ (float)$crit->current_stock }} {{ optional($crit->uom)->code ?? '-' }}</td>
-                        <td class="py-2 text-center text-muted">{{ (float)$crit->min_stock }} {{ optional($crit->uom)->code ?? '-' }}</td>
-                        <td class="py-2 text-center fw-bold text-primary bg-primary-subtle border-start border-end fs-6">
-                            <i class="bi bi-cart-plus me-1"></i> {{ is_numeric($saranOrder) ? $saranOrder : $saranOrder }} {{ optional($crit->uom)->code ?? '-' }}
-                        </td>
-                    </tr>
-                    @endforeach
-                </tbody>
-            </table>
-        </div>
-    </div>
     @endif
 
     {{-- FILTER PENCARIAN & GUDANG --}}
@@ -201,6 +223,12 @@
                                         <i class="bi bi-magic me-1"></i> Jadikan Aset
                                     </a>
                                     @endif
+
+                                    <button type="button" class="btn btn-sm btn-outline-warning rounded-pill fw-bold" onclick="openLimitModal({{ $item->id }})" title="Seting Min/Max Gudang">
+                                        <i class="bi bi-gear-fill"></i>
+                                    </button>
+
+
                                 </div>
                             </td>
                         </tr>
@@ -320,6 +348,55 @@
     </div>
 </div>
 
+
+
+{{-- 🔥 MODAL SETTING MIN/MAX MULTI-GUDANG 🔥 --}}
+<div class="modal fade" id="modalStockLimit" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered modal-lg">
+        <div class="border-0 shadow-lg modal-content rounded-4">
+            <div class="modal-header bg-warning bg-opacity-10 border-bottom-0">
+                <h5 class="modal-title fw-bolder text-dark"><i class="bi bi-sliders text-warning me-2"></i>Seting Batas Stok (Min/Max)</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <form action="{{ route('inventory.update_stock_limits') }}" method="POST">
+                @csrf
+                {{-- 🔥 TAMBAHAN BARU: INPUT HIDDEN UNTUK ID BARANG 🔥 --}}
+                <input type="hidden" name="item_id" id="limitItemId" value="">
+
+                <div class="p-4 modal-body">
+                    <div class="mb-3">
+                        <div class="small text-muted fw-bold text-uppercase">Nama Barang</div>
+                        <h5 class="mb-0 fw-bolder text-primary" id="limitItemName">Memuat...</h5>
+                    </div>
+                    <!-- (Tabel dan isi lainnya biarkan sama seperti sebelumnya) -->
+                    <div class="table-responsive">
+                        <table class="table align-middle table-borderless">
+                            <thead class="border-bottom">
+                                <tr>
+                                    <th class="text-secondary small fw-bold">NAMA GUDANG</th>
+                                    <th class="text-center text-secondary small fw-bold">STOK FISIK</th>
+                                    <th class="text-center text-secondary small fw-bold" width="25%">BATAS MINIMUM</th>
+                                    <th class="text-center text-secondary small fw-bold" width="25%">BATAS MAKSIMUM</th>
+                                </tr>
+                            </thead>
+                            <tbody id="limitTableBody">
+                                <tr><td colspan="4" class="py-4 text-center text-muted">Memuat data gudang...</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+                <div class="modal-footer bg-light border-top-0 rounded-bottom-4">
+                    <button type="button" class="px-4 btn btn-light fw-bold rounded-pill" data-bs-dismiss="modal">Batal</button>
+                    <button type="submit" class="px-4 shadow-sm btn btn-warning fw-bold rounded-pill"><i class="bi bi-save-fill me-1"></i>Simpan Seting</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+
+@endsection
+
 @push('scripts')
 <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
@@ -332,5 +409,63 @@
         });
     });
 </script>
+
+<script>
+    function openLimitModal(itemId) {
+        // Tampilkan Modal
+        var myModal = new bootstrap.Modal(document.getElementById('modalStockLimit'));
+        myModal.show();
+
+        // Reset Konten
+        document.getElementById('limitItemName').innerText = "Memuat data...";
+        document.getElementById('limitItemId').value = itemId; // Suntikkan ID ke form
+        document.getElementById('limitTableBody').innerHTML = '<tr><td colspan="4" class="py-4 text-center text-muted"><div class="spinner-border text-warning spinner-border-sm me-2"></div>Memuat gudang...</td></tr>';
+
+        // Gunakan Base URL Laravel agar tidak bocor
+        let ajaxUrl = "{{ url('inventory') }}/" + itemId + "/stock-limits";
+
+        // Tembak AJAX ke Controller
+        fetch(ajaxUrl)
+            .then(response => {
+                if(!response.ok) throw new Error("Terjadi kesalahan pada server (500)");
+                return response.json();
+            })
+            .then(data => {
+                document.getElementById('limitItemName').innerText = data.item_name;
+
+                let rowsHtml = '';
+                data.stocks.forEach((stock, index) => {
+                    let color = stock.current_qty <= stock.min_stock ? 'text-danger' : 'text-success';
+                    rowsHtml += `
+                        <tr class="border-bottom border-light">
+                            <td class="fw-bold text-dark"><i class="bi bi-shop me-2 text-muted"></i>${stock.warehouse}</td>
+                            <td class="text-center fw-bolder ${color}">${stock.current_qty} <span class="fw-normal small text-muted">${data.uom}</span></td>
+                            <td>
+                                <input type="hidden" name="limits[${index}][warehouse_id]" value="${stock.warehouse_id}">
+                                <div class="overflow-hidden border shadow-sm input-group input-group-sm rounded-3">
+                                    <input type="number" name="limits[${index}][min_stock]" class="text-center border-0 form-control fw-bold text-dark" value="${stock.min_stock}" min="0" step="any">
+                                    <!-- 🔥 LABEL SATUAN UOM 🔥 -->
+                                    <span class="px-2 border-0 input-group-text bg-light text-muted small fw-bold">${data.uom}</span>
+                                </div>
+                            </td>
+                            <td>
+                                <div class="overflow-hidden border shadow-sm input-group input-group-sm rounded-3">
+                                    <input type="number" name="limits[${index}][max_stock]" class="text-center border-0 form-control fw-bold text-primary" value="${stock.max_stock}" min="0" step="any">
+                                    <!-- 🔥 LABEL SATUAN UOM 🔥 -->
+                                    <span class="px-2 border-0 input-group-text bg-light text-muted small fw-bold">${data.uom}</span>
+                                </div>
+                            </td>
+                        </tr>
+                    `;
+                });
+
+                document.getElementById('limitTableBody').innerHTML = rowsHtml;
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                document.getElementById('limitTableBody').innerHTML = '<tr><td colspan="4" class="py-4 text-center text-danger fw-bold">Gagal memuat data. Silakan cek Inspect Element -> Network (F12).</td></tr>';
+            });
+    }
+</script>
+
 @endpush
-@endsection

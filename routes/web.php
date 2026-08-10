@@ -396,6 +396,11 @@ Route::middleware('auth')->group(function () {
         Route::post('/smart-restock/generate-pr', [\App\Http\Controllers\InventoryController::class, 'generateMassPr'])->name('generate_mass_pr');
 
 
+        // 🔥 Pengaturan Min/Max Stok Multi-Gudang
+        Route::get('/{item_id}/stock-limits', [\App\Http\Controllers\InventoryController::class, 'getStockLimits'])->name('get_stock_limits');
+        Route::post('/update-stock-limits', [\App\Http\Controllers\InventoryController::class, 'updateStockLimits'])->name('update_stock_limits');
+
+
         Route::get('/capitalize/{slug}', [App\Http\Controllers\InventoryController::class, 'capitalizeForm'])->name('capitalize.form');
         Route::post('/capitalize/{slug}', [App\Http\Controllers\InventoryController::class, 'capitalizeStore'])->name('capitalize.store');
 

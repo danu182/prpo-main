@@ -12,7 +12,7 @@
 @endpush
 
 @section('content')
-<div class="container-fluid pb-5 text-dark">
+<div class="pb-5 container-fluid text-dark">
 
     <div class="mb-4">
         <a href="{{ route('items.index') }}" class="mb-2 text-decoration-none text-muted small fw-bold d-inline-block">
@@ -256,7 +256,7 @@
             </div>
 
             <div class="col-lg-6">
-                <div class="border-0 border-4 shadow-sm card rounded-4 border-start border-danger h-100 stock-limit-section">
+                {{-- <div class="border-0 border-4 shadow-sm card rounded-4 border-start border-danger h-100 stock-limit-section">
                     <div class="py-3 bg-white card-header border-bottom">
                         <h6 class="mb-0 fw-bold text-dark"><i class="bi bi-speedometer2 me-2 text-danger"></i>Pengaturan Batas Stok Gudang</h6>
                     </div>
@@ -279,7 +279,7 @@
                             </div>
                         </div>
                     </div>
-                </div>
+                </div> --}}
             </div>
         </div>
 
