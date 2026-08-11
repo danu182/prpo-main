@@ -889,34 +889,72 @@ class InventoryController extends Controller
     }
 
 
+   // =========================================================================
+    // 🔥 1. HALAMAN SMART RESTOCK (FILTER GUDANG & BUGFIX QTY) 🔥
     // =========================================================================
-    // 🔥 1. HALAMAN SMART RESTOCK MULTI-GUDANG (Saran Pengadaan) 🔥
-    // =========================================================================
-    public function smartRestock()
+    public function smartRestock(\Illuminate\Http\Request $request)
     {
+        // Tangkap request filter gudang dari URL
+        $warehouseId = $request->input('warehouse_id');
 
+        $pendingPrQtys = \Illuminate\Support\Facades\DB::table('purchase_request_items')
+            ->join('purchase_requests', 'purchase_request_items.purchase_request_id', '=', 'purchase_requests.id')
+            ->leftJoin('statuses', 'purchase_requests.status_id', '=', 'statuses.id')
 
-        // 🔥 TAMBAHKAN INI: Tarik daftar PT untuk dropdown
-        $companies = \App\Models\Company::orderBy('name')->get();
+            // 🔥 UBAH BARIS INI: Tambahkan semua kemungkinan nama slug pembatalan/selesai 🔥
+            ->whereNotIn('statuses.slug', [
+                'rejected', 'ditolak',
+                'canceled', 'cancelled', 'batal', 'dibatalkan',
+                'completed', 'selesai'
+            ])
 
-        // Radar kini melacak tabel InventoryStock, bukan Item
-        $criticalItems = \App\Models\InventoryStock::with(['item.uom', 'warehouse'])
+            ->select('item_id', \Illuminate\Support\Facades\DB::raw('SUM(qty) as total_pending'))
+            ->groupBy('item_id')
+            ->pluck('total_pending', 'item_id');
+
+        // 🔥 MODIFIKASI: Kueri Kandidat dengan Filter Gudang 🔥
+        $candidatesQuery = \App\Models\InventoryStock::with(['item.uom', 'warehouse'])
             ->whereHas('item', function($q) {
-                // Abaikan Jasa & Non-Stok
-                $q->whereNotIn('item_type_code', ['JSA', 'NST'])
-                  ->orWhereNull('item_type_code');
+                $q->whereNotIn('item_type_code', ['JSA', 'NST'])->orWhereNull('item_type_code');
             })
             ->whereNotNull('min_stock')
-            ->where('min_stock', '>', 0)
-            ->whereColumn('stock_qty', '<=', 'min_stock')
-            ->get()
-            ->sortBy(function($stock) {
-                // Urutkan berdasarkan Nama Gudang dulu, baru Nama Barang
-                return optional($stock->warehouse)->name . '-' . optional($stock->item)->name;
-            });
+            ->where('min_stock', '>', 0);
 
-        return view('inventory.smart_restock', compact('criticalItems','companies'));
+        // Terapkan Filter jika Gudang dipilih
+        if (!empty($warehouseId)) {
+            $candidatesQuery->where('warehouse_id', $warehouseId);
+        }
+
+        $candidates = $candidatesQuery->get();
+        $criticalItems = collect();
+
+        foreach ($candidates as $stock) {
+            $currentQty = (float)$stock->stock_qty;
+            $minQty = (float)$stock->min_stock;
+            $pendingQty = (float)$pendingPrQtys->get($stock->item_id, 0);
+            $virtualStock = $currentQty + $pendingQty;
+
+            if ($virtualStock <= $minQty) {
+                $stock->pending_qty = $pendingQty;
+                $criticalItems->push($stock);
+            }
+        }
+
+        // Urutkan, LALU GUNAKAN ->values() UNTUK RESET INDEX KE 0,1,2,3
+        // 🔥 Inilah kunci kenapa Qty sebelumnya tidak berubah! 🔥
+        $criticalItems = $criticalItems->sortBy(function($stock) {
+            return optional($stock->warehouse)->name . '-' . optional($stock->item)->name;
+        })->values();
+
+        $companies = \App\Models\Company::orderBy('name')->get();
+
+        // Tarik daftar Gudang untuk Dropdown Filter
+        $warehouses = \App\Models\Warehouse::orderBy('name')->get();
+
+        return view('inventory.smart_restock', compact('criticalItems', 'companies', 'warehouses', 'warehouseId'));
     }
+
+
 
     // =========================================================================
     // 🔥 2. PROSES GENERATE MASS PR (KONSEP AKUMULASI/CONSOLIDATED) 🔥
@@ -975,7 +1013,8 @@ class InventoryController extends Controller
                 'company_id'    => $companyId,
                 'user_id'       => auth()->id(),
                 'requester_id'  => auth()->id(),
-                'purpose'       => 'Auto-Restock Rombongan (Multi-Gudang)',
+                // 🔥 UBAH BARIS INI: Ganti purpose menjadi description 🔥
+                'description'   => 'Auto-Restock Rombongan (Multi-Gudang)',
                 'status_id'     => $statusDraftId,
                 'notes'         => 'Dokumen PR ini digenerate secara otomatis oleh sistem Smart Restock.',
             ]);

@@ -111,6 +111,21 @@
                                             @endforeach
                                         </div>
                                     @endif
+
+                                    <<!-- 🔥 LENCANA INDIKATOR SMART RESTOCK (WARNA BARU) 🔥 -->
+                                    @php
+                                        $isAutoRestock = false;
+                                        if(!empty($pr->description) && str_contains($pr->description, 'Auto-Restock')) $isAutoRestock = true;
+                                        if(!empty($pr->notes) && str_contains($pr->notes, 'Smart Restock')) $isAutoRestock = true;
+                                    @endphp
+
+                                    @if($isAutoRestock)
+                                        <div class="mt-1">
+                                            <span class="shadow-sm badge rounded-pill" style="background: linear-gradient(135deg, #6f42c1 0%, #0d6efd 100%); color: #ffffff; font-size: 0.65rem; letter-spacing: 0.5px; border: none;">
+                                                <i class="bi bi-robot me-1"></i> SMART RESTOCK
+                                            </span>
+                                        </div>
+                                    @endif
                                 </td>
 
                                 <td class="py-3 text-muted">

@@ -9,14 +9,29 @@
     .restock-table thead th { border-bottom: none; text-transform: uppercase; font-size: 0.75rem; letter-spacing: 1px; color: #adb5bd; padding-bottom: 10px; }
     .restock-table tbody tr { background-color: #ffffff; box-shadow: 0 2px 6px rgba(0,0,0,0.02); border-radius: 12px; transition: all 0.2s ease; }
     .restock-table tbody tr:hover { box-shadow: 0 5px 15px rgba(0,0,0,0.08); transform: scale(1.002); }
-    .restock-table td { vertical-align: middle; border-top: 1px solid #f1f3f5; border-bottom: 1px solid #f1f3f5; }
+    .restock-table td { vertical-align: middle; border-top: 1px solid #f1f3f5; border-bottom: 1px solid #f1f3f5; transition: all 0.3s ease; }
     .restock-table td:first-child { border-left: 1px solid #f1f3f5; border-top-left-radius: 12px; border-bottom-left-radius: 12px; }
     .restock-table td:last-child { border-right: 1px solid #f1f3f5; border-top-right-radius: 12px; border-bottom-right-radius: 12px; }
 
-    .qty-input { border: 1px solid #dee2e6; border-radius: 8px; text-align: center; font-weight: bold; width: 100px; height: 35px; color: #0d6efd; }
+    .qty-input { border: 1px solid #dee2e6; border-radius: 8px; text-align: center; font-weight: bold; width: 100px; height: 35px; color: #0d6efd; transition: all 0.3s ease; }
     .qty-input:focus { border-color: #0d6efd; box-shadow: 0 0 0 0.2rem rgba(13,110,253,0.15); outline: none; }
 
     .progress-thin { height: 6px; border-radius: 10px; background-color: #e9ecef; }
+
+    /* Checkbox Styles */
+    .custom-row-check { width: 22px; height: 22px; border: 2px solid #869099; cursor: pointer; border-radius: 4px; box-shadow: inset 0 1px 2px rgba(0,0,0,0.05); transition: all 0.2s ease-in-out; }
+    .custom-row-check:checked { border-color: #0d6efd; background-color: #0d6efd; }
+    .custom-switch-check { transform: scale(1.3); margin-left: 0.5rem !important; cursor: pointer; border: 2px solid #869099; }
+    .custom-switch-check:checked { border-color: #0d6efd; background-color: #0d6efd; }
+
+    /* 🔥 TAMPILAN BARIS NON-AKTIF (INACTIVE) YANG LEBIH JELAS 🔥 */
+    .row-inactive { background-color: #f8f9fa !important; border-left: 4px solid #dee2e6 !important; box-shadow: none !important; }
+    .row-inactive td { border-color: #e9ecef; }
+    .row-inactive .text-dark { color: #6c757d !important; } /* Mengubah teks hitam menjadi abu-abu gelap agar tetap terbaca */
+    .row-inactive .badge { opacity: 0.7; filter: grayscale(100%); } /* Membuat label/badge menjadi abu-abu */
+    .row-inactive .qty-input { background-color: #e9ecef; border-color: #ced4da; color: #adb5bd; cursor: not-allowed; } /* Tampilan input terkunci */
+    .row-inactive h5, .row-inactive .text-danger, .row-inactive .text-warning { color: #adb5bd !important; } /* Memudarkan angka stok fisik */
+    .row-inactive .progress-bar { background-color: #ced4da !important; }
 </style>
 @endpush
 
@@ -43,6 +58,30 @@
                         <div class="mb-1 text-muted small fw-bold text-uppercase">Item Berstatus Kritis</div>
                         <h3 class="mb-0 fw-bolder text-dark">{{ $criticalItems->count() }} <span class="fs-6 text-muted fw-normal">Barang</span></h3>
                     </div>
+
+                    {{-- FILTER GUDANG --}}
+                    <div class="mb-4 bg-white border-0 shadow-sm card rounded-4 ms-auto">
+                        <div class="p-3 card-body d-flex align-items-center">
+                            <i class="bi bi-funnel-fill text-primary fs-4 me-3"></i>
+                            <form action="{{ route('inventory.smart_restock') }}" method="GET" class="mb-0 d-flex align-items-center w-100">
+                                <label class="fw-bold me-3 text-dark text-nowrap">Filter Lokasi Gudang:</label>
+                                <select name="warehouse_id" class="w-auto shadow-sm form-select fw-bold border-primary-subtle text-primary" onchange="this.form.submit()">
+                                    <option value="">-- Semua Gudang (Hak Akses Pusat) --</option>
+                                    @foreach($warehouses as $wh)
+                                        <option value="{{ $wh->id }}" {{ $warehouseId == $wh->id ? 'selected' : '' }}>
+                                            {{ $wh->name }}
+                                        </option>
+                                    @endforeach
+                                </select>
+                                @if($warehouseId)
+                                    <a href="{{ route('inventory.smart_restock') }}" class="shadow-sm btn btn-sm btn-outline-danger ms-3 rounded-pill fw-bold">
+                                        <i class="bi bi-x-circle me-1"></i>Reset Filter
+                                    </a>
+                                @endif
+                            </form>
+                        </div>
+                    </div>
+
                 </div>
             </div>
         </div>
@@ -52,9 +91,10 @@
         @csrf
 
         <div class="p-3 mb-3 bg-white border shadow-sm d-flex justify-content-between align-items-center rounded-4">
-            <div class="form-check form-switch ms-2">
-                <input class="form-check-input" type="checkbox" id="checkAll" checked style="cursor:pointer; transform: scale(1.2);">
-                <label class="form-check-label fw-bold ms-2 text-dark" for="checkAll">Pilih Semua</label>
+
+            <div class="mb-0 form-check form-switch d-flex align-items-center ps-0">
+                <input class="m-0 form-check-input custom-switch-check ms-2" type="checkbox" id="checkAll" checked role="switch">
+                <label class="form-check-label fw-bolder text-dark ms-3 fs-6" for="checkAll" style="cursor:pointer;">Pilih Semua Barang</label>
             </div>
 
             <div class="gap-2 d-flex align-items-center">
@@ -78,7 +118,7 @@
                 <table class="table align-middle restock-table w-100">
                     <thead>
                         <tr>
-                            <th class="ps-4" width="5%"></th>
+                            <th class="text-center ps-2" width="5%"><i class="bi bi-check2-square fs-6"></i></th>
                             <th width="35%">Nama Barang & SKU</th>
                             <th class="text-center" width="20%">Status Stok Saat Ini</th>
                             <th class="text-center" width="20%">Batas Min - Max</th>
@@ -91,26 +131,29 @@
                                 $itemMaster = $stock->item;
                                 $warehouse = $stock->warehouse;
 
-                                $current = (float)($stock->stock_qty ?? 0); // Di tabel stock biasanya stock_qty
+                                $current = (float)($stock->stock_qty ?? 0);
                                 $min = (float)($stock->min_stock ?? 0);
                                 $max = (float)($stock->max_stock ?? ($min * 3));
 
-                                // Kalkulasi persentase krisis
+                                $pendingPr = (float)($stock->pending_qty ?? 0);
+
                                 $pct = $max > 0 ? ($current / $max) * 100 : 0;
                                 $color = $current <= 0 ? 'danger' : 'warning';
 
-                                // Usulan pesanan (agar menyentuh max)
-                                $suggestedQty = max(1, $max - $current);
+                                $suggestedQty = max(1, $max - ($current + $pendingPr));
                             @endphp
                             <tr class="border-start border-4 border-{{ $color }} item-row">
-                                <td class="ps-4">
-                                    <input class="form-check-input row-check" type="checkbox" name="items[{{ $index }}][is_selected]" value="1" checked style="transform: scale(1.3); cursor: pointer;">
+
+                                <td class="text-center ps-3">
+                                    <div class="d-flex justify-content-center align-items-center">
+                                        <input class="m-0 form-check-input row-check custom-row-check" type="checkbox" name="items[{{ $index }}][is_selected]" value="1" checked>
+                                    </div>
                                     <input type="hidden" name="items[{{ $index }}][item_id]" value="{{ $itemMaster->id }}">
-                                    <!-- 🔥 TAMBAHKAN BARIS INI: Kirim Nama Gudang ke Controller 🔥 -->
                                     <input type="hidden" name="items[{{ $index }}][warehouse_name]" value="{{ optional($warehouse)->name ?? 'Gudang Pusat' }}">
                                 </td>
+
                                 <td class="py-3">
-                                    <div class="fw-bolder text-dark">{{ optional($itemMaster)->name }}</div>
+                                    <div class="fw-bolder text-dark itemName">{{ optional($itemMaster)->name }}</div>
                                     <div class="mt-1 small text-muted">
                                         <span class="border badge bg-secondary-subtle text-secondary border-secondary-subtle me-1">{{ optional($itemMaster)->code ?? 'NO-SKU' }}</span>
                                         <span class="border badge bg-primary-subtle text-primary border-primary-subtle"><i class="bi bi-shop me-1"></i> {{ optional($warehouse)->name ?? 'Gudang Pusat' }}</span>
@@ -118,9 +161,15 @@
                                 </td>
                                 <td class="py-3 text-center">
                                     <h5 class="mb-1 fw-bolder text-{{ $color }}">{{ $current }} <span class="fs-6 fw-normal text-muted">{{ optional($itemMaster)->unit ?? 'PCS' }}</span></h5>
-                                    <div class="mx-auto mt-2 progress progress-thin w-75">
-                                        <div class="progress-bar bg-{{ $color }}" style="width: {{ $pct }}%"></div>
-                                    </div>
+
+                                    @if($pendingPr > 0)
+                                        <div class="mt-2"><span class="px-2 border badge bg-info-subtle text-info border-info-subtle rounded-pill" style="font-size: 0.7rem;" title="Sudah ada PR yang sedang diproses"><i class="bi bi-truck me-1"></i> +{{ $pendingPr }} Sedang di-PR-kan</span></div>
+                                    @else
+                                        <div class="mx-auto mt-2 progress progress-thin w-75">
+                                            <div class="progress-bar bg-{{ $color }}" style="width: {{ $pct }}%"></div>
+                                        </div>
+                                    @endif
+
                                     @if($current <= 0)
                                         <div class="mt-1 small text-danger fw-bold">Stok Habis / Minus!</div>
                                     @endif
@@ -130,7 +179,7 @@
                                 </td>
                                 <td class="py-3 text-center pe-4">
                                     <div class="d-flex justify-content-center align-items-center">
-                                        <input type="number" name="items[{{ $index }}][qty]" class="qty-input" value="{{ $suggestedQty }}" min="1" step="any" required>
+                                        <input type="number" name="items[{{ $index }}][qty]" class="shadow-sm qty-input" value="{{ $suggestedQty }}" min="1" step="any" required>
                                         <span class="ms-2 small fw-bold text-muted">{{ optional($itemMaster)->unit ?? 'PCS' }}</span>
                                     </div>
                                 </td>
@@ -175,19 +224,20 @@
             });
         });
 
+        // 🔥 LOGIKA VISUAL BARU UNTUK BARIS NON-AKTIF 🔥
         function toggleRowOpacity(checkbox) {
             const row = checkbox.closest('.item-row');
             const inputQty = row.querySelector('.qty-input');
+
             if(checkbox.checked) {
-                row.style.opacity = '1';
+                row.classList.remove('row-inactive');
                 inputQty.removeAttribute('readonly');
             } else {
-                row.style.opacity = '0.5';
+                row.classList.add('row-inactive');
                 inputQty.setAttribute('readonly', 'true');
             }
         }
 
-        // Form Submit confirmation
         document.getElementById('restockForm').addEventListener('submit', function(e) {
             const checkedBoxes = document.querySelectorAll('.row-check:checked');
             if(checkedBoxes.length === 0 && rowChecks.length > 0) {
