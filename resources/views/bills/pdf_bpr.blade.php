@@ -1,286 +1,157 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="id">
 <head>
     <meta charset="UTF-8">
-    <title>Bank Payment Request</title>
+    <title>Bank Payment Request Form</title>
     <style>
-        body {
-            font-family: Arial, sans-serif;
-            font-size: 11px;
-            color: #000;
-        }
-        .header-title {
-            font-size: 18px;
-            font-weight: bold;
-            text-transform: uppercase;
-            margin-bottom: 5px;
-        }
-        .sub-title {
-            font-size: 14px;
-            margin-bottom: 5px;
+        /* Pengaturan Margin Kertas & Font */
+        @page { margin: 40px 40px 60px 40px; } /* Margin bawah disiapkan untuk Footer */
+        body { 
+            font-family: 'Helvetica', 'Arial', sans-serif; 
+            font-size: 10pt; 
+            color: #000; 
+            line-height: 1.3; 
         }
 
-        /* 1. KOTAK HEADER */
-        table.header-section {
-            width: 100%;
-            border-collapse: collapse;
-            border: 1px solid #000;
-            border-bottom: none;
-        }
-        table.header-section > tbody > tr > td {
-            padding: 5px 10px;
-            vertical-align: top;
-        }
-        table.header-section td.border-right {
-            border-right: 1px solid #000;
-        }
+        /* HEADER PERUSAHAAN & JUDUL */
+        .company-name { font-size: 16pt; font-weight: bold; margin: 0 0 5px 0; text-transform: uppercase; }
+        .doc-title { font-size: 12pt; margin: 0 0 15px 0; color: #333; }
 
-        .inner-table {
-            width: 100%;
+        /* PENGATURAN FOOTER (TANGGAL & HALAMAN) - Anti Pecah */
+        footer { position: fixed; bottom: -30px; left: 0px; right: 0px; height: 30px; }
+        .footer-table { 
+            width: 100%; border-top: 1px dashed #888; 
+            padding-top: 5px; font-size: 8pt; color: #555; font-style: italic; 
             border-collapse: collapse;
         }
-        .inner-table td {
-            padding: 2px 0;
-            border: none !important;
-        }
+        .pagenum:before { content: counter(page); }
 
-        /* 2. KOTAK TABEL INVOICE */
-        table.bpr-table {
-            width: 100%;
-            border-collapse: collapse;
-            border: 1px solid #000;
-        }
-        table.bpr-table th, table.bpr-table td {
-            border: 1px solid #000;
-            padding: 6px;
-        }
+        /* PENGATURAN TABEL UMUM */
+        table { width: 100%; border-collapse: collapse; }
+        td, th { border: 1px solid #000; padding: 6px 8px; vertical-align: top; }
+        
+        /* ALIGNMENT & FONT */
+        .text-center { text-align: center; }
+        .text-right { text-align: right; }
+        .fw-bold { font-weight: bold; }
 
-        /* 3. KOTAK TANDA TANGAN */
-        table.sig-table {
-            width: 100%;
-            border-collapse: collapse;
-        }
-        table.sig-table td {
-            border: 1px solid #000;
-            border-top: none;
-            padding: 8px 10px;
-            vertical-align: top;
-        }
-        .sig-title {
-            text-align: left;
-            font-size: 11px;
-        }
-        .sig-name {
-            text-align: center;
-            font-size: 11px;
-            margin-top: 70px;
-        }
+        /* TABEL 1: INFO DOKUMEN */
+        .info-table { margin-bottom: 15px; page-break-inside: avoid; }
+        .info-label { width: 15%; font-weight: bold; border-right: none; }
+        .info-colon { width: 2%; border-left: none; border-right: none; text-align: center; }
+        .info-value { width: 33%; border-left: none; }
 
-        /* Trik Mata Uang Rata Kiri Kanan */
-        .currency-table {
-            width: 100%;
-            border-collapse: collapse;
-        }
-        .currency-table td {
-            padding: 0 !important;
-            border: none !important;
-        }
+        /* TABEL 2: ITEM RINCIAN */
+        .item-table { margin-bottom: 15px; }
+        .item-table th { background-color: #f0f0f0; text-align: center; font-weight: bold; }
+
+        /* TRIK KHUSUS DOMPDF UNTUK FORMAT "Rp" AGAR RATA KIRI KANAN */
+        .currency-table td { border: none; padding: 0; vertical-align: middle; }
+
+        /* TABEL 3: TANDA TANGAN */
+        .sig-table { page-break-inside: avoid; }
+        .sig-table td { width: 50%; height: 100px; vertical-align: top; }
+        .sig-name { text-align: center; font-weight: bold; text-decoration: underline; margin-top: 60px; }
     </style>
 </head>
 <body>
 
-    <!-- JUDUL PERUSAHAAN & DOKUMEN -->
-    <div class="header-title">{{ $bill->company->name ?? 'PT MAHAPALA MAHARDHIKA' }}</div>
-    <div class="sub-title">Bank Payment Request Form</div>
+    {{-- 🔥 FOOTER (Selalu letakkan di bawah body tag pembuka) 🔥 --}}
+    <footer>
+        <table class="footer-table" style="border:none;">
+            <tr>
+                <td style="border:none; padding:0; text-align:left;">
+                    Printed on: {{ date('d-M-Y H:i') }} WIB &nbsp;|&nbsp; Ref: {{ $bill->bill_number ?? 'BILL/OPX/DM/2026/08/0001' }}
+                </td>
+                <td style="border:none; padding:0; text-align:right;">
+                    Page <span class="pagenum"></span>
+                </td>
+            </tr>
+        </table>
+    </footer>
 
-    <!-- 1. KOTAK HEADER (REQUESTER & INFO) -->
-    <table class="header-section">
+    {{-- KOP DOKUMEN --}}
+    <div class="company-name">DAMA</div>
+    <div class="doc-title">Bank Payment Request Form</div>
+
+    {{-- TABEL INFORMASI --}}
+    <table class="info-table">
         <tr>
-            <td style="width: 50%;" class="border-right">
-                <table class="inner-table">
-                    <tr>
-                        <td style="width: 25%;">Requester</td>
-                        <td style="width: 75%;">: {{ $bill->user->name ?? 'Super Administrator' }}</td>
-                    </tr>
-                    <tr>
-                        <td>Department</td>
-                        <td>: {{ optional($bill->user->department)->name ?? 'IT' }}</td>
-                    </tr>
-                    <tr>
-                        <td>Request Date</td>
-                        <td>: {{ \Carbon\Carbon::parse($bill->invoice_date)->format('d-M-y') }}</td>
-                    </tr>
-                </table>
-            </td>
-            <td style="width: 50%;">
-                <table class="inner-table">
-                    <tr>
-                        <td style="width: 30%;">Title</td>
-                        <td style="width: 70%;">: {{ $bill->title ?? '-' }}</td>
-                    </tr>
-                    <!-- 🔥 PERBAIKAN: Nomor Internal Sistem Dipindah Ke Sini 🔥 -->
-                    <tr>
-                        <td>Bill Ref.</td>
-                        <td>: {{ $bill->bill_number }}</td>
-                    </tr>
-                    <tr>
-                        <td>Payment Due Date</td>
-                        <td>: {{ \Carbon\Carbon::parse($bill->due_date)->format('d-M-y') }}</td>
-                    </tr>
-                </table>
-            </td>
+            <td class="info-label">Requester</td><td class="info-colon">:</td><td class="info-value">{{ $bill->requester_name ?? 'Super Administrator' }}</td>
+            <td class="info-label">Title</td><td class="info-colon">:</td><td class="info-value">{{ $bill->title ?? 'Tagihan Opex - CV Pertiwi' }}</td>
+        </tr>
+        <tr>
+            <td class="info-label">Department</td><td class="info-colon">:</td><td class="info-value">{{ $bill->department ?? 'IT' }}</td>
+            <td class="info-label">Bill Ref.</td><td class="info-colon">:</td><td class="info-value">{{ $bill->bill_number ?? 'BILL/OPX/DM/2026/08/0001' }}</td>
+        </tr>
+        <tr>
+            <td class="info-label">Request Date</td><td class="info-colon">:</td><td class="info-value">{{ \Carbon\Carbon::parse($bill->request_date ?? now())->format('d-M-y') }}</td>
+            <td class="info-label">Payment Due Date</td><td class="info-colon">:</td><td class="info-value">{{ \Carbon\Carbon::parse($bill->due_date ?? now())->format('d-M-y') }}</td>
         </tr>
     </table>
 
-    <!-- 2. KOTAK ITEM INVOICE -->
-    <table class="bpr-table">
+    {{-- TABEL UTAMA RINCIAN --}}
+    <table class="item-table">
         <thead>
             <tr>
-                <th style="width: 5%; text-align: center;">No</th>
-                <th style="width: 20%; text-align: center;">Invoices No.</th>
-                <th style="width: 30%; text-align: center;">Description</th>
-                <th style="width: 10%; text-align: center;">Reference</th>
-                <th style="width: 20%; text-align: center;">Total Amount (Rp)</th>
-                <th style="width: 15%; text-align: center;">Account No</th>
+                <th width="5%">No</th>
+                <th width="15%">Invoices No.</th>
+                <th width="35%">Description</th>
+                <th width="15%">Reference</th>
+                <th width="15%">Total Amount (Rp)</th>
+                <th width="15%">Account No</th>
             </tr>
         </thead>
         <tbody>
-            <!-- 🔥 PERBAIKAN: Looping Berdasarkan Jumlah Item 🔥 -->
-            @foreach($bill->items as $index => $item)
+            {{-- LOOPING DATA ITEM DI SINI JIKA ADA BANYAK BARIS --}}
+            {{-- @foreach($bill->items as $index => $item) --}}
             <tr>
-                <td style="text-align: center;">{{ $index + 1 }}</td>
-
-                <!-- Nomor Invoice dicetak di setiap baris atau bisa juga di baris pertama saja -->
-                <td style="text-align: center;">{{ $bill->vendor_invoice_number ?? '-' }}</td>
-
-                <!-- Ambil deskripsi, jika kosong ambil nama -->
-                <td>{{ !empty($item->description) ? $item->description : $item->name }}</td>
-
-                <td></td>
-
+                <td class="text-center">1</td>
+                <td class="text-center">2312313</td>
+                <td>Maintenance Server Tahunan Ke-17</td>
+                <td class="text-center"></td>
                 <td>
-                    <!-- Harga masing-masing item -->
-                    <table class="currency-table">
+                    {{-- Trik Anti-Pecah DomPDF untuk "Rp" rata kiri, Angka rata kanan --}}
+                    <table class="currency-table" width="100%">
                         <tr>
-                            <td style="text-align: left;">Rp</td>
-                            <td style="text-align: right;">{{ number_format($item->amount, 0, ',', '.') }}</td>
+                            <td style="text-align:left; width: 20%;">Rp</td>
+                            <td style="text-align:right;">1.850.000</td>
                         </tr>
                     </table>
                 </td>
-
-                <!-- Nomor rekening dimunculkan di baris pertama saja agar tabel tetap rapi -->
-                <td style="text-align: center;">
-                    {{ $index === 0 ? ($bill->account_number ?? $bill->vendor_account ?? $bill->vendor_bank_account ?? '') : '' }}
-                </td>
+                <td class="text-center"></td>
             </tr>
-            @endforeach
-
-            <!-- BARIS TAMBAHAN: Muncul otomatis JIKA ada biaya ekstra,
-                 agar Total Amount di bawahnya tetap masuk akal perhitungannya -->
-            @if($bill->total_charge > 0)
-            <tr>
-                <td colspan="4" style="text-align: right; font-size: 10px; color: #555;">Biaya Tambahan</td>
-                <td style="font-size: 10px; color: #555;">
-                    <table class="currency-table">
-                        <tr>
-                            <td style="text-align: left;">Rp</td>
-                            <td style="text-align: right;">{{ number_format($bill->total_charge, 0, ',', '.') }}</td>
-                        </tr>
-                    </table>
-                </td>
-                <td></td>
-            </tr>
-            @endif
-
-            <!-- BARIS TOTAL AMOUNT (GRAND TOTAL) -->
-            <tr>
-                <td colspan="4" style="text-align: center; font-weight: bold;">Total Amount</td>
-                <td style="font-weight: bold;">
-                    <table class="currency-table">
-                        <tr>
-                            <td style="text-align: left;">Rp</td>
-                            <td style="text-align: right;">{{ number_format($bill->amount, 0, ',', '.') }}</td>
-                        </tr>
-                    </table>
-                </td>
-                <td></td>
-            </tr>
+            {{-- @endforeach --}}
         </tbody>
+        <tfoot>
+            <tr>
+                <td colspan="4" class="text-center fw-bold">Total Amount</td>
+                <td class="fw-bold">
+                    <table class="currency-table" width="100%">
+                        <tr>
+                            <td style="text-align:left; width: 20%;">Rp</td>
+                            <td style="text-align:right;">1.850.000</td>
+                        </tr>
+                    </table>
+                </td>
+                <td></td>
+            </tr>
+        </tfoot>
     </table>
 
-    <!-- 3. KOTAK TANDA TANGAN -->
-    @php
-        $approvals = \App\Models\DocumentApproval::with(['role'])
-            ->where('document_id', $bill->id)
-            ->whereIn('document_type', ['App\Models\BillRequest', 'OPEX', 'BillRequest', get_class($bill)])
-            ->orderBy('step_order', 'asc')
-            ->get();
-
-        $totalCols = $approvals->count() + 1;
-        $colWidth = 100 / ($totalCols > 0 ? $totalCols : 1);
-    @endphp
-
+    {{-- TABEL TANDA TANGAN --}}
     <table class="sig-table">
         <tr>
-            <!-- KOTAK PEMBUAT -->
-            <td style="width: {{ $colWidth }}%;">
-                <div class="sig-title">Prepared by :</div>
-                <div class="sig-name">{{ $bill->user->name ?? '-' }}</div>
+            <td>
+                Prepared by :
+                <div class="sig-name">{{ $bill->requester_name ?? 'Super Administrator' }}</div>
             </td>
-
-            <!-- KOTAK APPROVER -->
-            @foreach($approvals as $index => $appr)
-            <td style="width: {{ $colWidth }}%;">
-                <div class="sig-title">
-                    {{ $index == ($approvals->count() - 1) ? 'Approved by :' : 'Checked by :' }}
-                </div>
-
-                <div class="sig-name">
-                    @if($appr->status == 'APPROVED')
-                        <span style="font-weight: bold;">{{ optional($appr->approver)->name ?? optional($appr->role)->name ?? 'Approved' }}</span>
-                    @else
-                        @php
-                            $roleName = optional($appr->role)->name ?? 'Pending';
-                            $deptName = '';
-                            if (is_null($appr->target_department_id)) {
-                                $deptName = is_object($bill->user->department) ? $bill->user->department->name : ($bill->user->department ?? '');
-                            } elseif ($appr->target_department_id !== 'all' && $appr->target_department_id != 0) {
-                                $deptObj = \App\Models\Department::find($appr->target_department_id);
-                                $deptName = $deptObj ? $deptObj->name : '';
-                            } elseif ($appr->target_department_id === 'all' || $appr->target_department_id === 0) {
-                                $deptName = 'All Dept';
-                            }
-                        @endphp
-                        <span style="color: #6c757d;">({{ $roleName }}{{ $deptName ? ' - ' . $deptName : '' }})</span>
-                    @endif
-                </div>
+            <td>
+                Approved by :
+                <div class="sig-name">{{ $bill->approver_name ?? 'Super Administrator' }}</div>
             </td>
-            @endforeach
         </tr>
     </table>
-
-
-    {{-- 🔥 LAMPIRAN GAMBAR (MUNCUL DI HALAMAN BARU) 🔥 --}}
-    @if(isset($bill->attachments) && $bill->attachments->count() > 0)
-        @php
-            $imageAttachments = $bill->attachments->filter(function($att) {
-                $ext = strtolower(pathinfo($att->file_name, PATHINFO_EXTENSION));
-                return in_array($ext, ['jpg', 'jpeg', 'png']);
-            });
-        @endphp
-
-        @if($imageAttachments->count() > 0)
-            <div style="page-break-before: always;"></div>
-            <h3 style="margin-bottom: 20px; font-family: Arial, sans-serif;">Lampiran Dokumen Pendukung</h3>
-
-            @foreach($imageAttachments as $img)
-                <div style="margin-bottom: 20px; text-align: center; font-family: Arial, sans-serif;">
-                    <p style="font-size: 10pt; text-align: left;"><strong>Nama File:</strong> {{ $img->file_name }}</p>
-                    <img src="{{ public_path('storage/' . $img->file_path) }}" style="max-width: 100%; max-height: 800px; border: 1px solid #000; padding: 5px;">
-                </div>
-            @endforeach
-        @endif
-    @endif
 
 </body>
 </html>
