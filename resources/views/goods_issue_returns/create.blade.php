@@ -55,6 +55,18 @@
         <div class="shadow-sm alert alert-danger rounded-3 fw-bold"><i class="bi bi-exclamation-triangle-fill me-2"></i> {{ session('error') }}</div>
     @endif
 
+    {{-- 🔥 PENAMPIL ERROR VALIDASI LARAVEL 🔥 --}}
+    @if ($errors->any())
+        <div class="mb-4 border-0 border-4 shadow-sm alert alert-danger rounded-4 fw-bold border-start border-danger">
+            <h6 class="mb-2 alert-heading"><i class="bi bi-exclamation-triangle-fill me-2"></i>Gagal Menyimpan! Periksa isian berikut:</h6>
+            <ul class="mb-0">
+                @foreach ($errors->all() as $error)
+                    <li>{{ $error }}</li>
+                @endforeach
+            </ul>
+        </div>
+    @endif
+
     <form action="{{ route('goods-issue-returns.store', $gi->id) }}" method="POST" id="form-retur">
         @csrf
 
@@ -112,7 +124,7 @@
                         </tr>
                     </thead>
                     <tbody>
-                        @foreach($returnableItems as $index => $item)
+                        @foreach($returnableItems as $item)
                         @php
                             $masterItem = $item->item;
                             $baseUomName = optional($masterItem->uom)->name ?? 'PCS';
@@ -121,13 +133,11 @@
                             $hasHistoryAsset = isset($item->held_assets) && count($item->held_assets) > 0;
                             $hasHistorySn = !empty($item->held_sns);
 
-                            // Jika punya histori Aset, paksa jadi Aset. Jika punya histori SN, paksa jadi SN.
                             if ($hasHistoryAsset) {
                                 $isAsset = true; $isTrackable = false;
                             } elseif ($hasHistorySn) {
                                 $isAsset = false; $isTrackable = true;
                             } else {
-                                // Jika tidak ada histori sama sekali, baru ikuti Master Barang
                                 $isAsset = optional($masterItem)->is_asset;
                                 $isTrackable = optional($masterItem)->is_trackable;
                             }
@@ -148,15 +158,17 @@
                             $sisaBisaRetur = (float)$item->qty_issued - (float)($item->qty_returned ?? 0);
                             $maxBaseQty = $sisaBisaRetur * $giConvRate;
                         @endphp
-                        <tr>
+                        <tr class="item-row" id="row_{{ $item->id }}">
                             <td class="py-3 ps-4">
-                                {{-- 🔥 TARIK NAMA DARI DOKUMEN GI LAMA 🔥 --}}
                                 <strong class="text-dark">{{ $item->item_name ?? optional($masterItem)->name }}</strong>
 
                                 <div class="mt-1 small text-muted">{{ optional($masterItem)->code }}</div>
                                 @if($isAsset)
                                     <span class="mt-1 border badge bg-primary-subtle text-primary border-primary-subtle" style="font-size: 0.65rem;">[ASET TETAP]</span>
                                 @endif
+                                
+                                {{-- 🔥 PERBAIKAN 1: GANTI gr_item_id MENJADI gi_item_id 🔥 --}}
+                                <input type="hidden" name="items[{{ $item->id }}][gi_item_id]" value="{{ $item->id }}">
                             </td>
 
                             <td class="text-center fw-bold text-danger">
@@ -173,30 +185,31 @@
                             <td>
                                 @if($isAsset)
                                     <div class="asset-select-container">
-                                        <select name="items[{{ $index }}][returned_asset_numbers][]" class="shadow-sm form-select border-info select-asset-return" multiple data-index="{{ $item->id }}">
+                                        {{-- 🔥 PERBAIKAN 2: GUNAKAN $item->id SEBAGAI KEY ARRAY 🔥 --}}
+                                        <select name="items[{{ $item->id }}][returned_asset_numbers][]" class="shadow-sm form-select border-info select-asset-return" multiple data-index="{{ $item->id }}">
                                             @foreach($item->held_assets ?? [] as $ast)
                                                 <option value="{{ $ast->asset_number }}">{{ $ast->asset_number }}</option>
                                             @endforeach
                                         </select>
                                     </div>
                                     <div class="form-text small text-info"><i class="bi bi-info-circle"></i> Pilih Aset yang dikembalikan.</div>
-                                    <input type="hidden" name="items[{{ $index }}][qty_returned]" class="qty-hidden-{{ $item->id }} qty-retur-input" value="0">
+                                    <input type="hidden" name="items[{{ $item->id }}][qty_returned]" class="qty-hidden-{{ $item->id }} qty-retur-input" value="0">
 
                                 @elseif($isTrackable)
                                     <div class="sn-select-container">
-                                        <select name="items[{{ $index }}][returned_minor_sns][]" class="shadow-sm form-select border-warning select-asset-return" multiple data-index="{{ $item->id }}">
+                                        <select name="items[{{ $item->id }}][returned_minor_sns][]" class="shadow-sm form-select border-warning select-asset-return" multiple data-index="{{ $item->id }}">
                                             @foreach($item->held_sns ?? [] as $sn)
                                                 <option value="{{ $sn }}">{{ $sn }}</option>
                                             @endforeach
                                         </select>
                                     </div>
                                     <div class="form-text small text-warning-emphasis"><i class="bi bi-upc-scan"></i> Pilih SN yang dikembalikan.</div>
-                                    <input type="hidden" name="items[{{ $index }}][qty_returned]" class="qty-hidden-{{ $item->id }} qty-retur-input" value="0">
+                                    <input type="hidden" name="items[{{ $item->id }}][qty_returned]" class="qty-hidden-{{ $item->id }} qty-retur-input" value="0">
 
                                 @else
                                     <div class="mb-1 shadow-sm input-group input-group-sm">
-                                        <input type="number" name="items[{{ $index }}][qty_returned]" id="qty-input-{{ $item->id }}" class="text-center form-control qty-retur-input border-success fw-bold text-dark" max="{{ $sisaBisaRetur }}" min="0" step="any" value="0" oninput="checkQty({{ $item->id }})">
-                                        <select name="items[{{ $index }}][uom]" class="form-select border-success bg-success-subtle text-dark fw-bold" style="max-width: 135px;" data-current-conv="{{ $giConvRate }}" onchange="changeUom(this, {{ $item->id }}, {{ $maxBaseQty }})">
+                                        <input type="number" name="items[{{ $item->id }}][qty_returned]" id="qty-input-{{ $item->id }}" class="text-center form-control qty-retur-input border-success fw-bold text-dark" max="{{ $sisaBisaRetur }}" min="0" step="any" value="0" oninput="checkQty({{ $item->id }})">
+                                        <select name="items[{{ $item->id }}][uom]" class="form-select border-success bg-success-subtle text-dark fw-bold" style="max-width: 135px;" data-current-conv="{{ $giConvRate }}" onchange="changeUom(this, {{ $item->id }}, {{ $maxBaseQty }})">
                                             <option value="{{ $rawGiUom }}" data-conv="{{ $giConvRate }}">{{ $rawGiUom }} [GI]</option>
                                             @if(strtolower($baseUomName) !== strtolower($cleanGiUom))
                                                 <option value="{{ $baseUomName }}" data-conv="1">{{ $baseUomName }} (Ecer)</option>
@@ -211,7 +224,7 @@
                             </td>
 
                             <td class="pe-4">
-                                <input type="text" name="items[{{ $index }}][notes]" class="shadow-sm form-control" placeholder="Cth: Kondisi baik...">
+                                <input type="text" name="items[{{ $item->id }}][notes]" class="shadow-sm form-control" placeholder="Cth: Kondisi baik...">
                             </td>
                         </tr>
                         @endforeach

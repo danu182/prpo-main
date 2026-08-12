@@ -91,8 +91,8 @@
                 $masterName = optional($item->item)->name ?? '-';
                 $specificName = $item->item_name ?? optional($item->goodsIssueItem)->item_name ?? $masterName;
 
-                // Pastikan variabel isAsset juga didefinisikan
                 $isAsset = optional($item->item)->is_asset || optional($item->item)->item_type_code === 'AST';
+                $isTrackable = optional($item->item)->is_trackable;
 
                 // 🔥 SIHIR PEMISAH SATUAN DARI CATATAN 🔥
                 $uomName = 'PCS'; // Default
@@ -101,15 +101,38 @@
                 if($item->notes) {
                     $notesArray = explode(' | ', $item->notes);
                     foreach($notesArray as $noteLine) {
-                        // Jika baris catatan mengandung kata "Satuan:"
                         if (\Illuminate\Support\Str::startsWith(trim($noteLine), 'Satuan:')) {
-                            // Ambil nama satuannya saja
                             $uomName = trim(str_replace('Satuan:', '', $noteLine));
                         } elseif (!empty(trim($noteLine))) {
-                            // Sisa catatan lainnya dimasukkan ke array bersih
                             $cleanNotes[] = trim($noteLine);
                         }
                     }
+                }
+
+                // =========================================================================
+                // 🔥 TRIK INTELIJEN: TARIK SN/ASET LANGSUNG DARI BUKU SEJARAH DATABASE 🔥
+                // =========================================================================
+                
+                // 1. Tarik Data Aset Tetap
+                $returnedAssets = \Illuminate\Support\Facades\DB::table('fixed_asset_histories')
+                    ->join('fixed_assets', 'fixed_asset_histories.fixed_asset_id', '=', 'fixed_assets.id')
+                    ->where('fixed_asset_histories.notes', 'like', "%{$return->return_number}%")
+                    ->where('fixed_assets.item_id', $item->item_id)
+                    ->pluck('fixed_assets.asset_number')
+                    ->toArray();
+                
+                if (count($returnedAssets) > 0) {
+                    $cleanNotes[] = "No. Aset: " . implode(', ', $returnedAssets);
+                }
+
+                // 2. Tarik Data Serial Number (Minor)
+                $snHistory = \Illuminate\Support\Facades\DB::table('employee_inventory_histories')
+                    ->where('reference_number', $return->return_number)
+                    ->where('item_id', $item->item_id)
+                    ->first();
+                    
+                if ($snHistory && preg_match('/SN:\s*(.*)$/', $snHistory->notes, $matches)) {
+                    $cleanNotes[] = "SN: " . trim($matches[1]);
                 }
             @endphp
             <tr>
@@ -128,7 +151,6 @@
                 </td>
                 <td class="center">
                     <strong style="font-size: 11pt;">{{ (float) $item->qty_returned }}</strong><br>
-                    {{-- Satuan kini tampil cantik di bawah angka --}}
                     <span style="font-size: 8pt; color: #555; text-transform: uppercase;">{{ $uomName }}</span>
                 </td>
                 <td style="font-size: 8.5pt;">

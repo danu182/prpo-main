@@ -251,12 +251,13 @@ class GoodsIssueReturnController extends Controller
                             }
                         }
 
-                        // Bebaskan SN di Gudang Utama
+                        // 🔥 PERBAIKAN: Bebaskan SN dan arahkan ke Gudang Tujuan 🔥
                         \DB::table('item_serials')
                             ->whereIn('serial_number', $pureSns)
                             ->update([
-                                'status' => 'AVAILABLE',
-                                'updated_at' => now()
+                                'status'       => 'AVAILABLE',
+                                'warehouse_id' => $targetWarehouseId, // 👈 KUNCI PERBAIKAN
+                                'updated_at'   => now()
                             ]);
 
                         foreach ($returnedSns as $retSnFull) {
