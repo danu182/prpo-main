@@ -344,7 +344,8 @@
                     theme: 'bootstrap-5', width: '100%', placeholder: 'Klik & Pilih Serial Number...',
                     ajax: {
                         url: "{{ route('goods-issues.search-sns') }}", dataType: 'json', delay: 250,
-                        data: function (params) { return { item_id: data.id, search: params.term }; },
+                        // 🔥 KUNCI PERBAIKAN: TAMBAHKAN WAREHOUSE_ID DI SINI 🔥
+                        data: function (params) { return { item_id: data.id, warehouse_id: warehouseSelect.val(), search: params.term }; },
                         processResults: function (res) { return { results: res }; }
                     }
                 });
@@ -368,7 +369,6 @@
             `);
 
             // 🔥 SET VALUE NAMA SPESIFIK OTOMATIS 🔥
-            // 🔥 POPULATE DROPDOWN NAMA SPESIFIK DARI RIWAYAT PO 🔥
             let nameSelect = tr.find('.item-name-select');
             nameSelect.empty();
 

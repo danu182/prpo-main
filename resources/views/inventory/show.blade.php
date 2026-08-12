@@ -222,6 +222,7 @@
                                 if ($mut->is_capitalize || $mut->is_decapitalize) {
                                     $assetsData = \DB::table('fixed_assets')
                                         ->where('item_id', $mut->item_id)
+                                        ->where('warehouse_id', $mut->warehouse_id)
                                         ->whereBetween('created_at', [\Carbon\Carbon::parse($mut->created_at)->subMinutes(1), \Carbon\Carbon::parse($mut->created_at)->addMinutes(1)])
                                         ->get();
 
@@ -246,81 +247,63 @@
                                         $realSns[] = $htmlBlock;
                                     }
                                 } else {
-                                    if (str_starts_with($mut->reference_number, 'AST/')) {
-                                        $ad = \DB::table('fixed_assets')->where('asset_number', $mut->reference_number)->first();
-                                        if ($ad) {
-                                            $accNo = $ad->accounting_asset_number ? '<div class="text-success fw-bold" style="font-size:0.7rem; margin-top:2px;">[FA: ' . $ad->accounting_asset_number . ']</div>' : '';
-                                            $snInfo = $ad->serial_number ? '<div class="text-muted" style="font-size:0.7rem;">SN: ' . $ad->serial_number . '</div>' : '';
-
-                                            $htmlBlock = '
-                                            <div class="p-2 mb-2 bg-white border rounded shadow-sm border-secondary-subtle ms-3 position-relative">
-                                                <div class="top-0 position-absolute start-0 translate-middle">
-                                                    <span class="px-2 py-1 badge bg-primary" style="font-size:0.55rem; letter-spacing:0.5px;">ASET</span>
-                                                </div>
-                                                <div class="mt-1 fw-bold text-primary">' . $ad->asset_number . '</div>
-                                                ' . $accNo . '
-                                                ' . $snInfo . '
-                                            </div>';
-                                            $realSns[] = $htmlBlock;
+                                    if (str_starts_with($mut->reference_number, 'GR-')) {
+                                        $grDoc = \DB::table('goods_receipts')->where('gr_number', $mut->reference_number)->first();
+                                        if ($grDoc) {
+                                            $realSns = \DB::table('item_serials')->where('goods_receipt_id', $grDoc->id)->where('item_id', $mut->item_id)->where('warehouse_id', $mut->warehouse_id)->pluck('serial_number')->toArray();
                                         }
-                                    }
-                                    else {
-                                        if (str_starts_with($mut->reference_number, 'GR-')) {
-                                            $grDoc = \DB::table('goods_receipts')->where('gr_number', $mut->reference_number)->first();
-                                            if ($grDoc) {
-                                                $realSns = \DB::table('item_serials')->where('goods_receipt_id', $grDoc->id)->where('item_id', $mut->item_id)->pluck('serial_number')->toArray();
-                                            }
-                                        } elseif (str_starts_with($mut->reference_number, 'RTV-')) {
-                                            $rtvDoc = \DB::table('return_to_vendors')->where('rtv_number', $mut->reference_number)->first();
-                                            if ($rtvDoc) {
-                                                $realSns = \DB::table('item_serials')->where('return_to_vendor_id', $rtvDoc->id)->where('item_id', $mut->item_id)->pluck('serial_number')->toArray();
-                                            }
-                                        } elseif (str_starts_with($mut->reference_number, 'GI-') || str_starts_with($mut->reference_number, 'RET-GI')) {
-                                            // 🔥 TAMBAHAN LOGIKA UNTUK RET-GI & GI 🔥
-                                            $baseRefNumber = str_replace('RET-', '', $mut->reference_number); // Jika Retur, kita cari dokumen aslinya
-                                            $giDoc = \DB::table('goods_issues')->where('gi_number', $baseRefNumber)->orWhere('gi_number', $mut->reference_number)->first();
+                                    } elseif (str_starts_with($mut->reference_number, 'RTV-')) {
+                                        $rtvDoc = \DB::table('return_to_vendors')->where('rtv_number', $mut->reference_number)->first();
+                                        if ($rtvDoc) {
+                                            $realSns = \DB::table('item_serials')->where('return_to_vendor_id', $rtvDoc->id)->where('item_id', $mut->item_id)->where('warehouse_id', $mut->warehouse_id)->pluck('serial_number')->toArray();
+                                        }
+                                    } elseif (str_starts_with($mut->reference_number, 'GI-') || str_starts_with($mut->reference_number, 'RET-GI')) {
+                                        // 🔥 TAMBAHAN LOGIKA UNTUK RET-GI & GI 🔥
+                                        $baseRefNumber = str_replace('RET-', '', $mut->reference_number); // Jika Retur, kita cari dokumen aslinya
+                                        $giDoc = \DB::table('goods_issues')->where('gi_number', $baseRefNumber)->orWhere('gi_number', $mut->reference_number)->first();
 
-                                            if ($giDoc) {
-                                                if (\Schema::hasColumn('item_serials', 'goods_issue_id')) {
-                                                    $snMinor = \DB::table('item_serials')->where('goods_issue_id', $giDoc->id)->where('item_id', $mut->item_id)->pluck('serial_number')->toArray();
-                                                    $realSns = array_merge($realSns, $snMinor);
-                                                } else {
-                                                    $snMinor = \DB::table('item_serials')
-                                                        ->where('item_id', $mut->item_id)
-                                                        ->whereIn('status', ['ISSUED', 'USED', 'OUT', 'DISPATCHED'])
-                                                        ->whereBetween('updated_at', [\Carbon\Carbon::parse($mut->created_at)->subMinutes(1), \Carbon\Carbon::parse($mut->created_at)->addMinutes(1)])
-                                                        ->pluck('serial_number')->toArray();
-                                                    $realSns = array_merge($realSns, $snMinor);
-                                                }
-
-                                                $giAssets = \DB::table('fixed_assets')
+                                        if ($giDoc) {
+                                            if (\Schema::hasColumn('item_serials', 'goods_issue_id')) {
+                                                $snMinor = \DB::table('item_serials')->where('goods_issue_id', $giDoc->id)->where('item_id', $mut->item_id)->where('warehouse_id', $mut->warehouse_id)->pluck('serial_number')->toArray();
+                                                $realSns = array_merge($realSns, $snMinor);
+                                            } else {
+                                                $snMinor = \DB::table('item_serials')
                                                     ->where('item_id', $mut->item_id)
+                                                    ->where('warehouse_id', $mut->warehouse_id)
+                                                    ->whereIn('status', ['ISSUED', 'USED', 'OUT', 'DISPATCHED'])
                                                     ->whereBetween('updated_at', [\Carbon\Carbon::parse($mut->created_at)->subMinutes(1), \Carbon\Carbon::parse($mut->created_at)->addMinutes(1)])
-                                                    ->get();
-
-                                                foreach ($giAssets as $ad) {
-                                                    $accNo = $ad->accounting_asset_number ? '<div class="text-success fw-bold" style="font-size:0.7rem; margin-top:2px;">[FA: ' . $ad->accounting_asset_number . ']</div>' : '';
-                                                    $snInfo = $ad->serial_number ? '<div class="text-muted" style="font-size:0.7rem;">SN: ' . $ad->serial_number . '</div>' : '';
-
-                                                    $htmlBlock = '
-                                                    <div class="p-2 mb-2 bg-white border rounded shadow-sm border-secondary-subtle ms-3 position-relative">
-                                                        <div class="top-0 position-absolute start-0 translate-middle">
-                                                            <span class="px-2 py-1 badge bg-primary" style="font-size:0.55rem; letter-spacing:0.5px;">ASET</span>
-                                                        </div>
-                                                        <div class="mt-1 fw-bold text-primary">' . $ad->asset_number . '</div>
-                                                        ' . $accNo . '
-                                                        ' . $snInfo . '
-                                                    </div>';
-
-                                                    if ($ad->serial_number) {
-                                                        $key = array_search($ad->serial_number, $realSns);
-                                                        if ($key !== false) unset($realSns[$key]);
-                                                    }
-
-                                                    if (!in_array($htmlBlock, $realSns)) $realSns[] = $htmlBlock;
-                                                }
-                                                $realSns = array_values($realSns);
+                                                    ->pluck('serial_number')->toArray();
+                                                $realSns = array_merge($realSns, $snMinor);
                                             }
+
+                                            $giAssets = \DB::table('fixed_assets')
+                                                ->where('item_id', $mut->item_id)
+                                                ->where('warehouse_id', $mut->warehouse_id)
+                                                ->whereBetween('updated_at', [\Carbon\Carbon::parse($mut->created_at)->subMinutes(1), \Carbon\Carbon::parse($mut->created_at)->addMinutes(1)])
+                                                ->get();
+
+                                            foreach ($giAssets as $ad) {
+                                                $accNo = $ad->accounting_asset_number ? '<div class="text-success fw-bold" style="font-size:0.7rem; margin-top:2px;">[FA: ' . $ad->accounting_asset_number . ']</div>' : '';
+                                                $snInfo = $ad->serial_number ? '<div class="text-muted" style="font-size:0.7rem;">SN: ' . $ad->serial_number . '</div>' : '';
+
+                                                $htmlBlock = '
+                                                <div class="p-2 mb-2 bg-white border rounded shadow-sm border-secondary-subtle ms-3 position-relative">
+                                                    <div class="top-0 position-absolute start-0 translate-middle">
+                                                        <span class="px-2 py-1 badge bg-primary" style="font-size:0.55rem; letter-spacing:0.5px;">ASET</span>
+                                                    </div>
+                                                    <div class="mt-1 fw-bold text-primary">' . $ad->asset_number . '</div>
+                                                    ' . $accNo . '
+                                                    ' . $snInfo . '
+                                                </div>';
+
+                                                if ($ad->serial_number) {
+                                                    $key = array_search($ad->serial_number, $realSns);
+                                                    if ($key !== false) unset($realSns[$key]);
+                                                }
+
+                                                if (!in_array($htmlBlock, $realSns)) $realSns[] = $htmlBlock;
+                                            }
+                                            $realSns = array_values($realSns);
                                         }
                                     }
                                 }

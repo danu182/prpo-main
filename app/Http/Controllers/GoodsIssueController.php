@@ -731,10 +731,16 @@ class GoodsIssueController extends Controller
     {
         $search = $request->search;
         $itemId = $request->item_id;
+        $warehouseId = $request->warehouse_id; // 🔥 TANGKAP ID GUDANG DARI FORM AJAX 🔥
 
         $query = \DB::table('item_serials')
                     ->where('item_id', $itemId)
                     ->where('status', 'AVAILABLE');
+
+        // 🔥 KUNCI UTAMA: FILTER BERDASARKAN GUDANG 🔥
+        if ($warehouseId) {
+            $query->where('warehouse_id', $warehouseId);
+        }
 
         if ($search) {
             $query->where('serial_number', 'like', "%{$search}%");

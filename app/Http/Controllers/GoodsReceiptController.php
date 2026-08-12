@@ -393,11 +393,15 @@ class GoodsReceiptController extends Controller
                                 throw new \Exception("Wajib mengisi Serial Number sebanyak {$qtyInt} unit untuk barang {$masterItem->name}!");
                             }
 
+                            // 🔥 AMBIL ID GUDANG DARI INPUTAN LAYAR 🔥
+                            $targetWarehouseIdForSn = $data['warehouse_id'] ?? 1;
+
                             // Simpan detail per unit SN ke database tabel item_serials
                             foreach ($finalSnList as $sn) {
                                 \DB::table('item_serials')->insert([
                                     'item_id'          => $masterItem->id,
                                     'goods_receipt_id' => $gr->id,
+                                    'warehouse_id'     => $targetWarehouseIdForSn, // 👈 PASTIKAN BARIS INI ADA!
                                     'serial_number'    => $sn,
                                     'status'           => 'AVAILABLE',
                                     'created_at'       => now(),
