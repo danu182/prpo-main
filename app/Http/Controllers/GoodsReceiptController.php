@@ -99,16 +99,18 @@ class GoodsReceiptController extends Controller
 
     public function create($slug)
     {
+        // 1. TARIK DATA PO TANPA RELASI PR (Bypass agar tidak ada error RelationNotFound)
         $po = \App\Models\PurchaseOrder::with([
             'vendor',
             'items.item.itemUoms',
-            'items.item.uom' // Memanggil relasi satuan dasar
+            'items.item.uom'
         ])->where('po_number', $slug)->firstOrFail();
 
-        $pendingItems = $po->items->filter(function ($item) {
+        // 🔥 PERHATIAN: Tambahkan "use ($po)" agar closure bisa membaca Header PO
+        $pendingItems = $po->items->filter(function ($item) use ($po) {
             $poConvFactor = 1;
 
-            // 🔥 TANGKAP NAMA SATUAN ASLI DARI MASTER BARANG 🔥
+            // TANGKAP NAMA SATUAN ASLI DARI MASTER BARANG
             $baseUomName = optional(optional($item->item)->uom)->name ?? 'Unit';
 
             if (!empty($item->uom_id)) {
@@ -117,7 +119,6 @@ class GoodsReceiptController extends Controller
                     $poConvFactor = (float) $uomDb->conversion_qty;
                 }
             } else {
-                // Jika PO UOM kosong, gunakan uom asli atau fallback ke baseUomName
                 $rawPoUom = is_string($item->uom) ? $item->uom : (optional($item->uom)->name ?? $item->getRawOriginal('uom') ?? $baseUomName);
                 if (preg_match('/Isi\s*[:=]\s*([0-9.]+)/i', $rawPoUom, $matches)) {
                     $poConvFactor = (float) $matches[1];
@@ -128,10 +129,62 @@ class GoodsReceiptController extends Controller
 
             $item->sisa_po_uom = $sisaPoUom;
             $item->po_conv_factor = $poConvFactor;
-
-            // Simpan variabel dinamis untuk ditampilkan di Blade (HTML)
             $item->base_uom_name = $baseUomName;
             $item->raw_po_uom = is_string($item->uom) ? $item->uom : $baseUomName;
+
+            // ====================================================================
+            // 🔥 OTAK CERDAS: PENCARIAN ALOKASI SUPER AGRESIF 🔥
+            // ====================================================================
+            $prItemDesc = null;
+
+            // 1. Coba cari ID PR Item dari baris PO
+            $prItemId = $item->purchase_request_item_id;
+
+            // 2. JIKA KOSONG (Link terputus saat Split PO), cari paksa lewat Header PO!
+            if (empty($prItemId) && !empty($po->purchase_request_id)) {
+                $lacakPrItem = \Illuminate\Support\Facades\DB::table('purchase_request_items')
+                                ->where('purchase_request_id', $po->purchase_request_id)
+                                ->where('item_id', $item->item_id) // Cocokkan ID Barangnya
+                                ->first();
+                if ($lacakPrItem) {
+                    $prItemId = $lacakPrItem->id;
+                }
+            }
+
+            // 3. Tarik Teks Catatan dari Database
+            if (!empty($prItemId)) {
+                $prItemRow = \Illuminate\Support\Facades\DB::table('purchase_request_items')
+                                ->where('id', $prItemId)
+                                ->first();
+                if ($prItemRow) {
+                    // 🔥 LANGSUNG TEMBAK KOLOM BARU KITA 🔥
+                    $prItemDesc = $prItemRow->allocation_notes ?? null;
+                }
+            }
+
+            // 4. Detektor Smart Restock
+            $isFromSmartRestock = false;
+            if (str_contains($po->notes ?? '', 'Auto-Restock') || str_contains($po->description ?? '', 'Auto-Restock')) {
+                $isFromSmartRestock = true;
+            }
+            if (!empty($prItemDesc) && str_contains($prItemDesc, 'Alokasi')) {
+                $isFromSmartRestock = true;
+            }
+
+            // 5. Eksekusi Tampilan
+            if ($isFromSmartRestock) {
+                $item->is_smart_restock = true;
+
+                if (!empty($prItemDesc) && str_contains($prItemDesc, 'Alokasi')) {
+                    $item->final_description = $prItemDesc;
+                } else {
+                    $item->final_description = "⚠️ BARANG SMART RESTOCK MULTI-GUDANG.\n(Teks alokasi tidak ditemukan di database. Ini terjadi karena PR dibuat sebelum update kolom. Tolong buat PR Massal yang BARU).";
+                }
+            } else {
+                // PO Biasa / Manual
+                $item->is_smart_restock = false;
+                $item->final_description = $item->description ?? $item->notes ?? '-';
+            }
 
             return round($sisaPoUom, 4) > 0;
         });
@@ -145,7 +198,6 @@ class GoodsReceiptController extends Controller
 
         return view('gr.create', compact('po', 'pendingItems', 'conditions', 'warehouses'));
     }
-
 
     // ========================================================
     // STORE GR (LENGKAP DENGAN TRANSLATOR [AUTO] & ANTI-PCS)
@@ -173,6 +225,7 @@ class GoodsReceiptController extends Controller
             'items.*.qty_received.numeric'  => 'Kuantitas terima harus berupa angka.',
             'items.*.condition_id.required' => 'Kondisi barang wajib dipilih.',
             'items.*.condition_id.exists'   => 'Kondisi barang yang dipilih tidak valid.',
+            'items.*.warehouse_id' => 'nullable|exists:warehouses,id', // 👈 TAMBAHKAN INI
         ]);
 
         try {
@@ -377,30 +430,29 @@ class GoodsReceiptController extends Controller
                             $balanceBefore = (float) $masterItem->current_stock;
                             $balanceAfter  = $balanceBefore + $baseQtyReceived;
 
-                            // Ambil nama spesifik, pastikan tidak ada tag HTML <ul><li> yang bikin panjang
-                            $namaSpesifik = strip_tags($poItem->description ?? $masterItem->name);
+                            // 🔥 AMBIL ID GUDANG DARI BARIS ITEM (BUKAN DARI HEADER LAGI) 🔥
+                            $targetWarehouseId = $data['warehouse_id'] ?? 1;
 
-                            // Kita HAPUS TOTAL penambahan daftar SN dari note mutasi agar tidak jebol!
+                            $namaSpesifik = strip_tags($poItem->description ?? $masterItem->name);
                             $noteMutasi = "Masuk: {$namaSpesifik} (Ref PO: {$po->po_number})";
 
                             if ($catatanAsli) {
-                                // Batasi catatan dari user maksimal 100 karakter
                                 $noteMutasi .= " - " . \Illuminate\Support\Str::limit(strip_tags($catatanAsli), 100);
                             }
 
                            \App\Models\InventoryStock::create([
                                 'company_id'       => $po->bill_to_company_id,
-                                'warehouse_id'     => $request->warehouse_id ?? 1,
+                                'warehouse_id'     => $targetWarehouseId, // 👈 SUDAH DIUBAH
                                 'item_id'          => $masterItem->id,
                                 'stock_qty'        => $baseQtyReceived,
-                                'unit_price'       => $hargaDasarPerPiece, // 🔥 SEKARANG SUDAH MENGGUNAKAN HARGA PER PCS
+                                'unit_price'       => $hargaDasarPerPiece,
                                 'reference_number' => $grNumber,
                                 'notes'            => $noteMutasi,
                             ]);
 
                             \App\Models\StockMutation::create([
                                 'item_id'          => $masterItem->id,
-                                'warehouse_id'     => $request->warehouse_id ?? 1,
+                                'warehouse_id'     => $targetWarehouseId, // 👈 SUDAH DIUBAH
                                 'type'             => 'IN',
                                 'qty'              => $baseQtyReceived,
                                 'balance_before'   => $balanceBefore,
@@ -457,7 +509,14 @@ class GoodsReceiptController extends Controller
                 return $grNumber;
             });
 
-            return redirect()->route('gr.index')->with(['success' => 'Penerimaan Barang & Serial Number berhasil disimpan!', 'print_url' => route('gr.print', $newGrNumber), 'new_gr' => $newGrNumber]);
+            // return redirect()->route('gr.index')->with(['success' => 'Penerimaan Barang & Serial Number berhasil disimpan!', 'print_url' => route('gr.print', $newGrNumber), 'new_gr' => $newGrNumber]);
+
+            return redirect()->route('gr.index')->with([
+                'success'   => 'Penerimaan Barang & Serial Number berhasil disimpan!',
+                'print_url' => route('gr.print_vendor', $newGrNumber)
+            ]);
+
+
         } catch (\Exception $e) {
             \Log::error('Error Simpan GR: ' . $e->getMessage() . " di baris " . $e->getLine());
             return back()->withInput()->with('error', 'Terjadi kesalahan: ' . $e->getMessage());
@@ -465,77 +524,179 @@ class GoodsReceiptController extends Controller
     }
 
 
-   public function show($slug)
+    // =========================================================================
+    // 🔥 TAMPILKAN HALAMAN DETAIL GR
+    // =========================================================================
+    public function show($slug)
     {
         $gr = \App\Models\GoodsReceipt::with([
-            'purchaseOrder.vendor',
-            'purchaseOrder.company',
-            'warehouse',
-            'items.item.uom', // Harus ada agar baseUomName bisa ditarik
-            'items.item.itemUoms',
-            'items.purchaseOrderItem',
-            'items.condition',
-            'attachments',
-            'receiver'
+            'purchaseOrder.vendor', 'purchaseOrder.company', 'items.item.uom',
+            'items.item.itemUoms', 'items.purchaseOrderItem', 'items.condition', 'attachments'
         ])->where('gr_number', $slug)->firstOrFail();
 
-        foreach ($gr->items as $grItem) {
-            $grItem->registered_sns = \DB::table('item_serials')
-                ->where('item_id', $grItem->item_id)
-                ->where('goods_receipt_id', $gr->id)
-                ->pluck('serial_number')
-                ->toArray();
+        // 1. Amankan Nama Penerima Secara Paksa
+        $receiverName = '-';
+        if ($gr->received_by) {
+            $user = \Illuminate\Support\Facades\DB::table('users')->where('id', $gr->received_by)->first();
+            if ($user) $receiverName = $user->name;
+        }
+        $gr->receiver_name_display = $receiverName;
 
-            // Pastikan satuan yang tampil benar
+        $warehouseNames = [];
+        foreach ($gr->items as $grItem) {
             $baseUomName = optional(optional($grItem->item)->uom)->name ?? 'Unit';
             $grItem->clean_uom_name = trim(preg_replace('/ \(Isi:?.*\)/i', '', $grItem->uom ?? $baseUomName));
+
+            // 2. Detektif Gudang (Baca Stok atau Teks PR)
+            $whName = 'Gudang Utama / Default';
+            try {
+                $mov = \Illuminate\Support\Facades\DB::table('inventory_movements')
+                    ->leftJoin('inventory_stocks', 'inventory_movements.inventory_stock_id', '=', 'inventory_stocks.id')
+                    ->where(function($q) use ($gr) {
+                        $q->where('inventory_movements.reference_number', $gr->gr_number)
+                          ->orWhere('inventory_movements.reference_number', (string) $gr->id);
+                    })->where('inventory_stocks.item_id', $grItem->item_id)
+                    ->select('inventory_movements.warehouse_id')->first();
+                    
+                if ($mov && $mov->warehouse_id) {
+                    $wh = \Illuminate\Support\Facades\DB::table('warehouses')->where('id', $mov->warehouse_id)->first();
+                    if ($wh) $whName = $wh->name;
+                } else {
+                    $poItem = $grItem->purchaseOrderItem;
+                    if ($poItem && $poItem->purchase_request_item_id) {
+                        $prItem = \Illuminate\Support\Facades\DB::table('purchase_request_items')->where('id', $poItem->purchase_request_item_id)->first();
+                        if ($prItem && $prItem->allocation_notes) {
+                            if (preg_match('/untuk\s+(Gudang.*?)(?:\n|\r|,|$)/i', $prItem->allocation_notes, $matches)) {
+                                $whName = trim($matches[1]);
+                            }
+                        }
+                    }
+                }
+            } catch (\Exception $e) {}
+            
+            $grItem->warehouse_name_display = $whName;
+            $warehouseNames[] = $whName;
         }
 
-        return view('gr.show', compact('gr'));
+        $uniqueWarehouses = collect($warehouseNames)->unique();
+        $globalWarehouse = $uniqueWarehouses->count() > 1 ? 'Multi-Gudang (Lihat Tabel)' : ($uniqueWarehouses->first() ?? 'Gudang Utama');
+
+        return view('gr.show', compact('gr', 'globalWarehouse'));
+    }
+
+    // =========================================================================
+    // 🔥 1. CETAK GABUNG (UNTUK VENDOR / KURIR)
+    // =========================================================================
+    public function printVendor($slug)
+    {
+        $gr = \App\Models\GoodsReceipt::with([
+            'items.item.itemUoms', 'items.purchaseOrderItem', 'purchaseOrder.vendor',
+            'purchaseOrder.company', 'items.condition'
+        ])->where('gr_number', $slug)->firstOrFail();
+
+        $receiverName = '-';
+        if ($gr->received_by) {
+            $user = \Illuminate\Support\Facades\DB::table('users')->where('id', $gr->received_by)->first();
+            if ($user) $receiverName = $user->name;
+        }
+        $gr->receiver_name_display = $receiverName;
+
+        foreach ($gr->items as $grItem) {
+            $whName = 'Gudang Utama / Default';
+            try {
+                $mov = \Illuminate\Support\Facades\DB::table('inventory_movements')
+                    ->leftJoin('inventory_stocks', 'inventory_movements.inventory_stock_id', '=', 'inventory_stocks.id')
+                    ->where(function($q) use ($gr) {
+                        $q->where('inventory_movements.reference_number', $gr->gr_number)->orWhere('inventory_movements.reference_number', (string) $gr->id);
+                    })->where('inventory_stocks.item_id', $grItem->item_id)
+                    ->select('inventory_movements.warehouse_id')->first();
+                if ($mov && $mov->warehouse_id) {
+                    $wh = \Illuminate\Support\Facades\DB::table('warehouses')->where('id', $mov->warehouse_id)->first();
+                    if ($wh) $whName = $wh->name;
+                } else {
+                    $poItem = $grItem->purchaseOrderItem;
+                    if ($poItem && $poItem->purchase_request_item_id) {
+                        $prItem = \Illuminate\Support\Facades\DB::table('purchase_request_items')->where('id', $poItem->purchase_request_item_id)->first();
+                        if ($prItem && $prItem->allocation_notes) {
+                            if (preg_match('/untuk\s+(Gudang.*?)(?:\n|\r|,|$)/i', $prItem->allocation_notes, $matches)) $whName = trim($matches[1]);
+                        }
+                    }
+                }
+            } catch (\Exception $e) {}
+            $grItem->warehouse_name_display = $whName;
+        }
+
+        $pdf = \Barryvdh\DomPDF\Facade\Pdf::loadView('gr.print_vendor', compact('gr'))->setPaper('A4', 'portrait');
+        return $pdf->stream('GR_Vendor_' . str_replace('/', '_', $gr->gr_number) . '.pdf');
+    }
+
+    // =========================================================================
+    // 🔥 2. CETAK DISTRIBUSI PECAH (UNTUK INTERNAL GUDANG)
+    // =========================================================================
+    public function printInternal($slug)
+    {
+        $gr = \App\Models\GoodsReceipt::with([
+            'items.item.itemUoms', 'items.purchaseOrderItem', 'purchaseOrder.vendor',
+            'purchaseOrder.company', 'items.condition'
+        ])->where('gr_number', $slug)->firstOrFail();
+
+        $receiverName = '-';
+        if ($gr->received_by) {
+            $user = \Illuminate\Support\Facades\DB::table('users')->where('id', $gr->received_by)->first();
+            if ($user) $receiverName = $user->name;
+        }
+        $gr->receiver_name_display = $receiverName;
+
+        foreach ($gr->items as $grItem) {
+            $whName = 'Gudang Utama / Default';
+            try {
+                $mov = \Illuminate\Support\Facades\DB::table('inventory_movements')
+                    ->leftJoin('inventory_stocks', 'inventory_movements.inventory_stock_id', '=', 'inventory_stocks.id')
+                    ->where(function($q) use ($gr) {
+                        $q->where('inventory_movements.reference_number', $gr->gr_number)->orWhere('inventory_movements.reference_number', (string) $gr->id);
+                    })->where('inventory_stocks.item_id', $grItem->item_id)
+                    ->select('inventory_movements.warehouse_id')->first();
+                if ($mov && $mov->warehouse_id) {
+                    $wh = \Illuminate\Support\Facades\DB::table('warehouses')->where('id', $mov->warehouse_id)->first();
+                    if ($wh) $whName = $wh->name;
+                } else {
+                    $poItem = $grItem->purchaseOrderItem;
+                    if ($poItem && $poItem->purchase_request_item_id) {
+                        $prItem = \Illuminate\Support\Facades\DB::table('purchase_request_items')->where('id', $poItem->purchase_request_item_id)->first();
+                        if ($prItem && $prItem->allocation_notes) {
+                            if (preg_match('/untuk\s+(Gudang.*?)(?:\n|\r|,|$)/i', $prItem->allocation_notes, $matches)) $whName = trim($matches[1]);
+                        }
+                    }
+                }
+            } catch (\Exception $e) {}
+            $grItem->warehouse_name_display = $whName;
+        }
+
+        $groupedItems = $gr->items->groupBy('warehouse_name_display');
+
+        $pdf = \Barryvdh\DomPDF\Facade\Pdf::loadView('gr.print_internal', compact('gr', 'groupedItems'))->setPaper('A4', 'portrait');
+        return $pdf->stream('GR_Internal_' . str_replace('/', '_', $gr->gr_number) . '.pdf');
     }
 
     public function print($slug)
     {
         $gr = \App\Models\GoodsReceipt::with([
             'items.item.itemUoms',
+            'items.purchaseOrderItem',
             'purchaseOrder.vendor',
             'purchaseOrder.company',
-            'user',
-            'warehouse'
+            'creator',
+            'items.warehouse',
+            'items.condition'
         ])->where('gr_number', $slug)->firstOrFail();
 
-        // 💡 Detektif Gudang (Bypass) seperti di halaman Show
-        $warehouseName = 'Gudang Utama / Default';
-        if (isset($gr->warehouse) && $gr->warehouse) {
-            $warehouseName = $gr->warehouse->name;
-        } else {
-            $mov = \Illuminate\Support\Facades\DB::table('inventory_movements')
-                ->where('reference_number', $gr->gr_number)
-                ->orWhere('reference_number', (string) $gr->id)
-                ->first();
+        // 🔥 LOGIKA CERDAS: KELOMPOKKAN ITEM BERDASARKAN NAMA GUDANG 🔥
+        $groupedItems = $gr->items->groupBy(function ($item) {
+            return $item->warehouse ? $item->warehouse->name : 'Gudang Utama / Default';
+        });
 
-            if (!$mov) {
-                $mov = \Illuminate\Support\Facades\DB::table('inventory_stocks')
-                    ->where('reference_number', $gr->gr_number)
-                    ->orWhere('reference_number', (string) $gr->id)
-                    ->first();
-            }
-
-            if ($mov) {
-                $whId = $mov->warehouse_id ?? null;
-                if (!$whId && isset($mov->inventory_stock_id)) {
-                    $stockParent = \Illuminate\Support\Facades\DB::table('inventory_stocks')
-                        ->where('id', $mov->inventory_stock_id)->first();
-                    $whId = $stockParent->warehouse_id ?? null;
-                }
-                if ($whId) {
-                    $whMaster = \Illuminate\Support\Facades\DB::table('warehouses')->where('id', $whId)->first();
-                    if ($whMaster) $warehouseName = $whMaster->name;
-                }
-            }
-        }
-
-        $pdf = \Barryvdh\DomPDF\Facade\Pdf::loadView('gr.print', compact('gr', 'warehouseName'))
+        // Render PDF menggunakan data yang sudah dikelompokkan
+        $pdf = \Barryvdh\DomPDF\Facade\Pdf::loadView('gr.print', compact('gr', 'groupedItems'))
                   ->setPaper('A4', 'portrait');
 
         return $pdf->stream('Goods_Receipt_' . str_replace('/', '_', $gr->gr_number) . '.pdf');
@@ -561,6 +722,9 @@ class GoodsReceiptController extends Controller
 
         return view('gr.print_labels', compact('gr', 'labelItems'));
     }
+
+
+    
 
 
 }

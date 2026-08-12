@@ -26,58 +26,45 @@ class PurchaseRequestController extends Controller
 {
     use InteractsWithMedia;
 
-    public function index(Request $request)
+    public function index(\Illuminate\Http\Request $request)
     {
+        // 1. Tangkap semua input filter dari Blade
         $search = $request->input('search');
-        $status = $request->input('status');
-        $departmentId = $request->input('department_id');
-        $user = auth()->user();
+        $statusFilter = $request->input('status');
+        $departmentFilter = $request->input('department');
 
-        // 1. Tarik semua Role ID yang dimiliki user saat ini
-        $userRoleIds = $user->roles->pluck('id')->toArray();
-
-        $query = \App\Models\PurchaseRequest::with(['requester', 'department', 'approvals.role'])
-            ->when($search, function ($q) use ($search) {
-                $q->where('pr_number', 'like', "%{$search}%")
-                  ->orWhereHas('requester', function ($q2) use ($search) {
-                      $q2->where('name', 'like', "%{$search}%");
-                  });
-            })
-            ->when($status, function ($q) use ($status) {
-                $q->whereHas('status', function ($qStatus) use ($status) {
-                    $qStatus->where('name', $status);
+        // 2. Kueri utama untuk menarik data PR (Purchase Request)
+        $requests = \App\Models\PurchaseRequest::with(['user', 'status', 'company', 'purchaseOrders'])
+            // Filter Pencarian Teks
+            ->when($search, function ($query) use ($search) {
+                $query->where(function($q) use ($search) {
+                    $q->where('pr_number', 'like', "%{$search}%")
+                      ->orWhereHas('user', function ($userQuery) use ($search) {
+                          $userQuery->where('name', 'like', "%{$search}%");
+                      });
                 });
             })
-            ->when($departmentId, function ($q) use ($departmentId) {
-                $q->where('department_id', $departmentId);
-            });
+            // Filter Dropdown Status
+            ->when($statusFilter, function ($query) use ($statusFilter) {
+                $query->whereHas('status', function ($statusQuery) use ($statusFilter) {
+                    $statusQuery->where('name', $statusFilter);
+                });
+            })
+            // Filter Dropdown Departemen/PT
+            ->when($departmentFilter, function ($query) use ($departmentFilter) {
+                $query->whereHas('company', function ($companyQuery) use ($departmentFilter) {
+                    $companyQuery->where('name', $departmentFilter);
+                });
+            })
+            ->latest()
+            ->paginate(10); // Paginasi untuk $requests->appends()->links() di Blade
 
-        // 🔥 LOGIKA VISIBILITAS (PINTU AKSES) 🔥
-        if (!$user->hasAnyRole(['Super Admin', 'super-admin'])) {
-            $query->where(function ($q) use ($user, $userRoleIds) {
-                // A. Pembuat PR
-                $q->where('user_id', $user->id)
-
-                  // B. Approver yang sedang ditunggu
-                  ->orWhereHas('approvals', function ($qApprovals) use ($userRoleIds) {
-                      $qApprovals->where('status', 'PENDING')
-                                 ->whereIn('role_id', $userRoleIds);
-                  })
-
-                  // C. Riwayat Approver
-                  ->orWhereHas('approvals', function ($qApprovals) use ($user) {
-                      $qApprovals->where('approved_by', $user->id);
-                  });
-            });
-        }
-
-        $requests = $query->latest()->paginate(10)->withQueryString();
-
-        $statuses = \App\Models\Status::where('type', 'PR')->orderBy('sequence')->get();
+        // 3. Tarik data untuk mengisi dropdown filter di atas tabel
+        $statuses = \App\Models\Status::where('type', 'PR')->get();
         $companies = \App\Models\Company::orderBy('name')->get();
-        $departments = \App\Models\Department::orderBy('name')->get();
 
-        return view('pr.index', compact('requests', 'search', 'status', 'statuses', 'companies', 'departments'));
+        // 4. Lempar data ke halaman pr.index
+        return view('pr.index', compact('requests', 'statuses', 'companies'));
     }
 
     public function create()

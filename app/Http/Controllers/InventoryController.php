@@ -957,7 +957,7 @@ class InventoryController extends Controller
 
 
     // =========================================================================
-    // 🔥 2. PROSES GENERATE MASS PR (KONSEP AKUMULASI/CONSOLIDATED) 🔥
+    // 🔥 2. PROSES GENERATE MASS PR (KONSEP AKUMULASI BY WAREHOUSE) 🔥
     // =========================================================================
     public function generateMassPr(\Illuminate\Http\Request $request)
     {
@@ -976,32 +976,30 @@ class InventoryController extends Controller
             }
 
             // ===============================================================
-            // 🔥 LOGIKA PENGGABUNGAN (CONSOLIDATION) 🔥
-            // Jika ada barang yang sama dari 2 gudang berbeda, jumlahkan!
+            // 🔥 LOGIKA PENGGABUNGAN: PISAHKAN BARIS JIKA BEDA GUDANG 🔥
             // ===============================================================
             $consolidatedItems = [];
             foreach ($selectedItems as $item) {
                 $itemId = $item['item_id'];
                 $qty = (float)$item['qty'];
-                $warehouseName = $item['warehouse_name'] ?? 'Gudang Pusat';
+                $warehouseName = $item['warehouse_name'] ?? 'Gudang Utama / Default';
 
-                if (!isset($consolidatedItems[$itemId])) {
-                    $consolidatedItems[$itemId] = [
+                // Kunci Group = ID Barang + Nama Gudang (Agar tidak gabung jika beda gudang)
+                $groupKey = $itemId . '_' . $warehouseName;
+
+                if (!isset($consolidatedItems[$groupKey])) {
+                    $consolidatedItems[$groupKey] = [
                         'item_id'   => $itemId,
+                        'warehouse' => $warehouseName,
                         'total_qty' => 0,
-                        'notes'     => []
                     ];
                 }
 
-                $consolidatedItems[$itemId]['total_qty'] += $qty;
-                $consolidatedItems[$itemId]['notes'][] = "- {$qty} Pcs dialokasikan untuk {$warehouseName}";
+                $consolidatedItems[$groupKey]['total_qty'] += $qty;
             }
 
             $companyId = $request->company_id;
-
             $prNumber = $this->generatePrNumber($companyId);
-
-            // $prNumber = $this->generatePrNumber($companyId);
             $statusDraftId = \App\Models\Status::where('type', 'PR')->whereIn('slug', ['draft', 'pending'])->first()->id ?? 1;
 
             // 1. Buat Induk Dokumen PR
@@ -1013,44 +1011,83 @@ class InventoryController extends Controller
                 'company_id'    => $companyId,
                 'user_id'       => auth()->id(),
                 'requester_id'  => auth()->id(),
-                // 🔥 UBAH BARIS INI: Ganti purpose menjadi description 🔥
                 'description'   => 'Auto-Restock Rombongan (Multi-Gudang)',
                 'status_id'     => $statusDraftId,
                 'notes'         => 'Dokumen PR ini digenerate secara otomatis oleh sistem Smart Restock.',
             ]);
 
-            // 2. Masukkan Item yang Sudah Digabung (Consolidated) ke dalam PR
+            // 2. Masukkan Item yang Sudah Dipisah per Gudang
             foreach ($consolidatedItems as $data) {
                 $masterItem = \App\Models\Item::find($data['item_id']);
                 if (!$masterItem) continue;
 
-                // Gabungkan rincian gudang menjadi teks
-                $combinedNotes = "Rincian Alokasi:\n" . implode("\n", $data['notes']);
+                // Teks alokasi yang PASTI masuk
+                $alokasiTeks = "Rincian Alokasi:\n- " . $data['total_qty'] . " Pcs dialokasikan untuk " . $data['warehouse'];
 
-                \App\Models\PurchaseRequestItem::create([
-                    'purchase_request_id' => $pr->id,
-                    'item_id'             => $masterItem->id,
-                    'item_name'           => $masterItem->name,
-                    'qty'                 => $data['total_qty'], // 👈 Qty sudah dijumlahkan (65 Pcs)
-                    'uom'                 => $masterItem->unit ?? 'PCS',
-                    'status'              => 'PENDING',
-                    'description'         => $combinedNotes,     // 👈 Penjelasan alokasi gudang
-                ]);
+                // ===================================================================
+                // 🔥 CARA KEKERASAN: BYPASS MASS ASSIGNMENT DENGAN OBJECT SAVE() 🔥
+                // ===================================================================
+                $newPrItem = new \App\Models\PurchaseRequestItem();
+                $newPrItem->purchase_request_id = $pr->id;
+                $newPrItem->item_id             = $masterItem->id;
+                $newPrItem->item_name           = $masterItem->name;
+                $newPrItem->qty                 = $data['total_qty'];
+                
+                // 🔥 PERBAIKAN: Gunakan uom_id (sesuai struktur tabel database) 🔥
+                $newPrItem->uom_id              = $masterItem->uom_id ?? null; 
+                
+                $newPrItem->status              = 'PENDING';
+                $newPrItem->allocation_notes    = $alokasiTeks;
+                $newPrItem->save();
             }
 
-            // 3. Catat ke History
+            // =========================================================================
+            // 🔥 3. MENGAKTIFKAN WORKFLOW APPROVAL & RIWAYAT 🔥
+            // =========================================================================
+            $needsApproval = \App\Services\ApprovalService::generateWorkflow($pr);
+
+            if ($needsApproval) {
+                $statusPending = \App\Models\Status::where('type', 'PR')->where('slug', 'pending_approval')->first();
+                if ($statusPending) {
+                    $pr->update(['status_id' => $statusPending->id]);
+                }
+                
+                if (class_exists('\App\Models\PurchaseRequestHistory')) {
+                    \App\Models\PurchaseRequestHistory::create([
+                        'purchase_request_id' => $pr->id,
+                        'user_id' => auth()->id(),
+                        'action' => 'SUBMITTED',
+                        'note' => 'PR Massal digenerate otomatis dan masuk antrean persetujuan.'
+                    ]);
+                }
+            } else {
+                $statusApproved = \App\Models\Status::where('type', 'PR')->where('slug', 'approved')->first();
+                if ($statusApproved) {
+                    $pr->update(['status_id' => $statusApproved->id]);
+                }
+                
+                if (class_exists('\App\Models\PurchaseRequestHistory')) {
+                    \App\Models\PurchaseRequestHistory::create([
+                        'purchase_request_id' => $pr->id,
+                        'user_id' => auth()->id(),
+                        'action' => 'APPROVED',
+                        'note' => 'PR Massal Auto-Approved karena tidak ada aturan matriks.'
+                    ]);
+                }
+            }
+
             if (class_exists('\App\Models\History')) {
                 \App\Models\History::create([
                     'record_id'   => $pr->id,
                     'record_type' => get_class($pr),
                     'user_id'     => auth()->id(),
                     'action'      => 'CREATED',
-                    'note'        => 'Dokumen PR dibuat masal dan diakumulasikan melalui fitur Smart Restock.'
+                    'note'        => 'Dokumen PR dibuat masal melalui fitur Smart Restock.'
                 ]);
             }
 
             \Illuminate\Support\Facades\DB::commit();
-            return redirect()->route('pr.edit', $pr->pr_number)->with('success', 'Hore! Mass PR berhasil di-generate secara otomatis. Barang dari gudang yang berbeda telah diakumulasikan.');
+            return redirect()->route('pr.edit', $pr->pr_number)->with('success', 'Hore! Mass PR berhasil di-generate secara otomatis dan Rute Persetujuan telah aktif!');
 
         } catch (\Exception $e) {
             \Illuminate\Support\Facades\DB::rollback();

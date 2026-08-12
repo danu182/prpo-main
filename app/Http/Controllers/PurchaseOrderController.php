@@ -1139,37 +1139,66 @@ class PurchaseOrderController extends Controller
     }
 
     // =========================================================================
-    // HELPER 2: PERBAIKI STATUS PR OTOMATIS
+    // HELPER: PERBAIKI STATUS PR OTOMATIS (MENDUKUNG PARSIAL QTY & PARSIAL ITEM)
     // =========================================================================
     private function checkAndUpdatePrStatus($prId)
     {
         $prRecord = \App\Models\PurchaseRequest::with('items')->find($prId);
         if (!$prRecord) return;
 
-        if (in_array(strtolower(optional($prRecord->status)->slug), ['canceled', 'cancelled', 'rejected'])) return;
+        // Cek jika status PR sudah Batal/Ditolak/Selesai/Closed, abaikan update
+        $currentSlug = strtolower(optional($prRecord->status)->slug);
+        if (in_array($currentSlug, ['cancelled', 'rejected', 'completed', 'closed'])) {
+            return;
+        }
 
         $anyItemProcessed = false;
         $allItemFulfilled = true;
+        $validItemsCount  = 0;
 
         foreach ($prRecord->items as $item) {
-            if (strtolower($item->status) !== 'approved') continue;
+            // Abaikan item jika status itemnya ditolak/dibatalkan oleh manajemen
+            $itemStatus = strtoupper($item->status ?? '');
+            if (in_array($itemStatus, ['REJECTED', 'CANCELED', 'CANCELLED'])) {
+                continue;
+            }
 
+            $validItemsCount++;
             $targetQty = (float) $item->qty;
             $currentOrdered = (float) ($item->ordered_qty ?? 0);
 
-            if (round($currentOrdered, 2) > 0) { $anyItemProcessed = true; }
-            if (round($currentOrdered, 2) < round($targetQty, 2)) { $allItemFulfilled = false; }
+            // Jika ada minimal 1 qty yang sudah di-PO-kan
+            if (round($currentOrdered, 4) > 0) {
+                $anyItemProcessed = true;
+            }
+
+            // Jika ada barang yang jumlah PO-nya masih kurang dari jumlah PR
+            if (round($currentOrdered, 4) < round($targetQty, 4)) {
+                $allItemFulfilled = false;
+            }
         }
 
+        // Jika semua item di dalam PR ditolak, biarkan saja (jangan diubah)
+        if ($validItemsCount === 0) return;
+
+        // =====================================================================
+        // 🔥 LOGIKA PENENTUAN STATUS AKHIR PR 🔥
+        // =====================================================================
+        $statusApproved = \App\Models\Status::where('type', 'PR')->where('slug', 'approved')->first();
+        $statusPartial  = \App\Models\Status::where('type', 'PR')->where('slug', 'partial_po')->first();
+        $statusPoIssued = \App\Models\Status::where('type', 'PR')->where('slug', 'po_issued')->first();
+
         if (!$anyItemProcessed) {
-            $st = \App\Models\Status::where('type', 'PR')->where('slug', 'approved')->first();
-            if ($st) $prRecord->update(['status_id' => $st->id]);
+            // Skenario 1: Belum ada yang dipesan sama sekali (Kondisi Awal)
+            if ($statusApproved) $prRecord->update(['status_id' => $statusApproved->id]);
+
         } elseif (!$allItemFulfilled) {
-            $st = \App\Models\Status::where('type', 'PR')->where('slug', 'partial_po')->first();
-            if ($st) $prRecord->update(['status_id' => $st->id]);
+            // Skenario 2: Dipesan sebagian (Bisa Parsial Item atau Parsial Qty) -> PR TETAP HIDUP!
+            if ($statusPartial) $prRecord->update(['status_id' => $statusPartial->id]);
+
         } else {
-            $st = \App\Models\Status::where('type', 'PR')->where('slug', 'po_issued')->first();
-            if ($st) $prRecord->update(['status_id' => $st->id]);
+            // Skenario 3: Semua barang dan kuantitas sudah lunas dibuatkan PO
+            if ($statusPoIssued) $prRecord->update(['status_id' => $statusPoIssued->id]);
         }
     }
 
@@ -1514,9 +1543,10 @@ class PurchaseOrderController extends Controller
         $user = auth()->user();
         $userRoleIds = $user->roles->pluck('id')->toArray();
 
-        // --- TARIK ANTRIAN PR ---
+        // --- TARIK ANTRIAN PR (MENGGUNAKAN SLUG DATABASE AKTUAL) ---
         $statusApproved = \App\Models\Status::where('type', 'PR')->where('slug', 'approved')->first();
         $statusPartial  = \App\Models\Status::where('type', 'PR')->where('slug', 'partial_po')->first();
+
         $statusIds = array_filter([$statusApproved ? $statusApproved->id : null, $statusPartial ? $statusPartial->id : null]);
 
         $readyPrs = \App\Models\PurchaseRequest::with(['user', 'status', 'company'])
@@ -1579,20 +1609,24 @@ class PurchaseOrderController extends Controller
         $pr = \App\Models\PurchaseRequest::with(['items.item.uom', 'items.item.itemUoms', 'items.vendorQuotes.vendor', 'user', 'company'])->where('pr_number', $slug)->firstOrFail();
         $prStatusSlug = strtolower(optional($pr->status)->slug ?? '');
 
+        // 🔥 PERBAIKAN: Hanya izinkan slug yang ada di database Komandan 🔥
         if (!in_array($prStatusSlug, ['approved', 'partial_po'])) {
             $prStatusText = strtoupper(trim(optional($pr->status)->name ?? $pr->status ?? ''));
             $isAllowed = false;
-            foreach (['APPROVED', 'PARTIAL', 'DISETUJUI', 'FINAL'] as $keyword) {
+            foreach (['APPROVED', 'PARSIAL', 'DISETUJUI'] as $keyword) {
                 if (str_contains($prStatusText, $keyword)) {
                     $isAllowed = true;
                     break;
                 }
             }
             if (!$isAllowed) {
-                return redirect()->back()->with('error', 'Akses Ditolak: PR ini berstatus "' . $prStatusText . '". Hanya PR yang Disetujui/Partial yang bisa dibuatkan PO.');
+                return redirect()->back()->with('error', 'Akses Ditolak: PR ini berstatus "' . $prStatusText . '". Hanya PR yang Disetujui/Parsial yang bisa dibuatkan PO.');
             }
         }
 
+        // =========================================================================
+        // 🔥 KODE YANG HILANG: Tarik riwayat PO Parsial dari PR ini 🔥
+        // =========================================================================
         $existingPos = \App\Models\PurchaseOrder::with(['vendor', 'status', 'items.item'])
             ->where('purchase_request_id', $pr->id)
             ->whereHas('status', function($q) {
@@ -1646,8 +1680,6 @@ class PurchaseOrderController extends Controller
         // 🔥 PASTIKAN $customWorkflows DIKIRIM KE COMPACT 🔥
         return view('po.process_pr', compact('pr', 'existingPos', 'vendors', 'companies', 'paymentTerms', 'taxes', 'chargeTypes', 'currencies', 'discountTypes', 'selectedVendor', 'defaultCurrency', 'defaultShippingAddress', 'customWorkflows'));
     }
-
-
 
     // =========================================================================
     // 10. MENGAJUKAN PERSETUJUAN PO

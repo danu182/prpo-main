@@ -112,7 +112,7 @@
                                         </div>
                                     @endif
 
-                                    <<!-- 🔥 LENCANA INDIKATOR SMART RESTOCK (WARNA BARU) 🔥 -->
+                                    <!-- 🔥 LENCANA INDIKATOR SMART RESTOCK (WARNA BARU) 🔥 -->
                                     @php
                                         $isAutoRestock = false;
                                         if(!empty($pr->description) && str_contains($pr->description, 'Auto-Restock')) $isAutoRestock = true;

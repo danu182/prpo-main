@@ -151,6 +151,10 @@ Route::middleware('auth')->group(function () {
         Route::get('/{slug}/print', [GoodsReceiptController::class, 'print'])->name('print')->where('slug', '.*');
         Route::get('/{slug}/print-labels', [GoodsReceiptController::class, 'printLabels'])->name('print_labels');
 
+
+        Route::get('/{id}/print-vendor', [GoodsReceiptController::class, 'printVendor'])->name('print_vendor');
+        Route::get('/{id}/print-internal', [GoodsReceiptController::class, 'printInternal'])->name('print_internal');
+
     });
 
 

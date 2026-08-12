@@ -421,25 +421,28 @@
 @push('scripts')
 <script>
     document.addEventListener("DOMContentLoaded", function() {
-        // 🔥 TANGKAP SINYAL PRINT DARI CONTROLLER SETELAH GR DISIMPAN 🔥
+        
+        // 🔥 TANGKAP URL PRINT DARI CONTROLLER 🔥
         @if(session('print_url'))
             Swal.fire({
                 title: 'Penerimaan Berhasil! 🎉',
-                text: "Barang sudah masuk ke sistem dan stok bertambah. Apakah Anda ingin langsung mencetak Bukti Penerimaan Barang (Goods Receipt) ini?",
+                text: 'Barang sudah masuk ke sistem dan stok bertambah. Apakah Anda ingin langsung mencetak Bukti Penerimaan Barang (Goods Receipt) ini?',
                 icon: 'success',
                 showCancelButton: true,
-                confirmButtonColor: '#198754', // Warna Hijau Success
+                confirmButtonColor: '#198754',
                 cancelButtonColor: '#6c757d',
-                confirmButtonText: '<i class="bi bi-printer"></i> Ya, Cetak Sekarang',
+                confirmButtonText: '<i class="bi bi-printer me-1"></i> Ya, Cetak Sekarang',
                 cancelButtonText: 'Nanti Saja',
-                borderRadius: '15px'
+                allowOutsideClick: false
             }).then((result) => {
                 if (result.isConfirmed) {
-                    // Buka dokumen GR di tab baru untuk diprint
-                    window.open('{{ session('print_url') }}', '_blank');
+                    // LANGSUNG BUKA URL YANG DIKIRIM CONTROLLER DI TAB BARU
+                    let printUrl = "{!! session('print_url') !!}";
+                    window.open(printUrl, "_blank");
                 }
             });
         @endif
+        
     });
 </script>
 @endpush

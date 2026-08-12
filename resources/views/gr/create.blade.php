@@ -1,7 +1,7 @@
 @extends('layouts.app')
 
 @section('content')
-<div class="container-fluid pb-5 text-dark">
+<div class="pb-5 container-fluid text-dark">
 
     {{-- HEADER HALAMAN --}}
     <div class="gap-3 mb-4 d-flex flex-column flex-md-row justify-content-between align-items-md-center">
@@ -64,40 +64,7 @@
                         <small class="text-muted" style="font-size: 0.65rem;">*Opsional. Maksimal 5MB per file.</small>
                     </div>
 
-                    @php
-                        $hasStockableItems = $pendingItems->contains(fn($poItem) => optional($poItem->item)->is_stockable || optional($poItem->item)->is_asset);
-                    @endphp
-
-                    <div class="mb-3 col-md-6">
-                        <label class="form-label small fw-bold text-muted">
-                            Tujuan Gudang Penempatan
-                            @if($hasStockableItems) <span class="text-danger">*</span> @endif
-                        </label>
-
-                        <select name="warehouse_id" class="shadow-sm form-select border-success" {{ $hasStockableItems ? 'required' : 'disabled' }}>
-                            @if(!$hasStockableItems)
-                                <option value="">-- Tidak Perlu Gudang (Khusus Jasa/Non-Stok) --</option>
-                            @else
-                                <option value="">-- Pilih Gudang --</option>
-                                @foreach($warehouses as $wh)
-                                    <option value="{{ $wh->id }}">{{ $wh->name }}</option>
-                                @endforeach
-                            @endif
-                        </select>
-
-                        @if(!$hasStockableItems)
-                            <input type="hidden" name="warehouse_id" value="">
-                        @endif
-
-                        <div class="form-text" style="font-size: 0.7rem;">
-                            @if($hasStockableItems)
-                                Semua barang fisik di bawah ini akan masuk ke gudang ini.
-                            @else
-                                <i class="bi bi-info-circle text-warning"></i> Item berupa Jasa/Service tidak memerlukan penyimpanan fisik.
-                            @endif
-                        </div>
-                    </div>
-                    <div class="mt-4 col-md-6">
+                    <div class="mt-4 col-md-12">
                         <label class="mb-1 small fw-bold text-muted">Catatan Penerimaan (Opsional)</label>
                         <input type="text" name="notes" class="shadow-sm form-control" placeholder="Contoh: Kardus sedikit basah, supir telat, dll...">
                     </div>
@@ -119,45 +86,21 @@
                             <th class="py-3 text-center" width="8%">Pesan</th>
                             <th class="py-3 text-center" width="8%">Sisa</th>
                             <th class="py-3 text-center" width="20%">Qty & Satuan Terima</th>
-                            <th class="py-3" width="12%">Kondisi</th>
-                            <th class="py-3 pe-4" width="27%">Catatan Item & Serial Number</th>
+                            <th class="py-3" width="15%">Gudang & Kondisi</th>
+                            <th class="py-3 pe-4" width="24%">Catatan Item & Serial Number</th>
                         </tr>
                     </thead>
                     <tbody>
 
                         @foreach($pendingItems as $index => $item)
                         @php
+                            // 🔥 TARIK DATA YANG SUDAH MATANG DARI CONTROLLER 🔥
                             $masterItem = $item->item;
-                            $baseUomName = optional($masterItem->uom)->name ?? 'PCS';
-
-                            $sisaPo = (float)$item->qty_ordered - (float)($item->qty_received ?? 0);
-                            $poUomDisplay = $item->uom ?? $item->raw_po_uom ?? 'PCS';
-                            $poConvFactor = 1;
-
-                            // 1. Tarik dari UOM ID
-                            if (!empty($item->uom_id) && $masterItem && $masterItem->itemUoms) {
-                                $uomMaster = collect($masterItem->itemUoms)->firstWhere('id', $item->uom_id);
-                                if ($uomMaster) {
-                                    $poConvFactor = (float) $uomMaster->conversion_qty;
-                                    $poUomDisplay = $uomMaster->uom_name . ' (Isi: ' . $poConvFactor . ')';
-                                }
-                            }
-
-                            // 2. Jika Gagal, Dobrak pakai Regex dari Teks
-                            if ($poConvFactor == 1) {
-                                if (preg_match('/(?:Isi|Qty|Konversi)\s*[:=]?\s*([0-9.]+)/i', $poUomDisplay, $matches)) {
-                                    $poConvFactor = (float) $matches[1];
-                                } else {
-                                    // 3. Jika Gagal juga, Cari nama teksnya di Database
-                                    $cleanName = trim(preg_replace('/\[.*?\]|\(.*?\)/', '', $poUomDisplay));
-                                    if ($masterItem && $masterItem->itemUoms) {
-                                        $uomMaster = collect($masterItem->itemUoms)->firstWhere('uom_name', $cleanName);
-                                        if ($uomMaster) $poConvFactor = (float) $uomMaster->conversion_qty;
-                                    }
-                                }
-                            }
-
-                            if ($poConvFactor <= 0) $poConvFactor = 1;
+                            $baseUomName = $item->base_uom_name ?? 'PCS';
+                            $sisaPo = (float)($item->sisa_po_uom ?? 0);
+                            $poUomDisplay = $item->raw_po_uom ?? 'PCS';
+                            $poConvFactor = (float)($item->po_conv_factor ?? 1);
+                            $finalDesc = $item->final_description ?? '-'; // 👈 INI KUNCINYA!
 
                             $maxBaseQty = $sisaPo * $poConvFactor;
                             $isTrackable = $masterItem && ($masterItem->is_asset || $masterItem->is_trackable);
@@ -166,21 +109,22 @@
                             <td class="py-3 ps-4">
                                 <input type="hidden" name="items[{{ $item->id }}][item_id]" value="{{ $masterItem->id ?? '' }}">
 
-                                {{-- 🔥 PRIORITASKAN NAMA DARI PO DI SINI 🔥 --}}
                                 <div class="mb-1 fw-bold text-dark">{{ $item->item_name ?? $masterItem->name ?? 'Unknown Item' }}</div>
 
                                 <span class="border badge bg-secondary-subtle text-secondary border-secondary-subtle">{{ $masterItem->code ?? '-' }}</span>
                                 @if($isTrackable)
                                     <span class="border badge bg-warning-subtle text-warning-emphasis border-warning"><i class="bi bi-upc-scan me-1"></i>Wajib Lacak (SN)</span>
                                 @endif
-                                <div class="mt-2">
-                                    <a href="#" class="text-decoration-none small" data-bs-toggle="collapse" data-bs-target="#spec_{{ $index }}"><i class="bi bi-list-nested me-1"></i>Lihat Spesifikasi</a>
-                                </div>
-                                <div class="mt-2 collapse" id="spec_{{ $index }}">
-                                    <div class="p-2 border rounded bg-light" style="font-size: 0.75rem;">
-                                        {!! nl2br(e($item->description ?? 'Tidak ada spesifikasi khusus di PO.')) !!}
+
+                                {{-- 🔥 KOTAK CATATAN / ALOKASI CERDAS 🔥 --}}
+                                @if(!empty($finalDesc) && $finalDesc !== '-' && $finalDesc !== ($masterItem->name ?? ''))
+                                    <div class="p-2 mt-2 border rounded shadow-sm border-info-subtle bg-info-subtle text-dark" style="font-size: 0.75rem;">
+                                        <div class="mb-1 fw-bold text-info-emphasis">
+                                            <i class="bi bi-info-circle-fill me-1"></i> Catatan & Alokasi:
+                                        </div>
+                                        {!! nl2br(e($finalDesc)) !!}
                                     </div>
-                                </div>
+                                @endif
                             </td>
                             <td class="text-center fw-bold text-secondary fs-6">
                                 {{ (float)$item->qty_ordered }} <br>
@@ -219,6 +163,45 @@
                                 <div class="mt-1 text-muted" style="font-size: 0.65rem;" id="help-text-{{ $index }}">Maks: <strong class="text-danger" id="max-val-{{ $index }}">{{ (float)$sisaPo }}</strong> <span id="uom-text-{{ $index }}">{{ $poUomDisplay }}</span></div>
                             </td>
                             <td>
+                                @php
+                                    // 🔥 LOGIKA AUTO-DETECT GUDANG DARI TEKS ALOKASI 🔥
+                                    $expectedWhId = '';
+                                    if ($item->is_smart_restock && !empty($finalDesc)) {
+                                        foreach($warehouses as $w) {
+                                            // Jika nama gudang (misal: "Gudang Utama") ada di dalam teks alokasi
+                                            if (str_contains($finalDesc, $w->name)) {
+                                                $expectedWhId = $w->id;
+                                                break;
+                                            }
+                                        }
+                                    }
+                                @endphp
+
+                                {{-- 🔥 DROPDOWN GUDANG PER BARIS (ANTI-NYASAR) 🔥 --}}
+                                <label class="mb-1 fw-bold text-primary" style="font-size: 0.65rem;">Gudang Tujuan:</label>
+                                <select name="items[{{ $item->id }}][warehouse_id]" class="mb-2 form-select form-select-sm border-primary wh-selector" data-expected-wh="{{ $expectedWhId }}" onchange="validateWarehouseSelection(this)" {{ $isTrackable ? 'required' : '' }}>
+                                    @if(!$isTrackable && !optional($masterItem)->is_stockable)
+                                        <option value="">-- Non-Stok --</option>
+                                    @else
+                                        <option value="">-- Pilih Gudang --</option>
+                                        @foreach($warehouses as $indexWh => $wh)
+                                            @php
+                                                $isSelected = '';
+                                                // Jika Smart Restock: Pilih otomatis jika nama gudang cocok
+                                                if ($item->is_smart_restock && $expectedWhId == $wh->id) {
+                                                    $isSelected = 'selected';
+                                                } 
+                                                // Jika PR Biasa: Default ke gudang pertama (Gudang Utama)
+                                                elseif (!$item->is_smart_restock && $indexWh === 0) {
+                                                    $isSelected = 'selected';
+                                                }
+                                            @endphp
+                                            <option value="{{ $wh->id }}" {{ $isSelected }}>{{ $wh->name }}</option>
+                                        @endforeach
+                                    @endif
+                                </select>
+
+                                <label class="mb-1 fw-bold text-muted" style="font-size: 0.65rem;">Kondisi Fisik:</label>
                                 <select name="items[{{ $item->id }}][condition_id]" class="form-select form-select-sm">
                                     @foreach($conditions as $cond)
                                         <option value="{{ $cond->id }}">{{ $cond->name }}</option>
@@ -420,5 +403,32 @@
             }
         });
     }
+
+    // 🔥 FUNGSI ALARM SALAH GUDANG 🔥
+    function validateWarehouseSelection(selectElement) {
+        let expectedWhId = selectElement.getAttribute('data-expected-wh');
+        let selectedWhId = selectElement.value;
+
+        // Jika ini barang Smart Restock (punya target gudang) DAN user memilih gudang yang salah
+        if (expectedWhId && selectedWhId !== expectedWhId && selectedWhId !== '') {
+            Swal.fire({
+                icon: 'error',
+                title: 'Awas Salah Kamar! 🚨',
+                text: 'Anda memilih Gudang yang BEDA dengan instruksi Rincian Alokasi! Ini bisa membuat kartu stok berantakan. Yakin ingin memindahkan barang ini?',
+                showCancelButton: true,
+                confirmButtonColor: '#d33',
+                cancelButtonColor: '#3085d6',
+                confirmButtonText: 'Ya, Tetap Pindahkan',
+                cancelButtonText: 'Batal (Kembalikan)'
+            }).then((result) => {
+                if (!result.isConfirmed) {
+                    // Kembalikan otomatis ke gudang yang seharusnya
+                    selectElement.value = expectedWhId;
+                }
+            });
+        }
+    }
+
+
 </script>
 @endpush

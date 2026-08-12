@@ -41,6 +41,9 @@
 
         .sn-list { margin: 4px 0 0 15px; padding: 0; font-family: monospace; font-size: 7.5pt; }
         .sn-list li { margin-bottom: 2px; }
+
+        /* 🔥 FITUR PEMISAH HALAMAN (PAGE BREAK) 🔥 */
+        .page-break { page-break-after: always; }
     </style>
 </head>
 <body>
@@ -49,164 +52,174 @@
         Dokumen GR: {{ $gr->gr_number }} &nbsp; | &nbsp; Dicetak pada: {{ date('d-m-Y H:i') }} &nbsp; | &nbsp; <span class="pagenum"></span>
     </footer>
 
-    <table class="header-table">
-        <tr>
-            <td width="60%">
-                <h2 class="company-name">{{ $gr->po?->company?->name ?? 'PERUSAHAAN' }}</h2>
-                <div class="company-address">{{ $gr->po?->company?->address ?? 'Alamat perusahaan belum diatur' }}</div>
-            </td>
-            <td width="40%" style="text-align: right;">
-                <h2 class="doc-title">GOODS RECEIPT NOTE</h2>
-                <div class="doc-number">No: {{ $gr->gr_number }}</div>
-            </td>
-        </tr>
-    </table>
+    {{-- 🔥 LOOPING PER GUDANG 🔥 --}}
+    @foreach($groupedItems as $warehouseName => $items)
 
-    <table class="info-table">
-        <tr>
-            <td class="label">No. Surat Jalan</td><td class="colon">:</td><td class="val">{{ $gr->delivery_note_number }}</td>
-            <td class="label">Vendor Pengirim</td><td class="colon">:</td><td class="val">{{ $gr->po?->vendor?->name ?? '-' }}</td>
-        </tr>
-        <tr>
-            <td class="label">Referensi PO</td><td class="colon">:</td><td class="val">{{ $gr->po?->po_number ?? '-' }}</td>
-            <td class="label">Diterima Oleh</td><td class="colon">:</td><td class="val">{{ optional($gr->receiver)->name ?? '-' }}</td>
-        </tr>
-        <tr>
-            <td class="label">Tanggal Terima</td><td class="colon">:</td><td class="val">{{ \Carbon\Carbon::parse($gr->received_date)->translatedFormat('d F Y') }}</td>
-            <td class="label">Gudang Penerima</td><td class="colon">:</td><td class="val">{{ $warehouseName ?? 'Gudang Utama / Default' }}</td>
-        </tr>
-        <tr>
-            <td class="label">Catatan</td><td class="colon">:</td>
-            <td colspan="4" style="font-weight: normal; font-style: italic;">{{ $gr->notes ?? '-' }}</td>
-        </tr>
-    </table>
-
-    <table class="data-table">
-        <thead>
+    <div class="page-container">
+        <table class="header-table">
             <tr>
-                <th width="5%">No</th>
-                <th width="30%">Nama Barang & Kode</th>
-                <th width="8%">Pesan</th>
-                <th width="10%">Datang</th>
-                <th width="8%">Retur</th>
-                <th width="12%">Kondisi</th>
-                <th width="27%">Keterangan / S/N</th>
-            </tr>
-        </thead>
-        <tbody>
-            @foreach($gr->items as $idx => $item)
-            @php
-                $isStock = optional($item->item)->is_stockable;
-                $isAsset = optional($item->item)->is_asset;
-                $qtyReturned = (float) ($item->qty_returned ?? 0);
-
-                // 🔥 LOGIKA CERDAS UOM & NAMA SPESIFIK 🔥
-                $poItem = $item->purchaseOrderItem;
-                $masterItem = $item->item;
-
-                // 1. Tarik Nama Spesifik
-                $itemName = $poItem?->item_name ?? $masterItem?->name ?? '-';
-
-                $baseUomName = optional($masterItem->uom)->name ?? 'PCS';
-
-                // 2. Mencari Satuan yang dipesan di PO
-                $poUomName = $baseUomName;
-                $poUomId = $poItem?->uom_id ?? $poItem?->item_uom_id ?? null;
-
-                if (!empty($poUomId) && optional($masterItem)->itemUoms) {
-                    $altUom = collect($masterItem->itemUoms)->where('id', $poUomId)->first();
-                    if ($altUom) {
-                        $poUomName = $altUom->uom_name ?? $altUom->name ?? $poUomName;
-                    }
-                } else {
-                    $rawPoUom = $poItem?->uom;
-                    if (is_string($rawPoUom) && str_starts_with(trim($rawPoUom), '{')) {
-                        $parsed = json_decode($rawPoUom);
-                        $poUomName = $parsed->name ?? $parsed->code ?? $baseUomName;
-                    } elseif (is_string($rawPoUom) && !is_numeric($rawPoUom) && trim($rawPoUom) !== '') {
-                        $poUomName = $rawPoUom;
-                    }
-                }
-
-                // 3. Mencari Satuan Kedatangan (GR)
-                $uomDatang = $item->uom ?? $poUomName;
-                if (is_string($uomDatang) && str_starts_with(trim($uomDatang), '{')) {
-                    $parsedGr = json_decode($uomDatang);
-                    $uomDatang = $parsedGr->name ?? $parsedGr->code ?? $poUomName;
-                }
-
-                // Bersihkan Deskripsi
-                $rawDesc = $poItem?->description ?? '';
-                $cleanDesc = strip_tags(str_replace(['</li>', '</p>', '<br>', '<br/>'], [', ', ' ', ' ', ' '], $rawDesc));
-                $cleanDesc = str_replace('&nbsp;', ' ', $cleanDesc);
-                $cleanDesc = rtrim(trim($cleanDesc), ',');
-            @endphp
-            <tr style="{{ $qtyReturned > 0 ? 'background-color: #fafafa;' : '' }}">
-                <td style="text-align: center;">{{ $idx + 1 }}</td>
-                <td>
-                    <strong style="text-transform: uppercase;">{{ $itemName }}</strong><br>
-                    <span style="font-size: 7.5pt; color: #444;">{{ $masterItem?->code ?? '-' }}</span>
-                    @if($isAsset) <span style="font-size: 7.5pt; font-weight: bold; color: #000;">[ASET]</span> @endif
-                    @if($cleanDesc && $cleanDesc !== '-')
-                        <div style="font-size: 7.5pt; color: #555; margin-top: 3px;">Spec: {{ \Illuminate\Support\Str::limit($cleanDesc, 100) }}</div>
-                    @endif
+                <td width="60%">
+                    <h2 class="company-name">{{ $gr->purchaseOrder?->company?->name ?? 'PERUSAHAAN' }}</h2>
+                    <div class="company-address">{{ $gr->purchaseOrder?->company?->address ?? 'Alamat perusahaan belum diatur' }}</div>
                 </td>
-                <td style="text-align: center;">
-                    <strong>{{ (float)($item->purchaseOrderItem?->qty_ordered ?? 0) }}</strong><br>
-                    <span style="font-size: 7pt; color: #555;">{{ strtoupper($poUomName) }}</span>
-                </td>
-                <td style="text-align: center;">
-                    <strong>{{ (float)$item->qty_received }}</strong><br>
-                    <span style="font-size: 7pt; color: #555;">{{ strtoupper($uomDatang) }}</span>
-                </td>
-                <td style="text-align: center;">
-                    @if($qtyReturned > 0)
-                        <strong style="color: red;">{{ $qtyReturned }}</strong>
-                    @else
-                        -
-                    @endif
-                </td>
-                <td style="text-align: center;">{{ $item->condition?->name ?? '-' }}</td>
-                <td>
-                    @if(trim(strip_tags($item->notes)))
-                        <div style="font-style: italic; margin-bottom: 4px;">{{ trim(strip_tags($item->notes)) }}</div>
-                    @endif
-
-                    @if(!empty($item->registered_sns))
-                        <div style="background-color: #f9f9f9; padding: 4px; border: 1px solid #eee;">
-                            <strong>SN Terdaftar:</strong>
-                            <ul class="sn-list">
-                                @foreach($item->registered_sns as $sn)
-                                    <li>{{ $sn }}</li>
-                                @endforeach
-                            </ul>
-                        </div>
+                <td width="40%" style="text-align: right;">
+                    <h2 class="doc-title">GOODS RECEIPT NOTE</h2>
+                    <div class="doc-number">No: {{ $gr->gr_number }}</div>
+                    {{-- Beri tanda khusus jika ini dokumen distribusi --}}
+                    @if(count($groupedItems) > 1)
+                    <div style="margin-top: 5px; font-size: 9pt; color: #d9534f; font-weight: bold;">[ DISTRIBUSI : {{ strtoupper($warehouseName) }} ]</div>
                     @endif
                 </td>
             </tr>
-            @endforeach
-        </tbody>
-    </table>
+        </table>
 
-    <table class="signature-table">
-        <tr>
-            <td>
-                <div class="sign-title">Diserahkan Oleh (Vendor/Kurir),</div>
-                <div class="sign-space"></div>
-                <div class="sign-name">___________________________</div>
-            </td>
-            <td>
-                <div class="sign-title">Diketahui Oleh (Purchasing/QC),</div>
-                <div class="sign-space"></div>
-                <div class="sign-name">___________________________</div>
-            </td>
-            <td>
-                <div class="sign-title">Diterima Oleh (Gudang),</div>
-                <div class="sign-space"></div>
-                <div class="sign-name">{{ optional($gr->receiver)->name ?? '-' }}</div>
-            </td>
-        </tr>
-    </table>
+        <table class="info-table">
+            <tr>
+                <td class="label">No. Surat Jalan</td><td class="colon">:</td><td class="val">{{ $gr->delivery_note_number }}</td>
+                <td class="label">Vendor Pengirim</td><td class="colon">:</td><td class="val">{{ $gr->purchaseOrder?->vendor?->name ?? '-' }}</td>
+            </tr>
+            <tr>
+                <td class="label">Referensi PO</td><td class="colon">:</td><td class="val">{{ $gr->purchaseOrder?->po_number ?? '-' }}</td>
+                <td class="label">Diterima Oleh</td><td class="colon">:</td><td class="val">{{ optional($gr->creator)->name ?? '-' }}</td>
+            </tr>
+            <tr>
+                <td class="label">Tanggal Terima</td><td class="colon">:</td><td class="val">{{ \Carbon\Carbon::parse($gr->receipt_date)->translatedFormat('d F Y') }}</td>
+                <td class="label">Gudang Penerima</td><td class="colon">:</td><td class="val" style="color: #0056b3;">{{ $warehouseName }}</td>
+            </tr>
+            <tr>
+                <td class="label">Catatan</td><td class="colon">:</td>
+                <td colspan="4" style="font-weight: normal; font-style: italic;">{{ $gr->notes ?? '-' }}</td>
+            </tr>
+        </table>
+
+        <table class="data-table">
+            <thead>
+                <tr>
+                    <th width="5%">No</th>
+                    <th width="30%">Nama Barang & Kode</th>
+                    <th width="8%">Pesan</th>
+                    <th width="10%">Datang</th>
+                    <th width="8%">Retur</th>
+                    <th width="12%">Kondisi</th>
+                    <th width="27%">Keterangan / S/N</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach($items as $idx => $item)
+                @php
+                    $isAsset = optional($item->item)->is_asset;
+                    $qtyReturned = (float) ($item->qty_returned ?? 0);
+
+                    // LOGIKA CERDAS UOM & NAMA SPESIFIK
+                    $poItem = $item->purchaseOrderItem;
+                    $masterItem = $item->item;
+
+                    $itemName = $poItem?->item_name ?? $masterItem?->name ?? '-';
+                    $baseUomName = optional($masterItem->uom)->name ?? 'PCS';
+
+                    $poUomName = $baseUomName;
+                    $poUomId = $poItem?->uom_id ?? $poItem?->item_uom_id ?? null;
+
+                    if (!empty($poUomId) && optional($masterItem)->itemUoms) {
+                        $altUom = collect($masterItem->itemUoms)->where('id', $poUomId)->first();
+                        if ($altUom) {
+                            $poUomName = $altUom->uom_name ?? $altUom->name ?? $poUomName;
+                        }
+                    } else {
+                        $rawPoUom = $poItem?->uom;
+                        if (is_string($rawPoUom) && str_starts_with(trim($rawPoUom), '{')) {
+                            $parsed = json_decode($rawPoUom);
+                            $poUomName = $parsed->name ?? $parsed->code ?? $baseUomName;
+                        } elseif (is_string($rawPoUom) && !is_numeric($rawPoUom) && trim($rawPoUom) !== '') {
+                            $poUomName = $rawPoUom;
+                        }
+                    }
+
+                    $uomDatang = $item->uom ?? $poUomName;
+                    if (is_string($uomDatang) && str_starts_with(trim($uomDatang), '{')) {
+                        $parsedGr = json_decode($uomDatang);
+                        $uomDatang = $parsedGr->name ?? $parsedGr->code ?? $poUomName;
+                    }
+
+                    $rawDesc = $poItem?->description ?? '';
+                    $cleanDesc = strip_tags(str_replace(['</li>', '</p>', '<br>', '<br/>'], [', ', ' ', ' ', ' '], $rawDesc));
+                    $cleanDesc = str_replace('&nbsp;', ' ', $cleanDesc);
+                    $cleanDesc = rtrim(trim($cleanDesc), ',');
+                @endphp
+                <tr style="{{ $qtyReturned > 0 ? 'background-color: #fafafa;' : '' }}">
+                    <td style="text-align: center;">{{ $idx + 1 }}</td>
+                    <td>
+                        <strong style="text-transform: uppercase;">{{ $itemName }}</strong><br>
+                        <span style="font-size: 7.5pt; color: #444;">{{ $masterItem?->code ?? '-' }}</span>
+                        @if($isAsset) <span style="font-size: 7.5pt; font-weight: bold; color: #000;">[ASET]</span> @endif
+                        @if($cleanDesc && $cleanDesc !== '-')
+                            <div style="font-size: 7.5pt; color: #555; margin-top: 3px;">Spec: {{ \Illuminate\Support\Str::limit($cleanDesc, 100) }}</div>
+                        @endif
+                    </td>
+                    <td style="text-align: center;">
+                        <strong>{{ (float)($item->purchaseOrderItem?->qty_ordered ?? 0) }}</strong><br>
+                        <span style="font-size: 7pt; color: #555;">{{ strtoupper($poUomName) }}</span>
+                    </td>
+                    <td style="text-align: center;">
+                        <strong>{{ (float)$item->qty_received }}</strong><br>
+                        <span style="font-size: 7pt; color: #555;">{{ strtoupper($uomDatang) }}</span>
+                    </td>
+                    <td style="text-align: center;">
+                        @if($qtyReturned > 0)
+                            <strong style="color: red;">{{ $qtyReturned }}</strong>
+                        @else
+                            -
+                        @endif
+                    </td>
+                    <td style="text-align: center;">{{ $item->condition?->name ?? '-' }}</td>
+                    <td>
+                        @if(trim(strip_tags($item->notes)))
+                            <div style="font-style: italic; margin-bottom: 4px;">{{ trim(strip_tags($item->notes)) }}</div>
+                        @endif
+
+                        @if(!empty($item->registered_sns))
+                            <div style="background-color: #f9f9f9; padding: 4px; border: 1px solid #eee;">
+                                <strong>SN Terdaftar:</strong>
+                                <ul class="sn-list">
+                                    @foreach($item->registered_sns as $sn)
+                                        <li>{{ $sn }}</li>
+                                    @endforeach
+                                </ul>
+                            </div>
+                        @endif
+                    </td>
+                </tr>
+                @endforeach
+            </tbody>
+        </table>
+
+        <table class="signature-table">
+            <tr>
+                <td>
+                    <div class="sign-title">Diserahkan Oleh (Vendor/Kurir),</div>
+                    <div class="sign-space"></div>
+                    <div class="sign-name">___________________________</div>
+                </td>
+                <td>
+                    <div class="sign-title">Diketahui Oleh (Purchasing/QC),</div>
+                    <div class="sign-space"></div>
+                    <div class="sign-name">___________________________</div>
+                </td>
+                <td>
+                    <div class="sign-title">Diterima Oleh (Gudang),</div>
+                    <div class="sign-space"></div>
+                    <div class="sign-name">{{ optional($gr->creator)->name ?? '-' }}</div>
+                </td>
+            </tr>
+        </table>
+    </div>
+
+    {{-- 🔥 JIKA BUKAN GUDANG TERAKHIR, POTONG HALAMAN DI SINI 🔥 --}}
+    @if(!$loop->last)
+        <div class="page-break"></div>
+    @endif
+
+    @endforeach
 
 </body>
 </html>

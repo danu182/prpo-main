@@ -95,4 +95,6 @@ class GoodsReceipt extends Model implements HasMedia
     }
 
 
+    
+
 }

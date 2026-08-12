@@ -52,9 +52,26 @@
             <a href="{{ route('gr.index') }}" class="px-4 bg-white shadow-sm btn btn-outline-secondary rounded-pill fw-bold">
                 <i class="bi bi-arrow-left me-1"></i> Kembali
             </a>
-            <a href="{{ route('gr.print', $gr->gr_number) }}" target="_blank" class="px-4 shadow-sm btn btn-primary rounded-pill fw-bold">
-                <i class="bi bi-file-earmark-pdf-fill me-1"></i> Cetak / PDF
-            </a>
+            
+            {{-- 🔥 TOMBOL DROPDOWN DUAL-PRINT 🔥 --}}
+            <div class="dropdown">
+                <button class="px-4 shadow-sm btn btn-primary rounded-pill fw-bold dropdown-toggle" type="button" data-bs-toggle="dropdown">
+                    <i class="bi bi-printer-fill me-1"></i> Cetak Bukti GR
+                </button>
+                <ul class="dropdown-menu dropdown-menu-end shadow border-0 mt-2 rounded-3">
+                    <li>
+                        <a class="dropdown-item py-2 fw-bold text-dark" href="{{ route('gr.print_vendor', $gr->gr_number) }}" target="_blank">
+                            <i class="bi bi-file-earmark-text text-primary me-2"></i> Cetak Gabung <span class="text-muted small fw-normal">(Untuk Vendor)</span>
+                        </a>
+                    </li>
+                    <li><hr class="dropdown-divider"></li>
+                    <li>
+                        <a class="dropdown-item py-2 fw-bold text-dark" href="{{ route('gr.print_internal', $gr->gr_number) }}" target="_blank">
+                            <i class="bi bi-diagram-2 text-success me-2"></i> Cetak Distribusi <span class="text-muted small fw-normal">(Internal/Pecah Gudang)</span>
+                        </a>
+                    </li>
+                </ul>
+            </div>
         </div>
     </div>
 
@@ -96,54 +113,12 @@
                     </div>
                 </div>
 
-                {{-- 🔥 INI KOLOM GUDANG PENERIMA YANG BARU (ULTIMATE BYPASS) 🔥 --}}
+                {{-- 🔥 KOLOM GUDANG PENERIMA (BYPASS SEDERHANA KARENA SUDAH DI-HANDLE CONTROLLER) 🔥 --}}
                 <div class="pt-3 col-md-3 border-top">
                     <label class="mb-1 small fw-bold text-muted text-uppercase">Gudang Penerima</label>
                     <div class="fw-bold text-dark">
-                        @php
-                            $warehouseName = 'Gudang Utama / Default';
-
-                            // 1. Cek bawaan dari relasi GR
-                            if (isset($gr->warehouse) && $gr->warehouse) {
-                                $warehouseName = $gr->warehouse->name;
-                            } else {
-                                // 2. Cari di inventory_movements
-                                $mov = \Illuminate\Support\Facades\DB::table('inventory_movements')
-                                    ->where('reference_number', $gr->gr_number)
-                                    ->orWhere('reference_number', (string) $gr->id)
-                                    ->first();
-
-                                // 3. Jika tidak ada di movements, cari langsung di inventory_stocks
-                                if (!$mov) {
-                                    $mov = \Illuminate\Support\Facades\DB::table('inventory_stocks')
-                                        ->where('reference_number', $gr->gr_number)
-                                        ->orWhere('reference_number', (string) $gr->id)
-                                        ->first();
-                                }
-
-                                // 4. Jika datanya ketemu di salah satu tabel, tarik ID Gudangnya!
-                                if ($mov) {
-                                    $whId = $mov->warehouse_id ?? null;
-
-                                    if (!$whId && isset($mov->inventory_stock_id)) {
-                                        $stockParent = \Illuminate\Support\Facades\DB::table('inventory_stocks')
-                                            ->where('id', $mov->inventory_stock_id)->first();
-                                        $whId = $stockParent->warehouse_id ?? null;
-                                    }
-
-                                    // 5. Ubah ID Gudang menjadi Nama Gudang Asli
-                                    if ($whId) {
-                                        $whMaster = \Illuminate\Support\Facades\DB::table('warehouses')->where('id', $whId)->first();
-                                        if ($whMaster) {
-                                            $warehouseName = $whMaster->name;
-                                        }
-                                    }
-                                }
-                            }
-                        @endphp
-
                         <span class="px-2 py-1 border shadow-sm badge bg-light text-dark">
-                            <i class="bi bi-box-seam text-info me-1"></i> {{ $warehouseName }}
+                            <i class="bi bi-box-seam text-info me-1"></i> {{ $globalWarehouse ?? 'Gudang Utama' }}
                         </span>
                     </div>
                 </div>
@@ -177,15 +152,22 @@
         <div class="px-4 py-3 bg-white card-header border-bottom">
             <h6 class="mb-0 fw-bold text-dark"><i class="bi bi-list-check me-2 text-primary"></i>Rincian Barang yang Diterima</h6>
         </div>
+        {{-- 2. TABEL ITEM YANG DITERIMA --}}
+    <div class="mb-4 overflow-hidden border-0 border-4 shadow-sm card rounded-4 border-top border-primary">
+        <div class="px-4 py-3 bg-white card-header border-bottom">
+            <h6 class="mb-0 fw-bold text-dark"><i class="bi bi-list-check me-2 text-primary"></i>Rincian Barang yang Diterima</h6>
+        </div>
         <div class="p-0 card-body table-responsive">
             <table class="table mb-0 align-middle table-hover">
                 <thead class="bg-light text-muted small text-uppercase fw-bold border-bottom">
                     <tr>
                         <th class="py-3 ps-4" width="25%">Barang & Spesifikasi</th>
-                        <th class="py-3 text-center" width="12%">Qty Order (PO)</th>
-                        <th class="py-3 text-center" width="15%">Qty Diterima</th>
-                        <th class="py-3" width="13%">Kondisi</th>
-                        <th class="py-3 pe-4" width="35%">Catatan Staf & Serial Number Terdaftar</th>
+                        <th class="py-3 text-center" width="10%">Order (PO)</th>
+                        <th class="py-3 text-center" width="10%">Diterima</th>
+                        {{-- 🔥 TAMBAHAN KOLOM GUDANG TUJUAN 🔥 --}}
+                        <th class="py-3 text-center" width="15%">Gudang Tujuan</th>
+                        <th class="py-3" width="15%">Kondisi</th>
+                        <th class="py-3 pe-4" width="25%">Catatan Staf & Serial Number</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -194,7 +176,6 @@
                         {{-- NAMA BARANG --}}
                         <td class="py-3 ps-4">
                             <div class="fw-bolder text-dark" style="font-size: 0.95rem;">
-                                {{-- 🔥 PERBAIKAN: Tampilkan Nama Spesifik PO Jika Ada 🔥 --}}
                                 {{ optional($item->purchaseOrderItem)->item_name ?? optional($item->item)->name ?? 'Nama Barang Tidak Ditemukan' }}
                             </div>
                             <div class="gap-1 mt-1 mb-2 d-flex">
@@ -250,6 +231,13 @@
                                     }
                                 @endphp
                                 {{ $grUom }}
+                            </span>
+                        </td>
+
+                        {{-- 🔥 DATA GUDANG TUJUAN 🔥 --}}
+                        <td class="py-3 text-center">
+                            <span class="fw-bold text-primary" style="font-size: 0.85rem;">
+                                <i class="bi bi-box-seam me-1"></i> {{ $item->warehouse_name_display ?? 'Gudang Utama' }}
                             </span>
                         </td>
 
@@ -319,6 +307,7 @@
                 </tbody>
             </table>
         </div>
+    </div>
     </div>
 
 </div>
