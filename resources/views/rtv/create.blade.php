@@ -140,7 +140,7 @@
                                 <span class="mt-1 border badge bg-secondary-subtle text-secondary border-secondary-subtle">{{ $masterItem->code }}</span>
 
                                 {{-- 🔥 PERBAIKAN: Gunakan $item->id, bukan $index 🔥 --}}
-                                <input type="hidden" name="items[{{ $item->id }}][gr_item_id]" value="{{ $item->id }}">
+                                <input type="hidden" name="items[{{ $item->id }}][warehouse_id]" value="{{ $item->detected_warehouse_id }}">
 
                                 @if($requiresSnAction)
                                     <span class="mt-1 border badge bg-warning-subtle text-warning-emphasis border-warning ms-1"><i class="bi bi-upc-scan me-1"></i>Pilih SN Wajib</span>

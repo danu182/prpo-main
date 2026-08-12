@@ -64,8 +64,7 @@ class ReturnToVendorController extends Controller
         return view('rtv.show', compact('rtv'));
     }
 
-   
-    public function create($slug)
+   public function create($slug)
     {
         $gr = GoodsReceipt::with(['items.item.itemUoms', 'items.purchaseOrderItem', 'po.vendor', 'po.company'])
                 ->where('gr_number', $slug)->firstOrFail();
@@ -91,33 +90,6 @@ class ReturnToVendorController extends Controller
             $sisaKuotaGR = (float) $item->qty_received - (float) ($item->qty_returned ?? 0);
             $maxReturnable = $sisaKuotaGR;
 
-            // 🔥 TENTUKAN WAREHOUSE ID DARI DATA GR ITEM (DI-BYPASS DARI PR/MOVEMENT) 🔥
-            $warehouseIdForRtv = null;
-            $poItem = $item->purchaseOrderItem;
-            if ($poItem && $poItem->purchase_request_item_id) {
-                $prItem = \Illuminate\Support\Facades\DB::table('purchase_request_items')->where('id', $poItem->purchase_request_item_id)->first();
-                if ($prItem && $prItem->allocation_notes) {
-                    if (preg_match('/untuk\s+(Gudang.*?)(?:\n|\r|,|$)/i', $prItem->allocation_notes, $matches)) {
-                        $whName = trim($matches[1]);
-                        $whDb = \Illuminate\Support\Facades\DB::table('warehouses')->where('name', $whName)->first();
-                        if ($whDb) $warehouseIdForRtv = $whDb->id;
-                    }
-                }
-            }
-            if (!$warehouseIdForRtv) {
-                try {
-                    $mov = \Illuminate\Support\Facades\DB::table('inventory_movements')
-                        ->leftJoin('inventory_stocks', 'inventory_movements.inventory_stock_id', '=', 'inventory_stocks.id')
-                        ->where(function($q) use ($gr) {
-                            $q->where('inventory_movements.reference_number', $gr->gr_number)->orWhere('inventory_movements.reference_number', (string) $gr->id);
-                        })->where('inventory_stocks.item_id', $item->item_id)->select('inventory_movements.warehouse_id')->first();
-                    if ($mov && $mov->warehouse_id) $warehouseIdForRtv = $mov->warehouse_id;
-                } catch (\Exception $e) {}
-            }
-            
-            // Simpan warehouse_id ke dalam $item object agar bisa dikirim ke form blade
-            $item->detected_warehouse_id = $warehouseIdForRtv;
-
             // =========================================================
             // 🔥 LOGIKA BARU: HANYA ADA BARANG LACAK (SN) & BARANG BIASA 🔥
             // =========================================================
@@ -125,17 +97,12 @@ class ReturnToVendorController extends Controller
 
             if (isset($masterItem->is_trackable) && $masterItem->is_trackable) {
                 // JIKA BARANG TRACKABLE (SN): Cari di tabel item_serials berdasarkan GR ID
-                $snQuery = \DB::table('item_serials')
+                $availableSerials = \DB::table('item_serials')
                     ->where('item_id', $item->item_id)
                     ->where('goods_receipt_id', $gr->id) // Sangat akurat karena dari dokumen yang sama
-                    ->where('status', 'AVAILABLE');
-                
-                // 🔥 TAMBAH FILTER GUDANG AGAR SN TIDAK NYASAR KE GUDANG LAIN 🔥
-                if ($warehouseIdForRtv) {
-                    $snQuery->where('warehouse_id', $warehouseIdForRtv);
-                }
-                
-                $availableSerials = $snQuery->pluck('serial_number')->toArray();
+                    ->where('status', 'AVAILABLE')
+                    ->pluck('serial_number')
+                    ->toArray();
 
                 if (!empty($availableSerials)) {
                     $tempSnList = $availableSerials;
@@ -146,14 +113,7 @@ class ReturnToVendorController extends Controller
 
             } elseif (isset($masterItem->is_stockable) && $masterItem->is_stockable) {
                 // JIKA BARANG STOK BIASA: Cari di tabel inventory_stocks
-                $stokGudangQuery = \App\Models\InventoryStock::where('item_id', $item->item_id);
-                
-                // 🔥 TAMBAH FILTER GUDANG 🔥
-                if ($warehouseIdForRtv) {
-                    $stokGudangQuery->where('warehouse_id', $warehouseIdForRtv);
-                }
-                
-                $stokGudang_Base = $stokGudangQuery->sum('stock_qty');
+                $stokGudang_Base = \App\Models\InventoryStock::where('item_id', $item->item_id)->sum('stock_qty');
                 $stokGudang_GR = $stokGudang_Base / $grConvRate;
                 $maxReturnable = min($sisaKuotaGR, $stokGudang_GR);
             }
@@ -172,6 +132,8 @@ class ReturnToVendorController extends Controller
 
         return view('rtv.create', compact('gr', 'reasons', 'returnableItems'));
     }
+
+
 
     // ========================================================
     // STORE RTV (DENGAN SURAT KEMATIAN SN & LAMPIRAN DINAMIS)
@@ -236,9 +198,6 @@ class ReturnToVendorController extends Controller
                         $poItem = PurchaseOrderItem::findOrFail($grItem->purchase_order_item_id);
                         $masterItem = Item::with('uom', 'itemUoms')->findOrFail($grItem->item_id);
                         $baseUomName = optional($masterItem->uom)->name ?? 'Unit';
-
-                        // 🔥 TERIMA ID GUDANG DARI INPUTAN LAYAR 🔥
-                        $warehouseIdForRtv = $data['warehouse_id'] ?? null;
 
                         // 1. Ekstrak Konversi PO (Untuk penyesuaian qty_received di PO)
                         $rawPoUom = is_string($poItem->uom) ? $poItem->uom : (optional($poItem->uom)->name ?? $poItem->getRawOriginal('uom') ?? $baseUomName);
@@ -322,20 +281,13 @@ class ReturnToVendorController extends Controller
                         if ($snStringRetur) $catatanKonversi .= " | SN: {$snStringRetur}";
 
                         // =========================================================================
-                        // 🔥 PEMOTONGAN STOK MENGGUNAKAN FILTER WAREHOUSE 🔥
+                        // 🔥 PEMOTONGAN STOK GLOBAL (DARI GUDANG MANAPUN YANG ADA STOKNYA) 🔥
                         // =========================================================================
                         if ($masterItem->is_stockable ?? true) {
 
-                            $stockQuery = \App\Models\InventoryStock::where('item_id', $masterItem->id)
-                                                                    ->where('stock_qty', '>', 0)
-                                                                    ->orderBy('created_at', 'asc')->lockForUpdate();
-                            
-                            // 🔥 PASTI MEMOTONG DARI GUDANG YANG BENAR 🔥
-                            if ($warehouseIdForRtv) {
-                                $stockQuery->where('warehouse_id', $warehouseIdForRtv);
-                            }
-
-                            $availableStocks = $stockQuery->get();
+                            $availableStocks = \App\Models\InventoryStock::where('item_id', $masterItem->id)
+                                                                        ->where('stock_qty', '>', 0)
+                                                                        ->orderBy('created_at', 'asc')->lockForUpdate()->get();
 
                             $totalAvailable = $availableStocks->sum('stock_qty');
 
@@ -367,7 +319,7 @@ class ReturnToVendorController extends Controller
 
                                 \App\Models\StockMutation::create([
                                     'item_id'          => $masterItem->id,
-                                    'warehouse_id'     => $stockRow->warehouse_id, // 👈 Memotong dari gudang aslinya
+                                    'warehouse_id'     => $stockRow->warehouse_id,
                                     'type'             => 'OUT',
                                     'qty'              => $potong,
                                     'balance_before'   => $balanceBefore,
