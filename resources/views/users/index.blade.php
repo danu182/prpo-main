@@ -4,7 +4,6 @@
     <link href="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css" rel="stylesheet" />
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/select2-bootstrap-5-theme@1.3.0/dist/select2-bootstrap-5-theme.min.css" />
     <style>
-        /* Memastikan select2 di dalam modal tidak berantakan */
         .select2-container { width: 100% !important; }
     </style>
 @endpush
@@ -30,7 +29,6 @@
                     </button>
                 </div>
             </form>
-            {{-- 🔥 Tombol Baru: Mengarah ke halaman Import/Export 🔥 --}}
             <a href="{{ route('users.import_form') }}" class="px-4 shadow-sm btn btn-outline-success fw-bold rounded-pill text-nowrap" title="Manajemen Data Excel">
                 <i class="bi bi-file-earmark-spreadsheet me-1"></i> <span class="d-none d-md-inline">Import / Export</span>
             </a>
@@ -134,11 +132,12 @@
                         </td>
                     </tr>
 
-                    {{-- MODAL EDIT USER --}}
+                    {{-- 🔥 MODAL EDIT USER 🔥 --}}
                     <div class="modal fade" id="modalEdit{{ $user->id }}" tabindex="-1">
                         <div class="modal-dialog modal-dialog-centered modal-lg">
                             <div class="overflow-hidden border-0 shadow-lg modal-content rounded-4">
-                                <form action="{{ route('users.update', $user->id) }}" method="POST">
+                                {{-- PERBAIKAN: WAJIB ENCTYPE UNTUK UPLOAD GAMBAR --}}
+                                <form action="{{ route('users.update', $user->id) }}" method="POST" enctype="multipart/form-data">
                                     @csrf
                                     @method('PUT')
                                     <div class="py-3 text-white border-0 modal-header bg-primary">
@@ -195,7 +194,15 @@
                                         <div class="mb-4 row g-3">
                                             <div class="col-md-6">
                                                 <label class="form-label fw-bold small text-muted">Jabatan</label>
-                                                <input type="text" name="job_title" class="shadow-sm form-control" value="{{ $user->job_title }}">
+                                                {{-- 🔥 PERBAIKAN: GANTI INPUT MENJADI DROPDOWN 🔥 --}}
+                                                <select name="job_title" class="shadow-sm form-select" required>
+                                                    <option value="">-- Pilih Jabatan --</option>
+                                                    @foreach($jobTitles as $jt)
+                                                        <option value="{{ $jt->name }}" {{ $user->job_title == $jt->name ? 'selected' : '' }}>
+                                                            {{ $jt->name }}
+                                                        </option>
+                                                    @endforeach
+                                                </select>
                                             </div>
                                             <div class="col-md-6">
                                                 <label class="form-label fw-bold small text-muted">Status Akun</label>
@@ -206,7 +213,23 @@
                                             </div>
                                         </div>
 
-                                        {{-- 🔥 FILTER GUDANG 🔥 --}}
+                                        {{-- 🔥 INPUT UPLOAD AVATAR & SIGNATURE 🔥 --}}
+                                        <div class="p-3 mb-4 bg-white border shadow-sm border-secondary-subtle rounded-3">
+                                            <div class="row g-3">
+                                                <div class="col-md-6">
+                                                    <label class="form-label fw-bold small text-dark"><i class="bi bi-image text-primary me-1"></i> Foto Profil (Avatar)</label>
+                                                    <input type="file" name="avatar" class="form-control form-control-sm" accept="image/png, image/jpeg, image/jpg">
+                                                    <div class="mt-1 form-text" style="font-size: 0.7rem;">Maks 2MB. Format: JPG/PNG.</div>
+                                                </div>
+                                                <div class="col-md-6">
+                                                    <label class="form-label fw-bold small text-dark"><i class="bi bi-pen text-primary me-1"></i> Tanda Tangan Digital</label>
+                                                    <input type="file" name="signature" class="form-control form-control-sm" accept="image/png">
+                                                    <div class="mt-1 form-text" style="font-size: 0.7rem;">Wajib format PNG (Tanpa Background). Maks 2MB.</div>
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        {{-- FILTER GUDANG --}}
                                         <div class="p-3 mb-4 bg-white border shadow-sm border-info-subtle rounded-3">
                                             <label class="mb-1 form-label fw-bold small text-info-emphasis">
                                                 <i class="bi bi-box-seam text-info me-1"></i> Isolasi Akses Gudang <span class="fw-normal text-muted">(Opsional)</span>
@@ -218,11 +241,11 @@
                                                 @endforeach
                                             </select>
                                             <div class="mt-2 form-text" style="font-size: 0.75rem;">
-                                                Biarkan kosong jika user ini adalah <strong>Super Admin/Manager/Finance</strong> (sistem otomatis memberikan akses penuh).
+                                                Biarkan kosong jika user ini adalah <strong>Super Admin/Manager/Finance</strong>.
                                             </div>
                                         </div>
 
-                                        {{-- 🔥 OTORITAS ROLE 🔥 --}}
+                                        {{-- OTORITAS ROLE --}}
                                         <div class="p-3 bg-white border rounded shadow-sm">
                                             <label class="mb-1 form-label fw-bold small text-dark">
                                                 <i class="bi bi-shield-lock-fill text-warning me-1"></i> Otoritas Hak Akses (Role)
@@ -265,11 +288,12 @@
     </div>
 </div>
 
-{{-- MODAL TAMBAH USER BARU --}}
+{{-- 🔥 MODAL TAMBAH USER BARU 🔥 --}}
 <div class="modal fade" id="modalAdd" tabindex="-1">
     <div class="modal-dialog modal-dialog-centered modal-lg">
         <div class="overflow-hidden border-0 shadow-lg modal-content rounded-4">
-            <form action="{{ route('users.store') }}" method="POST">
+            {{-- PERBAIKAN: WAJIB ENCTYPE UNTUK UPLOAD GAMBAR --}}
+            <form action="{{ route('users.store') }}" method="POST" enctype="multipart/form-data">
                 @csrf
                 <div class="py-3 text-white border-0 modal-header bg-dark">
                     <h5 class="modal-title fw-bold"><i class="bi bi-person-plus-fill me-2"></i>Pendaftaran Karyawan Baru</h5>
@@ -325,11 +349,33 @@
                     <div class="mb-4 row g-3">
                         <div class="col-md-12">
                             <label class="form-label fw-bold small text-muted">Jabatan</label>
-                            <input type="text" name="job_title" class="shadow-sm form-control" placeholder="Cth: Staf Gudang">
+                            {{-- 🔥 PERBAIKAN: GANTI INPUT MENJADI DROPDOWN 🔥 --}}
+                            <select name="job_title" class="shadow-sm form-select" required>
+                                <option value="">-- Pilih Jabatan --</option>
+                                @foreach($jobTitles as $jt)
+                                    <option value="{{ $jt->name }}">{{ $jt->name }}</option>
+                                @endforeach
+                            </select>
                         </div>
                     </div>
 
-                    {{-- 🔥 FILTER GUDANG 🔥 --}}
+                    {{-- 🔥 INPUT UPLOAD AVATAR & SIGNATURE 🔥 --}}
+                    <div class="p-3 mb-4 bg-white border shadow-sm border-secondary-subtle rounded-3">
+                        <div class="row g-3">
+                            <div class="col-md-6">
+                                <label class="form-label fw-bold small text-dark"><i class="bi bi-image text-primary me-1"></i> Foto Profil (Avatar)</label>
+                                <input type="file" name="avatar" class="form-control form-control-sm" accept="image/png, image/jpeg, image/jpg">
+                                <div class="mt-1 form-text" style="font-size: 0.7rem;">Maks 2MB. Format: JPG/PNG.</div>
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label fw-bold small text-dark"><i class="bi bi-pen text-primary me-1"></i> Tanda Tangan Digital</label>
+                                <input type="file" name="signature" class="form-control form-control-sm" accept="image/png">
+                                <div class="mt-1 form-text" style="font-size: 0.7rem;">Wajib format PNG (Tanpa Background). Maks 2MB.</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    {{-- FILTER GUDANG --}}
                     <div class="p-3 mb-4 bg-white border shadow-sm border-info-subtle rounded-3">
                         <label class="mb-1 form-label fw-bold small text-info-emphasis">
                             <i class="bi bi-box-seam text-info me-1"></i> Isolasi Akses Gudang <span class="fw-normal text-muted">(Opsional)</span>
@@ -344,7 +390,7 @@
                         </div>
                     </div>
 
-                    {{-- 🔥 OTORITAS ROLE 🔥 --}}
+                    {{-- OTORITAS ROLE --}}
                     <div class="p-3 bg-white border rounded shadow-sm">
                         <label class="mb-1 form-label fw-bold small text-dark">
                             <i class="bi bi-shield-lock-fill text-danger me-1"></i> Otoritas Awal (Role)
@@ -380,7 +426,6 @@
 <script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
 <script>
     $(document).ready(function() {
-        // Trik Bootstrap 5 Modal x Select2
         $('.modal').on('shown.bs.modal', function () {
             $(this).find('.select2-multiple').select2({
                 theme: 'bootstrap-5',

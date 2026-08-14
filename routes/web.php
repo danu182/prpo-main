@@ -121,6 +121,10 @@ Route::middleware('auth')->group(function () {
         Route::get('/attachment/header/delete/{id}', [App\Http\Controllers\PurchaseOrderController::class, 'deleteHeaderAttachment'])->name('delete_header_attachment');
         Route::get('/attachment/item/delete/{id}', [App\Http\Controllers\PurchaseOrderController::class, 'deleteItemAttachment'])->name('delete_item_attachment');
 
+        Route::post('/update-billing/{slug}', [App\Http\Controllers\PurchaseOrderController::class, 'updateBillingInfo'])->name('update_billing');
+
+        Route::get('/print-bpr-detail/{slug}', [App\Http\Controllers\PurchaseOrderController::class, 'printBprDetail'])->name('print_bpr_detail');
+
     });
 
 

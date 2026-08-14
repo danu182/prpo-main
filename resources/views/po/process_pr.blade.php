@@ -26,8 +26,9 @@
     .is-invalid { border-color: #dc3545 !important; background-color: #fff8f8 !important; }
     .input-group-modern:has(.is-invalid) { border-color: #dc3545 !important; box-shadow: 0 0 0 0.25rem rgba(220, 53, 69, 0.25) !important; }
 
-    /* 🔥 STYLING KHUSUS CKEDITOR 🔥 */
+    /* STYLING CKEDITOR & ACCORDION */
     .ck-editor__editable_inline { min-height: 120px; font-size: 0.85rem; }
+    .accordion-button:not(.collapsed) { background-color: #f8f9fa; color: #0d6efd; box-shadow: none; }
 
     input[type=number]::-webkit-inner-spin-button,
     input[type=number]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
@@ -66,75 +67,39 @@
 
             {{-- 📜 TRACK RECORD: PO YANG SUDAH TERBIT DARI PR INI 📜 --}}
             @if(isset($existingPos) && $existingPos->count() > 0)
-            <div class="mb-4 border-0 border-4 shadow-sm card rounded-4 border-start border-info">
-                <div class="py-3 bg-white card-header d-flex align-items-center justify-content-between">
-                    <div class="d-flex align-items-center">
-                        <div class="p-2 bg-info bg-opacity-10 text-info rounded-circle me-3 d-flex align-items-center justify-content-center" style="width: 35px; height: 35px;">
-                            <i class="bi bi-clock-history"></i>
-                        </div>
-                        <h6 class="mb-0 fw-bold text-dark">Riwayat PO Terkait (PR ini sudah pernah diproses)</h6>
-                    </div>
-                    <span class="px-3 badge bg-info-subtle text-info rounded-pill">{{ $existingPos->count() }} PO Terdeteksi</span>
-                </div>
-                <div class="p-0 card-body">
-                    <div class="table-responsive">
-                        <table class="table mb-0 align-middle table-hover" style="font-size: 0.85rem;">
-                            <thead class="bg-light text-muted">
+            <div class="mb-4 border-0 border-4 shadow-sm card rounded-4 border-start border-info bg-info bg-opacity-10">
+                <div class="p-4 card-body">
+                    <h6 class="mb-3 fw-bold text-dark">
+                        <i class="bi bi-clock-history me-2 text-info"></i>Riwayat PO dari PR Ini
+                    </h6>
+                    <div class="bg-white border table-responsive rounded-3">
+                        <table class="table mb-0 align-middle table-sm table-hover">
+                            <thead class="bg-light text-muted small text-uppercase">
                                 <tr>
-                                    <th class="ps-4">No. PO</th>
-                                    <th>Vendor</th>
-                                    <th>Item yang Dipesan</th>
-                                    <th class="text-center">Status</th>
-                                    <th class="text-end pe-4">Total Harga</th>
+                                    <th class="py-2 ps-3">No. PO</th>
+                                    <th class="py-2">Tanggal</th>
+                                    <th class="py-2">Vendor</th>
+                                    <th class="py-2 text-end">Total Nilai</th>
+                                    <th class="py-2 text-center">Status</th>
+                                    <th class="py-2 text-center pe-3">Aksi</th>
                                 </tr>
                             </thead>
-                            <tbody>
-                                @foreach($existingPos as $oldPo)
+                            <tbody class="small">
+                                @foreach($existingPos as $epo)
                                 <tr>
-                                    <td class="ps-4">
-                                        <a href="{{ route('po.show', $oldPo->po_number) }}" target="_blank" class="fw-bold text-decoration-none">
-                                            {{ $oldPo->po_number }} <i class="bi bi-box-arrow-up-right ms-1" style="font-size: 0.7rem;"></i>
-                                        </a>
-                                        <div class="text-muted" style="font-size: 0.7rem;">{{ \Carbon\Carbon::parse($oldPo->po_date)->format('d/m/Y') }}</div>
-                                    </td>
-                                    <td>
-                                        <div class="fw-bold text-dark">{{ $oldPo->vendor->name ?? '-' }}</div>
-                                    </td>
-                                    <td>
-                                        <ul class="mb-0 list-unstyled" style="font-size: 0.75rem;">
-                                            @foreach($oldPo->items as $pItem)
-                                                @php
-                                                    $uomDisplayHistory = $pItem->uom;
-                                                    if (empty($uomDisplayHistory) || is_numeric($uomDisplayHistory)) {
-                                                        if (!empty($pItem->uom_id)) {
-                                                            $uomMaster = \App\Models\ItemUom::find($pItem->uom_id);
-                                                            if ($uomMaster) {
-                                                                $baseUnit = optional($pItem->item)->unit ?? 'Pcs';
-                                                                $uomDisplayHistory = $uomMaster->uom_name . ' (Isi: ' . (float)$uomMaster->conversion_qty . ' ' . $baseUnit . ')';
-                                                            }
-                                                        }
-                                                    }
-                                                    if (empty($uomDisplayHistory) || is_numeric($uomDisplayHistory)) {
-                                                        $uomDisplayHistory = optional($pItem->item)->unit ?? 'PCS';
-                                                    }
-                                                @endphp
-                                                <li>
-                                                    <i class="bi bi-dot text-primary"></i>
-                                                    <span class="fw-bold text-dark">{{ (float) $pItem->qty_ordered }}</span>
-                                                    <span class="badge bg-primary-subtle text-primary ms-1 me-1">{{ $uomDisplayHistory }}</span>
-                                                    <span class="text-muted">{{ $pItem->item_name ?? optional($pItem->item)->name ?? $pItem->description }}</span>
-                                                </li>
-                                            @endforeach
-                                        </ul>
-                                    </td>
-                                    <td class="text-center">
-                                        @php $color = $oldPo->status->color ?? 'secondary'; @endphp
-                                        <span class="badge bg-{{ $color }}-subtle text-{{ $color }} border border-{{ $color }}-subtle rounded-pill px-2" style="font-size: 0.7rem;">
-                                            {{ mb_strtoupper($oldPo->status->name ?? 'DRAFT') }}
+                                    <td class="py-2 ps-3 fw-bold text-primary">{{ $epo->po_number }}</td>
+                                    <td class="py-2 text-muted">{{ \Carbon\Carbon::parse($epo->po_date)->format('d M Y') }}</td>
+                                    <td class="py-2 fw-bold text-dark">{{ optional($epo->vendor)->name ?? 'Vendor Dihapus' }}</td>
+                                    <td class="py-2 text-end text-success fw-bold">{{ $epo->currency ?? 'IDR' }} {{ number_format($epo->grand_total, 2) }}</td>
+                                    <td class="py-2 text-center">
+                                        <span class="px-2 badge bg-secondary rounded-pill" style="font-size: 0.65rem;">
+                                            {{ optional($epo->status)->name ?? 'DRAFT' }}
                                         </span>
                                     </td>
-                                    <td class="text-end pe-4">
-                                        <div class="fw-bold text-dark">{{ $oldPo->currency }} {{ number_format($oldPo->grand_total, 0, ',', '.') }}</div>
+                                    <td class="py-2 text-center pe-3">
+                                        <a href="{{ route('po.show', $epo->po_number) }}" target="_blank" class="px-3 py-0 btn btn-sm btn-outline-info rounded-pill fw-bold" style="font-size: 0.7rem;">
+                                            Lihat PO <i class="bi bi-box-arrow-up-right ms-1"></i>
+                                        </a>
                                     </td>
                                 </tr>
                                 @endforeach
@@ -146,14 +111,9 @@
             @endif
 
             {{-- 1. INFORMASI PENAGIHAN & PENGIRIMAN --}}
-            <div class="mb-4 border-0 shadow-sm card rounded-4">
-                <div class="py-3 bg-white card-header border-bottom d-flex align-items-center">
-                    <div class="p-2 bg-primary bg-opacity-10 text-primary rounded-circle me-3 d-flex align-items-center justify-content-center" style="width: 35px; height: 35px;">
-                        <i class="bi bi-geo-alt-fill"></i>
-                    </div>
-                    <h6 class="mb-0 fw-bold">Penagihan & Pengiriman</h6>
-                </div>
+            <div class="mb-4 border-0 shadow-sm card rounded-4 border-start border-4 border-primary">
                 <div class="p-4 card-body">
+                    <h6 class="mb-3 fw-bold text-dark"><i class="bi bi-info-circle-fill me-2 text-primary"></i>Informasi Pengiriman & Pembayaran</h6>
                     <div class="row g-4">
                         <div class="col-md-8">
                             <label class="form-label small fw-bold text-dark">Tagihan Ke (Bill To) <span class="text-danger">*</span></label>
@@ -313,6 +273,7 @@
                                                     <i class="bi bi-plus-lg me-1"></i> Tambah File
                                                 </button>
 
+                                                {{-- 🔥 FASILITAS VENDOR QUOTES / INTIP PENAWARAN ASLI DARI PR 🔥 --}}
                                                 @if($item->vendorQuotes && $item->vendorQuotes->count() > 0)
                                                 <div class="pt-2 border-top">
                                                     <button class="bg-white shadow-sm btn btn-outline-secondary btn-sm w-100 rounded-3 fw-bold d-flex justify-content-between align-items-center" type="button" data-bs-toggle="collapse" data-bs-target="#vendorData{{ $index }}" aria-expanded="false">
@@ -342,9 +303,27 @@
                                                                     </div>
                                                                     <div style="font-size: 0.75rem; line-height: 1.4;" class="pt-1">
                                                                         @if($vq->reference_link)
-                                                                            <a href="{{ $vq->reference_link }}" target="_blank" onclick="event.stopPropagation();" class="mb-1 text-decoration-none fw-bold me-2 d-inline-block"><i class="bi bi-link-45deg"></i> Link Toko</a>
+                                                                            <a href="{{ $vq->reference_link }}" target="_blank" onclick="event.stopPropagation();" class="mb-1 text-decoration-none fw-bold me-2 d-inline-block"><i class="bi bi-link-45deg"></i> Link Toko/Bukti</a>
                                                                         @endif
                                                                         <span class="mb-1 text-muted fst-italic d-block">{{ $vq->notes ?? 'Tidak ada catatan.' }}</span>
+
+                                                                        {{-- 🔥 TAMBAHAN: MUNCULKAN FILE LAMPIRAN PENAWARAN VENDOR DARI PR 🔥 --}}
+                                                                        @if(isset($vq->attachments) && count($vq->attachments) > 0)
+                                                                            <div class="mt-1 d-flex flex-wrap gap-1">
+                                                                                @foreach($vq->attachments as $vFile)
+                                                                                    <a href="{{ asset('storage/' . $vFile->file_path) }}" target="_blank" onclick="event.stopPropagation();" class="badge bg-secondary-subtle text-secondary text-decoration-none border border-secondary-subtle">
+                                                                                        <i class="bi bi-paperclip"></i> {{ $vFile->file_name ?? 'Lampiran' }}
+                                                                                    </a>
+                                                                                @endforeach
+                                                                            </div>
+                                                                        @elseif(!empty($vq->file_path))
+                                                                            {{-- Fallback jika lampiran disave langsung di kolom file_path tabel vendor_quotes --}}
+                                                                            <div class="mt-1">
+                                                                                <a href="{{ asset('storage/' . $vq->file_path) }}" target="_blank" onclick="event.stopPropagation();" class="badge bg-secondary-subtle text-secondary text-decoration-none border border-secondary-subtle">
+                                                                                    <i class="bi bi-paperclip"></i> Lihat Lampiran
+                                                                                </a>
+                                                                            </div>
+                                                                        @endif
                                                                     </div>
                                                                 </div>
                                                             @endforeach
@@ -352,6 +331,7 @@
                                                     </div>
                                                 </div>
                                                 @endif
+
                                             </div>
                                         </div>
                                     </div>
@@ -417,13 +397,11 @@
                                 <div class="col-md-3">
                                     <label class="form-label small fw-bold text-dark">Pajak (VAT/PPN)</label>
                                     <div class="shadow-sm input-group-modern">
-                                        {{-- 1. Pilihan Tipe (% atau USD/IDR) --}}
                                         <select name="po_items[{{ $index }}][tax_type]" class="text-center form-select fw-bold text-secondary tax-type-select" style="flex: 0 0 85px;" onchange="toggleTaxUI(this); calculateRow(this)">
                                             <option value="PERCENT">%</option>
                                             <option value="FIXED" class="dynamic-currency-text">IDR</option>
                                         </select>
 
-                                        {{-- 2. Dropdown Master Data --}}
                                         <select name="po_items[{{ $index }}][tax_id]" class="form-select text-end fw-bold text-info tax-master-select" onchange="applyMasterTax(this); calculateRow(this)">
                                             <option value="" data-rate="0">- Tanpa Pajak -</option>
                                             <option value="MANUAL_PERCENT" data-rate="0">Manual (%)</option>
@@ -432,7 +410,6 @@
                                             @endforeach
                                         </select>
 
-                                        {{-- 3. Kotak Nominal Manual --}}
                                         <input type="number" name="po_items[{{ $index }}][tax_value]" class="form-control text-end fw-bold text-info tax-val-input d-none" value="0" min="0" step="any" oninput="calculateRow(this)">
                                     </div>
                                     <input type="hidden" name="po_items[{{ $index }}][tax_amount]" class="tax-amt-hidden" value="0">

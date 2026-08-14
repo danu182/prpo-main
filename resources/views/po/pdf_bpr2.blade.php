@@ -19,7 +19,7 @@
         .watermark { position: fixed; top: 30%; left: 5%; width: 90%; text-align: center; font-size: 80pt; font-weight: bold; text-transform: uppercase; color: rgba(255, 0, 0, 0.15); transform: rotate(-45deg); z-index: -1000; }
         .watermark-paid { color: rgba(0, 128, 0, 0.15); }
 
-        /* 🔥 PENGATURAN TANDA TANGAN & STEMPEL (BARU) 🔥 */
+        /* 🔥 PENGATURAN TANDA TANGAN & STEMPEL 🔥 */
         table.signature { width: 100%; border-collapse: collapse; margin-top: 30px; page-break-inside: avoid; }
         table.signature td { border: none; padding: 10px; text-align: center; vertical-align: top; }
         .sign-title { font-size: 10pt; font-weight: bold; margin-bottom: 20px; color: #333; }
@@ -37,6 +37,7 @@
         /* Teks Identitas */
         .sign-name { font-weight: bold; text-decoration: underline; font-size: 10pt; color: #000; }
         .sign-meta { font-size: 8.5pt; color: #555; margin-top: 3px; }
+        .sign-dept { font-size: 8pt; color: #777; margin-top: 2px; }
     </style>
 </head>
 <body>
@@ -72,15 +73,11 @@
                 <table class="info-table">
                     <tr><td style="width: 130px;">Title</td><td>: Pembayaran PO - {{ optional($po->vendor)->name ?? $po->vendor_name }}</td></tr>
                     <tr><td>Bill Ref.</td><td>: {{ $po->po_number }}</td></tr>
-                    <tr><td>Payment Due Date</td><td>: {{ $po->delivery_date ? date('d-M-y', strtotime($po->delivery_date)) : '-' }}</td></tr>
+                    <tr><td>Payment Due Date</td><td>: {{ $po->due_date ? date('d-M-y', strtotime($po->due_date)) : ($po->delivery_date ? date('d-M-y', strtotime($po->delivery_date)) : '-') }}</td></tr>
                 </table>
             </td>
         </tr>
     </table>
-
-    @php
-        $calcSubtotalGross = 0;
-    @endphp
 
     {{-- TABEL ITEM (TENGAH) --}}
     <table class="bordered main">
@@ -89,9 +86,10 @@
                 <th width="5%">No</th>
                 <th width="15%">Invoices No.</th>
                 <th width="35%">Description</th>
-                <th width="15%">Reference</th>
+                {{-- 🔥 KOLOM REFERENCE DIUBAH MENJADI QTY 🔥 --}}
+                <th width="10%">Qty</th>
                 <th width="20%">Total Amount ({{ $po->currency ?? 'IDR' }})</th>
-                <th width="10%">Account No</th>
+                <th width="15%">Account No</th>
             </tr>
         </thead>
         <tbody>
@@ -103,96 +101,66 @@
                     $hargaSatuan = (float) ($item->unit_price ?? $item->price ?? 0);
                     $subtotalDB = (float) ($item->subtotal ?? $item->total_price ?? ($qty * $hargaSatuan));
 
-                    if ($hargaSatuan == 0 && $subtotalDB > 0) {
-                        $hargaSatuan = $subtotalDB / $qty;
-                    }
-
-                    $calcSubtotalGross += $subtotalDB;
-
-                    $baseUomName = optional(optional($item->item)->uom)->name ?? 'Unit';
+                    // Pembersihan string UOM agar rapi
+                    $baseUomName = optional(optional($item->item)->uom)->name ?? 'PCS';
                     $uomStr = is_string($item->uom) ? $item->uom : (isset($item->uom->name) ? $item->uom->name : $baseUomName);
                     if (is_string($uomStr) && str_contains($uomStr, '{')) {
                         $uomDec = json_decode($uomStr);
                         $uomStr = $uomDec->name ?? $uomDec->code ?? $baseUomName;
                     }
+                    $uomStr = preg_replace('/ \(Isi:.*\)/i', '', $uomStr);
                 @endphp
                 <tr>
                     <td style="text-align: center; vertical-align: top; padding-top: 10px;">{{ $index + 1 }}</td>
-                    <td style="text-align: center; vertical-align: top; padding-top: 10px;">-</td>
+                    
+                    {{-- Menampilkan Nomor Invoice --}}
+                    <td style="text-align: center; vertical-align: top; padding-top: 10px; font-weight: bold; color: #0d6efd;">
+                        {{ $index === 0 ? ($po->invoice_number ?: '-') : '' }}
+                    </td>
+                    
                     <td style="padding-top: 10px; padding-bottom: 10px;">
                         <div style="font-weight: bold; font-size: 13px; color: #000;">
                             {{ $item->item_name ?? optional($item->item)->name }}
                         </div>
-                        <div style="font-size: 12px; color: #444; margin-top: 5px;">
-                            <strong style="color: #0d6efd;">{{ $qty }} {{ strtoupper($uomStr) }}</strong> &nbsp;x&nbsp; Rp {{ number_format($hargaSatuan, 0, ',', '.') }}
-                        </div>
+                        @if(!empty($item->description) && $item->description !== '-')
+                            <div style="font-size: 11px; color: #555; margin-top: 3px;">
+                                {!! strip_tags($item->description) !!}
+                            </div>
+                        @endif
                     </td>
-                    <td></td>
+                    
+                    {{-- 🔥 DATA QTY DITAMPILKAN DI SINI 🔥 --}}
+                    <td style="text-align: center; vertical-align: top; padding-top: 10px; color: #333;">
+                        <span style="font-weight: bold;">{{ $qty }}</span><br>
+                        <span style="font-size: 9px;">{{ strtoupper($uomStr) }}</span>
+                    </td>
+                    
                     <td style="text-align: right; vertical-align: bottom; padding-bottom: 10px; font-weight: bold;">
                         Rp {{ number_format($subtotalDB, 0, ',', '.') }}
                     </td>
-                    <td></td>
+                    
+                    {{-- Menampilkan Nomor Rekening --}}
+                    <td style="text-align: center; vertical-align: top; padding-top: 10px; font-weight: bold; color: #198754;">
+                        {{ $index === 0 ? ($po->account_number ?: '-') : '' }}
+                    </td>
                 </tr>
             @endforeach
 
             @php
-                $sumSubtotal = (float)($po->subtotal ?? 0) > 0 ? (float)$po->subtotal : $calcSubtotalGross;
-                $sumDiscount = (float)($po->discount_total ?? $po->discount_amount ?? 0);
-                $sumTax = (float)($po->tax_total ?? $po->tax_amount ?? 0);
+                // Langsung ambil Final Grand Total dari Database
                 $sumGrandTotal = (float)($po->grand_total ?? 0);
             @endphp
 
+            {{-- 🔥 HANYA MENAMPILKAN GRAND TOTAL 🔥 --}}
             <tr>
-                <td colspan="4" style="text-align: right; font-weight: bold; padding-top: 8px;">Subtotal Gross (DPP)</td>
-                <td style="text-align: right; font-weight: bold; padding-top: 8px;">Rp {{ number_format($sumSubtotal, 0, ',', '.') }}</td>
-                <td></td>
-            </tr>
-
-            @if($sumDiscount > 0)
-                <tr>
-                    <td colspan="4" style="text-align: right; color: red;">Diskon Komersial</td>
-                    <td style="text-align: right; color: red;">- Rp {{ number_format($sumDiscount, 0, ',', '.') }}</td>
-                    <td></td>
-                </tr>
-            @endif
-
-            @if($sumTax > 0)
-                <tr>
-                    <td colspan="4" style="text-align: right;">Total Pajak (VAT / PPN)</td>
-                    <td style="text-align: right;">+ Rp {{ number_format($sumTax, 0, ',', '.') }}</td>
-                    <td></td>
-                </tr>
-            @endif
-
-            @if(isset($charges) && count($charges) > 0)
-                @foreach($charges as $charge)
-                    <tr>
-                        <td colspan="4" style="text-align: right; font-size: 11px; color: #555;">↳ Biaya: {{ $charge->name ?? 'Biaya Lainnya' }}</td>
-                        <td style="text-align: right; font-size: 11px;">+ Rp {{ number_format($charge->amount, 0, ',', '.') }}</td>
-                        <td></td>
-                    </tr>
-                @endforeach
-            @endif
-
-            @if(isset($extraDiscounts) && count($extraDiscounts) > 0)
-                @foreach($extraDiscounts as $disc)
-                    <tr>
-                        <td colspan="4" style="text-align: right; font-size: 11px; color: red;">↳ Potongan: {{ $disc->name ?? 'Diskon Tambahan' }}</td>
-                        <td style="text-align: right; font-size: 11px; color: red;">- Rp {{ number_format($disc->amount, 0, ',', '.') }}</td>
-                        <td></td>
-                    </tr>
-                @endforeach
-            @endif
-
-            <tr>
-                <td colspan="4" style="text-align: right; font-weight: bold; font-size: 14px; padding-top: 10px;">GRAND TOTAL</td>
-                <td style="text-align: right; font-weight: bold; font-size: 14px; padding-top: 10px;">Rp {{ number_format($sumGrandTotal, 0, ',', '.') }}</td>
+                <td colspan="4" style="text-align: right; font-weight: bold; font-size: 14px; padding-top: 10px; padding-bottom: 10px;">GRAND TOTAL</td>
+                <td style="text-align: right; font-weight: bold; font-size: 14px; padding-top: 10px; padding-bottom: 10px; background-color: #f8f9fa;">Rp {{ number_format($sumGrandTotal, 0, ',', '.') }}</td>
                 <td></td>
             </tr>
         </tbody>
     </table>
 
-    {{-- 🔥 KOTAK TANDA TANGAN (STYLE BARU STEMPEL) 🔥 --}}
+    {{-- 🔥 KOTAK TANDA TANGAN (PEMISAHAN BARIS JABATAN & DEPT) 🔥 --}}
     @php
         $approvals = \App\Models\DocumentApproval::with('role')
             ->where('document_id', $po->id)
@@ -207,6 +175,7 @@
         $prepSigPath = ($prepUser && $prepUser->signature && file_exists(public_path('storage/' . $prepUser->signature)))
                         ? public_path('storage/' . $prepUser->signature) : null;
         $prepDept = optional($prepUser->department)->name ?? 'Purchasing Dept.';
+        $prepRole = optional(optional($prepUser)->roles->first())->name ?? 'Staff';
     @endphp
 
     <table class="signature">
@@ -222,8 +191,9 @@
                     @endif
                 </div>
                 <div class="sign-name">{{ $po->user->name ?? 'Tim Purchasing' }}</div>
-                <div class="sign-meta">{{ $prepDept }}</div>
-                <div class="sign-meta">{{ $po->created_at ? $po->created_at->format('d/m/Y H:i') : '-' }}</div>
+                <div class="sign-meta" style="font-weight: bold;">{{ $prepRole }}</div>
+                <div class="sign-dept">{{ $prepDept }}</div>
+                <div class="sign-meta" style="margin-top: 5px;">{{ $po->created_at ? $po->created_at->format('d/m/Y H:i') : '-' }}</div>
             </td>
 
             {{-- KOLOM APPROVAL BERANTAI --}}
@@ -232,37 +202,30 @@
                     $approverUser = \App\Models\User::find($approval->approved_by);
                     $hasSignature = $approverUser && $approverUser->signature && file_exists(public_path('storage/' . $approverUser->signature));
 
-                    // 1. Tentukan Nama Jabatan (Role) dari Matriks
+                    // Tentukan Nama Jabatan (Role) dari Matriks
                     $roleName = optional($approval->role)->name ?? 'Manager';
 
-                    // 2. 🔥 KUNCI MUTLAK: PRIORITASKAN DEPARTEMEN DARI MATRIKS 🔥
+                    // Tentukan Departemen
                     $deptName = '';
                     if (!empty($approval->target_department_id) && $approval->target_department_id !== 'all') {
-                        // Jika matriks secara spesifik menyebut departemen (Misal: HR&GA / Finance)
                         $deptObj = \App\Models\Department::find($approval->target_department_id);
                         $deptName = $deptObj ? $deptObj->name : '';
                     } else {
-                        // Jika matriks adalah "Atasan Langsung" (NULL), barulah kita tarik dari profil
                         if ($approverUser && $approverUser->department_id) {
                             $deptName = optional($approverUser->department)->name ?? '';
                         } else {
-                            $deptName = optional($po->user->department)->name ?? ''; // Fallback ke pembuat
+                            $deptName = optional($po->user->department)->name ?? ''; 
                         }
                     }
 
-                    // 3. Tentukan Nama Penyetuju
+                    // Tentukan Nama Penyetuju
                     $approverName = '<span style="color:#aaa;">...................................................</span>';
                     if ($approval->status == 'APPROVED' || $approval->status == 'REJECTED') {
                         $approverName = $approverUser->name ?? $roleName;
-
-                        // Opsional: Jika yang menyetujui BUKAN Super Admin, gunakan nama jabatan aslinya
                         if ($approverUser && $approverUser->job_title && !str_contains(strtolower($approverUser->name), 'super')) {
                             $roleName = $approverUser->job_title;
                         }
                     }
-
-                    // Gabungkan Role dan Departemen untuk dicetak
-                    $roleDisplay = $roleName . ($deptName ? ' - ' . $deptName : '');
                 @endphp
                 <td style="width: {{ 100 / $totalCols }}%;">
                     <div class="sign-title">{{ $loop->last ? 'Disetujui Oleh,' : 'Diperiksa Oleh,' }}</div>
@@ -276,8 +239,6 @@
                             @endif
                         @elseif($approval->status == 'REJECTED')
                             <div class="stamp stamp-rejected">REJECTED</div>
-                        @else
-                            {{-- Kosong jika pending --}}
                         @endif
                     </div>
 
@@ -285,8 +246,11 @@
                         {!! $approverName !!}
                     </div>
 
-                    <div class="sign-meta">{{ $roleDisplay }}</div>
-                    <div class="sign-meta">
+                    {{-- 🔥 ROLE & DEPT DIPISAH MENJADI 2 BARIS 🔥 --}}
+                    <div class="sign-meta" style="font-weight: bold;">{{ $roleName }}</div>
+                    <div class="sign-dept">{{ $deptName ?: '-' }}</div>
+                    
+                    <div class="sign-meta" style="margin-top: 5px;">
                         @if($approval->status == 'APPROVED' || $approval->status == 'REJECTED')
                             {{ $approval->approved_at ? date('d/m/Y H:i', strtotime($approval->approved_at)) : '-' }}
                         @else

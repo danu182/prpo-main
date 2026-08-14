@@ -4,8 +4,9 @@ namespace App\Http\Controllers;
 
 use App\Models\Company;
 use App\Models\Department;
-use App\Models\Warehouse; // 🔥 Import Model Warehouse
+use App\Models\Warehouse;
 use App\Models\User;
+use App\Models\JobTitle; // 🔥 Import Model JobTitle
 use Illuminate\Http\Request;
 use Spatie\Permission\Models\Role;
 use Illuminate\Support\Facades\Hash;
@@ -20,7 +21,6 @@ class UserController extends Controller
     {
         $search = $request->input('search');
 
-        // 🔥 Tambahkan 'warehouses' di dalam with() agar query efisien
         $users = User::with(['company', 'department', 'roles', 'warehouses'])
             ->when($search, function ($query) use ($search) {
                 $query->where('name', 'like', "%{$search}%")
@@ -34,9 +34,12 @@ class UserController extends Controller
         $companies = Company::orderBy('name', 'asc')->get();
         $departments = Department::orderBy('name', 'asc')->get();
         $roles = Role::orderBy('name', 'asc')->get();
-        $warehouses = Warehouse::orderBy('name', 'asc')->get(); // 🔥 Tarik master data Gudang
+        $warehouses = Warehouse::orderBy('name', 'asc')->get();
 
-        return view('users.index', compact('users', 'search', 'companies', 'departments', 'roles', 'warehouses'));
+        // 🔥 Tarik Master Data Jabatan untuk Dropdown 🔥
+        $jobTitles = JobTitle::where('is_active', true)->orderBy('name', 'asc')->get();
+
+        return view('users.index', compact('users', 'search', 'companies', 'departments', 'roles', 'warehouses', 'jobTitles'));
     }
 
     // 2. SIMPAN PENGGUNA BARU
@@ -48,13 +51,15 @@ class UserController extends Controller
             'password'      => 'required|string|min:6|confirmed',
             'company_id'    => 'nullable|exists:companies,id',
             'department_id' => 'nullable|exists:departments,id',
-            'job_title'     => 'nullable|string|max:255',
+            'job_title'     => 'required|string|max:255', // 🔥 Wajib diisi dari dropdown
             'roles'         => 'nullable|array',
-            'warehouse_ids' => 'nullable|array' // 🔥 Validasi Array Gudang
+            'warehouse_ids' => 'nullable|array',
+            'avatar'        => 'nullable|image|mimes:jpg,jpeg,png|max:2048',
+            'signature'     => 'nullable|image|mimes:png|max:2048',
         ]);
 
         try {
-            $user = User::create([
+            $userData = [
                 'name'          => $request->name,
                 'email'         => $request->email,
                 'password'      => Hash::make($request->password),
@@ -62,13 +67,22 @@ class UserController extends Controller
                 'department_id' => $request->department_id,
                 'job_title'     => $request->job_title,
                 'is_active'     => 1,
-            ]);
+            ];
+
+            // LOGIKA UPLOAD GAMBAR
+            if ($request->hasFile('avatar')) {
+                $userData['avatar'] = $request->file('avatar')->store('avatars', 'public');
+            }
+            if ($request->hasFile('signature')) {
+                $userData['signature'] = $request->file('signature')->store('signatures', 'public');
+            }
+
+            $user = User::create($userData);
 
             if ($request->has('roles')) {
                 $user->syncRoles($request->roles);
             }
 
-            // 🔥 Terapkan Akses Gudang (Untuk Andi/Joko/Budi) 🔥
             if ($request->has('warehouse_ids')) {
                 $user->warehouses()->sync($request->warehouse_ids);
             }
@@ -89,10 +103,12 @@ class UserController extends Controller
             'email'         => 'required|string|email|max:255|unique:users,email,' . $id,
             'company_id'    => 'nullable|exists:companies,id',
             'department_id' => 'nullable|exists:departments,id',
-            'job_title'     => 'nullable|string|max:255',
+            'job_title'     => 'required|string|max:255', // 🔥 Wajib diisi dari dropdown
             'is_active'     => 'required|boolean',
             'roles'         => 'nullable|array',
-            'warehouse_ids' => 'nullable|array' // 🔥 Validasi Array Gudang
+            'warehouse_ids' => 'nullable|array',
+            'avatar'        => 'nullable|image|mimes:jpg,jpeg,png|max:2048',
+            'signature'     => 'nullable|image|mimes:png|max:2048',
         ]);
 
         try {
@@ -108,10 +124,22 @@ class UserController extends Controller
                 $user->password = Hash::make($request->password);
             }
 
+            // LOGIKA REPLACE GAMBAR LAMA
+            if ($request->hasFile('avatar')) {
+                if ($user->avatar && \Illuminate\Support\Facades\Storage::disk('public')->exists($user->avatar)) {
+                    \Illuminate\Support\Facades\Storage::disk('public')->delete($user->avatar);
+                }
+                $user->avatar = $request->file('avatar')->store('avatars', 'public');
+            }
+            if ($request->hasFile('signature')) {
+                if ($user->signature && \Illuminate\Support\Facades\Storage::disk('public')->exists($user->signature)) {
+                    \Illuminate\Support\Facades\Storage::disk('public')->delete($user->signature);
+                }
+                $user->signature = $request->file('signature')->store('signatures', 'public');
+            }
+
             $user->save();
             $user->syncRoles($request->roles ?? []);
-
-            // 🔥 Update Akses Gudang 🔥
             $user->warehouses()->sync($request->warehouse_ids ?? []);
 
             return back()->with('success', 'Data & Hak Akses ('.$user->name.') berhasil diperbarui!');
@@ -127,7 +155,6 @@ class UserController extends Controller
         if (auth()->id() == $user->id) {
             return back()->with('error', 'Akses Ditolak: Anda tidak dapat menghapus akun Anda sendiri!');
         }
-
         try {
             $user->delete();
             return back()->with('success', 'Pengguna berhasil dihapus permanen!');
@@ -135,10 +162,6 @@ class UserController extends Controller
             return back()->with('error', 'Gagal menghapus user. Pastikan user ini belum memiliki riwayat transaksi.');
         }
     }
-
-
-
-    // Tambahkan fungsi ini di dalam UserController.php
 
     // 5. HALAMAN KHUSUS IMPORT / EXPORT
     public function importForm()
@@ -158,7 +181,7 @@ class UserController extends Controller
         return Excel::download(new \App\Exports\UsersExport(false), 'Data_Users_Export.xlsx');
     }
 
-    // 6. PROSES BACA EXCEL & TAMPILKAN PREVIEW (DETEKTIF ERROR)
+    // 8. PROSES BACA EXCEL & TAMPILKAN PREVIEW
     public function previewImport(Request $request)
     {
         $request->validate(['file_excel' => 'required|mimes:xlsx,xls,csv|max:2048']);
@@ -170,17 +193,13 @@ class UserController extends Controller
             $previewData = [];
             $hasError = false;
 
-            // Ambil referensi ID untuk validasi
             $companyIds = Company::pluck('id')->toArray();
             $deptIds = Department::pluck('id')->toArray();
 
             foreach ($rows as $row) {
-                // Lewati baris yang benar-benar kosong
                 if (empty($row['name']) && empty($row['email'])) continue;
-
                 $errors = [];
 
-                // 1. Validasi Nama & Email
                 if (empty($row['name'])) $errors[] = 'Nama Lengkap wajib diisi.';
                 if (empty($row['email'])) {
                     $errors[] = 'Email wajib diisi.';
@@ -190,7 +209,6 @@ class UserController extends Controller
                     $errors[] = 'Email sudah terdaftar di sistem.';
                 }
 
-                // 2. Validasi ID Perusahaan & Departemen
                 if (!empty($row['company_id']) && !in_array($row['company_id'], $companyIds)) {
                     $errors[] = 'ID Perusahaan tidak ditemukan.';
                 }
@@ -212,7 +230,7 @@ class UserController extends Controller
         }
     }
 
-    // 7. EKSEKUSI DATA (HANYA SIMPAN YANG AMAN)
+    // 9. EKSEKUSI DATA
     public function processImport(Request $request)
     {
         $rows = session()->get('users_preview_data');
@@ -222,7 +240,6 @@ class UserController extends Controller
         try {
             $countSuccess = 0;
             foreach ($rows as $row) {
-                // 🔥 LEWATI BARIS YANG PUNYA ERROR 🔥
                 if (count($row['errors']) > 0) continue;
 
                 $user = User::create([
@@ -231,7 +248,7 @@ class UserController extends Controller
                     'password'      => Hash::make($row['password'] ?: '123456'),
                     'company_id'    => $row['company_id'] ?: null,
                     'department_id' => $row['department_id'] ?: null,
-                    'job_title'     => $row['job_title'] ?: null,
+                    'job_title'     => $row['job_title'] ?: 'Staff',
                     'is_active'     => 1,
                 ]);
 
@@ -250,5 +267,4 @@ class UserController extends Controller
             return redirect()->route('users.import_form')->with('error', 'Gagal menyimpan ke database: ' . $e->getMessage());
         }
     }
-
 }

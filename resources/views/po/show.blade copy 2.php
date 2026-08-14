@@ -54,49 +54,32 @@
         @endphp
 
         <div class="flex-wrap gap-2 d-flex">
-            {{-- 1. TOMBOL CETAK PO & BPR --}}
+            {{-- 🔥 1. TOMBOL CETAK PO 🔥 --}}
             @if(in_array($statusSlug, ['approved', 'issued', 'partial_receipt', 'partial_received', 'fully_received', 'completed']))
                 <a href="{{ route('po.print', $po->po_number) }}" target="_blank" class="px-4 shadow-sm btn btn-dark rounded-pill fw-bold">
                     <i class="bi bi-printer-fill me-1"></i> Cetak PO
                 </a>
-                
-                <div class="dropdown d-inline-block">
-                    <button class="shadow-sm btn btn-success rounded-pill fw-bold dropdown-toggle" type="button" data-bs-toggle="dropdown">
-                        <i class="bi bi-bank me-1"></i> Cetak Form BPR
-                    </button>
-                    <ul class="border-0 shadow-lg dropdown-menu rounded-3">
-                        <li>
-                            <a class="dropdown-item fw-bold py-2" href="{{ route('po.print_bpr_attachments', $po->po_number) }}" target="_blank">
-                                <i class="bi bi-file-earmark-text me-2 text-secondary"></i> BPR Standar (Ringkas)
-                            </a>
-                        </li>
-                        <li>
-                            <a class="dropdown-item fw-bold py-2 text-primary" href="{{ route('po.print_bpr_detail', $po->po_number) }}" target="_blank">
-                                <i class="bi bi-list-columns-reverse me-2"></i> BPR Detail (Rincian Biaya)
-                            </a>
-                        </li>
-                    </ul>
-                </div>
+                <a href="{{ route('po.print_bpr_attachments', $po->po_number) }}" target="_blank" class="shadow-sm btn btn-success rounded-pill fw-bold">
+                    <i class="bi bi-bank me-1"></i> Cetak Form BPR + Lampiran
+                </a>
             @endif
 
-            {{-- 2. TOMBOL EDIT PO (Hanya untuk Pembuat PO / Super Admin & Belum Ada Persetujuan Masuk) --}}
+            {{-- 2. TOMBOL EDIT PO (Terkunci Otomatis Jika Sudah Ada Approval) --}}
             @if(in_array($statusSlug, ['draft', '', 'pending_approval', 'rejected']))
-                @if(auth()->id() == $po->created_by || auth()->user()->hasAnyRole(['Super Admin', 'Super Administrator', 'super-admin']))
-                    @if(!$hasBeenPartiallyApproved)
-                        <a href="{{ route('po.edit', $po->po_number) }}" class="px-4 shadow-sm btn btn-warning text-dark rounded-pill fw-bold">
-                            <i class="bi bi-pencil-fill me-1"></i> Edit PO
-                        </a>
-                    @else
-                        <span class="d-inline-block" tabindex="0" data-bs-toggle="tooltip" title="Tidak dapat diedit karena sudah ada persetujuan yang masuk.">
-                            <button class="px-4 shadow-sm btn btn-warning text-dark rounded-pill fw-bold" type="button" disabled style="opacity: 0.5;">
-                                <i class="bi bi-lock-fill me-1"></i> Terkunci
-                            </button>
-                        </span>
-                    @endif
+                @if(!$hasBeenPartiallyApproved)
+                    <a href="{{ route('po.edit', $po->po_number) }}" class="px-4 shadow-sm btn btn-warning text-dark rounded-pill fw-bold">
+                        <i class="bi bi-pencil-fill me-1"></i> Edit PO
+                    </a>
+                @else
+                    <span class="d-inline-block" tabindex="0" data-bs-toggle="tooltip" title="Tidak dapat diedit karena sudah ada persetujuan yang masuk.">
+                        <button class="px-4 shadow-sm btn btn-warning text-dark rounded-pill fw-bold" type="button" disabled style="opacity: 0.5;">
+                            <i class="bi bi-lock-fill me-1"></i> Terkunci
+                        </button>
+                    </span>
                 @endif
             @endif
 
-            {{-- 3. TOMBOL AJUKAN APPROVAL (SIMPLE) --}}
+            {{-- 3. TOMBOL AJUKAN APPROVAL --}}
             @if(in_array($statusSlug, ['draft', '', 'rejected']))
                 <form action="{{ route('po.submit_approval', $po->po_number) }}" method="POST" class="d-inline" id="formSubmitApproval">
                     @csrf
@@ -106,66 +89,103 @@
                 </form>
             @endif
 
-            {{-- 4. LOGIKA SMART APPROVAL BERGILIRAN --}}
-            @php
-                $canApprove = false;
+            {{-- 4. LOGIKA SMART APPROVAL --}}
+            @if($statusSlug == 'pending_approval')
+                @php
+                    $currentApproval = \App\Models\DocumentApproval::with('role')
+                        ->where('document_id', $po->id)
+                        ->where('document_type', get_class($po))
+                        ->where('status', 'PENDING')
+                        ->orderBy('step_order', 'asc')
+                        ->first();
 
-                $currentPendingApproval = \App\Models\DocumentApproval::with('role')
-                    ->where('document_id', $po->id)
-                    ->where('document_type', get_class($po))
-                    ->where('status', 'PENDING')
-                    ->orderBy('step_order', 'asc')
-                    ->first();
+                    $canApprove = $currentApproval && (auth()->user()->hasRole($currentApproval->role->name) || auth()->user()->hasRole(['Super Admin', 'super-admin', 'Super Administrator']));
+                @endphp
 
-                if ($currentPendingApproval) {
-                    $user = auth()->user();
-                    $isSuperAdmin = $user->hasAnyRole(['Super Admin', 'Super Administrator', 'super-admin']);
+                @if($canApprove)
+                    <form action="{{ route('po.decide', $po->po_number) }}" method="POST" class="d-inline" id="formApprove">
+                        @csrf
+                        <input type="hidden" name="action" value="APPROVE">
 
-                    $reqRoleName = optional($currentPendingApproval->role)->name;
-                    $hasRequiredRole = $reqRoleName ? $user->roles()->where('name', $reqRoleName)->exists() : false;
+                        {{-- 🔥 LOGIKA CERDAS UNTUK TOMBOL APPROVAL BERDASARKAN GILIRAN 🔥 --}}
+                        @php
+                            $canApprove = false;
 
-                    $targetDeptId = $currentPendingApproval->target_department_id;
-                    $hasRequiredDept = false;
+                            // 1. Cari antrian approval PERTAMA yang statusnya masih PENDING
+                            $currentPendingApproval = \App\Models\DocumentApproval::where('document_id', $po->id)
+                                ->where('document_type', get_class($po))
+                                ->where('status', 'PENDING')
+                                ->orderBy('step_order', 'asc')
+                                ->first();
 
-                    if (empty($targetDeptId)) {
-                        $pembuatPo = \App\Models\User::find($po->created_by);
-                        $hasRequiredDept = ($pembuatPo && (int) $user->department_id === (int) $pembuatPo->department_id);
-                    } elseif ($targetDeptId === 'all' || $targetDeptId == 0) {
-                        $hasRequiredDept = true;
-                    } else {
-                        $hasRequiredDept = ((int) $user->department_id === (int) $targetDeptId);
-                    }
+                            // Jika ada langkah yang PENDING, berarti dokumen ini SEDANG BUTUH PERSETUJUAN
+                            if ($currentPendingApproval) {
+                                $user = auth()->user();
 
-                    if ($isSuperAdmin || ($hasRequiredRole && $hasRequiredDept)) {
-                        $canApprove = true;
-                    }
-                }
-            @endphp
+                                // 2. Cek apakah Super Admin (Dewa - Punya hak Bypass)
+                                $isSuperAdmin = $user->hasAnyRole(['Super Admin', 'Super Administrator', 'super-admin']);
 
-            @if($canApprove)
-                {{-- Form Approve --}}
-                <form action="{{ route('po.decide', $po->po_number) }}" method="POST" class="d-inline" id="formApprove">
-                    @csrf
-                    <input type="hidden" name="action" value="APPROVE">
-                    <button type="button" onclick="confirmApprove()" class="px-4 shadow-sm btn btn-success fw-bold rounded-pill">
-                        <i class="bi bi-check-circle-fill me-1"></i> Setujui PO
-                    </button>
-                </form>
+                                // 3. Cocokkan Jabatan (Role)
+                                $hasRequiredRole = $user->hasRole(optional($currentPendingApproval->role)->name);
 
-                {{-- Form Reject --}}
-                <form action="{{ route('po.decide', $po->po_number) }}" method="POST" class="d-inline" id="formReject">
-                    @csrf
-                    <input type="hidden" name="action" value="REJECT">
-                    <input type="hidden" name="note" id="rejectNoteInput">
-                    <button type="button" onclick="confirmRejectWithNote()" class="px-4 shadow-sm btn btn-danger fw-bold rounded-pill">
-                        <i class="bi bi-x-circle-fill me-1"></i> Tolak PO
-                    </button>
-                </form>
-            @elseif($currentPendingApproval)
-                {{-- Mode Menunggu Persetujuan --}}
-                <div class="px-4 py-2 border shadow-sm rounded-pill bg-light text-muted fw-bold d-inline-block">
-                    <i class="bi bi-hourglass-split me-1"></i> Menunggu Persetujuan: {{ $currentPendingApproval->role->name ?? 'Atasan' }}
-                </div>
+                                // 4. Cocokkan Departemen (Amankan dua kemungkinan nama kolom)
+                                $targetDeptId = $currentPendingApproval->department_id ?? $currentPendingApproval->target_department_id ?? null;
+
+                                $hasRequiredDept = false;
+
+                                if (empty($targetDeptId) || $targetDeptId == 0) {
+                                    // Artinya "Atasan Langsung", jadi departemen approver harus sama dengan departemen pembuat dokumen
+                                    $hasRequiredDept = ($user->department_id == $po->user->department_id);
+                                } elseif ($targetDeptId === 'all') {
+                                    // Artinya "Berlaku Umum" (Siapapun yg rolenya cocok boleh acc)
+                                    $hasRequiredDept = true;
+                                } else {
+                                    // Artinya Spesifik (Misal: 14 untuk HR&GA)
+                                    $hasRequiredDept = ($user->department_id == $targetDeptId);
+                                }
+
+                                // 5. Eksekusi Keputusan
+                                // Munculkan tombol JIKA dia Super Admin ATAU (Jabatannya Cocok & Departemennya Cocok)
+                                if ($isSuperAdmin || ($hasRequiredRole && $hasRequiredDept)) {
+                                    $canApprove = true;
+                                }
+                            }
+                        @endphp
+
+                        {{-- 🔥 TAMPILKAN TOMBOL HANYA JIKA $canApprove BERNILAI TRUE 🔥 --}}
+                        @if($canApprove)
+                            <button type="button" class="px-4 shadow-sm btn btn-success fw-bold rounded-pill" data-bs-toggle="modal" data-bs-target="#modalApprove">
+                                <i class="bi bi-check-circle-fill me-1"></i> Setujui PO
+                            </button>
+                            <button type="button" class="px-4 shadow-sm btn btn-danger fw-bold rounded-pill" data-bs-toggle="modal" data-bs-target="#modalReject">
+                                <i class="bi bi-x-circle-fill me-1"></i> Tolak PO
+                            </button>
+                        @endif
+
+                        {{-- 🔥 TAMPILKAN TOMBOL HANYA JIKA $canApprove BERNILAI TRUE 🔥 --}}
+                        @if($canApprove)
+                            <button type="button" class="px-4 shadow-sm btn btn-success fw-bold rounded-pill" data-bs-toggle="modal" data-bs-target="#modalApprove">
+                                <i class="bi bi-check-circle-fill me-1"></i> Setujui PO
+                            </button>
+                            <button type="button" class="px-4 shadow-sm btn btn-danger fw-bold rounded-pill" data-bs-toggle="modal" data-bs-target="#modalReject">
+                                <i class="bi bi-x-circle-fill me-1"></i> Tolak PO
+                            </button>
+                        @endif
+                    </form>
+
+                    <form action="{{ route('po.decide', $po->po_number) }}" method="POST" class="d-inline" id="formReject">
+                        @csrf
+                        <input type="hidden" name="action" value="REJECT">
+                        <input type="hidden" name="note" id="rejectNoteInput">
+                        <button type="button" onclick="confirmRejectWithNote()" class="px-4 shadow-sm btn btn-danger rounded-pill fw-bold">
+                            <i class="bi bi-x-circle-fill me-1"></i> Tolak PO
+                        </button>
+                    </form>
+                @else
+                    <div class="px-4 py-2 border shadow-sm rounded-pill bg-light text-muted fw-bold d-inline-block">
+                        <i class="bi bi-hourglass-split me-1"></i> Menunggu Persetujuan: {{ $currentApproval ? $currentApproval->role->name : 'Atasan' }}
+                    </div>
+                @endif
             @endif
 
             {{-- 5. TOMBOL TERIMA BARANG (GOODS RECEIPT) --}}
@@ -177,20 +197,18 @@
                 @endcan
             @endif
 
-            {{-- 6. TOMBOL BATALKAN PO (Hanya untuk Pembuat PO / Super Admin) --}}
+            {{-- 6. TOMBOL BATALKAN PO --}}
             @if(in_array($statusSlug, ['draft', 'pending_approval', 'issued', 'approved', '']))
-                @if(auth()->id() == $po->created_by || auth()->user()->hasAnyRole(['Super Admin', 'Super Administrator', 'super-admin']))
-                    <form action="{{ route('po.cancel', $po->po_number) }}" method="POST" class="d-inline" id="formCancel">
-                        @csrf
-                        <input type="hidden" name="cancel_reason" id="cancelReasonInput">
-                        <button type="button" onclick="confirmCancelWithReason()" class="px-4 shadow-sm btn btn-outline-danger rounded-pill fw-bold">
-                            <i class="bi bi-slash-circle me-1"></i> Batalkan PO
-                        </button>
-                    </form>
-                @endif
+                <form action="{{ route('po.cancel', $po->po_number) }}" method="POST" class="d-inline" id="formCancel">
+                    @csrf
+                    <input type="hidden" name="cancel_reason" id="cancelReasonInput">
+                    <button type="button" onclick="confirmCancelWithReason()" class="px-4 shadow-sm btn btn-outline-danger rounded-pill fw-bold">
+                        <i class="bi bi-slash-circle me-1"></i> Batalkan PO
+                    </button>
+                </form>
             @endif
 
-            {{-- 7. TOMBOL FORCE CLOSE PO --}}
+            {{-- 🔥 7. TOMBOL FORCE CLOSE PO 🔥 --}}
             @if(in_array($statusSlug, ['issued', 'approved', 'partial_receipt', 'partial_received']))
                 <form action="{{ route('po.force_close', $po->po_number) }}" method="POST" class="d-inline" id="formForceClose">
                     @csrf
@@ -201,7 +219,6 @@
                 </form>
             @endif
         </div>
-
     </div>
 
     {{-- ========================================================================= --}}
@@ -266,62 +283,6 @@
                         {!! nl2br(e($po->shipping_address ?? 'Sesuai alamat perusahaan')) !!}
                     </div>
                 </div>
-
-                <div class="col-sm-3">
-                    <div class="mb-3 d-flex justify-content-between align-items-center">
-                        <h6 class="mb-0 fw-bold text-muted text-uppercase"><i class="bi bi-info-circle me-1"></i> Detail Pembayaran:</h6>
-                        {{-- Tombol Edit Khusus Invoice (Hanya tampil untuk Pembuat PO atau Super Admin) --}}
-                        @if(auth()->id() == $po->created_by || auth()->user()->hasAnyRole(['Super Admin', 'super-admin']))
-                            <button class="p-0 btn btn-link text-primary text-decoration-none small fw-bold" data-bs-toggle="modal" data-bs-target="#modalEditBilling">
-                                <i class="bi bi-pencil-square"></i> Isi / Edit
-                            </button>
-                        @endif
-                    </div>
-                    
-                    <div class="p-3 border small text-muted rounded-3 h-100 bg-light position-relative">
-                        <strong>Mata Uang:</strong> {{ $po->currency ?? 'IDR' }}<br>
-                        <strong>Termin:</strong> {{ $po->payment_terms ?? '-' }}<br>
-                        <strong>Estimasi Tiba:</strong> {{ $po->delivery_date ? \Carbon\Carbon::parse($po->delivery_date)->format('d M Y') : 'TBD' }}<br>
-                        <hr class="my-2 border-secondary-subtle">
-                        <strong class="text-dark">No. Invoice:</strong> <span class="text-primary fw-bold">{{ $po->invoice_number ?? '-' }}</span><br>
-                        <strong class="text-dark">No. Rekening:</strong> <span class="text-success fw-bold">{{ $po->account_number ?? '-' }}</span>
-                    </div>
-
-                    {{-- 🔥 MODAL KHUSUS EDIT INVOICE & REKENING 🔥 --}}
-                    <div class="modal fade" id="modalEditBilling" tabindex="-1">
-                        <div class="modal-dialog modal-dialog-centered">
-                            <div class="overflow-hidden border-0 shadow-lg modal-content rounded-4 text-start">
-                                <form action="{{ route('po.update_billing', $po->po_number) }}" method="POST">
-                                    @csrf
-                                    <div class="py-3 text-white border-0 modal-header bg-primary">
-                                        <h6 class="mb-0 modal-title fw-bold"><i class="bi bi-receipt me-2"></i>Lengkapi Data Penagihan</h6>
-                                        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
-                                    </div>
-                                    <div class="p-4 modal-body bg-light">
-                                        <div class="mb-3 alert alert-info small border-info-subtle">
-                                            <i class="bi bi-info-circle-fill me-1"></i> Data ini dapat diedit kapan saja dan <strong>tidak akan</strong> mereset persetujuan atasan.
-                                        </div>
-                                        <div class="mb-3">
-                                            <label class="form-label fw-bold text-dark small">Nomor Invoice</label>
-                                            <input type="text" name="invoice_number" class="shadow-sm form-control border-primary-subtle fw-bold text-primary" value="{{ $po->invoice_number }}" placeholder="Contoh: INV/2026/08/001">
-                                        </div>
-                                        <div class="mb-3">
-                                            <label class="form-label fw-bold text-dark small">Nomor Rekening (Account No)</label>
-                                            <input type="text" name="account_number" class="shadow-sm form-control border-success-subtle fw-bold text-success" value="{{ $po->account_number }}" placeholder="Contoh: BCA - 1234567890 a.n Vendor">
-                                        </div>
-                                    </div>
-                                    <div class="p-3 bg-white modal-footer border-top">
-                                        <button type="button" class="px-4 border btn btn-light rounded-pill fw-bold" data-bs-dismiss="modal">Batal</button>
-                                        <button type="submit" class="px-4 text-white shadow-sm btn btn-primary rounded-pill fw-bold">
-                                            <i class="bi bi-save me-1"></i> Simpan Data
-                                        </button>
-                                    </div>
-                                </form>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-                
                 <div class="col-sm-3">
                     <h6 class="mb-3 fw-bold text-muted text-uppercase"><i class="bi bi-info-circle me-1"></i> Detail Pembayaran:</h6>
                     <div class="p-3 border small text-muted rounded-3 h-100 bg-light">
@@ -563,12 +524,6 @@
             @php
                 $creator = \App\Models\User::find($po->created_by);
                 $creatorRole = $creator ? $creator->roles->first() : null;
-                $creatorDept = '';
-
-                // Ambil nama departemen pembuat secara langsung dari database agar aman
-                if ($creator && $creator->department_id) {
-                    $creatorDept = \Illuminate\Support\Facades\DB::table('departments')->where('id', $creator->department_id)->value('name');
-                }
 
                 $approvals = \App\Models\DocumentApproval::with(['role', 'approver'])
                                 ->where('document_id', $po->id)
@@ -585,37 +540,11 @@
                         <span class="stamp-approved" style="color: #198754; border: 2px solid #198754; padding: 5px 10px; font-weight: bold; transform: rotate(-5deg); opacity: 0.8; letter-spacing: 2px;">ISSUED</span>
                     </div>
                     <p class="mb-0"><u><strong>{{ $creator->name ?? '....................................' }}</strong></u></p>
-                    <p class="mb-0 text-muted" style="font-size: 0.75rem;">{{ $creatorRole ? $creatorRole->name : 'Staff / Pembuat' }}</p>
-                    <p class="mb-0 text-muted fw-bold" style="font-size: 0.65rem;">{{ $creatorDept ?: '-' }}</p>
-                    <p class="mb-0 text-muted mt-1" style="font-size: 0.7rem;">Tgl: {{ \Carbon\Carbon::parse($po->created_at)->format('d/m/Y') }}</p>
+                    <p class="mb-0 text-muted" style="font-size: 0.75rem;">{{ $creatorRole ? $creatorRole->name : 'Procurement Dept' }}</p>
+                    <p class="mb-0 text-muted" style="font-size: 0.7rem;">Tgl: {{ \Carbon\Carbon::parse($po->created_at)->format('d/m/Y') }}</p>
                 </div>
 
                 @foreach($approvals as $approval)
-                    @php
-                        $roleName = optional($approval->role)->name ?? 'Atasan';
-                        $deptName = '';
-
-                        // Tentukan nama departemen
-                        if (in_array($approval->status, ['APPROVED', 'REJECTED'])) {
-                            // Jika sudah direspon, ambil dari data user yang klik setuju
-                            if ($approval->approved_by) {
-                                $apprUser = \App\Models\User::find($approval->approved_by);
-                                if ($apprUser && $apprUser->department_id) {
-                                    $deptName = \Illuminate\Support\Facades\DB::table('departments')->where('id', $apprUser->department_id)->value('name');
-                                }
-                            }
-                        } else {
-                            // Jika belum direspon (PENDING), baca dari aturan matriks
-                            if ($approval->target_department_id === 'all' || $approval->target_department_id == 0) {
-                                $deptName = 'Semua Departemen';
-                            } elseif (!empty($approval->target_department_id)) {
-                                $deptName = \Illuminate\Support\Facades\DB::table('departments')->where('id', $approval->target_department_id)->value('name');
-                            } else {
-                                $deptName = $creatorDept; // Atasan Langsung
-                            }
-                        }
-                    @endphp
-
                     <div class="px-2 signature-box">
                         <p class="mb-1 text-muted">Disetujui Oleh,</p>
 
@@ -634,14 +563,12 @@
                                 $approverName = optional($approval->approver)->name ?? (\App\Models\User::find($approval->approved_by)->name ?? '....................................');
                             @endphp
                             <p class="mb-0"><u><strong>{{ $approverName }}</strong></u></p>
-                            <p class="mb-0 text-muted" style="font-size: 0.75rem;">{{ $roleName }}</p>
-                            <p class="mb-0 text-muted fw-bold" style="font-size: 0.65rem;">{{ $deptName ?: '-' }}</p>
-                            <p class="mb-0 text-muted mt-1" style="font-size: 0.7rem;">Tgl: {{ \Carbon\Carbon::parse($approval->approved_at)->format('d/m/Y') }}</p>
+                            <p class="mb-0 text-muted" style="font-size: 0.75rem;">{{ optional($approval->role)->name ?? 'Atasan' }}</p>
+                            <p class="mb-0 text-muted" style="font-size: 0.7rem;">Tgl: {{ \Carbon\Carbon::parse($approval->approved_at)->format('d/m/Y') }}</p>
                         @else
                             <p class="mb-0"><u><strong>....................................</strong></u></p>
-                            <p class="mb-0 text-muted" style="font-size: 0.75rem;">{{ $roleName }}</p>
-                            <p class="mb-0 text-muted fw-bold" style="font-size: 0.65rem;">{{ $deptName ?: '-' }}</p>
-                            <p class="mb-0 text-muted mt-1" style="font-size: 0.7rem;">Tgl: ........................</p>
+                            <p class="mb-0 text-muted" style="font-size: 0.75rem;">{{ optional($approval->role)->name ?? 'Atasan' }}</p>
+                            <p class="mb-0 text-muted" style="font-size: 0.7rem;">Tgl: ........................</p>
                         @endif
                     </div>
                 @endforeach
@@ -651,8 +578,7 @@
                     <div class="sign-space" style="height: 80px;"></div>
                     <p class="mb-0"><u><strong>....................................</strong></u></p>
                     <p class="mb-0 text-muted" style="font-size: 0.75rem;">Cap & Tanda Tangan</p>
-                    <p class="mb-0 text-white" style="font-size: 0.65rem;">-</p>
-                    <p class="mb-0 text-muted mt-1" style="font-size: 0.7rem;">Tgl: ........................</p>
+                    <p class="mb-0 text-muted" style="font-size: 0.7rem;">Tgl: ........................</p>
                 </div>
             </div>
 
