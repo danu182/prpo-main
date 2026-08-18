@@ -202,6 +202,8 @@ class PurchaseOrderController extends Controller
             'payment_term_id'    => 'required|exists:payment_terms,id',
             'po_items'           => 'required|array',
             'delivery_date'      => 'required|date',
+            'invoice_number'     => 'nullable|string', // INI YANG BENAR
+            'account_number'     => 'nullable|string', // INI YANG BENAR
         ]);
 
         try {
@@ -335,6 +337,10 @@ class PurchaseOrderController extends Controller
                         'tax_total'             => $totalAllTaxes,
                         'charge_total'          => $poChargeTotal,
                         'grand_total'           => $poGrandTotal,
+
+                        // 🔥 TAMBAHKAN 2 BARIS INI DI SINI 🔥
+                        'invoice_number'        => $request->invoice_number,
+                        'account_number'        => $request->account_number,
                     ]);
 
                     // I. SIMPAN RINCIAN EXTRA
@@ -478,6 +484,8 @@ class PurchaseOrderController extends Controller
             'payment_term_id'    => 'required|exists:payment_terms,id',
             'po_items'           => 'required|array',
             'delivery_date'      => 'required|date',
+            'invoice_number'     => 'nullable|string', // INI YANG BENAR
+            'account_number'     => 'nullable|string', // INI YANG BENAR
         ]);
 
         try {
@@ -892,9 +900,10 @@ class PurchaseOrderController extends Controller
         $prRecord = \App\Models\PurchaseRequest::with('items')->find($prId);
         if (!$prRecord) return;
 
-        // Cek jika status PR sudah Batal/Ditolak/Selesai/Closed, abaikan update
+        // 🔥 PERBAIKAN FATAL: Hapus 'completed' dan 'closed' dari daftar blokir.
+        // Biarkan PR yang sudah "Selesai/PO Issued" bisa HIDUP KEMBALI jika PO dibatalkan.
         $currentSlug = strtolower(optional($prRecord->status)->slug);
-        if (in_array($currentSlug, ['cancelled', 'rejected', 'completed', 'closed'])) {
+        if (in_array($currentSlug, ['cancelled', 'canceled', 'rejected'])) {
             return;
         }
 
@@ -930,16 +939,16 @@ class PurchaseOrderController extends Controller
         // =====================================================================
         // 🔥 LOGIKA PENENTUAN STATUS AKHIR PR 🔥
         // =====================================================================
-        $statusApproved = \App\Models\Status::where('type', 'PR')->where('slug', 'approved')->first();
-        $statusPartial  = \App\Models\Status::where('type', 'PR')->where('slug', 'partial_po')->first();
-        $statusPoIssued = \App\Models\Status::where('type', 'PR')->where('slug', 'po_issued')->first();
+        $statusApproved = \App\Models\Status::where('type', 'PR')->whereIn('slug', ['approved', 'disetujui'])->first();
+        $statusPartial  = \App\Models\Status::where('type', 'PR')->whereIn('slug', ['partial_po', 'parsial'])->first();
+        $statusPoIssued = \App\Models\Status::where('type', 'PR')->whereIn('slug', ['po_issued', 'completed', 'selesai'])->first();
 
         if (!$anyItemProcessed) {
-            // Skenario 1: Belum ada yang dipesan sama sekali (Kondisi Awal)
+            // Skenario 1: Belum ada yang dipesan / PO DIBATALKAN TOTAL -> HIDUP KEMBALI
             if ($statusApproved) $prRecord->update(['status_id' => $statusApproved->id]);
 
         } elseif (!$allItemFulfilled) {
-            // Skenario 2: Dipesan sebagian (Bisa Parsial Item atau Parsial Qty) -> PR TETAP HIDUP!
+            // Skenario 2: Dipesan sebagian (Parsial Item atau Parsial Qty)
             if ($statusPartial) $prRecord->update(['status_id' => $statusPartial->id]);
 
         } else {
@@ -1979,6 +1988,8 @@ class PurchaseOrderController extends Controller
             'po_date'            => 'required|date',
             'delivery_date'      => 'required|date',
             'po_items'           => 'required|array|min:1',
+            'invoice_number'     => 'nullable|string', // INI YANG BENAR
+            'account_number'     => 'nullable|string', // INI YANG BENAR
         ]);
 
         try {
@@ -2202,7 +2213,7 @@ class PurchaseOrderController extends Controller
     {
         try {
             $po = \App\Models\PurchaseOrder::where('po_number', $slug)->firstOrFail();
-            
+
             // Simpan data
             $po->update([
                 'invoice_number' => $request->input('invoice_number'),
@@ -2286,7 +2297,7 @@ class PurchaseOrderController extends Controller
                 ->header('Content-Type', 'application/pdf')
                 ->header('Content-Disposition', 'inline; filename="' . $filename . '"');
     }
-    
+
 
 
 }

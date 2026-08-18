@@ -577,6 +577,11 @@ class PurchaseOrderController extends Controller
                 $po->update([
                     'bill_to_company_id'    => $request->billing_company_id,
                     'shipping_address'      => $request->shipping_address,
+                    
+                    // 🔥 TAMBAHKAN 2 BARIS INI DI SINI 🔥
+                    'invoice_number'        => $request->invoice_number,
+                    'account_number'        => $request->account_number,
+
                     'payment_terms'         => $paymentTermName,
                     'notes'                 => $request->notes,
                     'delivery_date'         => $request->delivery_date,

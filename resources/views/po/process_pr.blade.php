@@ -111,7 +111,7 @@
             @endif
 
             {{-- 1. INFORMASI PENAGIHAN & PENGIRIMAN --}}
-            <div class="mb-4 border-0 shadow-sm card rounded-4 border-start border-4 border-primary">
+            <div class="mb-4 border-0 border-4 shadow-sm card rounded-4 border-start border-primary">
                 <div class="p-4 card-body">
                     <h6 class="mb-3 fw-bold text-dark"><i class="bi bi-info-circle-fill me-2 text-primary"></i>Informasi Pengiriman & Pembayaran</h6>
                     <div class="row g-4">
@@ -132,6 +132,17 @@
                                 @endforeach
                             </select>
                         </div>
+
+                        {{-- 🔥 KOLOM BARU: INVOICE & REKENING 🔥 --}}
+                        <div class="col-md-6">
+                            <label class="form-label small fw-bold text-dark">No. Invoice (Opsional)</label>
+                            <input type="text" name="invoice_number" class="form-control form-input-custom fw-bold text-primary" placeholder="Bisa dikosongkan & diisi menyusul...">
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label small fw-bold text-dark">No. Rekening (Account No)</label>
+                            <input type="text" name="account_number" class="form-control form-input-custom fw-bold text-success" placeholder="Bisa dikosongkan & diisi menyusul...">
+                        </div>
+
                         <div class="col-12">
                             <div class="mb-2 d-flex justify-content-between align-items-end">
                                 <label class="mb-0 form-label small fw-bold text-dark">Lokasi Pengiriman (Ship To) <span class="text-danger">*</span></label>
@@ -309,9 +320,9 @@
 
                                                                         {{-- 🔥 TAMBAHAN: MUNCULKAN FILE LAMPIRAN PENAWARAN VENDOR DARI PR 🔥 --}}
                                                                         @if(isset($vq->attachments) && count($vq->attachments) > 0)
-                                                                            <div class="mt-1 d-flex flex-wrap gap-1">
+                                                                            <div class="flex-wrap gap-1 mt-1 d-flex">
                                                                                 @foreach($vq->attachments as $vFile)
-                                                                                    <a href="{{ asset('storage/' . $vFile->file_path) }}" target="_blank" onclick="event.stopPropagation();" class="badge bg-secondary-subtle text-secondary text-decoration-none border border-secondary-subtle">
+                                                                                    <a href="{{ asset('storage/' . $vFile->file_path) }}" target="_blank" onclick="event.stopPropagation();" class="border badge bg-secondary-subtle text-secondary text-decoration-none border-secondary-subtle">
                                                                                         <i class="bi bi-paperclip"></i> {{ $vFile->file_name ?? 'Lampiran' }}
                                                                                     </a>
                                                                                 @endforeach
@@ -319,7 +330,7 @@
                                                                         @elseif(!empty($vq->file_path))
                                                                             {{-- Fallback jika lampiran disave langsung di kolom file_path tabel vendor_quotes --}}
                                                                             <div class="mt-1">
-                                                                                <a href="{{ asset('storage/' . $vq->file_path) }}" target="_blank" onclick="event.stopPropagation();" class="badge bg-secondary-subtle text-secondary text-decoration-none border border-secondary-subtle">
+                                                                                <a href="{{ asset('storage/' . $vq->file_path) }}" target="_blank" onclick="event.stopPropagation();" class="border badge bg-secondary-subtle text-secondary text-decoration-none border-secondary-subtle">
                                                                                     <i class="bi bi-paperclip"></i> Lihat Lampiran
                                                                                 </a>
                                                                             </div>

@@ -93,12 +93,22 @@
                                 @endforeach
                             </select>
                         </div>
+                        {{-- 🔥 KOLOM INVOICE & REKENING (BARU) 🔥 --}}
+                        <div class="col-md-6">
+                            <label class="form-label small fw-bold text-dark">No. Invoice (Opsional)</label>
+                            <input type="text" name="invoice_number" class="form-control form-input-custom fw-bold text-primary" value="{{ $po->invoice_number }}" placeholder="Bisa dikosongkan & diisi menyusul...">
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label small fw-bold text-dark">No. Rekening (Account No)</label>
+                            <input type="text" name="account_number" class="form-control form-input-custom fw-bold text-success" value="{{ $po->account_number }}" placeholder="Bisa dikosongkan & diisi menyusul...">
+                        </div>
+
                         <div class="col-12">
                             <div class="mb-2 d-flex justify-content-between align-items-end">
                                 <label class="mb-0 form-label small fw-bold text-dark">Lokasi Pengiriman (Ship To) <span class="text-danger">*</span></label>
                                 <button type="button" class="p-0 btn btn-sm btn-link text-decoration-none" onclick="updateShippingAddress(true)"><i class="bi bi-arrow-counterclockwise"></i> Reset ke Alamat PT</button>
                             </div>
-                            <textarea name="shipping_address" id="shippingAddressInput" rows="2" class="form-control form-input-custom bg-light" required>{{ old('shipping_address', $po->shipping_address) }}</textarea>
+                            <textarea name="shipping_address" id="shippingAddressInput" rows="2" class="form-control form-input-custom bg-light" required>{{ $po->shipping_address }}</textarea>
                         </div>
                     </div>
                 </div>

@@ -79,6 +79,17 @@
                                 @foreach($companies as $c) <option value="{{ $c->id }}" data-address="{{ $c->address ?? '' }}">{{ $c->name }}</option> @endforeach
                             </select>
                         </div>
+
+                        {{-- 🔥 KOLOM BARU: INVOICE & REKENING 🔥 --}}
+                        <div class="col-md-6">
+                            <label class="form-label small fw-bold text-dark">No. Invoice (Opsional)</label>
+                            <input type="text" name="invoice_number" class="form-control form-input-custom fw-bold text-primary" placeholder="Bisa dikosongkan & diisi menyusul...">
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label small fw-bold text-dark">No. Rekening (Account No)</label>
+                            <input type="text" name="account_number" class="form-control form-input-custom fw-bold text-success" placeholder="Bisa dikosongkan & diisi menyusul...">
+                        </div>
+
                         <div class="col-12">
                             <label class="mb-1 form-label small fw-bold text-dark">Lokasi Pengiriman (Ship To) <span class="text-danger">*</span></label>
                             <textarea name="shipping_address" id="shippingAddressInput" rows="2" class="form-control form-input-custom bg-light" required>{{ $defaultShippingAddress }}</textarea>
@@ -97,7 +108,7 @@
 
             <div class="text-center" id="emptyStateBox">
                 <div class="py-5 border border-dashed rounded-4 bg-light border-secondary-subtle">
-                    <i class="bi bi-basket text-secondary opacity-50" style="font-size: 3rem;"></i>
+                    <i class="opacity-50 bi bi-basket text-secondary" style="font-size: 3rem;"></i>
                     <p class="mt-2 mb-0 text-muted fw-bold">Belum ada barang yang ditambahkan.</p>
                     <p class="small text-muted">Klik tombol "Tambah Barang" di atas untuk memulai.</p>
                 </div>
