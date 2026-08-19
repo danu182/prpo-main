@@ -115,7 +115,7 @@
                             </div>
                         </div>
 
-                        {{-- BLOK INFO INVOICE & REKENING --}}
+                        {{-- 🔥 BLOK INFO INVOICE & REKENING (BARU) 🔥 --}}
                         <div class="col-md-12">
                             <label class="mb-1 small text-muted fw-bold">DETAIL PEMBAYARAN</label>
                             <div class="p-3 border d-flex flex-column flex-sm-row justify-content-between bg-light rounded-3">
@@ -273,83 +273,6 @@
                                 </div>
                             </a>
                         </div>
-                        @endforeach
-                    </div>
-                </div>
-            </div>
-            @endif
-
-            {{-- ========================================================================= --}}
-            {{-- 🔥 AREA TRACKING STATUS PERSETUJUAN (BARU) 🔥 --}}
-            {{-- ========================================================================= --}}
-            @php
-                $approvals = \App\Models\DocumentApproval::with(['role'])
-                    ->where('document_id', $bill->id)
-                    ->whereIn('document_type', ['App\Models\BillRequest', 'OPEX', 'BillRequest', get_class($bill)])
-                    ->orderBy('step_order', 'asc')
-                    ->get();
-            @endphp
-
-            @if($approvals->count() > 0)
-            <div class="mb-4 border-0 shadow-sm card rounded-4 bg-light border-primary-subtle">
-                <div class="py-3 bg-white card-header border-bottom-0 rounded-top-4">
-                    <h6 class="mb-0 fw-bold text-primary"><i class="bi bi-shield-check me-2"></i>Status Persetujuan Dokumen</h6>
-                </div>
-                <div class="p-4 pt-3 card-body">
-                    <div class="gap-3 d-flex flex-column">
-                        @foreach($approvals as $approval)
-                            @php
-                                $approverUser = $approval->approved_by ? \App\Models\User::find($approval->approved_by) : null;
-
-                                // Cari Departemen
-                                $deptName = '';
-                                if (!empty($approval->target_department_id) && $approval->target_department_id !== 'all') {
-                                    $dept = \App\Models\Department::find($approval->target_department_id);
-                                    if($dept) $deptName = $dept->name;
-                                }
-
-                                $roleDisplay = optional($approval->role)->name ?? 'Atasan';
-                                if($deptName) $roleDisplay .= ' - ' . $deptName;
-
-                                // Kondisi Tampilan (Warna, Icon, Teks)
-                                $bgClass = 'bg-white';
-                                $borderClass = 'border-warning-subtle';
-                                $icon = 'bi-hourglass-split text-warning';
-                                $statusBadge = '<span class="px-3 py-2 shadow-sm badge bg-warning text-dark rounded-pill"><i class="bi bi-clock me-1"></i>PENDING</span>';
-
-                                if($approval->status == 'APPROVED') {
-                                    $borderClass = 'border-success';
-                                    $icon = 'bi-check-circle-fill text-success';
-                                    $statusBadge = '<span class="px-3 py-2 shadow-sm badge bg-success rounded-pill"><i class="bi bi-check-all me-1"></i>APPROVED</span>';
-                                } elseif($approval->status == 'REJECTED') {
-                                    $borderClass = 'border-danger';
-                                    $icon = 'bi-x-circle-fill text-danger';
-                                    $statusBadge = '<span class="px-3 py-2 shadow-sm badge bg-danger rounded-pill"><i class="bi bi-x-circle me-1"></i>REJECTED</span>';
-                                }
-                            @endphp
-
-                            <div class="p-3 border {{ $borderClass }} rounded-4 bg-white shadow-sm d-flex flex-column flex-sm-row align-items-sm-center justify-content-between">
-                                <div class="mb-2 d-flex align-items-center mb-sm-0">
-                                    <i class="bi {{ $icon }} fs-2 me-3"></i>
-                                    <div>
-                                        <div class="mb-1 fw-bold text-dark">
-                                            <span class="badge bg-secondary me-2">Tahap {{ $approval->step_order }}</span>
-                                            {{ $roleDisplay }}
-                                        </div>
-                                        <div class="small text-muted">
-                                            @if($approval->status == 'APPROVED' || $approval->status == 'REJECTED')
-                                                Diproses oleh: <span class="fw-bold text-dark">{{ $approverUser->name ?? 'Unknown User' }}</span>
-                                                <br><i class="bi bi-calendar-check me-1"></i> {{ \Carbon\Carbon::parse($approval->approved_at)->format('d M Y, H:i') }} WIB
-                                            @else
-                                                <i class="bi bi-person-fill-exclamation me-1"></i> Menunggu tinjauan...
-                                            @endif
-                                        </div>
-                                    </div>
-                                </div>
-                                <div class="text-sm-end">
-                                    {!! $statusBadge !!}
-                                </div>
-                            </div>
                         @endforeach
                     </div>
                 </div>

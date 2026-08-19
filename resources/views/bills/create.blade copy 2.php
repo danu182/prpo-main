@@ -10,13 +10,7 @@
 @endpush
 
 @section('content')
-
-{{-- 🔥 PENGAMAN DATA PAJAK: Menarik data master otomatis jika tidak dipassing dari Controller 🔥 --}}
-@php
-    $taxes = $taxes ?? \App\Models\Tax::where('is_active', 1)->orderBy('percent')->get();
-@endphp
-
-<div class="py-2 container-fluid">
+<div class="container-fluid py-2">
 
     {{-- HEADER --}}
     <div class="mb-4 d-flex align-items-center justify-content-between">
@@ -84,7 +78,7 @@
                                 <input type="date" name="due_date" class="form-control" value="{{ date('Y-m-d', strtotime('+14 days')) }}" required>
                             </div>
 
-                            <div class="col-md-12">
+                            <div class="col-md-6">
                                 <label class="form-label fw-bold small text-muted text-uppercase">Nama Vendor / Supplier <span class="text-danger">*</span></label>
                                 <select name="vendor_name" class="form-select select2-vendor" required>
                                     <option value="">-- Cari Vendor dari Master Data --</option>
@@ -96,23 +90,22 @@
                                     <i class="bi bi-lightbulb me-1"></i>Jika belum ada, <strong>ketik lalu tekan Enter</strong>.
                                 </div>
                             </div>
-
-                            {{-- 🔥 PERBAIKAN: KOLOM INVOICE & REKENING BERDAMPINGAN 🔥 --}}
                             <div class="col-md-6">
                                 <label class="form-label fw-bold small text-muted text-uppercase">No. Invoice Vendor <span class="text-muted text-lowercase">(Opsional)</span></label>
-                                <input type="text" name="vendor_invoice_number" class="form-control fw-bold text-primary" value="{{ old('vendor_invoice_number') }}" placeholder="Contoh: INV-2026-001">
-                            </div>
-                            <div class="col-md-6">
-                                <label class="form-label fw-bold small text-muted text-uppercase">No. Rekening (Account No)</label>
-                                <input type="text" name="account_number" class="form-control fw-bold text-success" value="{{ old('account_number') }}" placeholder="BCA 1234567 a.n Vendor">
+                                <input type="text" name="vendor_invoice_number" class="form-control" value="{{ old('vendor_invoice_number') }}" placeholder="Contoh: INV-2026-001">
+                                <div class="mt-1 form-text small">
+                                    Akan muncul di kolom Invoices No pada Form BPR PDF.
+                                </div>
                             </div>
 
-                            <div class="mt-2 col-md-12">
+                            <div class="col-md-12">
                                 <label class="form-label fw-bold small text-muted text-uppercase">Catatan Tagihan</label>
                                 <textarea name="note" class="form-control rounded-3" rows="2" placeholder="Tuliskan keterangan jika ada..."></textarea>
                             </div>
 
-                            {{-- JALUR TIKUS (OVERRIDE WORKFLOW) --}}
+                            {{-- ========================================================= --}}
+                            {{-- 🔥 JALUR TIKUS (OVERRIDE WORKFLOW) 🔥 --}}
+                            {{-- ========================================================= --}}
                             <div class="pt-3 mt-3 col-md-12 border-top">
                                 <label class="form-label fw-bold small text-primary text-uppercase">
                                     <i class="bi bi-shuffle me-1"></i> Pilih Jalur Persetujuan Khusus (Opsional)
@@ -126,9 +119,11 @@
                                     @endif
                                 </select>
                                 <div class="mt-1 form-text small text-muted">
-                                    <i class="bi bi-info-circle me-1"></i>Biarkan kosong jika ingin menggunakan rute standar departemen Anda.
+                                    <i class="bi bi-info-circle me-1"></i>Biarkan kosong jika ingin menggunakan rute standar departemen Anda. Pilih rute jika tagihan ini bersifat khusus (misal: Hosting/IT).
                                 </div>
                             </div>
+                            {{-- ========================================================= --}}
+
                         </div>
                     </div>
                 </div>
@@ -170,22 +165,13 @@
                 <div class="mb-4 border-0 shadow-sm card rounded-4">
                     <div class="py-3 bg-white card-header border-bottom-0 rounded-top-4 d-flex justify-content-between align-items-center">
                         <h6 class="mb-0 fw-bold text-primary"><i class="bi bi-list-check me-2"></i>Rincian Barang / Jasa Opex</h6>
-
-                        {{-- 🔥 FITUR PAJAK GLOBAL (HYBRID) 🔥 --}}
-                        <div class="input-group input-group-sm" style="width: 420px;">
+                        <div class="input-group input-group-sm" style="width: 320px;">
                             <span class="input-group-text bg-light border-primary-subtle" style="font-size: 0.75rem;">Pajak Semua:</span>
+                            <input type="text" id="global_tax_val" class="form-control price-display border-primary-subtle" value="0">
                             <select id="global_tax_type" class="form-select border-primary-subtle" style="max-width: 60px;">
-                                <option value="percent" selected>%</option>
                                 <option value="fixed">Rp</option>
+                                <option value="percent" selected>%</option>
                             </select>
-                            <select id="global_tax_master" class="form-select border-primary-subtle fw-bold text-info">
-                                <option value="" data-rate="0">- Tanpa Pajak -</option>
-                                <option value="MANUAL_PERCENT" data-rate="0">Manual (%)</option>
-                                @foreach($taxes as $tax)
-                                    <option value="{{ $tax->id }}" data-rate="{{ (float)$tax->percent }}">{{ $tax->name }} ({{ (float)$tax->percent }}%)</option>
-                                @endforeach
-                            </select>
-                            <input type="text" id="global_tax_val" class="form-control price-display border-primary-subtle text-end d-none" value="0">
                             <button class="btn btn-primary" type="button" id="btnApplyGlobalTax" style="font-size: 0.75rem;">
                                 <i class="bi bi-check-all"></i>
                             </button>
@@ -225,27 +211,19 @@
                                         </div>
                                     </td>
                                     <td class="pt-3">
-                                        {{-- 🔥 FITUR PAJAK ITEM (HYBRID) 🔥 --}}
                                         <div class="mb-1 input-group input-group-sm" title="Pajak per-item">
                                             <span class="input-group-text bg-info bg-opacity-10 text-info fw-bold" style="font-size: 0.7rem;">+Pajak</span>
-                                            <select name="items[0][tax_type]" class="form-select tax-type" style="max-width: 55px; padding-right:5px; padding-left:5px;">
-                                                <option value="percent" selected>%</option>
-                                                <option value="fixed">Rp</option>
-                                            </select>
-                                            <select name="items[0][tax_id]" class="form-select tax-master-select fw-bold text-info">
-                                                <option value="" data-rate="0">- Tanpa Pajak -</option>
-                                                <option value="MANUAL_PERCENT" data-rate="0">Manual (%)</option>
-                                                @foreach($taxes as $tax)
-                                                    <option value="{{ $tax->id }}" data-rate="{{ (float)$tax->percent }}">{{ $tax->name }} ({{ (float)$tax->percent }}%)</option>
-                                                @endforeach
-                                            </select>
-                                            <input type="text" class="form-control text-end tax-val-display d-none" value="0">
+                                            <input type="text" class="form-control tax-val-display" value="0">
                                             <input type="hidden" name="items[0][tax_value]" class="tax-val-real" value="0">
+                                            <select name="items[0][tax_type]" class="form-select tax-type" style="max-width: 60px;">
+                                                <option value="fixed">Rp</option>
+                                                <option value="percent" selected>%</option>
+                                            </select>
                                         </div>
 
                                         <div class="input-group input-group-sm" title="Diskon per-item">
                                             <span class="input-group-text bg-danger bg-opacity-10 text-danger fw-bold" style="font-size: 0.7rem;">-Disc&nbsp;&nbsp;</span>
-                                            <input type="text" class="form-control text-end disc-val-display" value="0">
+                                            <input type="text" class="form-control disc-val-display" value="0">
                                             <input type="hidden" name="items[0][discount_value]" class="disc-val-real" value="0">
                                             <select name="items[0][discount_type]" class="form-select disc-type" style="max-width: 60px;">
                                                 <option value="fixed">Rp</option>
@@ -409,7 +387,7 @@ $(document).ready(function() {
     function formatNumber(num) { return num.toString().replace(/\B(?=(\d{3})+(?!\d))/g, "."); }
     function unformatNumber(str) { return parseInt(str.toString().replace(/[^0-9]/g, '')) || 0; }
 
-    $(document).on('keyup', '.price-display, .disc-val-display, .tax-val-display, .charge-display, .ext-disc-display, #global_tax_val', function() {
+    $(document).on('keyup', '.price-display, .disc-val-display, .tax-val-display, .charge-display, .ext-disc-display', function() {
         let isPercent = false;
 
         if($(this).hasClass('disc-val-display')) {
@@ -424,145 +402,17 @@ $(document).ready(function() {
         if(isPercent && val > 100) val = 100;
 
         $(this).val(isPercent ? val : formatNumber(val));
-
-        // Pengecualian: global_tax_val tidak punya sibling input hidden secara langsung di sebelahnya,
-        // jadi hidden-nya dilewati, nilai aslinya diambil langsung pakai unformat saat tombol apply diklik.
-        if ($(this).attr('id') !== 'global_tax_val') {
-            $(this).siblings('input[type="hidden"]').val(val);
-        }
-
+        $(this).siblings('input[type="hidden"]').val(val);
         calculate();
     });
 
-    $(document).on('change', '.disc-type', function() {
+    $(document).on('change', '.disc-type, .tax-type, #global_tax_type', function() {
         let displayInput = $(this).closest('.input-group').find('input[type="text"]');
         let hiddenInput = $(this).closest('.input-group').find('input[type="hidden"]');
         displayInput.val(0); hiddenInput.val(0);
         calculate();
     });
 
-    // ==========================================
-    // 🔥 LOGIKA PAJAK HYBRID (PER ITEM) 🔥
-    // ==========================================
-    $(document).on('change', '.tax-type', function() {
-        let container = $(this).closest('.input-group');
-        let masterSelect = container.find('.tax-master-select');
-        let valDisplay = container.find('.tax-val-display');
-        let valReal = container.find('.tax-val-real');
-
-        if ($(this).val() === 'percent') {
-            masterSelect.removeClass('d-none');
-            if (masterSelect.val() === 'MANUAL_PERCENT') {
-                valDisplay.removeClass('d-none');
-            } else {
-                valDisplay.addClass('d-none');
-                let rate = masterSelect.find(':selected').data('rate') || 0;
-                valDisplay.val(rate);
-                valReal.val(rate);
-            }
-        } else {
-            masterSelect.addClass('d-none');
-            valDisplay.removeClass('d-none');
-            valDisplay.val(0);
-            valReal.val(0);
-        }
-        calculate();
-    });
-
-    $(document).on('change', '.tax-master-select', function() {
-        let container = $(this).closest('.input-group');
-        let valDisplay = container.find('.tax-val-display');
-        let valReal = container.find('.tax-val-real');
-
-        if ($(this).val() === 'MANUAL_PERCENT') {
-            valDisplay.removeClass('d-none').val(0);
-            valReal.val(0);
-            valDisplay.focus();
-        } else {
-            valDisplay.addClass('d-none');
-            let rate = $(this).find(':selected').data('rate') || 0;
-            valDisplay.val(rate);
-            valReal.val(rate);
-        }
-        calculate();
-    });
-
-    // ==========================================
-    // 🔥 LOGIKA PAJAK HYBRID (GLOBAL) 🔥
-    // ==========================================
-    $('#global_tax_type').change(function() {
-        let masterSelect = $('#global_tax_master');
-        let valDisplay = $('#global_tax_val');
-
-        if ($(this).val() === 'percent') {
-            masterSelect.removeClass('d-none');
-            if(masterSelect.val() === 'MANUAL_PERCENT') {
-                valDisplay.removeClass('d-none');
-            } else {
-                valDisplay.addClass('d-none');
-            }
-        } else {
-            masterSelect.addClass('d-none');
-            valDisplay.removeClass('d-none').val(0);
-        }
-    });
-
-    $('#global_tax_master').change(function() {
-        let valDisplay = $('#global_tax_val');
-        if ($(this).val() === 'MANUAL_PERCENT') {
-            valDisplay.removeClass('d-none').val(0).focus();
-        } else {
-            valDisplay.addClass('d-none');
-            let rate = $(this).find(':selected').data('rate') || 0;
-            valDisplay.val(rate);
-        }
-    });
-
-    $('#btnApplyGlobalTax').click(function() {
-        let type = $('#global_tax_type').val();
-        let masterId = $('#global_tax_master').val();
-        let rate = $('#global_tax_master').find(':selected').data('rate') || 0;
-        let manualValDisplay = $('#global_tax_val').val();
-        let manualValReal = unformatNumber(manualValDisplay);
-
-        if($('.item-row').length === 0) return;
-
-        $('.item-row').each(function() {
-            let rowType = $(this).find('.tax-type');
-            let rowMaster = $(this).find('.tax-master-select');
-            let rowDisplay = $(this).find('.tax-val-display');
-            let rowReal = $(this).find('.tax-val-real');
-
-            rowType.val(type);
-
-            if (type === 'percent') {
-                rowMaster.val(masterId).removeClass('d-none');
-                if (masterId === 'MANUAL_PERCENT') {
-                    rowDisplay.val(manualValDisplay).removeClass('d-none');
-                    rowReal.val(manualValReal);
-                } else {
-                    rowDisplay.val(rate).addClass('d-none');
-                    rowReal.val(rate);
-                }
-            } else {
-                rowMaster.addClass('d-none');
-                rowDisplay.val(manualValDisplay).removeClass('d-none');
-                rowReal.val(manualValReal);
-            }
-        });
-
-        calculate();
-
-        Swal.fire({
-            toast: true, position: 'top-end', icon: 'success',
-            title: 'Pajak berhasil diterapkan ke semua item!',
-            showConfirmButton: false, timer: 2000
-        });
-    });
-
-    // ==========================================
-    // TAMBAH ITEM DAN BIAYA EKSTRA
-    // ==========================================
     $('#addItem').click(function() {
         const container = document.getElementById('itemContainer');
         const index = container.querySelectorAll('.item-row').length;
@@ -584,25 +434,17 @@ $(document).ready(function() {
                 </div>
             </td>
             <td class="pt-3">
-                <div class="mb-1 input-group input-group-sm" title="Pajak per-item">
+                <div class="mb-1 input-group input-group-sm">
                     <span class="input-group-text bg-info bg-opacity-10 text-info fw-bold" style="font-size: 0.7rem;">+Pajak</span>
-                    <select name="items[${index}][tax_type]" class="form-select tax-type" style="max-width: 55px; padding-right:5px; padding-left:5px;">
-                        <option value="percent" selected>%</option>
-                        <option value="fixed">Rp</option>
-                    </select>
-                    <select name="items[${index}][tax_id]" class="form-select tax-master-select fw-bold text-info">
-                        <option value="" data-rate="0">- Tanpa Pajak -</option>
-                        <option value="MANUAL_PERCENT" data-rate="0">Manual (%)</option>
-                        @foreach($taxes as $tax)
-                            <option value="{{ $tax->id }}" data-rate="{{ (float)$tax->percent }}">{{ $tax->name }} ({{ (float)$tax->percent }}%)</option>
-                        @endforeach
-                    </select>
-                    <input type="text" class="form-control text-end tax-val-display d-none" value="0">
+                    <input type="text" class="form-control tax-val-display" value="0">
                     <input type="hidden" name="items[${index}][tax_value]" class="tax-val-real" value="0">
+                    <select name="items[${index}][tax_type]" class="form-select tax-type" style="max-width: 60px;">
+                        <option value="fixed">Rp</option><option value="percent" selected>%</option>
+                    </select>
                 </div>
                 <div class="input-group input-group-sm">
                     <span class="input-group-text bg-danger bg-opacity-10 text-danger fw-bold" style="font-size: 0.7rem;">-Disc&nbsp;&nbsp;</span>
-                    <input type="text" class="form-control text-end disc-val-display" value="0">
+                    <input type="text" class="form-control disc-val-display" value="0">
                     <input type="hidden" name="items[${index}][discount_value]" class="disc-val-real" value="0">
                     <select name="items[${index}][discount_type]" class="form-select disc-type" style="max-width: 60px;">
                         <option value="fixed">Rp</option><option value="percent" selected>%</option>
@@ -684,6 +526,7 @@ $(document).ready(function() {
     function updateSymbols() {
         const symbol = $('#currency_select option:selected').data('symbol');
         $('.curr-symbol').text(symbol); $('.curr-symbol-display').text(symbol);
+        $('.disc-type option[value="fixed"], .tax-type option[value="fixed"], #global_tax_type option[value="fixed"]').text(symbol);
     }
 
     $('#is_recurring').change(function() {
@@ -705,7 +548,7 @@ $(document).ready(function() {
             const itemDisc = (discType === 'fixed') ? discVal : (gross * discVal / 100);
             const dpp = gross - itemDisc;
 
-            // Pajak (Ambil langsung dari input hidden Real Value yang sudah dikelola oleh JS Toggle)
+            // Pajak
             const taxVal = parseFloat($(this).find('.tax-val-real').val()) || 0;
             const taxType = $(this).find('.tax-type').val();
             const itemTax = (taxType === 'fixed') ? taxVal : (dpp * taxVal / 100);
@@ -729,6 +572,26 @@ $(document).ready(function() {
     }
 
     $(document).on('input', '.qty', calculate);
+
+    $('#btnApplyGlobalTax').click(function() {
+        let globalVal = $('#global_tax_val').val();
+        let globalRealVal = unformatNumber(globalVal);
+        let globalType = $('#global_tax_type').val();
+
+        if($('.item-row').length === 0) return;
+
+        $('.tax-val-display').val(globalVal);
+        $('.tax-val-real').val(globalRealVal);
+        $('.tax-type').val(globalType);
+
+        calculate();
+
+        Swal.fire({
+            toast: true, position: 'top-end', icon: 'success',
+            title: 'Pajak berhasil diterapkan ke semua baris!',
+            showConfirmButton: false, timer: 2000
+        });
+    });
 
     $('#btnSubmitForm').click(function() {
         const form = document.getElementById('billForm');

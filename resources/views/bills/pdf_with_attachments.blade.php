@@ -2,258 +2,359 @@
 <html lang="id">
 <head>
     <meta charset="UTF-8">
-    <title>Tagihan OPEX - {{ $bill->bill_number }}</title>
+    <title>Bank Payment Request Form</title>
     <style>
-        body { font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; font-size: 10pt; color: #333; margin: 0; padding: 20px; }
-
-        /* 🔥 WATERMARK CSS (KHUSUS DOMPDF) 🔥 */
-        .watermark {
-            position: fixed;
-            top: 30%;
-            left: 5%;
-            width: 90%;
-            text-align: center;
-            font-size: 80pt;
-            font-weight: bold;
-            text-transform: uppercase;
-            color: rgba(255, 0, 0, 0.15); /* Merah Transparan */
-            transform: rotate(-45deg);
-            z-index: -1000;
-        }
-        .watermark-paid {
-            color: rgba(0, 128, 0, 0.15); /* Hijau Transparan */
+        /* Pengaturan Margin Kertas & Font */
+        @page { margin: 40px 40px 60px 40px; } /* Margin bawah disiapkan untuk Footer */
+        body {
+            font-family: 'Helvetica', 'Arial', sans-serif;
+            font-size: 10pt;
+            color: #000;
+            line-height: 1.3;
         }
 
-        .header-table { width: 100%; border-bottom: 2px solid #0056b3; padding-bottom: 10px; margin-bottom: 20px; }
-        .header-table td { vertical-align: middle; }
-        .company-name { font-size: 16pt; font-weight: bold; color: #0056b3; text-transform: uppercase; margin: 0; }
-        .doc-title { font-size: 18pt; font-weight: bold; text-align: right; color: #333; text-transform: uppercase; margin: 0; }
+        /* HEADER PERUSAHAAN & JUDUL */
+        .company-name { font-size: 16pt; font-weight: bold; margin: 0 0 5px 0; text-transform: uppercase; color: #0056b3; }
+        .doc-title { font-size: 14pt; font-weight: bold; margin: 0 0 15px 0; color: #333; text-transform: uppercase; }
 
-        .info-table { width: 100%; margin-bottom: 20px; border-collapse: collapse; }
-        .info-table td { vertical-align: top; padding: 5px; }
-        .info-box { border: 1px solid #ddd; background-color: #f9f9f9; padding: 10px; border-radius: 5px; }
+        /* PENGATURAN FOOTER (TANGGAL & HALAMAN) */
+        footer { position: fixed; bottom: -30px; left: 0px; right: 0px; height: 30px; }
+        .footer-table {
+            width: 100%; border-top: 1px dashed #888;
+            padding-top: 5px; font-size: 8pt; color: #555; font-style: italic;
+            border-collapse: collapse; border: none;
+        }
+        .footer-table td { border: none !important; padding: 0; }
+        .pagenum:before { content: counter(page); }
+
+        /* WATERMARK */
+        .watermark { position: fixed; top: 30%; left: 5%; width: 90%; text-align: center; font-size: 80pt; font-weight: bold; text-transform: uppercase; color: rgba(255, 0, 0, 0.15); transform: rotate(-45deg); z-index: -1000; }
+        .watermark-paid { color: rgba(0, 128, 0, 0.15); }
+
+        /* PENGATURAN TABEL UMUM */
+        table { width: 100%; border-collapse: collapse; margin-bottom: 15px; }
+        td, th { border: 1px solid #000; padding: 6px 8px; vertical-align: top; }
+
+        .text-center { text-align: center; }
+        .text-right { text-align: right; }
+        .fw-bold { font-weight: bold; }
+
+        /* TABEL 1: INFO DOKUMEN */
+        .info-table { page-break-inside: avoid; }
+        .info-box { border: 1px solid #000; padding: 8px; }
         .info-box p { margin: 2px 0; }
 
-        .main-table { width: 100%; border-collapse: collapse; margin-bottom: 20px; }
-        .main-table th, .main-table td { border: 1px solid #ddd; padding: 8px; }
-        .main-table th { background-color: #0056b3; color: #fff; text-align: left; font-size: 9pt; text-transform: uppercase; }
-        .text-right { text-align: right; }
-        .text-center { text-align: center; }
+        /* TABEL 2: ITEM RINCIAN */
+        .item-table th { background-color: #f0f0f0; text-align: center; font-weight: bold; text-transform: uppercase; font-size: 9pt;}
 
-        .summary-table { width: 40%; float: right; border-collapse: collapse; }
-        .summary-table td { padding: 6px 8px; border-bottom: 1px solid #eee; }
-        .summary-table .bold td { font-weight: bold; color: #000; }
-        .summary-table .total td { font-weight: bold; font-size: 12pt; border-top: 2px solid #0056b3; border-bottom: 2px solid #0056b3; color: #0056b3; background-color: #f4f8ff; }
+        /* 🔥 UTILITY MATA UANG ANTI BERANTAKAN (INNER TABLE) 🔥 */
+        .break-text { word-wrap: break-word; word-break: break-all; }
+        table.amount-box { width: 100%; border: none !important; margin: 0; padding: 0; }
+        table.amount-box td { border: none !important; padding: 0 !important; margin: 0 !important; background: transparent !important; vertical-align: middle; line-height: 1.2; }
+        .curr-txt { text-align: left; font-size: 8.5pt; color: #666; white-space: nowrap; width: 1%; padding-right: 5px !important; }
+        .num-txt { text-align: right; font-size: 10pt; }
 
-        .signature-table { width: 100%; margin-top: 80px; text-align: center; table-layout: fixed; }
-        .signature-table td { vertical-align: bottom; padding: 0 10px; }
-        .sign-line { border-top: 1px solid #000; width: 90%; margin: 0 auto; margin-top: 60px; padding-top: 5px; font-weight: bold; font-size: 9pt; }
+        /* 🔥 PENGATURAN TANDA TANGAN DINAMIS 🔥 */
+        table.signature { width: 100%; border-collapse: collapse; margin-top: 30px; page-break-inside: avoid; }
+        table.signature td { border: 1px solid #000; padding: 10px; text-align: center; vertical-align: top; }
+        .sign-title { font-size: 10pt; font-weight: bold; margin-bottom: 20px; color: #333; text-align: left;}
 
-        .clearfix { clear: both; }
-        .status-stamp { display: inline-block; padding: 5px 15px; font-weight: bold; font-size: 14pt; transform: rotate(-10deg); margin-bottom: 10px; border: 3px solid; }
-        .stamp-rejected { color: red; border-color: red; }
-        .stamp-paid { color: green; border-color: green; }
-        .stamp-approved { color: #0056b3; border-color: #0056b3; }
+        .sign-box { height: 75px; margin-bottom: 10px; display: flex; align-items: center; justify-content: center; }
+        .sign-box img { max-height: 75px; max-width: 140px; object-fit: contain; }
+
+        .stamp { display: inline-block; padding: 5px 12px; font-weight: bold; font-size: 11pt; letter-spacing: 1.5px; text-transform: uppercase; border: 2px solid; margin-top: 15px; }
+        .stamp-issued { color: #198754; border-color: #198754; }
+        .stamp-approved { color: #0d6efd; border-color: #0d6efd; }
+        .stamp-rejected { color: #dc3545; border-color: #dc3545; }
+
+        .sign-name { font-weight: bold; text-decoration: underline; font-size: 10pt; color: #000; }
+        .sign-meta { font-size: 8.5pt; color: #333; margin-top: 3px; }
+        .sign-dept { font-size: 8pt; color: #777; margin-top: 2px; }
     </style>
 </head>
 <body>
 
     @php
-        // Deteksi Status Slug (Anti Gagal)
         $statusSlug = strtolower(optional($bill->status)->slug ?? $bill->status);
+        $currency = $bill->currency ?? 'IDR';
     @endphp
 
-    {{-- 🔥 WATERMARK BACKGROUND 🔥 --}}
-    @if(in_array($statusSlug, ['rejected', 'canceled']))
-        <div class="watermark">REJECTED</div>
-    @elseif(in_array($statusSlug, ['paid']))
+    {{-- FOOTER --}}
+    <footer>
+        <table class="footer-table">
+            <tr>
+                <td style="text-align:left;">
+                    Printed on: {{ date('d-M-Y H:i') }} WIB &nbsp;|&nbsp; Ref: {{ $bill->bill_number }}
+                </td>
+                <td style="text-align:right;">
+                    Page <span class="pagenum"></span>
+                </td>
+            </tr>
+        </table>
+    </footer>
+
+    {{-- WATERMARK --}}
+    @if(in_array($statusSlug, ['rejected', 'canceled', 'void']))
+        <div class="watermark">DIBATALKAN</div>
+    @elseif(in_array($statusSlug, ['paid', 'lunas']))
         <div class="watermark watermark-paid">LUNAS / PAID</div>
     @endif
 
-    <table class="header-table">
-        <tr>
-            <td width="60%">
-                <h1 class="company-name">{{ $bill->company->name ?? 'Perusahaan Internal' }}</h1>
-                <p style="margin: 5px 0 0 0; color: #666;">Dokumen Pengajuan Biaya Operasional (OPEX)</p>
-            </td>
-            <td width="40%" class="text-right">
-                <h2 class="doc-title">PAYMENT REQUEST</h2>
-                <p style="margin: 5px 0 0 0;"><strong>No:</strong> {{ $bill->bill_number }}</p>
-                <p style="margin: 2px 0 0 0;"><strong>Tanggal:</strong> {{ date('d M Y', strtotime($bill->invoice_date)) }}</p>
-            </td>
-        </tr>
-    </table>
+    {{-- KOP SURAT --}}
+    <div style="border-bottom: 2px solid #0056b3; padding-bottom: 10px; margin-bottom: 20px;">
+        <table style="border: none; margin: 0;">
+            <tr>
+                <td style="border: none; padding: 0; width: 60%;">
+                    <h1 class="company-name">{{ $bill->company->name ?? 'Perusahaan Internal' }}</h1>
+                    <p style="margin: 0; color: #666; font-size: 9pt;">Dokumen Pengajuan Biaya Operasional (OPEX)</p>
+                </td>
+                <td style="border: none; padding: 0; width: 40%; text-align: right; vertical-align: bottom;">
+                    <h2 class="doc-title">PAYMENT REQUEST</h2>
+                </td>
+            </tr>
+        </table>
+    </div>
 
+    {{-- KOTAK INFORMASI ATAS --}}
     <table class="info-table">
         <tr>
             <td width="48%" class="info-box">
                 <p style="color: #666; font-size: 8pt; text-transform: uppercase; font-weight: bold; border-bottom: 1px solid #ccc; padding-bottom: 3px; margin-bottom: 5px;">Dibayarkan Kepada (Vendor):</p>
-                <p><strong>{{ $bill->vendor_name }}</strong></p>
+                <p style="font-size: 11pt;"><strong>{{ $bill->vendor_name }}</strong></p>
                 <p>Keterangan: {{ $bill->description ?? '-' }}</p>
             </td>
-            <td width="4%"></td>
+            <td width="4%" style="border: none;"></td>
             <td width="48%" class="info-box" style="text-align: right;">
                 <p style="color: #666; font-size: 8pt; text-transform: uppercase; font-weight: bold; border-bottom: 1px solid #ccc; padding-bottom: 3px; margin-bottom: 5px;">Informasi Dokumen:</p>
-                <p>Jatuh Tempo: <strong>{{ date('d M Y', strtotime($bill->due_date)) }}</strong></p>
-                <p>Mata Uang: <strong>{{ $bill->currency }}</strong></p>
-                <p>Siklus: <strong>{{ $bill->is_recurring ? 'Berulang ('. $bill->recurring_interval .' '. $bill->recurring_period .')' : 'Sekali Bayar' }}</strong></p>
+                <table style="border: none; margin: 0; width: 100%;">
+                    <tr><td style="border: none; padding: 2px 0;">No. Dokumen</td><td style="border: none; padding: 2px 0;">: <strong>{{ $bill->bill_number }}</strong></td></tr>
+                    <tr><td style="border: none; padding: 2px 0;">Tgl. Tagihan</td><td style="border: none; padding: 2px 0;">: <strong>{{ date('d M Y', strtotime($bill->invoice_date)) }}</strong></td></tr>
+                    <tr><td style="border: none; padding: 2px 0;">Jatuh Tempo</td><td style="border: none; padding: 2px 0;">: <strong style="color: red;">{{ date('d M Y', strtotime($bill->due_date)) }}</strong></td></tr>
+                </table>
             </td>
         </tr>
     </table>
 
-    <div style="text-align: center; margin-bottom: 15px;">
-        @if(in_array($statusSlug, ['paid']))
-            <div class="status-stamp stamp-paid">LUNAS / PAID</div>
-        @elseif(in_array($statusSlug, ['rejected', 'canceled']))
-            <div class="status-stamp stamp-rejected">DITOLAK / REJECTED</div>
-        @elseif(in_array($statusSlug, ['approved']))
-            <div class="status-stamp stamp-approved">DISETUJUI / APPROVED</div>
-        @endif
-    </div>
-
-    {{-- TABEL ITEM UTAMA --}}
-    <table class="main-table">
+    {{-- TABEL ITEM DETAIL (BPR RINGKAS) --}}
+    <table class="item-table">
         <thead>
             <tr>
-                <th width="5%" class="text-center">No</th>
-                <th width="45%">Deskripsi Item Jasa / Biaya</th>
-                <th width="10%" class="text-center">Qty</th>
-                <th width="20%" class="text-right">Harga Satuan</th>
-                <th width="20%" class="text-right">Total Bersih</th>
+                <th style="width: 5%;">No</th>
+                <th style="width: 18%;">Invoices No.</th>
+                <th style="width: 32%;">Description</th>
+                <th style="width: 10%;">Reference</th>
+                <th style="width: 20%;">Total Amount</th>
+                <th style="width: 15%;">Account No</th>
             </tr>
         </thead>
         <tbody>
             @foreach($bill->items as $index => $item)
-            <tr>
-                <td class="text-center">{{ $index + 1 }}</td>
-                <td>
-                    <strong>{{ $item->name }}</strong>
-                    @if($item->description)<br><span style="font-size: 8pt; color: #666;">{{ $item->description }}</span>@endif
-                    @if($item->discount_amount > 0 || $item->tax_amount > 0)
-                        <br><span style="font-size: 8pt; color: #666;">
-                        (Harga awal: {{ number_format($item->price,0,',','.') }}
-                        @if($item->discount_amount>0) | Disc: -{{ number_format($item->discount_amount,0,',','.') }} @endif
-                        @if($item->tax_amount>0) | Tax: +{{ number_format($item->tax_amount,0,',','.') }} @endif)
-                        </span>
-                    @endif
-                </td>
-                <td class="text-center">{{ $item->qty }}</td>
-                <td class="text-right">{{ number_format($item->price, 0, ',', '.') }}</td>
-                <td class="text-right">{{ number_format($item->amount, 0, ',', '.') }}</td>
-            </tr>
+                @php
+                    $qty = (float) ($item->qty ?? 1);
+                @endphp
+                <tr>
+                    <td style="text-align: center;">{{ $index + 1 }}</td>
+
+                    <td style="text-align: center; color: #0d6efd;" class="break-text">
+                        @if($index === 0)
+                            {{ !empty($bill->vendor_invoice_number) ? wordwrap($bill->vendor_invoice_number, 16, " ", true) : '-' }}
+                        @endif
+                    </td>
+
+                    <td>
+                        <strong style="font-size: 11pt;">{{ $item->name }}</strong>
+                        @if(!empty($item->description))
+                            <br><span style="font-size: 9pt; color: #555;">{{ strip_tags($item->description) }}</span>
+                        @endif
+                        @if($item->discount_amount > 0 || $item->tax_amount > 0)
+                            <br><span style="font-size: 8pt; color: #666;">
+                            (Hrg: {{ number_format($item->price,0,',','.') }}
+                            @if($item->discount_amount>0) | Disc: -{{ number_format($item->discount_amount,0,',','.') }} @endif
+                            @if($item->tax_amount>0) | Tax: +{{ number_format($item->tax_amount,0,',','.') }} @endif)
+                            </span>
+                        @endif
+                    </td>
+
+                    <td style="text-align: center;">{{ $qty }} LS</td>
+
+                    {{-- 🔥 Format Inner Table agar Mata Uang Lurus Mutlak 🔥 --}}
+                    <td style="padding: 0; vertical-align: middle;">
+                        <table class="amount-box">
+                            <tr>
+                                <td class="curr-txt">{{ $currency }}</td>
+                                <td class="num-txt">{{ number_format($item->amount, 0, ',', '.') }}</td>
+                            </tr>
+                        </table>
+                    </td>
+
+                    <td style="text-align: center; font-weight: bold; color: #198754;" class="break-text">
+                        @if($index === 0)
+                            {{ !empty($bill->account_number) ? wordwrap($bill->account_number, 14, " ", true) : '-' }}
+                        @endif
+                    </td>
+                </tr>
             @endforeach
 
+            {{-- Biaya Tambahan (Charges) --}}
             @if($bill->charges->count() > 0)
-                <tr><td colspan="5" style="background-color: #f9f9f9; font-weight: bold; font-size: 8pt;">BIAYA TAMBAHAN (CHARGES)</td></tr>
+                <tr><td colspan="6" style="background-color: #f9f9f9; font-weight: bold; font-size: 8pt;">BIAYA TAMBAHAN (CHARGES)</td></tr>
                 @foreach($bill->charges as $charge)
                 <tr>
+                    <td colspan="4" style="text-align: right;">{{ optional($charge->chargeType)->name ?? 'Biaya Lainnya' }} {{ $charge->note ? '('.$charge->note.')' : '' }}</td>
+                    <td style="padding: 0; vertical-align: middle;">
+                        <table class="amount-box">
+                            <tr>
+                                <td class="curr-txt">{{ $currency }}</td>
+                                <td class="num-txt">{{ number_format($charge->amount, 0, ',', '.') }}</td>
+                            </tr>
+                        </table>
+                    </td>
                     <td></td>
-                    <td colspan="3">{{ optional($charge->chargeType)->name ?? 'Biaya Lainnya' }} {{ $charge->note ? '('.$charge->note.')' : '' }}</td>
-                    <td class="text-right">{{ number_format($charge->amount, 0, ',', '.') }}</td>
                 </tr>
                 @endforeach
             @endif
 
+            {{-- Potongan Tambahan (Discounts) --}}
             @if($bill->discounts->count() > 0)
-                <tr><td colspan="5" style="background-color: #f9f9f9; font-weight: bold; font-size: 8pt; color: red;">POTONGAN / DISKON EKSTRA</td></tr>
+                <tr><td colspan="6" style="background-color: #f9f9f9; font-weight: bold; font-size: 8pt; color: red;">POTONGAN / DISKON EKSTRA</td></tr>
                 @foreach($bill->discounts as $discount)
                 <tr>
+                    <td colspan="4" style="text-align: right; color: red;">{{ optional($discount->discountType)->name ?? 'Diskon Lainnya' }} {{ $discount->note ? '('.$discount->note.')' : '' }}</td>
+                    <td style="padding: 0; vertical-align: middle;">
+                        <table class="amount-box">
+                            <tr>
+                                <td class="curr-txt" style="color: red;">{{ $currency }}</td>
+                                <td class="num-txt" style="color: red;">-{{ number_format($discount->amount, 0, ',', '.') }}</td>
+                            </tr>
+                        </table>
+                    </td>
                     <td></td>
-                    <td colspan="3" style="color: red;">{{ optional($discount->discountType)->name ?? 'Diskon Lainnya' }} {{ $discount->note ? '('.$discount->note.')' : '' }}</td>
-                    <td class="text-right" style="color: red;">({{ number_format($discount->amount, 0, ',', '.') }})</td>
                 </tr>
                 @endforeach
             @endif
+
+            {{-- GRAND TOTAL --}}
+            <tr>
+                <td colspan="4" style="text-align: right; font-weight: bold; padding: 12px; font-size: 12px;">GRAND TOTAL</td>
+                <td colspan="2" style="padding: 12px; background-color: #f4f8ff; border-top: 2px solid #0056b3;">
+                    <table class="amount-box">
+                        <tr>
+                            <td class="curr-txt" style="font-size: 10pt; font-weight: bold; color: #0056b3;">{{ $currency }}</td>
+                            <td class="num-txt" style="font-weight: bold; font-size: 14px; color: #0056b3;">{{ number_format($bill->amount, 0, ',', '.') }}</td>
+                        </tr>
+                    </table>
+                </td>
+            </tr>
         </tbody>
     </table>
 
-    {{-- TABEL RINGKASAN BAWAH --}}
-    <table class="summary-table">
-        @php
-            $grossItems = $bill->items->sum('subtotal');
-            $totalItemDisc = $bill->items->sum('discount_amount');
-            $totalExtDisc = $bill->discounts->sum('amount');
-            $totalDiscounts = $totalItemDisc + $totalExtDisc;
-        @endphp
-        <tr>
-            <td>Subtotal Item:</td>
-            <td class="text-right">{{ number_format($grossItems, 0, ',', '.') }}</td>
-        </tr>
-        @if($totalDiscounts > 0)
-        <tr>
-            <td style="color: red;">Total Diskon:</td>
-            <td class="text-right" style="color: red;">({{ number_format($totalDiscounts, 0, ',', '.') }})</td>
-        </tr>
-        @endif
-        @if($bill->total_tax > 0)
-        <tr>
-            <td>Total Pajak:</td>
-            <td class="text-right">{{ number_format($bill->total_tax, 0, ',', '.') }}</td>
-        </tr>
-        @endif
-        @if($bill->total_charge > 0)
-        <tr>
-            <td>Biaya Tambahan:</td>
-            <td class="text-right">{{ number_format($bill->total_charge, 0, ',', '.') }}</td>
-        </tr>
-        @endif
-        <tr class="total">
-            <td>GRAND TOTAL:</td>
-            <td class="text-right">{{ $bill->currency }} {{ number_format($bill->amount, 0, ',', '.') }}</td>
-        </tr>
-    </table>
-
-    <div class="clearfix"></div>
-
-    {{-- 🔥 LOGIKA TANDA TANGAN DINAMIS 🔥 --}}
+    {{-- 🔥 KOTAK TANDA TANGAN DINAMIS (ANTI ERROR IMAGE DENGAN BASE64) 🔥 --}}
     @php
         $approvals = \App\Models\DocumentApproval::with('role')
             ->where('document_id', $bill->id)
-            ->whereIn('document_type', [get_class($bill), 'OPEX', 'App\Models\BillRequest'])
+            ->whereIn('document_type', ['App\Models\BillRequest', 'OPEX', 'BillRequest', get_class($bill)])
             ->orderBy('step_order', 'asc')
             ->get();
 
-        $totalColumns = 1 + $approvals->count();
-        $colWidth = (100 / $totalColumns) . '%';
+        $totalCols = 1 + $approvals->count();
+
+        // Data Pembuat (Requester)
+        $prepUser = $bill->user;
+        $prepSigBase64 = null;
+
+        if ($prepUser && $prepUser->signature) {
+            $path = public_path('storage/' . $prepUser->signature);
+            if (file_exists($path)) {
+                $type = pathinfo($path, PATHINFO_EXTENSION);
+                $data = file_get_contents($path);
+                $prepSigBase64 = 'data:image/' . $type . ';base64,' . base64_encode($data);
+            }
+        }
+
+        $prepDept = optional($prepUser->department)->name ?? 'Umum';
+        $prepRole = optional(optional($prepUser)->roles->first())->name ?? 'Staff';
     @endphp
 
-    <table class="signature-table">
+    <table class="signature">
         <tr>
-            <td style="width: {{ $colWidth }};">
-                <p style="margin-bottom: 50px;">Dibuat Oleh,</p>
-                <div class="sign-line">{{ $bill->user->name ?? 'Admin System' }}</div>
-                <p style="font-size: 8pt; color: #666; margin-top: 2px;">Pemohon / Requestor</p>
-                <p style="font-size: 7pt; color: #999;">(Tersubmit di Sistem)</p>
-            </td>
-
-            @foreach($approvals as $approval)
-            <td style="width: {{ $colWidth }};">
-                <p style="margin-bottom: 50px;">
-                    @if($loop->last) Disetujui Oleh, @else Diperiksa Oleh, @endif
-                </p>
-
-                <div class="sign-line">
-                    @if($approval->status == 'APPROVED')
-                        {{ \App\Models\User::find($approval->approved_by)->name ?? optional($approval->role)->name }}
+            {{-- KOLOM PEMBUAT (ISSUED) --}}
+            <td style="width: {{ 100 / ($totalCols > 0 ? $totalCols : 1) }}%;">
+                <div class="sign-title">Prepared by :</div>
+                <div class="sign-box">
+                    @if($prepSigBase64)
+                        <img src="{{ $prepSigBase64 }}">
                     @else
-                        {{ optional($approval->role)->name ?? 'Atasan' }}
+                        <div class="stamp stamp-issued">ISSUED</div>
                     @endif
                 </div>
-
-                <p style="font-size: 8pt; color: #666; margin-top: 2px;">
-                    @if($approval->status == 'APPROVED')
-                        <span style="color: green;">Telah Disetujui</span>
-                    @elseif($approval->status == 'REJECTED')
-                        <span style="color: red;">Ditolak</span>
-                    @else
-                        Menunggu Persetujuan
-                    @endif
-                </p>
-
-                @if($approval->approved_at)
-                    <p style="font-size: 7pt; color: #999; margin: 0;">{{ date('d/m/Y H:i', strtotime($approval->approved_at)) }}</p>
-                @endif
+                <div class="sign-name">{{ $bill->user->name ?? 'Tim Operasional' }}</div>
+                <div class="sign-meta" style="font-weight: bold;">{{ $prepRole }}</div>
+                <div class="sign-dept">{{ $prepDept }}</div>
+                <div class="sign-meta" style="margin-top: 5px;">{{ $bill->created_at ? $bill->created_at->format('d/m/Y H:i') : '-' }}</div>
             </td>
+
+            {{-- KOLOM APPROVAL BERANTAI --}}
+            @foreach($approvals as $idx => $approval)
+                @php
+                    $approverUser = \App\Models\User::find($approval->approved_by);
+
+                    $approverSigBase64 = null;
+                    if ($approverUser && $approverUser->signature) {
+                        $path = public_path('storage/' . $approverUser->signature);
+                        if (file_exists($path)) {
+                            $type = pathinfo($path, PATHINFO_EXTENSION);
+                            $data = file_get_contents($path);
+                            $approverSigBase64 = 'data:image/' . $type . ';base64,' . base64_encode($data);
+                        }
+                    }
+
+                    $roleName = optional($approval->role)->name ?? 'Manager';
+
+                    $deptName = '';
+                    if (!empty($approval->target_department_id) && $approval->target_department_id !== 'all') {
+                        $deptObj = \App\Models\Department::find($approval->target_department_id);
+                        $deptName = $deptObj ? $deptObj->name : '';
+                    } else {
+                        if ($approverUser && $approverUser->department_id) {
+                            $deptName = optional($approverUser->department)->name ?? '';
+                        }
+                    }
+
+                    $approverName = '<span style="color:#aaa;">...................................................</span>';
+                    if ($approval->status == 'APPROVED' || $approval->status == 'REJECTED') {
+                        $approverName = $approverUser->name ?? $roleName;
+                        if ($approverUser && $approverUser->job_title && !str_contains(strtolower($approverUser->name), 'super')) {
+                            $roleName = $approverUser->job_title;
+                        }
+                    }
+                @endphp
+                <td style="width: {{ 100 / $totalCols }}%;">
+                    <div class="sign-title">{{ $loop->last ? 'Approved by :' : 'Checked by :' }}</div>
+
+                    <div class="sign-box">
+                        @if($approval->status == 'APPROVED')
+                            @if($approverSigBase64)
+                                <img src="{{ $approverSigBase64 }}">
+                            @else
+                                <div class="stamp stamp-approved">APPROVED</div>
+                            @endif
+                        @elseif($approval->status == 'REJECTED')
+                            <div class="stamp stamp-rejected">REJECTED</div>
+                        @endif
+                    </div>
+
+                    <div class="sign-name">{!! $approverName !!}</div>
+                    <div class="sign-meta" style="font-weight: bold;">{{ $roleName }}</div>
+                    <div class="sign-dept">{{ $deptName ?: '-' }}</div>
+
+                    <div class="sign-meta" style="margin-top: 5px;">
+                        @if($approval->status == 'APPROVED' || $approval->status == 'REJECTED')
+                            {{ $approval->approved_at ? date('d/m/Y H:i', strtotime($approval->approved_at)) : '-' }}
+                        @else
+                            Tgl: ..........................
+                        @endif
+                    </div>
+                </td>
             @endforeach
         </tr>
     </table>
@@ -262,7 +363,7 @@
     {{-- ========================================================================= --}}
     {{-- 🔥 HALAMAN BARU KHUSUS UNTUK LAMPIRAN (HANYA MUNCUL JIKA ADA FILE) 🔥 --}}
     {{-- ========================================================================= --}}
-    @if(isset($bill->attachments) && $bill->attachments->count() > 0)
+    @if(isset($attachments) && $attachments->count() > 0)
 
         {{-- Memaksa pindah ke halaman baru --}}
         <div style="page-break-before: always;"></div>
@@ -272,7 +373,7 @@
                 LAMPIRAN DOKUMEN PENDUKUNG
             </h3>
 
-            @foreach($bill->attachments as $attachment)
+            @foreach($attachments as $attachment)
                 @php
                     $ext = strtolower(pathinfo($attachment->file_path, PATHINFO_EXTENSION));
                 @endphp

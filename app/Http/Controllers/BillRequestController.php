@@ -127,35 +127,6 @@ class BillRequestController extends Controller
     }
 
 
-   // --- 2. FORM CREATE ---
-    // public function create()
-    // {
-    //     $companies  = \App\Models\Company::all();
-    //     $taxes      = \App\Models\Tax::where('is_active', true)->orderBy('name')->get();
-    //     $currencies = \App\Models\Currency::where('is_active', true)->orderBy('name')->get();
-    //     $vendors    = \App\Models\Vendor::orderBy('name')->get();
-
-    //     // 🔥 PERBAIKAN: Gunakan item_type_code untuk mengambil Jasa/Non-Stok (OPEX)
-    //     $opexItems  = \App\Models\Item::where('item_type_code', 'JSA') // JSA biasanya kode untuk Jasa/Non-Stok
-    //                                   ->orWhereNull('item_type_code') // Jaga-jaga jika ada barang lawas yang belum di-set tipenya
-    //                                   ->orderBy('name')
-    //                                   ->get();
-
-
-    //     // 🔥 PERBAIKAN: Filter buang yang sifatnya fisik gudang (STK) dan Aset Tetap (AST)
-    //     // $opexItems  = \App\Models\Item::whereNotIn('item_type_code', ['AST', 'STK'])
-    //     //                               ->orWhereNull('item_type_code')
-    //     //                               ->orderBy('name')
-    //     //                               ->get();
-
-    //     // Panggil Master Biaya Tambahan (Charges)
-    //     $chargeTypes = \App\Models\ChargeType::where('is_active', true)->orderBy('name')->get();
-
-    //     // TAMBAHAN BARU: Panggil Master Potongan Harga (Discounts)
-    //     $discountTypes = \App\Models\DiscountType::where('is_active', true)->orderBy('name')->get();
-
-    //     return view('bills.create', compact('companies', 'taxes','currencies', 'vendors', 'opexItems', 'chargeTypes', 'discountTypes'));
-    // }
 
 
 
@@ -359,135 +330,6 @@ class BillRequestController extends Controller
     }
 
 
-    // =========================================================================
-    // 3. STORE (SIMPAN DATA BARU + GENERATE WORKFLOW VIA SERVICE)
-    // =========================================================================
-    // public function store(Request $request)
-    // {
-    //     $request->validate([
-    //         'paid_by_company_id'    => 'required|exists:companies,id',
-    //         'currency_id'           => 'required|exists:currencies,id',
-    //         'bill_date'             => 'required|date',
-    //         'due_date'              => 'required|date|after_or_equal:bill_date',
-    //         'vendor_name'           => 'required|string|max:255',
-    //         'vendor_invoice_number' => 'nullable|string|max:255',
-    //         'items'                 => 'required|array|min:1',
-    //         'items.*.name'          => 'required|string',
-    //         'items.*.qty'           => 'required|numeric|min:1',
-    //         'items.*.price'         => 'required|numeric|min:0',
-    //     ]);
-
-    //     \DB::beginTransaction();
-    //     try {
-    //         $company = \App\Models\Company::find($request->paid_by_company_id);
-    //         $companyCode = $company ? ($company->code ?? 'GEN') : 'GEN';
-    //         $monthYear = \Carbon\Carbon::parse($request->bill_date)->format('Y/m');
-
-    //         $prefix = "BILL/OPX/{$companyCode}/{$monthYear}/";
-    //         $lastBill = \App\Models\BillRequest::where('bill_number', 'like', $prefix . '%')->lockForUpdate()->orderBy('id', 'desc')->first();
-
-    //         $newNumber = $lastBill ? ((int) substr($lastBill->bill_number, -4) + 1) : 1;
-    //         $billNumber = $prefix . sprintf('%04d', $newNumber);
-    //         $currency = \App\Models\Currency::find($request->currency_id)->code ?? 'IDR';
-
-    //         $totalSubtotal = 0; $totalItemDisc = 0; $totalTax = 0; $totalCharge = 0; $totalExtDisc = 0;
-
-    //         $bill = \App\Models\BillRequest::create([
-    //             'bill_number'           => $billNumber,
-    //             'title'                 => 'Tagihan Opex - ' . $request->vendor_name,
-    //             'user_id'               => auth()->id(),
-    //             'company_id'            => $request->paid_by_company_id,
-    //             'type'                  => 'OPEX',
-    //             'vendor_name'           => $request->vendor_name,
-    //             'vendor_invoice_number' => $request->vendor_invoice_number,
-    //             'description'           => $request->note,
-    //             'invoice_date'          => $request->bill_date,
-    //             'due_date'              => $request->due_date,
-    //             'currency'              => $currency,
-    //             'status_id'             => $this->getStatusId('pending'),
-    //             'subtotal'              => 0, 'total_discount' => 0, 'total_tax' => 0, 'total_charge' => 0, 'amount' => 0,
-    //             'is_recurring'          => $request->is_recurring == '1',
-    //             'recurring_interval'    => $request->is_recurring == '1' ? (int)$request->recurring_interval : null,
-    //             'recurring_period'      => $request->is_recurring == '1' ? $request->recurring_period : null,
-    //             'next_generation_date'  => $request->is_recurring == '1' ? \Carbon\Carbon::parse($request->bill_date)->add((int)$request->recurring_interval, $request->recurring_period) : null,
-    //         ]);
-
-    //         foreach ($request->items as $item) {
-    //             $qty = (float)$item['qty']; $price = (float)$item['price']; $gross = $qty * $price;
-
-    //             // Diskon
-    //             $discVal = (float)($item['discount_value'] ?? 0); $discType = $item['discount_type'] ?? 'fixed';
-    //             $discAmount = ($discType == 'percent') ? ($gross * $discVal / 100) : $discVal;
-    //             $dpp = $gross - $discAmount;
-
-    //             // Pajak (Format Baru)
-    //             $taxVal = (float)($item['tax_value'] ?? 0); $taxType = $item['tax_type'] ?? 'percent';
-    //             $taxAmount = ($taxType == 'percent') ? ($dpp * $taxVal / 100) : $taxVal;
-
-    //             $bill->items()->create([
-    //                 'name' => $item['name'], 'description' => $item['description'] ?? null, 'qty' => $qty, 'price' => $price, 'amount' => $dpp + $taxAmount,
-    //                 'discount_type' => $discType, 'discount_value' => $discVal, 'discount_amount' => $discAmount,
-    //                 'tax_type' => $taxType, 'tax_value' => $taxVal, 'tax_amount' => $taxAmount, 'subtotal' => $gross,
-    //             ]);
-
-    //             $totalSubtotal += $gross; $totalItemDisc += $discAmount; $totalTax += $taxAmount;
-    //         }
-
-    //         if ($request->has('charges')) {
-    //             foreach ($request->charges as $charge) {
-    //                 if (!empty($charge['charge_type_id']) && $charge['amount'] > 0) {
-    //                     $bill->charges()->create(['charge_type_id' => $charge['charge_type_id'], 'amount' => $charge['amount'], 'note' => $charge['note'] ?? null]);
-    //                     $totalCharge += $charge['amount'];
-    //                 }
-    //             }
-    //         }
-
-    //         if ($request->has('discounts')) {
-    //             foreach ($request->discounts as $discount) {
-    //                 if (!empty($discount['discount_type_id']) && $discount['amount'] > 0) {
-    //                     $bill->discounts()->create(['discount_type_id' => $discount['discount_type_id'], 'amount' => $discount['amount'], 'note' => $discount['note'] ?? null]);
-    //                     $totalExtDisc += $discount['amount'];
-    //                 }
-    //             }
-    //         }
-
-    //         $grandTotal = max(0, ($totalSubtotal - $totalItemDisc) + $totalTax + $totalCharge - $totalExtDisc);
-    //         $bill->update(['subtotal' => $totalSubtotal, 'total_discount' => $totalItemDisc + $totalExtDisc, 'total_tax' => $totalTax, 'total_charge' => $totalCharge, 'amount' => $grandTotal]);
-
-    //         if ($request->hasFile('attachments')) {
-    //             $basePath = \DB::table('system_settings')->where('setting_key', 'path_bills_opex')->value('setting_value') ?: 'attachments/opex';
-    //             $safeBillNumber = str_replace(['/', '\\'], '-', $bill->bill_number);
-    //             $storagePath = $basePath . '/' . $safeBillNumber;
-
-    //             foreach ($request->file('attachments') as $file) {
-    //                 $originalName = $file->getClientOriginalName();
-    //                 $path = $file->storeAs($storagePath, time() . '_' . uniqid() . '_' . str_replace(' ', '_', $originalName), 'public');
-    //                 \DB::table('bill_attachments')->insert([
-    //                     'bill_request_id' => $bill->id, 'file_name' => $originalName, 'file_path' => str_replace('\\', '/', $path),
-    //                     'created_at' => now(), 'updated_at' => now()
-    //                 ]);
-    //             }
-    //         }
-
-    //         $this->logHistory($bill, 'CREATED', "Membuat tagihan baru No: {$billNumber}");
-
-    //         $needsApproval = \App\Services\ApprovalService::generateWorkflow($bill);
-
-    //         if ($needsApproval) {
-    //             $this->logHistory($bill, 'SYSTEM', "Rute persetujuan (Workflow) berhasil di-generate.");
-    //         } else {
-    //             $bill->update(['status_id' => $this->getStatusId('approved') ?? 3]);
-    //             $this->logHistory($bill, 'APPROVED', "Auto-Approved karena tidak ada aturan/matriks persetujuan aktif.");
-    //         }
-
-    //         \DB::commit();
-    //         return redirect()->route('bills.index')->with('success', "Tagihan Opex berhasil disimpan! Nomor: {$billNumber}");
-    //     } catch (\Exception $e) {
-    //         \DB::rollback();
-    //         return back()->withInput()->with('error', 'Gagal menyimpan tagihan: ' . $e->getMessage());
-    //     }
-    // }
-
 
     // =========================================================================
     // 3. STORE (SIMPAN DATA BARU + OVERRIDE WORKFLOW)
@@ -501,6 +343,7 @@ class BillRequestController extends Controller
             'due_date'              => 'required|date|after_or_equal:bill_date',
             'vendor_name'           => 'required|string|max:255',
             'vendor_invoice_number' => 'nullable|string|max:255',
+            'account_number'        => 'nullable|string|max:255', // 🔥 VALIDASI KOLOM BARU 🔥
             'items'                 => 'required|array|min:1',
             'items.*.name'          => 'required|string',
             'items.*.qty'           => 'required|numeric|min:1',
@@ -531,6 +374,7 @@ class BillRequestController extends Controller
                 'type'                  => 'OPEX',
                 'vendor_name'           => $request->vendor_name,
                 'vendor_invoice_number' => $request->vendor_invoice_number,
+                'account_number'        => $request->account_number, // 🔥 SIMPAN KOLOM BARU 🔥
                 'description'           => $request->note,
                 'invoice_date'          => $request->bill_date,
                 'due_date'              => $request->due_date,
@@ -545,21 +389,42 @@ class BillRequestController extends Controller
 
             // 2. Simpan Data Item (Baris per Baris)
             foreach ($request->items as $item) {
-                $qty = (float)$item['qty']; $price = (float)$item['price']; $gross = $qty * $price;
+                $qty = (float)$item['qty'];
+                $price = (float)$item['price'];
+                $gross = $qty * $price;
 
                 // Diskon
-                $discVal = (float)($item['discount_value'] ?? 0); $discType = $item['discount_type'] ?? 'fixed';
+                $discVal = (float)($item['discount_value'] ?? 0);
+                $discType = $item['discount_type'] ?? 'fixed';
                 $discAmount = ($discType == 'percent') ? ($gross * $discVal / 100) : $discVal;
                 $dpp = $gross - $discAmount;
 
-                // Pajak
-                $taxVal = (float)($item['tax_value'] ?? 0); $taxType = $item['tax_type'] ?? 'percent';
+                // 🔥 UPDATE LOGIKA PAJAK (HYBRID) 🔥
+                $taxVal = (float)($item['tax_value'] ?? 0);
+                $taxType = $item['tax_type'] ?? 'percent';
+                $taxId = $item['tax_id'] ?? null;
+
+                // Pastikan jika tipenya manual persentase, kalkulasinya tetap pakai %
+                if ($taxId === 'MANUAL_PERCENT') {
+                    $taxType = 'percent';
+                }
+
                 $taxAmount = ($taxType == 'percent') ? ($dpp * $taxVal / 100) : $taxVal;
 
                 $bill->items()->create([
-                    'name' => $item['name'], 'description' => $item['description'] ?? null, 'qty' => $qty, 'price' => $price, 'amount' => $dpp + $taxAmount,
-                    'discount_type' => $discType, 'discount_value' => $discVal, 'discount_amount' => $discAmount,
-                    'tax_type' => $taxType, 'tax_value' => $taxVal, 'tax_amount' => $taxAmount, 'subtotal' => $gross,
+                    'name'            => $item['name'],
+                    'description'     => $item['description'] ?? null,
+                    'qty'             => $qty,
+                    'price'           => $price,
+                    'amount'          => $dpp + $taxAmount,
+                    'discount_type'   => $discType,
+                    'discount_value'  => $discVal,
+                    'discount_amount' => $discAmount,
+                    'tax_id'          => is_numeric($taxId) ? $taxId : null, // 🔥 SIMPAN ID PAJAK MASTER 🔥
+                    'tax_type'        => $taxType,
+                    'tax_value'       => $taxVal,
+                    'tax_amount'      => $taxAmount,
+                    'subtotal'        => $gross,
                 ]);
 
                 $totalSubtotal += $gross; $totalItemDisc += $discAmount; $totalTax += $taxAmount;
@@ -621,18 +486,22 @@ class BillRequestController extends Controller
 
                 if ($workflow && $workflow->steps->count() > 0) {
                     foreach ($workflow->steps as $step) {
+                        // 🔥 AMBIL DEPARTEMEN DARI MATRIKS 🔥
+                        $targetDept = $step->target_department_id ?? $step->department_id ?? null;
+
                         \App\Models\DocumentApproval::create([
-                            'document_id'   => $bill->id,
-                            'document_type' => get_class($bill),
-                            'role_id'       => $step->role_id,
-                            'step_order'    => $step->step_order,
-                            'status'        => 'PENDING'
+                            'document_id'          => $bill->id,
+                            'document_type'        => get_class($bill),
+                            'role_id'              => $step->role_id,
+                            'target_department_id' => $targetDept, // 🔥 SIMPAN KE DATABASE 🔥
+                            'step_order'           => $step->step_order,
+                            'status'               => 'PENDING'
                         ]);
                     }
                     $needsApproval = true;
                     // Logika di fungsi store sebelumnya:
                     $this->logHistory($bill, 'SYSTEM', "Menggunakan Rute Persetujuan Khusus: " . $workflow->name);
-                }
+                } // 🔥 KURUNG KURAWAL INI YANG TERTINGGAL SEBELUMNYA 🔥
             } else {
                 // B. JIKA DROPDOWN DIKOSONGKAN (Kembali ke Jalan Tol Utama / Default Departemen)
                 // Memakai service otomatis yang sudah Komandan buat sebelumnya
@@ -659,32 +528,34 @@ class BillRequestController extends Controller
             return back()->withInput()->with('error', 'Gagal menyimpan tagihan: ' . $e->getMessage());
         }
     }
-
     // =========================================================================
     // 5. EDIT (FORM EDIT BERBASIS SLUG)
     // =========================================================================
     public function edit($slug)
     {
+        // 1. Tarik Data Tagihan Utama beserta Relasinya
         $bill = \App\Models\BillRequest::with(['items', 'charges', 'discounts', 'status'])->where('bill_number', $slug)->firstOrFail();
 
+        // Cek Status (Hanya Pending/Draft yang boleh diedit)
         if ($bill->status && !in_array($bill->status->slug, ['pending', 'draft'])) {
             return back()->with('error', 'Tagihan yang sudah disetujui atau diproses tidak dapat diedit!');
         }
 
-        $companies    = \App\Models\Company::all();
-        $taxes        = \App\Models\Tax::where('is_active', true)->orderBy('name')->get();
-        $currencies   = \App\Models\Currency::where('is_active', true)->orderBy('name')->get();
-        $vendors      = \App\Models\Vendor::orderBy('name')->get();
-        $chargeTypes  = \App\Models\ChargeType::where('is_active', true)->orderBy('name')->get();
+        // 2. Tarik Master Data
+        $companies     = \App\Models\Company::all();
+        $taxes         = \App\Models\Tax::where('is_active', true)->orderBy('name')->get(); // 🔥 MASTER PAJAK 🔥
+        $currencies    = \App\Models\Currency::where('is_active', true)->orderBy('name')->get();
+        $vendors       = \App\Models\Vendor::orderBy('name')->get();
+        $chargeTypes   = \App\Models\ChargeType::where('is_active', true)->orderBy('name')->get();
         $discountTypes = \App\Models\DiscountType::where('is_active', true)->orderBy('name')->get();
 
-        $opexItems    = \App\Models\Item::whereNotIn('item_type_code', ['AST', 'STK'])->orWhereNull('item_type_code')->orderBy('name')->get();
+        $opexItems     = \App\Models\Item::whereNotIn('item_type_code', ['AST', 'STK'])->orWhereNull('item_type_code')->orderBy('name')->get();
 
-        // 🔥 TARIK DATA LAMPIRAN DARI TABEL BARU 🔥
+        // 3. Tarik Lampiran
         $attachments = \DB::table('bill_attachments')->where('bill_request_id', $bill->id)->get();
 
         // =========================================================================
-        // 🔥 1. TARIK HANYA MATRIKS OPEX (Abaikan PR, PO, dll) 🔥
+        // 🔥 LOGIKA DETEKTIF MATRIKS (WORKFLOW) 🔥
         // =========================================================================
         $customWorkflows = [];
         $selectedWorkflowId = null;
@@ -696,89 +567,64 @@ class BillRequestController extends Controller
                     $q->where('document_type', 'like', '%BillRequest%')
                       ->orWhere('document_type', 'like', '%OPEX%')
                       ->orWhere('document_type', 'like', '%bill%');
-                })
-                ->get();
+                })->get();
 
-            // =========================================================================
-            // 🔥 2. LOGIKA DETEKTIF SUPER AKURAT (Baca dari Jejak Rekam / History) 🔥
-            // =========================================================================
-            $selectedWorkflowId = null;
-
-            // CARA A: Cari jejak nama matriks dari tabel History tagihan ini
+            // A. Lacak dari History Utama
             $historyLog = \App\Models\History::where('record_id', $bill->id)
                 ->whereIn('record_type', [get_class($bill), 'App\Models\BillRequest', 'OPEX'])
                 ->where('action', 'SYSTEM')
                 ->where('note', 'like', 'Menggunakan Rute Persetujuan Khusus:%')
-                ->orderBy('id', 'desc')
-                ->first();
+                ->orderBy('id', 'desc')->first();
 
-            // 🔥 PELACAKAN SILSILAH UNTUK TAGIHAN ANAK (RECURRING) 🔥
-            // Jika tidak ketemu di tagihan ini, cek apakah ini tagihan anak hasil generate otomatis
+            // B. Lacak Silsilah Jika ini Tagihan Recurring (Berulang)
             if (!$historyLog) {
                 $recurringLog = \App\Models\History::where('record_id', $bill->id)
                     ->whereIn('record_type', [get_class($bill), 'App\Models\BillRequest', 'OPEX'])
                     ->where('action', 'CREATED')
-                    ->where('note', 'like', '%Recurring dari:%')
-                    ->first();
+                    ->where('note', 'like', '%Recurring dari:%')->first();
 
                 if ($recurringLog) {
-                    // Ekstrak Nomor Tagihan Induk dari teks (Misal: "...Recurring dari: BILL/OPX/0001)...")
                     preg_match('/Recurring dari:\s*([^)]+)/', $recurringLog->note, $matches);
-
                     if (!empty($matches[1])) {
-                        $parentBillNumber = trim($matches[1]);
-                        $parentBill = \App\Models\BillRequest::where('bill_number', $parentBillNumber)->first();
-
+                        $parentBill = \App\Models\BillRequest::where('bill_number', trim($matches[1]))->first();
                         if ($parentBill) {
-                            // Baca history milik Tagihan Induk!
                             $historyLog = \App\Models\History::where('record_id', $parentBill->id)
                                 ->whereIn('record_type', [get_class($parentBill), 'App\Models\BillRequest', 'OPEX'])
                                 ->where('action', 'SYSTEM')
                                 ->where('note', 'like', 'Menggunakan Rute Persetujuan Khusus:%')
-                                ->orderBy('id', 'desc')
-                                ->first();
+                                ->orderBy('id', 'desc')->first();
                         }
                     }
                 }
             }
 
-            // Jika log berhasil ditemukan (baik dari tagihan ini atau dari Induknya)
+            // Jika ketemu nama workflow-nya
             if ($historyLog) {
-                // Ekstrak nama matriks dari teks
                 $workflowName = trim(str_replace('Menggunakan Rute Persetujuan Khusus:', '', $historyLog->note));
-
-                // Cari ID-nya berdasarkan nama tersebut
                 $matchedWorkflow = $customWorkflows->where('name', $workflowName)->first();
                 if ($matchedWorkflow) {
                     $selectedWorkflowId = $matchedWorkflow->id;
                 }
             }
 
-            // CARA B: Fallback ... (Tetap biarkan kode Cara B di bawah ini seperti aslinya)
-
-            // CARA B: Fallback (Jika tagihan lama tidak punya log history, gunakan pencocokan jabatan)
+            // C. Fallback: Cocokkan jumlah Step (Jabatan)
             if (!$selectedWorkflowId) {
                 $currentApprovals = \App\Models\DocumentApproval::where('document_id', $bill->id)
                     ->whereIn('document_type', [get_class($bill), 'App\Models\BillRequest', 'OPEX'])
-                    ->orderBy('step_order', 'asc')
-                    ->get();
+                    ->orderBy('step_order', 'asc')->get();
 
                 if ($currentApprovals->count() > 0 && $customWorkflows->count() > 0) {
                     foreach ($customWorkflows as $cw) {
                         $cwSteps = $cw->steps->sortBy('step_order')->values();
-
                         if ($cwSteps->count() === $currentApprovals->count() && $cwSteps->count() > 0) {
                             $isMatch = true;
                             foreach ($cwSteps as $index => $step) {
                                 if ($step->role_id != $currentApprovals[$index]->role_id) {
-                                    $isMatch = false;
-                                    break;
+                                    $isMatch = false; break;
                                 }
                             }
-
                             if ($isMatch) {
-                                $selectedWorkflowId = $cw->id;
-                                break;
+                                $selectedWorkflowId = $cw->id; break;
                             }
                         }
                     }
@@ -786,6 +632,7 @@ class BillRequestController extends Controller
             }
         }
 
+        // 4. Lemparkan semua variabel ke Blade!
         return view('bills.edit', compact(
             'bill', 'companies', 'taxes', 'currencies', 'vendors',
             'opexItems', 'chargeTypes', 'discountTypes', 'attachments',
@@ -795,36 +642,6 @@ class BillRequestController extends Controller
 
 
 
-    // =========================================================================
-    // 5. EDIT (FORM EDIT BERBASIS SLUG)
-    // =========================================================================
-    // public function edit($slug)
-    // {
-    //     $bill = \App\Models\BillRequest::with(['items', 'charges', 'discounts', 'status'])->where('bill_number', $slug)->firstOrFail();
-
-    //     if ($bill->status && !in_array($bill->status->slug, ['pending', 'draft'])) {
-    //         return back()->with('error', 'Tagihan yang sudah disetujui atau diproses tidak dapat diedit!');
-    //     }
-
-    //     $companies  = \App\Models\Company::all();
-    //     $taxes      = \App\Models\Tax::where('is_active', true)->orderBy('name')->get();
-    //     $currencies = \App\Models\Currency::where('is_active', true)->orderBy('name')->get();
-    //     $vendors    = \App\Models\Vendor::orderBy('name')->get();
-    //     $chargeTypes = \App\Models\ChargeType::where('is_active', true)->orderBy('name')->get();
-    //     $discountTypes = \App\Models\DiscountType::where('is_active', true)->orderBy('name')->get();
-
-    //     $opexItems  = \App\Models\Item::whereNotIn('item_type_code', ['AST', 'STK'])->orWhereNull('item_type_code')->orderBy('name')->get();
-
-    //     // 🔥 TARIK DATA LAMPIRAN DARI TABEL BARU 🔥
-    //     $attachments = \DB::table('bill_attachments')->where('bill_request_id', $bill->id)->get();
-
-    //     // 🔥 PASTIKAN $attachments MASUK KE DALAM compact() 🔥
-    //     return view('bills.edit', compact('bill', 'companies', 'taxes', 'currencies', 'vendors', 'opexItems', 'chargeTypes', 'discountTypes', 'attachments'));
-    // }
-
-    // =========================================================================
-    // 6. UPDATE (SIMPAN REVISI BERBASIS SLUG + RESET WORKFLOW VIA SERVICE)
-    // =========================================================================
     // =========================================================================
     // 6. UPDATE (SIMPAN REVISI + OVERRIDE WORKFLOW)
     // =========================================================================
@@ -836,6 +653,8 @@ class BillRequestController extends Controller
             'bill_date'             => 'required|date',
             'due_date'              => 'required|date|after_or_equal:bill_date',
             'vendor_name'           => 'required|string|max:255',
+            'vendor_invoice_number' => 'nullable|string|max:255',
+            'account_number'        => 'nullable|string|max:255', // 🔥 VALIDASI KOLOM BARU 🔥
             'items'                 => 'required|array|min:1',
         ]);
 
@@ -852,6 +671,7 @@ class BillRequestController extends Controller
                 'company_id'            => $request->paid_by_company_id,
                 'vendor_name'           => $request->vendor_name,
                 'vendor_invoice_number' => $request->vendor_invoice_number,
+                'account_number'        => $request->account_number, // 🔥 SIMPAN KOLOM BARU 🔥
                 'description'           => $request->note,
                 'invoice_date'          => $request->bill_date,
                 'due_date'              => $request->due_date,
@@ -866,21 +686,63 @@ class BillRequestController extends Controller
 
             foreach ($request->items as $item) {
                 $qty = (float)$item['qty']; $price = (float)$item['price']; $gross = $qty * $price;
+
                 $discVal = (float)($item['discount_value'] ?? 0); $discType = $item['discount_type'] ?? 'fixed';
                 $discAmount = ($discType == 'percent') ? ($gross * $discVal / 100) : $discVal;
                 $dpp = $gross - $discAmount;
-                $taxVal = (float)($item['tax_value'] ?? 0); $taxType = $item['tax_type'] ?? 'percent';
+
+                // 🔥 LOGIKA PAJAK (HYBRID) 🔥
+                $taxVal = (float)($item['tax_value'] ?? 0);
+                $taxType = $item['tax_type'] ?? 'percent';
+                $taxId = $item['tax_id'] ?? null;
+
+                if ($taxId === 'MANUAL_PERCENT') {
+                    $taxType = 'percent';
+                }
+
                 $taxAmount = ($taxType == 'percent') ? ($dpp * $taxVal / 100) : $taxVal;
 
                 $bill->items()->create([
                     'name' => $item['name'], 'description' => $item['description'], 'qty' => $qty, 'price' => $price, 'amount' => $dpp + $taxAmount,
                     'discount_type' => $discType, 'discount_value' => $discVal, 'discount_amount' => $discAmount,
+                    'tax_id' => is_numeric($taxId) ? $taxId : null, // 🔥 SIMPAN ID PAJAK MASTER 🔥
                     'tax_type' => $taxType, 'tax_value' => $taxVal, 'tax_amount' => $taxAmount, 'subtotal' => $gross,
                 ]);
                 $totalSubtotal += $gross; $totalItemDisc += $discAmount; $totalTax += $taxAmount;
             }
 
-            // ... (Kode update charge, discount, lampiran tetap sama seperti sebelumnya) ...
+            if ($request->has('charges')) {
+                foreach ($request->charges as $charge) {
+                    if (!empty($charge['charge_type_id']) && $charge['amount'] > 0) {
+                        $bill->charges()->create(['charge_type_id' => $charge['charge_type_id'], 'amount' => $charge['amount'], 'note' => $charge['note'] ?? null]);
+                        $totalCharge += $charge['amount'];
+                    }
+                }
+            }
+
+            if ($request->has('discounts')) {
+                foreach ($request->discounts as $discount) {
+                    if (!empty($discount['discount_type_id']) && $discount['amount'] > 0) {
+                        $bill->discounts()->create(['discount_type_id' => $discount['discount_type_id'], 'amount' => $discount['amount'], 'note' => $discount['note'] ?? null]);
+                        $totalExtDisc += $discount['amount'];
+                    }
+                }
+            }
+
+            if ($request->hasFile('attachments')) {
+                $basePath = \DB::table('system_settings')->where('setting_key', 'path_bills_opex')->value('setting_value') ?: 'attachments/opex';
+                $safeBillNumber = str_replace(['/', '\\'], '-', $bill->bill_number);
+                $storagePath = $basePath . '/' . $safeBillNumber;
+
+                foreach ($request->file('attachments') as $file) {
+                    $originalName = $file->getClientOriginalName();
+                    $path = $file->storeAs($storagePath, time() . '_' . uniqid() . '_' . str_replace(' ', '_', $originalName), 'public');
+                    \DB::table('bill_attachments')->insert([
+                        'bill_request_id' => $bill->id, 'file_name' => $originalName, 'file_path' => str_replace('\\', '/', $path),
+                        'created_at' => now(), 'updated_at' => now()
+                    ]);
+                }
+            }
 
             $grandTotal = max(0, ($totalSubtotal - $totalItemDisc) + $totalTax + $totalCharge - $totalExtDisc);
             $bill->update(['subtotal' => $totalSubtotal, 'total_discount' => $totalItemDisc + $totalExtDisc, 'total_tax' => $totalTax, 'total_charge' => $totalCharge, 'amount' => $grandTotal]);
@@ -898,9 +760,16 @@ class BillRequestController extends Controller
                 $workflow = \App\Models\ApprovalWorkflow::with('steps')->find($customWorkflowId);
                 if ($workflow && $workflow->steps->count() > 0) {
                     foreach ($workflow->steps as $step) {
+                        // 🔥 AMBIL DEPARTEMEN DARI MATRIKS 🔥
+                        $targetDept = $step->target_department_id ?? $step->department_id ?? null;
+
                         \App\Models\DocumentApproval::create([
-                            'document_id'   => $bill->id, 'document_type' => get_class($bill),
-                            'role_id'       => $step->role_id, 'step_order' => $step->step_order, 'status' => 'PENDING'
+                            'document_id'          => $bill->id,
+                            'document_type'        => get_class($bill),
+                            'role_id'              => $step->role_id,
+                            'target_department_id' => $targetDept, // 🔥 SIMPAN KE DATABASE 🔥
+                            'step_order'           => $step->step_order,
+                            'status'               => 'PENDING'
                         ]);
                     }
                     $needsApproval = true;
@@ -924,6 +793,8 @@ class BillRequestController extends Controller
             return back()->withInput()->with('error', 'Gagal update tagihan: ' . $e->getMessage());
         }
     }
+
+
 
     // =========================================================================
     // 7. APPROVE (WORKFLOW DINAMIS BERBASIS SLUG + ANTI EMBARGO BYPASS)
@@ -1206,14 +1077,23 @@ class BillRequestController extends Controller
     // =========================================================================
     public function show($slug)
     {
+        // 1. Tarik Data Utama + Relasi (Eager Loading agar performa cepat)
         $bill = \App\Models\BillRequest::with([
-            'status', 'items', 'company', 'user', 'histories.user', 'charges.chargeType', 'discounts.discountType'
+            'status',
+            'items',
+            'company',
+            'user',
+            'histories.user',
+            'charges.chargeType',
+            'discounts.discountType'
         ])->where('bill_number', $slug)->firstOrFail();
 
-        // 🔥 TARIK DATA LAMPIRAN DARI TABEL BARU 🔥
-        $attachments = \DB::table('bill_attachments')->where('bill_request_id', $bill->id)->get();
+        // 2. Tarik Data Lampiran Fisik dari tabel terpisah
+        $attachments = \DB::table('bill_attachments')
+            ->where('bill_request_id', $bill->id)
+            ->get();
 
-        // 🔥 PASTIKAN $attachments MASUK KE DALAM compact() 🔥
+        // 3. Lemparkan ke Halaman Blade
         return view('bills.show', compact('bill', 'attachments'));
     }
 
@@ -1247,113 +1127,143 @@ class BillRequestController extends Controller
 
 
 
-    public function printWithAttachments($slug)
-    {
-        $bill = \App\Models\BillRequest::with([
-            'items', 'company', 'user', 'charges.chargeType', 'discounts.discountType', 'attachments'
-        ])->where('bill_number', $slug)->firstOrFail();
-
-        // 1. RENDER DOMPDF MENGGUNAKAN TEMPLATE PRINT_PDF AGAR TAMPILANNYA SAMA PERSIS
-        $pdf = \Barryvdh\DomPDF\Facade\Pdf::loadView('bills.print_pdf', compact('bill'))
-                ->setPaper('A4', 'portrait');
-
-        // 2. SIMPAN HASIL DOMPDF SEMENTARA DI FOLDER STORAGE
-        $tempMainPdfPath = storage_path('app/temp_bill_' . uniqid() . '.pdf');
-        $pdf->save($tempMainPdfPath);
-
-        // 3. INISIASI MESIN PENGGABUNG PDF (MERGER)
-        $merger = new \iio\libmergepdf\Merger();
-
-        // Masukkan file utama (Halaman Tagihan) ke halaman paling depan
-        $merger->addFile($tempMainPdfPath);
-
-        // 4. CARI LAMPIRAN BERFORMAT PDF & MASUKKAN KE MERGER
-        if ($bill->attachments) {
-            foreach ($bill->attachments as $attachment) {
-                $ext = strtolower(pathinfo($attachment->file_path, PATHINFO_EXTENSION));
-
-                // Jika file adalah PDF asli, gabungkan langsung
-                if ($ext === 'pdf') {
-                    $pdfAttachmentPath = public_path('storage/' . $attachment->file_path);
-
-                    // Pastikan filenya benar-benar ada di folder server
-                    if (file_exists($pdfAttachmentPath)) {
-                        $merger->addFile($pdfAttachmentPath);
-                    }
-                }
-            }
-        }
-
-        // 5. JAHIT/GABUNGKAN SEMUA PDF MENJADI SATU KESATUAN
-        $mergedPdfData = $merger->merge();
-
-        // 6. BERSIHKAN FILE SEMENTARA (Agar server tidak penuh)
-        if (file_exists($tempMainPdfPath)) {
-            unlink($tempMainPdfPath);
-        }
-
-        // 7. TAMPILKAN HASILNYA KE BROWSER USER
-        $filename = 'Tagihan_Opex_Lengkap_' . str_replace('/', '_', $bill->bill_number) . '.pdf';
-
-        return response($mergedPdfData)
-                ->header('Content-Type', 'application/pdf')
-                ->header('Content-Disposition', 'inline; filename="' . $filename . '"');
-    }
-
-
-
     // =========================================================================
-    // CETAK BPR LENGKAP DENGAN LAMPIRAN (PDF MERGER)
+    // CETAK BPR LENGKAP DENGAN LAMPIRAN (SMART MERGE / ANTI-BADAI)
     // =========================================================================
     public function printBprWithAttachments($slug)
     {
         $bill = \App\Models\BillRequest::with([
-            'items', 'company', 'user', 'charges.chargeType', 'discounts.discountType', 'attachments'
+            'items', 'company', 'user', 'charges.chargeType', 'discounts.discountType'
         ])->where('bill_number', $slug)->firstOrFail();
 
         // 1. RENDER DOMPDF MENGGUNAKAN TEMPLATE BPR
-        $pdf = \Barryvdh\DomPDF\Facade\Pdf::loadView('bills.pdf_bpr', compact('bill'))
+        $attachments = \DB::table('bill_attachments')->where('bill_request_id', $bill->id)->get();
+        $pdf = \Barryvdh\DomPDF\Facade\Pdf::loadView('bills.pdf_bpr', compact('bill', 'attachments'))
                 ->setPaper('A4', 'portrait');
 
-        // 2. SIMPAN HASIL DOMPDF SEMENTARA DI FOLDER STORAGE
-        $tempMainPdfPath = storage_path('app/temp_bpr_' . uniqid() . '.pdf');
-        $pdf->save($tempMainPdfPath);
+        // 2. SIAPKAN FOLDER SEMENTARA
+        $tempDir = storage_path('app/public/temp_pdf');
+        if (!file_exists($tempDir)) {
+            mkdir($tempDir, 0777, true);
+        }
 
-        // 3. INISIASI MESIN PENGGABUNG PDF (MERGER)
-        $merger = new \iio\libmergepdf\Merger();
+        // 3. SIMPAN HASIL DOMPDF UTAMA
+        $tempMainPdfName = 'main_bpr_' . $bill->id . '_' . time() . '.pdf';
+        $tempMainPdfPath = $tempDir . '/' . $tempMainPdfName;
+        file_put_contents($tempMainPdfPath, $pdf->output());
 
-        // Masukkan file utama (Halaman BPR) ke halaman paling depan
-        $merger->addFile($tempMainPdfPath);
+        // 4. INISIASI MESIN PENGGABUNG PDF
+        $oMerger = \Webklex\PDFMerger\Facades\PDFMergerFacade::init();
+        $oMerger->addPDF($tempMainPdfPath, 'all');
 
-        // 4. CARI LAMPIRAN BERFORMAT PDF & MASUKKAN KE MERGER
-        if ($bill->attachments) {
-            foreach ($bill->attachments as $attachment) {
-                $ext = strtolower(pathinfo($attachment->file_path, PATHINFO_EXTENSION));
+        $tempFilesToDelete = [$tempMainPdfPath];
+        $totalLampiranDiDatabase = 0;
 
-                // Jika file adalah PDF asli
-                if ($ext === 'pdf') {
-                    $pdfAttachmentPath = public_path('storage/' . $attachment->file_path);
+        // 5. PROSES LAMPIRAN
+        if ($attachments && $attachments->count() > 0) {
+            $totalLampiranDiDatabase = $attachments->count();
 
-                    // Pastikan filenya benar-benar ada di direktori
-                    if (file_exists($pdfAttachmentPath)) {
-                        $merger->addFile($pdfAttachmentPath);
+            foreach ($attachments as $file) {
+                $cleanFilePath = ltrim($file->file_path, '/');
+                $finalFilePath = storage_path('app/public/' . $cleanFilePath);
+
+                // 🔥 JIKA FILE FISIK DITEMUKAN 🔥
+                if (file_exists($finalFilePath)) {
+                    $extension = strtolower(pathinfo($finalFilePath, PATHINFO_EXTENSION));
+
+                    // A. PENANGANAN FILE PDF (DENGAN TRY-CATCH ANTI BADAI)
+                    if ($extension === 'pdf') {
+                        try {
+                            $fpdi = new \setasign\Fpdi\Fpdi();
+                            $fpdi->setSourceFile($finalFilePath);
+                            $oMerger->addPDF($finalFilePath, 'all');
+                        } catch (\Exception $e) {
+                            // Jika PDF terkompresi / terkunci, buat halaman info
+                            $html = "<div style='border:2px solid #0d6efd; padding:20px; text-align:center; font-family:sans-serif; margin-top:50px;'>
+                                        <h2 style='color:#0d6efd;'>📄 LAMPIRAN PDF (TERENKRIPSI/TERKOMPRESI)</h2>
+                                        <p>File pendukung bernama: <b>{$file->file_name}</b></p>
+                                        <p>File ini menggunakan format PDF modern yang tidak bisa digabungkan ke dalam dokumen ini secara otomatis.</p>
+                                        <p><i>Silakan lihat atau unduh file ini langsung melalui sistem ProcureApp.</i></p>
+                                     </div>";
+                            $infoPdf = \Barryvdh\DomPDF\Facade\Pdf::loadHTML($html)->setPaper('a4', 'portrait');
+                            $infoPath = $tempDir . '/info_' . uniqid() . '.pdf';
+                            file_put_contents($infoPath, $infoPdf->output());
+                            $oMerger->addPDF($infoPath, 'all');
+                            $tempFilesToDelete[] = $infoPath;
+                        }
                     }
+                    // B. PENANGANAN FILE GAMBAR (UBAH KE PDF DULU SEBELUM DIGABUNG)
+                    elseif (in_array($extension, ['jpg', 'jpeg', 'png'])) {
+                        $imageData = base64_encode(file_get_contents($finalFilePath));
+                        $mime = mime_content_type($finalFilePath);
+                        $base64Src = 'data:' . $mime . ';base64,' . $imageData;
+
+                        $imgPdf = \Barryvdh\DomPDF\Facade\Pdf::loadHTML("
+                            <html><head><style>@page{margin:0px;} body{margin:0;padding:20px;text-align:center;} img{max-width:100%;max-height:1050px;}</style></head>
+                            <body><img src='" . $base64Src . "'></body></html>
+                        ")->setPaper('a4', 'portrait');
+
+                        $imgTempName = 'img_convert_' . uniqid() . '.pdf';
+                        $imgTempPath = $tempDir . '/' . $imgTempName;
+                        file_put_contents($imgTempPath, $imgPdf->output());
+                        $oMerger->addPDF($imgTempPath, 'all');
+                        $tempFilesToDelete[] = $imgTempPath;
+                    }
+                    // C. PENANGANAN FILE WORD / EXCEL / LAINNYA
+                    else {
+                        $html = "<div style='border:2px solid #198754; padding:20px; text-align:center; font-family:sans-serif; margin-top:50px;'>
+                                    <h2 style='color:#198754;'>📎 LAMPIRAN BERKAS (".strtoupper($extension).")</h2>
+                                    <p>File pendukung bernama: <b>{$file->file_name}</b></p>
+                                    <p>File ini berformat Excel / Word / Lainnya sehingga tidak dapat ditampilkan sebagai halaman PDF.</p>
+                                    <p><i>Silakan unduh lampiran ini melalui menu detail tagihan di sistem.</i></p>
+                                 </div>";
+                        $infoPdf = \Barryvdh\DomPDF\Facade\Pdf::loadHTML($html)->setPaper('a4', 'portrait');
+                        $infoPath = $tempDir . '/info_' . uniqid() . '.pdf';
+                        file_put_contents($infoPath, $infoPdf->output());
+                        $oMerger->addPDF($infoPath, 'all');
+                        $tempFilesToDelete[] = $infoPath;
+                    }
+                }
+                // 🔥 JIKA FILE FISIK HILANG DARI SERVER 🔥
+                else {
+                    $errorHtml = "<div style='border:2px solid red; padding:20px; text-align:center; font-family:sans-serif; margin-top:50px;'>
+                                    <h2 style='color:red;'>⚠️ FILE FISIK HILANG ⚠️</h2>
+                                    <p>Data lampiran <b>{$file->file_name}</b> tercatat di sistem, tapi file aslinya tidak ditemukan di server.</p>
+                                  </div>";
+                    $errorPdf = \Barryvdh\DomPDF\Facade\Pdf::loadHTML($errorHtml)->setPaper('a4', 'portrait');
+                    $errorTempPath = $tempDir . '/err_notfound_' . uniqid() . '.pdf';
+                    file_put_contents($errorTempPath, $errorPdf->output());
+                    $oMerger->addPDF($errorTempPath, 'all');
+                    $tempFilesToDelete[] = $errorTempPath;
                 }
             }
         }
 
-        // 5. JAHIT/GABUNGKAN SEMUA PDF MENJADI SATU KESATUAN
-        $mergedPdfData = $merger->merge();
-
-        // 6. BERSIHKAN FILE SEMENTARA
-        if (file_exists($tempMainPdfPath)) {
-            unlink($tempMainPdfPath);
+        // JIKA DI DATABASE TIDAK ADA LAMPIRAN SAMA SEKALI
+        if ($totalLampiranDiDatabase === 0) {
+            $noDataHtml = "<div style='border: 2px solid orange; padding: 20px; font-family: sans-serif; text-align:center; margin-top:50px;'>
+                            <h2 style='color: orange;'>⚠️ INFO SISTEM ⚠️</h2><p>TIDAK ADA DATA LAMPIRAN untuk Tagihan ini.</p></div>";
+            $noDataPdf = \Barryvdh\DomPDF\Facade\Pdf::loadHTML($noDataHtml)->setPaper('a4', 'portrait');
+            $noDataTempPath = $tempDir . '/err_nodata_' . uniqid() . '.pdf';
+            file_put_contents($noDataTempPath, $noDataPdf->output());
+            $oMerger->addPDF($noDataTempPath, 'all');
+            $tempFilesToDelete[] = $noDataTempPath;
         }
 
-        // 7. TAMPILKAN HASILNYA KE BROWSER USER
-        $filename = 'BPR_Lengkap_' . str_replace('/', '_', $bill->bill_number) . '.pdf';
+        // 6. JAHIT SEMUA PDF MENJADI SATU KESATUAN
+        $oMerger->merge();
+        $finalPdfOutput = $oMerger->output();
 
-        return response($mergedPdfData)
+        // 7. BERSIHKAN FILE SEMENTARA
+        foreach ($tempFilesToDelete as $trashPath) {
+            if (file_exists($trashPath)) {
+                unlink($trashPath);
+            }
+        }
+
+        $filename = 'BPR_Lengkap_Dengan_Lampiran_' . str_replace('/', '_', $bill->bill_number) . '.pdf';
+
+        return response($finalPdfOutput)
                 ->header('Content-Type', 'application/pdf')
                 ->header('Content-Disposition', 'inline; filename="' . $filename . '"');
     }
