@@ -254,9 +254,10 @@
                 <div class="p-4 pt-0 card-body">
                     <div class="row g-3">
                         @foreach($attachments as $file)
-                        <div class="col-md-6">
+                        <div class="col-md-6 position-relative">
+                            {{-- Link untuk membuka file --}}
                             <a href="{{ asset('storage/' . $file->file_path) }}" target="_blank" class="text-decoration-none">
-                                <div class="p-3 border rounded-4 bg-light d-flex align-items-center hover-shadow">
+                                <div class="p-3 border rounded-4 bg-light d-flex align-items-center hover-shadow pe-5">
                                     <div class="p-2 bg-white shadow-sm rounded-circle me-3">
                                         @if(Str::endsWith(strtolower($file->file_name), ['.jpg', '.jpeg', '.png']))
                                             <i class="bi bi-file-image fs-4 text-primary"></i>
@@ -272,6 +273,18 @@
                                     </div>
                                 </div>
                             </a>
+
+                            {{-- 🔥 TOMBOL HAPUS LANGSUNG (Hanya muncul jika status pending/draft atau login sbg Super Admin) 🔥 --}}
+                            @if(in_array($statusSlug, ['pending', 'draft']) || $isSuperAdmin)
+                                <form action="{{ route('bills.destroyAttachment', ['slug' => $bill->bill_number, 'mediaId' => $file->id]) }}" method="POST" class="position-absolute" style="top: 50%; right: 25px; transform: translateY(-50%);">
+                                    @csrf
+                                    @method('DELETE')
+                                    <button type="button" class="shadow-sm btn btn-sm btn-danger rounded-circle" onclick="if(confirm('Yakin ingin menghapus lampiran ini secara permanen?')) this.form.submit();" title="Hapus Lampiran">
+                                        <i class="bi bi-trash"></i>
+                                    </button>
+                                </form>
+                            @endif
+
                         </div>
                         @endforeach
                     </div>

@@ -654,7 +654,7 @@ class BillRequestController extends Controller
             'due_date'              => 'required|date|after_or_equal:bill_date',
             'vendor_name'           => 'required|string|max:255',
             'vendor_invoice_number' => 'nullable|string|max:255',
-            'account_number'        => 'nullable|string|max:255', // 🔥 VALIDASI KOLOM BARU 🔥
+            'account_number'        => 'nullable|string|max:255',
             'items'                 => 'required|array|min:1',
         ]);
 
@@ -671,7 +671,7 @@ class BillRequestController extends Controller
                 'company_id'            => $request->paid_by_company_id,
                 'vendor_name'           => $request->vendor_name,
                 'vendor_invoice_number' => $request->vendor_invoice_number,
-                'account_number'        => $request->account_number, // 🔥 SIMPAN KOLOM BARU 🔥
+                'account_number'        => $request->account_number,
                 'description'           => $request->note,
                 'invoice_date'          => $request->bill_date,
                 'due_date'              => $request->due_date,
@@ -691,7 +691,6 @@ class BillRequestController extends Controller
                 $discAmount = ($discType == 'percent') ? ($gross * $discVal / 100) : $discVal;
                 $dpp = $gross - $discAmount;
 
-                // 🔥 LOGIKA PAJAK (HYBRID) 🔥
                 $taxVal = (float)($item['tax_value'] ?? 0);
                 $taxType = $item['tax_type'] ?? 'percent';
                 $taxId = $item['tax_id'] ?? null;
@@ -705,7 +704,7 @@ class BillRequestController extends Controller
                 $bill->items()->create([
                     'name' => $item['name'], 'description' => $item['description'], 'qty' => $qty, 'price' => $price, 'amount' => $dpp + $taxAmount,
                     'discount_type' => $discType, 'discount_value' => $discVal, 'discount_amount' => $discAmount,
-                    'tax_id' => is_numeric($taxId) ? $taxId : null, // 🔥 SIMPAN ID PAJAK MASTER 🔥
+                    'tax_id' => is_numeric($taxId) ? $taxId : null,
                     'tax_type' => $taxType, 'tax_value' => $taxVal, 'tax_amount' => $taxAmount, 'subtotal' => $gross,
                 ]);
                 $totalSubtotal += $gross; $totalItemDisc += $discAmount; $totalTax += $taxAmount;
@@ -744,15 +743,26 @@ class BillRequestController extends Controller
                 }
             }
 
+            // 🔥 LOGIKA MENGHAPUS LAMPIRAN LAMA YANG DICENTANG SAAT EDIT 🔥
+            if ($request->has('delete_media')) {
+                foreach ($request->delete_media as $mediaId) {
+                    $attachment = \DB::table('bill_attachments')->where('id', $mediaId)->first();
+                    if ($attachment) {
+                        if (\Illuminate\Support\Facades\Storage::disk('public')->exists($attachment->file_path)) {
+                            \Illuminate\Support\Facades\Storage::disk('public')->delete($attachment->file_path);
+                        }
+                        \DB::table('bill_attachments')->where('id', $mediaId)->delete();
+                    }
+                }
+            }
+
             $grandTotal = max(0, ($totalSubtotal - $totalItemDisc) + $totalTax + $totalCharge - $totalExtDisc);
             $bill->update(['subtotal' => $totalSubtotal, 'total_discount' => $totalItemDisc + $totalExtDisc, 'total_tax' => $totalTax, 'total_charge' => $totalCharge, 'amount' => $grandTotal]);
 
             $this->logHistory($bill, 'UPDATED', "Merevisi dokumen tagihan. Total Baru: {$currency} " . number_format($grandTotal, 0, ',', '.'));
 
-            // 🔥 BERSIHKAN MATRIKS PERSETUJUAN LAMA 🔥
             \App\Models\DocumentApproval::where('document_id', $bill->id)->where('document_type', get_class($bill))->delete();
 
-            // 🔥 LOGIKA OVERRIDE WORKFLOW UNTUK REVISI 🔥
             $customWorkflowId = $request->input('custom_workflow_id');
             $needsApproval = false;
 
@@ -760,14 +770,12 @@ class BillRequestController extends Controller
                 $workflow = \App\Models\ApprovalWorkflow::with('steps')->find($customWorkflowId);
                 if ($workflow && $workflow->steps->count() > 0) {
                     foreach ($workflow->steps as $step) {
-                        // 🔥 AMBIL DEPARTEMEN DARI MATRIKS 🔥
                         $targetDept = $step->target_department_id ?? $step->department_id ?? null;
-
                         \App\Models\DocumentApproval::create([
                             'document_id'          => $bill->id,
                             'document_type'        => get_class($bill),
                             'role_id'              => $step->role_id,
-                            'target_department_id' => $targetDept, // 🔥 SIMPAN KE DATABASE 🔥
+                            'target_department_id' => $targetDept,
                             'step_order'           => $step->step_order,
                             'status'               => 'PENDING'
                         ]);
