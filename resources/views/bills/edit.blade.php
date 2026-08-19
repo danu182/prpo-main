@@ -169,7 +169,7 @@
 
                 {{-- CARD 3: RINCIAN ITEM --}}
                 <div class="mb-4 border-0 shadow-sm card rounded-4">
-                    {{-- 🔥 HEADER DENGAN FITUR SET PAJAK MASSAL (BARU) 🔥 --}}
+                    {{-- 🔥 HEADER DENGAN FITUR SET PAJAK MASSAL 🔥 --}}
                     <div class="py-3 bg-white card-header border-bottom-0 rounded-top-4 d-flex justify-content-between align-items-center">
                         <h6 class="mb-0 fw-bold text-warning-emphasis"><i class="bi bi-list-check me-2"></i>Rincian Item Jasa / Opex</h6>
                         <div class="input-group input-group-sm" style="width: 420px;">
@@ -196,7 +196,7 @@
                         <table class="table align-middle table-borderless" id="itemTable">
                             <thead class="bg-secondary bg-opacity-10 text-muted small fw-bold text-uppercase rounded-3">
                                 <tr>
-                                    <th width="35%" class="rounded-start">Master Item</th>
+                                    <th width="35%" class="rounded-start">Item & Deskripsi</th>
                                     <th width="10%">Qty</th>
                                     <th width="20%">Harga Satuan</th>
                                     <th width="25%">Pajak & Diskon Item</th>
@@ -211,15 +211,20 @@
                                 @endphp
                                 <tr class="item-row border-bottom">
                                     <td class="pt-3">
-                                        <select name="items[{{ $index }}][name]" class="mb-2 form-select select2-item" required>
-                                            <option value="{{ $item->name }}" selected>{{ $item->name }}</option>
+                                        {{-- 🔥 PERUBAHAN TAMPILAN CUSTOM ITEM (EDIT MODE) 🔥 --}}
+                                        <label class="mb-1 form-label small fw-bold text-dark">Master Item <span class="text-danger">*</span></label>
+                                        <select name="items[{{ $index }}][name]" class="mb-2 form-select select2-item item-select" required onchange="onOpexItemSelect(this, {{ $index }})">
+                                            <option value="{{ $item->name }}" selected>Current: {{ $item->name }}</option>
                                             @foreach($opexItems as $opx)
-                                                @if($opx->name != $item->name)
-                                                    <option value="{{ $opx->name }}">{{ $opx->code }} - {{ $opx->name }}</option>
-                                                @endif
+                                                <option value="{{ $opx->name }}">{{ $opx->code }} - {{ $opx->name }}</option>
                                             @endforeach
                                         </select>
-                                        <textarea name="items[{{ $index }}][description]" class="form-control form-control-sm" rows="1">{{ $item->description }}</textarea>
+
+                                        <label class="mt-2 mb-1 form-label small fw-bold text-dark">Nama Barang di Tagihan (Custom) <span class="text-danger">*</span></label>
+                                        <input type="text" name="items[{{ $index }}][name_override]" id="name_override_{{ $index }}" class="mb-2 form-control form-control-sm fw-bold text-primary" value="{{ $item->name }}" placeholder="Bisa diedit/disesuaikan..." required>
+
+                                        <label class="mt-1 mb-1 form-label small fw-bold text-dark">Spesifikasi Detail (Catatan)</label>
+                                        <textarea name="items[{{ $index }}][description]" class="form-control form-control-sm" rows="2" placeholder="Ketik catatan detail...">{{ $item->description }}</textarea>
                                     </td>
                                     <td class="pt-3">
                                         <input type="number" name="items[{{ $index }}][qty]" class="text-center form-control form-control-sm qty" value="{{ (int)$item->qty }}" min="1">
@@ -233,7 +238,7 @@
                                     </td>
                                     <td class="pt-3">
                                         {{-- 🔥 INPUT PAJAK HYBRID (Bisa Master/Nominal/Persen) 🔥 --}}
-                                        <div class="mb-1 input-group input-group-sm">
+                                        <div class="mb-1 input-group input-group-sm" title="Pajak per-item">
                                             <span class="input-group-text bg-info bg-opacity-10 text-info fw-bold" style="font-size: 0.7rem;">+Pajak</span>
                                             <select name="items[{{ $index }}][tax_type]" class="form-select tax-type" style="max-width: 55px; padding-right:5px; padding-left:5px;">
                                                 <option value="percent" {{ !$isTaxFixed ? 'selected' : '' }}>%</option>
@@ -389,11 +394,12 @@
                 </div>
             </div>
 
-            {{-- KOLOM KANAN: RINGKASAN (STICKY) --}}
+            {{-- KOLOM KANAN: RINGKASAN HARGA (STICKY) --}}
             <div class="col-lg-4">
                 <div class="border-0 shadow-sm card rounded-4 sticky-top" style="top: 20px;">
                     <div class="p-4 card-body">
                         <h6 class="mb-4 fw-bold text-secondary small text-uppercase"><i class="bi bi-calculator me-2"></i>Ringkasan Tagihan</h6>
+
                         <div class="mb-3 d-flex justify-content-between small">
                             <span class="text-muted">Subtotal Item</span>
                             <span class="fw-bold text-dark"><span class="curr-symbol-display">Rp</span> <span id="display_subtotal">0</span></span>
@@ -416,6 +422,7 @@
                             <span class="text-muted fw-bold">Potongan Ekstra</span>
                             <span class="fw-bold text-danger">- <span class="curr-symbol-display">Rp</span> <span id="display_extra_discounts">0</span></span>
                         </div>
+
                         <div class="p-3 mb-4 text-center border bg-warning bg-opacity-10 border-warning-subtle rounded-4">
                             <div class="mb-1 small text-warning-emphasis fw-bold text-uppercase">TOTAL TAGIHAN BERSIH</div>
                             <h3 class="mb-0 fw-bold text-dark"><span class="curr-symbol-display">Rp</span> <span id="display_grand_total">0</span></h3>
@@ -434,21 +441,27 @@
 
 {{-- TEMPLATE CLONING --}}
 <div id="hiddenSelectTemplate" style="display: none;">
-    <select class="mb-2 form-select select2-item-template" required>
+    <select class="mb-2 form-select select2-item-template item-select" required onchange="onOpexItemSelect(this, 'INDEX_PLACEHOLDER')">
         <option value="">-- Pilih Item Opex --</option>
-        @foreach($opexItems as $opx) <option value="{{ $opx->name }}">{{ $opx->code }} - {{ $opx->name }}</option> @endforeach
+        @foreach($opexItems as $opx)
+            <option value="{{ $opx->name }}">{{ $opx->code }} - {{ $opx->name }}</option>
+        @endforeach
     </select>
 </div>
 <div id="hiddenChargeTemplate" style="display: none;">
     <select class="mb-2 form-select select2-charge-template" required>
         <option value="">-- Pilih Master Biaya --</option>
-        @foreach($chargeTypes as $charge) <option value="{{ $charge->id }}">{{ $charge->name }}</option> @endforeach
+        @foreach($chargeTypes as $charge)
+            <option value="{{ $charge->id }}">{{ $charge->name }}</option>
+        @endforeach
     </select>
 </div>
 <div id="hiddenDiscountTemplate" style="display: none;">
     <select class="mb-2 form-select select2-discount-template" required>
         <option value="">-- Pilih Master Potongan --</option>
-        @foreach($discountTypes as $disc) <option value="{{ $disc->id }}">{{ $disc->name }}</option> @endforeach
+        @foreach($discountTypes as $disc)
+            <option value="{{ $disc->id }}">{{ $disc->name }}</option>
+        @endforeach
     </select>
 </div>
 
@@ -479,6 +492,7 @@ $(document).ready(function() {
     // 🔥 Update pemicu KeyUp untuk memproses Pajak & Diskon 🔥
     $(document).on('keyup', '.price-display, .disc-val-display, .tax-val-display, .charge-display, .ext-disc-display', function() {
         let isPercent = false;
+
         if($(this).hasClass('disc-val-display')) {
             isPercent = $(this).closest('.input-group').find('.disc-type').val() === 'percent';
         } else if($(this).hasClass('tax-val-display')) {
@@ -492,6 +506,8 @@ $(document).ready(function() {
 
         $(this).val(isPercent ? val : formatNumber(val));
 
+        // Pengecualian: global_tax_val tidak punya sibling input hidden secara langsung di sebelahnya,
+        // jadi hidden-nya dilewati, nilai aslinya diambil langsung pakai unformat saat tombol apply diklik.
         if ($(this).attr('id') !== 'global_tax_val') {
             $(this).siblings('input[type="hidden"]').val(val);
         }
@@ -502,7 +518,8 @@ $(document).ready(function() {
     $(document).on('change', '.disc-type', function() {
         let displayInput = $(this).closest('.input-group').find('input[type="text"]');
         let hiddenInput = $(this).closest('.input-group').find('input[type="hidden"]');
-        displayInput.val(0); hiddenInput.val(0); calculate();
+        displayInput.val(0); hiddenInput.val(0);
+        calculate();
     });
 
     // ==========================================
@@ -616,21 +633,35 @@ $(document).ready(function() {
         });
 
         calculate();
+
         Swal.fire({
             toast: true, position: 'top-end', icon: 'success',
-            title: 'Pajak berhasil diterapkan ke semua baris!',
+            title: 'Pajak berhasil diterapkan ke semua item!',
             showConfirmButton: false, timer: 2000
         });
     });
 
+    // ==========================================
+    // TAMBAH ITEM DAN BIAYA EKSTRA
+    // ==========================================
     $('#addItem').click(function() {
         const container = document.getElementById('itemContainer');
         const index = new Date().getTime();
-        const templateSelect = $('#hiddenSelectTemplate').html();
+        const templateSelect = $('#hiddenSelectTemplate').html().replace(/INDEX_PLACEHOLDER/g, index);
+
         const tr = document.createElement('tr');
         tr.className = 'item-row border-bottom';
         tr.innerHTML = `
-            <td class="pt-3">${templateSelect}<textarea name="items[${index}][description]" class="mt-2 form-control form-control-sm" rows="1"></textarea></td>
+            <td class="pt-3">
+                <label class="mb-1 form-label small fw-bold text-dark">Master Item <span class="text-danger">*</span></label>
+                ${templateSelect}
+
+                <label class="mt-2 mb-1 form-label small fw-bold text-dark">Nama Barang di Tagihan (Custom) <span class="text-danger">*</span></label>
+                <input type="text" name="items[${index}][name_override]" id="name_override_${index}" class="mb-2 form-control form-control-sm fw-bold text-primary" placeholder="Bisa diedit/disesuaikan..." required>
+
+                <label class="mt-1 mb-1 form-label small fw-bold text-dark">Spesifikasi Detail (Catatan)</label>
+                <textarea name="items[${index}][description]" class="form-control form-control-sm" rows="2" placeholder="Ketik catatan spek..."></textarea>
+            </td>
             <td class="pt-3"><input type="number" name="items[${index}][qty]" class="text-center form-control form-control-sm qty" value="1" min="1"></td>
             <td class="pt-3">
                 <div class="input-group input-group-sm">
@@ -658,14 +689,15 @@ $(document).ready(function() {
                 </div>
                 <div class="input-group input-group-sm">
                     <span class="input-group-text bg-danger bg-opacity-10 text-danger fw-bold" style="font-size: 0.7rem;">-Disc&nbsp;&nbsp;</span>
-                    <input type="text" class="form-control disc-val-display" value="0">
+                    <input type="text" class="form-control text-end disc-val-display" value="0">
                     <input type="hidden" name="items[${index}][discount_value]" class="disc-val-real" value="0">
                     <select name="items[${index}][discount_type]" class="form-select disc-type" style="max-width: 60px;">
                         <option value="fixed">Rp</option><option value="percent" selected>%</option>
                     </select>
                 </div>
             </td>
-            <td class="pt-3 text-end"><button type="button" class="btn btn-outline-danger btn-sm remove-item rounded-circle"><i class="bi bi-trash"></i></button></td>`;
+            <td class="pt-3 text-end"><button type="button" class="btn btn-outline-danger btn-sm remove-item rounded-circle" title="Hapus Baris"><i class="bi bi-trash"></i></button></td>
+        `;
         container.appendChild(tr);
         $(tr).find('.select2-item-template').removeClass('select2-item-template').addClass('select2-item').attr('name', `items[${index}][name]`);
         $(tr).find('.select2-item').select2({ theme: 'bootstrap-5', width: '100%' });
@@ -674,11 +706,23 @@ $(document).ready(function() {
 
     $('#addCharge').click(function() {
         const container = document.getElementById('chargeContainer');
-        const index = new Date().getTime();
+        const index = container.querySelectorAll('.charge-row').length;
         const templateSelect = $('#hiddenChargeTemplate').html();
+
         const div = document.createElement('div');
         div.className = 'charge-row mb-3 p-2 border rounded bg-white';
-        div.innerHTML = `${templateSelect}<div class="mb-2 input-group input-group-sm"><span class="input-group-text curr-symbol">Rp</span><input type="text" class="form-control charge-display text-end" value="0"><input type="hidden" name="charges[${index}][amount]" class="charge-real" value="0"></div><div class="d-flex"><input type="text" name="charges[${index}][note]" class="form-control form-control-sm me-2"><button type="button" class="btn btn-danger btn-sm remove-extra"><i class="bi bi-trash"></i></button></div>`;
+        div.innerHTML = `
+            ${templateSelect}
+            <div class="mb-2 input-group input-group-sm">
+                <span class="input-group-text curr-symbol">Rp</span>
+                <input type="text" class="form-control charge-display text-end" value="0">
+                <input type="hidden" name="charges[${index}][amount]" class="charge-real" value="0">
+            </div>
+            <div class="d-flex">
+                <input type="text" name="charges[${index}][note]" class="form-control form-control-sm me-2" placeholder="Catatan opsional...">
+                <button type="button" class="btn btn-danger btn-sm remove-extra"><i class="bi bi-trash"></i></button>
+            </div>
+        `;
         container.appendChild(div);
         $(div).find('.select2-charge-template').removeClass('select2-charge-template').addClass('select2-charge').attr('name', `charges[${index}][charge_type_id]`);
         $(div).find('.select2-charge').select2({ theme: 'bootstrap-5', width: '100%' });
@@ -687,11 +731,23 @@ $(document).ready(function() {
 
     $('#addDiscount').click(function() {
         const container = document.getElementById('discountContainer');
-        const index = new Date().getTime();
+        const index = container.querySelectorAll('.discount-row').length;
         const templateSelect = $('#hiddenDiscountTemplate').html();
+
         const div = document.createElement('div');
         div.className = 'discount-row mb-3 p-2 border border-danger border-opacity-50 rounded bg-white';
-        div.innerHTML = `${templateSelect}<div class="mb-2 input-group input-group-sm"><span class="text-white input-group-text bg-danger curr-symbol">Rp</span><input type="text" class="form-control ext-disc-display text-end" value="0"><input type="hidden" name="discounts[${index}][amount]" class="ext-disc-real" value="0"></div><div class="d-flex"><input type="text" name="discounts[${index}][note]" class="form-control form-control-sm me-2"><button type="button" class="btn btn-danger btn-sm remove-extra"><i class="bi bi-trash"></i></button></div>`;
+        div.innerHTML = `
+            ${templateSelect}
+            <div class="mb-2 input-group input-group-sm">
+                <span class="text-white input-group-text bg-danger curr-symbol">Rp</span>
+                <input type="text" class="form-control ext-disc-display text-end" value="0">
+                <input type="hidden" name="discounts[${index}][amount]" class="ext-disc-real" value="0">
+            </div>
+            <div class="d-flex">
+                <input type="text" name="discounts[${index}][note]" class="form-control form-control-sm me-2" placeholder="Catatan potongan...">
+                <button type="button" class="btn btn-danger btn-sm remove-extra"><i class="bi bi-trash"></i></button>
+            </div>
+        `;
         container.appendChild(div);
         $(div).find('.select2-discount-template').removeClass('select2-discount-template').addClass('select2-discount').attr('name', `discounts[${index}][discount_type_id]`);
         $(div).find('.select2-discount').select2({ theme: 'bootstrap-5', width: '100%' });
@@ -699,9 +755,12 @@ $(document).ready(function() {
     });
 
     $(document).on('click', '.remove-item', function() {
-        if ($('.item-row').length > 1) { $(this).closest('.item-row').remove(); calculate(); } else { Swal.fire('Oops!', 'Minimal harus 1 item.', 'warning'); }
+        if ($('.item-row').length > 1) { $(this).closest('.item-row').remove(); calculate(); }
+        else { Swal.fire('Oops!', 'Minimal harus 1 item.', 'warning'); }
     });
-    $(document).on('click', '.remove-extra', function() { $(this).closest('.charge-row, .discount-row').remove(); calculate(); });
+    $(document).on('click', '.remove-extra', function() {
+        $(this).closest('.charge-row, .discount-row').remove(); calculate();
+    });
 
     $('#addFile').click(function() {
         $('#attachmentContainer').append(`<div class="mb-2 input-group"><input type="file" name="attachments[]" class="form-control" accept=".pdf,.jpg,.jpeg,.png"><button class="btn btn-outline-danger remove-file" type="button"><i class="bi bi-x-lg"></i></button></div>`);
@@ -728,11 +787,13 @@ $(document).ready(function() {
             const price = parseFloat($(this).find('.price-real').val()) || 0;
             const gross = qty * price;
 
+            // Diskon
             const discVal = parseFloat($(this).find('.disc-val-real').val()) || 0;
             const discType = $(this).find('.disc-type').val();
             const itemDisc = (discType === 'fixed') ? discVal : (gross * discVal / 100);
             const dpp = gross - itemDisc;
 
+            // Pajak (Ambil langsung dari input hidden Real Value yang sudah dikelola oleh JS Toggle)
             const taxVal = parseFloat($(this).find('.tax-val-real').val()) || 0;
             const taxType = $(this).find('.tax-type').val();
             const itemTax = (taxType === 'fixed') ? taxVal : (dpp * taxVal / 100);
@@ -757,28 +818,46 @@ $(document).ready(function() {
 
     $(document).on('input', '.qty', calculate);
 
-    $('#btnSubmitForm').click(function(e) {
-        e.preventDefault();
-        let btn = $(this);
+    $('#btnSubmitForm').click(function() {
         const form = document.getElementById('billForm');
-
         if (!form.checkValidity()) { form.reportValidity(); return; }
 
         Swal.fire({
-            title: 'Update Tagihan?', text: "Data lama akan ditimpa dengan rincian yang baru.", icon: 'warning',
-            showCancelButton: true, confirmButtonColor: '#ffc107', cancelButtonColor: '#6c757d',
-            confirmButtonText: '<span class="text-dark fw-bold">Ya, Update Data!</span>', reverseButtons: true
+            title: 'Simpan Tagihan?', text: "Pastikan nominal sudah sesuai.", icon: 'question',
+            showCancelButton: true, confirmButtonColor: '#0d6efd', cancelButtonColor: '#6c757d',
+            confirmButtonText: 'Ya, Simpan!', reverseButtons: true
         }).then((result) => {
             if (result.isConfirmed) {
-                btn.prop('disabled', true).html('<span class="spinner-border spinner-border-sm me-2"></span> Menyimpan...');
-                Swal.fire({ title: 'Memproses Perubahan...', allowOutsideClick: false, didOpen: () => { Swal.showLoading(); } });
+                $(this).prop('disabled', true).html('<span class="spinner-border spinner-border-sm me-2"></span> Menyimpan...');
+                Swal.fire({ title: 'Memproses Data...', allowOutsideClick: false, didOpen: () => { Swal.showLoading(); } });
                 form.submit();
             }
         });
     });
 
+    // ==========================================
+    // 🔥 AUTO FILL NAMA CUSTOM DARI MASTER 🔥
+    // ==========================================
+    window.onOpexItemSelect = function(selectObj, index) {
+        if(!selectObj.options || selectObj.selectedIndex < 0) return;
+        let selectedOption = selectObj.options[selectObj.selectedIndex];
+        let itemNameRaw = selectedOption.text;
+
+        // Bypass untuk opsi "Current" di Edit page agar tidak merusak nama asli yang di-load
+        if(selectedOption.value === "" || itemNameRaw.startsWith("Current:")) {
+            return;
+        }
+
+        let itemNameSplit = itemNameRaw.split(' - ');
+        let cleanName = itemNameSplit.length > 1 ? itemNameSplit.slice(1).join(' - ') : itemNameRaw;
+
+        document.getElementById('name_override_' + index).value = cleanName;
+    };
+
     updateSymbols();
-    calculate();
 });
 </script>
 @endpush
+{{-- tolong rapihakna lagi karen saat kita simpan perubahan dia hanya loading saja saat ada kolom kosong di dalam item padal kan di beri pesan data yang ksong di bagian mana nya seperti erorr atau requered
+
+There is a file you can reference named "image_909eb4.png". Refer to this file by its name verbatim. --}}

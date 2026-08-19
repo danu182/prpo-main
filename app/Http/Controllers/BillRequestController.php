@@ -412,7 +412,7 @@ class BillRequestController extends Controller
                 $taxAmount = ($taxType == 'percent') ? ($dpp * $taxVal / 100) : $taxVal;
 
                 $bill->items()->create([
-                    'name'            => $item['name'],
+                    'name'            => $item['name_override'] ?? $item['name'], // 🔥 TERIMA NAMA CUSTOM 🔥
                     'description'     => $item['description'] ?? null,
                     'qty'             => $qty,
                     'price'           => $price,
@@ -702,10 +702,19 @@ class BillRequestController extends Controller
                 $taxAmount = ($taxType == 'percent') ? ($dpp * $taxVal / 100) : $taxVal;
 
                 $bill->items()->create([
-                    'name' => $item['name'], 'description' => $item['description'], 'qty' => $qty, 'price' => $price, 'amount' => $dpp + $taxAmount,
-                    'discount_type' => $discType, 'discount_value' => $discVal, 'discount_amount' => $discAmount,
+                    'name'            => $item['name_override'] ?? $item['name'], // 🔥 TERIMA NAMA CUSTOM 🔥
+                    'description'     => $item['description'] ?? null,
+                    'qty' => $qty,
+                    'price' => $price,
+                    'amount' => $dpp + $taxAmount,
+                    'discount_type' => $discType,
+                    'discount_value' => $discVal,
+                    'discount_amount' => $discAmount,
                     'tax_id' => is_numeric($taxId) ? $taxId : null,
-                    'tax_type' => $taxType, 'tax_value' => $taxVal, 'tax_amount' => $taxAmount, 'subtotal' => $gross,
+                    'tax_type' => $taxType,
+                    'tax_value' => $taxVal,
+                    'tax_amount' => $taxAmount,
+                    'subtotal' => $gross,
                 ]);
                 $totalSubtotal += $gross; $totalItemDisc += $discAmount; $totalTax += $taxAmount;
             }

@@ -196,7 +196,7 @@
                         <table class="table align-middle table-borderless" id="itemTable">
                             <thead class="bg-secondary bg-opacity-10 text-muted small fw-bold text-uppercase rounded-3">
                                 <tr>
-                                    <th width="35%" class="rounded-start">Master Item</th>
+                                    <th width="35%" class="rounded-start">Item & Deskripsi</th>
                                     <th width="10%">Qty</th>
                                     <th width="20%">Harga Satuan</th>
                                     <th width="25%">Pajak & Diskon Item</th>
@@ -206,13 +206,20 @@
                             <tbody id="itemContainer">
                                 <tr class="item-row border-bottom">
                                     <td class="pt-3">
-                                        <select name="items[0][name]" class="mb-2 form-select select2-item" required>
+                                        {{-- 🔥 PERUBAHAN TAMPILAN CUSTOM ITEM 🔥 --}}
+                                        <label class="mb-1 form-label small fw-bold text-dark">Master Item <span class="text-danger">*</span></label>
+                                        <select name="items[0][name]" class="mb-2 form-select select2-item item-select" required onchange="onOpexItemSelect(this, 0)">
                                             <option value="">-- Pilih Item Opex --</option>
                                             @foreach($opexItems as $opx)
                                                 <option value="{{ $opx->name }}">{{ $opx->code }} - {{ $opx->name }}</option>
                                             @endforeach
                                         </select>
-                                        <textarea name="items[0][description]" class="form-control form-control-sm" rows="1" placeholder="Deskripsi/Keterangan tambahan..."></textarea>
+
+                                        <label class="mt-2 mb-1 form-label small fw-bold text-dark">Nama Barang di Tagihan (Custom) <span class="text-danger">*</span></label>
+                                        <input type="text" name="items[0][name_override]" id="name_override_0" class="mb-2 form-control form-control-sm fw-bold text-primary" placeholder="Bisa diedit/disesuaikan..." required>
+
+                                        <label class="mt-1 mb-1 form-label small fw-bold text-dark">Spesifikasi Detail (Catatan)</label>
+                                        <textarea name="items[0][description]" class="form-control form-control-sm" rows="2" placeholder="Ketik catatan detail..."></textarea>
                                     </td>
                                     <td class="pt-3">
                                         <input type="number" name="items[0][qty]" class="text-center form-control form-control-sm qty" value="1" min="1">
@@ -242,20 +249,16 @@
                                             <input type="text" class="form-control text-end tax-val-display d-none" value="0">
                                             <input type="hidden" name="items[0][tax_value]" class="tax-val-real" value="0">
                                         </div>
-
-                                        <div class="input-group input-group-sm" title="Diskon per-item">
+                                        <div class="input-group input-group-sm">
                                             <span class="input-group-text bg-danger bg-opacity-10 text-danger fw-bold" style="font-size: 0.7rem;">-Disc&nbsp;&nbsp;</span>
                                             <input type="text" class="form-control text-end disc-val-display" value="0">
                                             <input type="hidden" name="items[0][discount_value]" class="disc-val-real" value="0">
                                             <select name="items[0][discount_type]" class="form-select disc-type" style="max-width: 60px;">
-                                                <option value="fixed">Rp</option>
-                                                <option value="percent" selected>%</option>
+                                                <option value="fixed">Rp</option><option value="percent" selected>%</option>
                                             </select>
                                         </div>
                                     </td>
-                                    <td class="pt-3 text-end">
-                                        <button type="button" class="btn btn-outline-danger btn-sm remove-item rounded-circle" title="Hapus Baris"><i class="bi bi-trash"></i></button>
-                                    </td>
+                                    <td class="pt-3 text-end"><button type="button" class="btn btn-outline-danger btn-sm remove-item rounded-circle" title="Hapus Baris"><i class="bi bi-trash"></i></button></td>
                                 </tr>
                             </tbody>
                         </table>
@@ -365,7 +368,7 @@
 
 {{-- TEMPLATE CLONING --}}
 <div id="hiddenSelectTemplate" style="display: none;">
-    <select class="mb-2 form-select select2-item-template" required>
+    <select class="mb-2 form-select select2-item-template item-select" required onchange="onOpexItemSelect(this, 'INDEX_PLACEHOLDER')">
         <option value="">-- Pilih Item Opex --</option>
         @foreach($opexItems as $opx)
             <option value="{{ $opx->name }}">{{ $opx->code }} - {{ $opx->name }}</option>
@@ -565,15 +568,21 @@ $(document).ready(function() {
     // ==========================================
     $('#addItem').click(function() {
         const container = document.getElementById('itemContainer');
-        const index = container.querySelectorAll('.item-row').length;
-        const templateSelect = $('#hiddenSelectTemplate').html();
+        const index = new Date().getTime();
+        const templateSelect = $('#hiddenSelectTemplate').html().replace('INDEX_PLACEHOLDER', index);
 
         const tr = document.createElement('tr');
         tr.className = 'item-row border-bottom';
         tr.innerHTML = `
             <td class="pt-3">
+                <label class="mb-1 form-label small fw-bold text-dark">Master Item <span class="text-danger">*</span></label>
                 ${templateSelect}
-                <textarea name="items[${index}][description]" class="mt-2 form-control form-control-sm" rows="1" placeholder="Catatan..."></textarea>
+
+                <label class="mt-2 mb-1 form-label small fw-bold text-dark">Nama Barang di Tagihan (Custom) <span class="text-danger">*</span></label>
+                <input type="text" name="items[${index}][name_override]" id="name_override_${index}" class="mb-2 form-control form-control-sm fw-bold text-primary" placeholder="Bisa diedit/disesuaikan..." required>
+
+                <label class="mt-1 mb-1 form-label small fw-bold text-dark">Spesifikasi Detail (Catatan)</label>
+                <textarea name="items[${index}][description]" class="form-control form-control-sm" rows="2" placeholder="Ketik catatan spek..."></textarea>
             </td>
             <td class="pt-3"><input type="number" name="items[${index}][qty]" class="text-center form-control form-control-sm qty" value="1" min="1"></td>
             <td class="pt-3">
@@ -684,6 +693,7 @@ $(document).ready(function() {
     function updateSymbols() {
         const symbol = $('#currency_select option:selected').data('symbol');
         $('.curr-symbol').text(symbol); $('.curr-symbol-display').text(symbol);
+        $('.disc-type option[value="fixed"], .tax-type option[value="fixed"], #global_tax_type option[value="fixed"]').text(symbol);
     }
 
     $('#is_recurring').change(function() {
@@ -747,7 +757,29 @@ $(document).ready(function() {
         });
     });
 
+    // ==========================================
+    // 🔥 AUTO FILL NAMA CUSTOM DARI MASTER 🔥
+    // ==========================================
+    window.onOpexItemSelect = function(selectObj, index) {
+        if(!selectObj.options || selectObj.selectedIndex < 0) return;
+        let selectedOption = selectObj.options[selectObj.selectedIndex];
+        let itemNameRaw = selectedOption.text;
+
+        let itemNameSplit = itemNameRaw.split(' - ');
+        let cleanName = itemNameSplit.length > 1 ? itemNameSplit.slice(1).join(' - ') : itemNameRaw;
+
+        if(selectObj.value !== "") {
+            document.getElementById('name_override_' + index).value = cleanName;
+        } else {
+            document.getElementById('name_override_' + index).value = "";
+        }
+    };
+
+    // Trigger untuk baris pertama saat halaman di-load
+    $('.select2-item').first().on('change', function() { onOpexItemSelect(this, 0); });
+
     updateSymbols();
 });
 </script>
 @endpush
+baik unutk file edit nya bagimna karena belum di sesuaikan untuk file edit nya sebalumnnya spt in bladenya

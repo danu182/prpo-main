@@ -112,10 +112,13 @@
                     </td>
 
                     <td>
-                        {{-- <strong style="font-size: 13px;">{{ $item->name }}</strong> --}}
+                        <strong style="font-size: 13px;">{{ $item->name }}</strong>
                         @if(!empty($item->description))
-                            <br><span style="font-size: 10px; color: #555;">{!! strip_tags($item->description) !!}</span>
+                        <strong style="font-size: 13px;">{{ $item->description }}</strong>
                         @endif
+                        {{-- @if(!empty($item->description)) --}}
+                        {{-- <br><span style="font-size: 10px; color: #555;">{!! strip_tags($item->description) !!}</span> --}}
+                        {{-- @endif --}}
                     </td>
 
                     <td style="text-align: center;">{{ $qty }} LS</td>
