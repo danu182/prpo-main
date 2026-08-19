@@ -85,6 +85,27 @@
                             <label class="form-label fw-bold small text-dark">Tujuan Pengadaan Umum <span class="text-danger">*</span></label>
                             <input type="text" name="description" class="form-control border-secondary-subtle bg-light" value="{{ old('description', $pr->description) }}" placeholder="Contoh: Pengadaan fasilitas IT untuk karyawan baru..." required>
                         </div>
+
+                        {{-- 🔥 JALUR TIKUS (OVERRIDE WORKFLOW) 🔥 --}}
+                        <div class="pt-3 mt-3 col-12 border-top">
+                            <label class="form-label fw-bold small text-primary text-uppercase">
+                                <i class="bi bi-shuffle me-1"></i> Pilih Jalur Persetujuan Khusus (Opsional)
+                            </label>
+                            <select name="custom_workflow_id" class="form-select border-primary-subtle bg-primary bg-opacity-10" style="max-width: 500px;">
+                                <option value="">-- Ikuti Standar Departemen (Default) --</option>
+                                @if(isset($customWorkflows) && count($customWorkflows) > 0)
+                                    @foreach($customWorkflows as $cw)
+                                        <option value="{{ $cw->id }}" {{ (isset($selectedWorkflowId) && $selectedWorkflowId == $cw->id) ? 'selected' : '' }}>
+                                            {{ $cw->name }}
+                                        </option>
+                                    @endforeach
+                                @endif
+                            </select>
+                            <div class="mt-1 form-text small text-muted">
+                                <i class="bi bi-info-circle me-1"></i>Biarkan kosong jika ingin menggunakan rute standar departemen.
+                            </div>
+                        </div>
+
                     </div>
                 </div>
             </div>
@@ -117,7 +138,7 @@
                         <input type="number" name="items[{{ $iIdx }}][qty]" class="form-control text-primary fw-bold border-secondary-subtle" value="{{ (float)$item->qty }}" min="0.01" step="0.01" required>
                     </div>
 
-                    {{-- 🔥 UOM DROPDOWN 🔥 --}}
+                    {{-- UOM DROPDOWN --}}
                     <div class="col-md-4">
                         <label class="mb-2 small text-dark fw-bold">Kemasan / Satuan <span class="text-danger">*</span></label>
                         <select name="items[{{ $iIdx }}][uom_id]" class="form-select select-uom fw-bold border-secondary-subtle bg-light" required>
@@ -133,15 +154,15 @@
                         </select>
                     </div>
 
-                    {{-- 1. KOTAK NAMA SPESIFIK (SHORT TEXT) --}}
-                    <div class="col-12 mt-3">
+                    {{-- KOTAK NAMA SPESIFIK (SHORT TEXT) --}}
+                    <div class="mt-3 col-12">
                         <label class="form-label small fw-bold text-dark">Nama Spesifik Barang (Bisa disesuaikan)</label>
                         <input type="text" name="items[{{ $iIdx }}][item_name]" class="form-control form-input-custom fw-bold text-primary" value="{{ $item->item_name }}" placeholder="Contoh: Asus VivoBook 14 A1404ZA...">
                         <div class="mt-1 form-text text-muted" style="font-size: 0.7rem;">*Nama ini yang akan tercetak di PDF. Master Data tetap aman.</div>
                     </div>
 
-                    {{-- 🔥 AREA CKEDITOR SPESIFIKASI 🔥 --}}
-                    <div class="col-12 mt-3">
+                    {{-- AREA CKEDITOR SPESIFIKASI --}}
+                    <div class="mt-3 col-12">
                         <label class="mb-2 small text-dark fw-bold">
                             <i class="bi bi-card-text me-1 text-secondary"></i>Spesifikasi / Detail Khusus (Opsional)
                         </label>
@@ -202,12 +223,12 @@
                                             <div class="mb-2">
                                                 <label class="mb-1 text-muted fw-bold" style="font-size: 0.65rem;">File Tersimpan (Klik untuk Lihat):</label>
                                                 @foreach($existingFiles as $file)
-                                                    <div class="p-2 mb-1 bg-white border border-info border-opacity-50 rounded shadow-sm d-flex justify-content-between align-items-center file-existing-row">
+                                                    <div class="p-2 mb-1 bg-white border border-opacity-50 rounded shadow-sm border-info d-flex justify-content-between align-items-center file-existing-row">
                                                         <a href="{{ asset('storage/' . $file->file_path) }}" target="_blank" class="text-truncate small text-decoration-none text-primary fw-bold" style="font-size: 0.75rem; max-width: 80%;" title="Buka File di Tab Baru">
                                                             <i class="bi bi-file-earmark-pdf-fill text-danger me-1"></i> {{ $file->file_name }}
                                                         </a>
                                                         <input type="hidden" name="items[{{ $iIdx }}][vendors][{{ $vIdx }}][existing_files][]" value="{{ $file->id }}">
-                                                        <button type="button" class="py-0 px-1 btn btn-sm btn-outline-danger" onclick="this.closest('.file-existing-row').remove()" title="Hapus File Ini"><i class="bi bi-trash"></i></button>
+                                                        <button type="button" class="px-1 py-0 btn btn-sm btn-outline-danger" onclick="this.closest('.file-existing-row').remove()" title="Hapus File Ini"><i class="bi bi-trash"></i></button>
                                                     </div>
                                                 @endforeach
                                             </div>
@@ -229,7 +250,7 @@
                                     </div>
                                 </div>
 
-                                <div class="col-lg-6 mt-2">
+                                <div class="mt-2 col-lg-6">
                                     <label class="mb-1 x-small text-muted fw-bold">Link Produk</label>
                                     <input type="url" name="items[{{ $iIdx }}][vendors][{{ $vIdx }}][link]" class="form-control form-control-sm" value="{{ $v->reference_link }}">
                                 </div>
@@ -275,7 +296,7 @@
                                         </div>
                                     </div>
                                 </div>
-                                <div class="col-lg-6 mt-2">
+                                <div class="mt-2 col-lg-6">
                                     <label class="mb-1 x-small text-muted fw-bold">Link Produk</label>
                                     <input type="url" name="items[{{ $iIdx }}][vendors][0][link]" class="form-control form-control-sm">
                                 </div>
@@ -301,7 +322,7 @@
 
     <div class="p-3 shadow-lg fixed-bottom-bar fixed-bottom">
         <div class="container gap-3 d-flex justify-content-end align-items-center">
-            <button type="submit" class="px-5 shadow btn btn-success rounded-pill fw-bold fs-6" id="btn-submit-main">
+            <button type="button" class="px-5 shadow btn btn-success rounded-pill fw-bold fs-6" id="btn-submit-main">
                 <i class="bi bi-save-fill me-2"></i> Simpan Perubahan PR
             </button>
         </div>
@@ -319,7 +340,6 @@
     let itemIdx = {{ $pr->items->count() > 0 ? $pr->items->count() - 1 : 0 }};
     let myEditors = {};
 
-    // 🔥 FUNGSI INISIASI CKEDITOR 🔥
     function initCKEditor(selectorId) {
         let domElement = document.querySelector('#' + selectorId);
         if (domElement && !domElement.ckeditorInstance) {
@@ -346,7 +366,6 @@
             }
         });
 
-        // 🔥 LOGIKA TAMBAH BARANG (KLONING DENGAN AMAN) 🔥
         $('#btn-add-item').on('click', function() {
             itemIdx++;
             let $firstRow = $('.item-row').first();
@@ -370,7 +389,7 @@
             $newRow.find('.select2-item-ajax').attr('name', `items[${itemIdx}][item_id]`);
             $newRow.find('input[name*="[qty]"]').attr('name', `items[${itemIdx}][qty]`);
             $newRow.find('.select-uom').attr('name', `items[${itemIdx}][uom_id]`);
-            $newRow.find('input[name*="[item_name]"]').attr('name', `items[${itemIdx}][item_name]`); // <-- UPDATE KOLOM SHORT TEXT
+            $newRow.find('input[name*="[item_name]"]').attr('name', `items[${itemIdx}][item_name]`);
 
             $newRow.find('.ck-editor').remove();
             let clonedTextarea = $newRow.find('.ckeditor-spec');
@@ -410,32 +429,50 @@
             initCKEditor(newSpecId);
         });
 
-        $('#prForm').on('submit', function(e) {
-            let form = this; e.preventDefault();
+        // 🔥 LOGIKA SUBMIT YANG SUDAH DIPERBAIKI (ANTI LOADING INFINITE) 🔥
+        $('#btn-submit-main').click(function(e) {
+            e.preventDefault();
+            let btn = $(this);
+            const form = document.getElementById('prForm');
 
+            // 1. Sinkronisasi Textarea CKEditor ke Form Asli
             for (let editorId in myEditors) {
                 if (myEditors.hasOwnProperty(editorId) && myEditors[editorId]) {
                     myEditors[editorId].updateSourceElement();
                 }
             }
 
-            if ($('.item-row').length === 0) return Swal.fire({ icon: 'error', title: 'Kosong!', text: 'Belum ada barang!' });
-
+            // 2. Cek Select2 (Barang) agar tidak lolos saat kosong
             let isBarangValid = true;
             $('.select2-item-ajax').each(function() { if (!$(this).val()) isBarangValid = false; });
-            if (!isBarangValid) return Swal.fire({ icon: 'warning', title: 'Data Belum Lengkap', text: 'Ada baris barang yang belum dipilih.' });
+            if (!isBarangValid) {
+                return Swal.fire({ icon: 'warning', title: 'Data Belum Lengkap', text: 'Ada baris barang yang belum dipilih dari katalog.' });
+            }
 
-            $('input[type="file"]').each(function() { if ($(this).val() === '') { $(this).prop('disabled', true); } });
+            // 3. Validasi HTML5 Bawaan Browser (PENTING!)
+            if (!form.checkValidity()) {
+                form.reportValidity(); // Memunculkan tooltip merah dari browser
+                return; // Membunuh proses JS agar tidak masuk ke SweetAlert
+            }
 
+            // 4. Pastikan ada minimal 1 barang
+            if ($('.item-row').length === 0) {
+                return Swal.fire({ icon: 'error', title: 'Kosong!', text: 'Minimal harus ada 1 barang untuk mengajukan PR.' });
+            }
+
+            // 5. Jika semua lolos, jalankan proses penyimpanan
             Swal.fire({
                 title: 'Simpan Perubahan?', icon: 'question', showCancelButton: true,
                 confirmButtonColor: '#198754', confirmButtonText: 'Ya, Simpan!', cancelButtonText: 'Batal'
             }).then((result) => {
                 if (result.isConfirmed) {
+                    btn.prop('disabled', true).html('<span class="spinner-border spinner-border-sm me-2"></span> Menyimpan...');
                     Swal.fire({ title: 'Menyimpan...', didOpen: () => { Swal.showLoading() }, allowOutsideClick: false });
+
+                    // Matikan input file yang kosong agar tidak ikut terkirim ke server (mempercepat proses)
+                    $('input[type="file"]').each(function() { if ($(this).val() === '') { $(this).prop('disabled', true); } });
+
                     form.submit();
-                } else {
-                    $('input[type="file"]').prop('disabled', false);
                 }
             });
         });

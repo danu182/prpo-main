@@ -26,6 +26,9 @@ class PurchaseRequestController extends Controller
 {
     use InteractsWithMedia;
 
+    // =========================================================================
+    // DAFTAR PR (DENGAN GEMBOK PRIVASI & BYPASS SUPER ADMIN)
+    // =========================================================================
     public function index(\Illuminate\Http\Request $request)
     {
         // 1. Tangkap semua input filter dari Blade
@@ -33,39 +36,89 @@ class PurchaseRequestController extends Controller
         $statusFilter = $request->input('status');
         $departmentFilter = $request->input('department');
 
-        // 2. Kueri utama untuk menarik data PR (Purchase Request)
-        $requests = \App\Models\PurchaseRequest::with(['user', 'status', 'company', 'purchaseOrders'])
-            // Filter Pencarian Teks
-            ->when($search, function ($query) use ($search) {
-                $query->where(function($q) use ($search) {
-                    $q->where('pr_number', 'like', "%{$search}%")
-                      ->orWhereHas('user', function ($userQuery) use ($search) {
-                          $userQuery->where('name', 'like', "%{$search}%");
-                      });
-                });
-            })
-            // Filter Dropdown Status
-            ->when($statusFilter, function ($query) use ($statusFilter) {
-                $query->whereHas('status', function ($statusQuery) use ($statusFilter) {
-                    $statusQuery->where('name', $statusFilter);
-                });
-            })
-            // Filter Dropdown Departemen/PT
-            ->when($departmentFilter, function ($query) use ($departmentFilter) {
-                $query->whereHas('company', function ($companyQuery) use ($departmentFilter) {
-                    $companyQuery->where('name', $departmentFilter);
-                });
-            })
-            ->latest()
-            ->paginate(10); // Paginasi untuk $requests->appends()->links() di Blade
+        // 2. Ambil data User yang sedang Login
+        $user = auth()->user();
 
-        // 3. Tarik data untuk mengisi dropdown filter di atas tabel
+        // 🔥 LOGIKA BYPASS SUPER ADMIN YANG LEBIH KUAT & ANTI GAGAL 🔥
+        $userRoleNames = $user->getRoleNames()->toArray();
+        $isSuperAdmin = in_array('Super Admin', $userRoleNames) || in_array('Super Administrator', $userRoleNames) || $user->id === 1;
+
+        $userRoleIds = $user->roles->pluck('id')->toArray();
+
+        // 3. Kueri utama untuk menarik data PR (Purchase Request)
+        $query = \App\Models\PurchaseRequest::with(['user', 'status', 'company', 'purchaseOrders']);
+
+        // =========================================================================
+        // 🔥 GEMBOK PRIVASI: MENCEGAH SALING INTIP DOKUMEN 🔥
+        // =========================================================================
+        if (!$isSuperAdmin) {
+            $query->where(function ($q) use ($user, $userRoleIds) {
+                // A. User bisa melihat dokumen jika dia adalah Pembuat (Creator/Requester)
+                // HANYA MENGGUNAKAN user_id KARENA KOLOM created_by TIDAK ADA DI TABEL
+                $q->where('purchase_requests.user_id', $user->id);
+
+                // B. User bisa melihat dokumen jika dia bertugas sebagai APPROVER (Penyetuju)
+                if (!empty($userRoleIds)) {
+                    $q->orWhereExists(function ($subQuery) use ($user, $userRoleIds) {
+                        $subQuery->select(\DB::raw(1))
+                                 ->from('document_approvals')
+                                 // Join ke tabel users untuk mencocokkan departemen pembuat PR
+                                 ->join('users as pembuat', 'pembuat.id', '=', 'purchase_requests.user_id')
+                                 ->whereColumn('document_approvals.document_id', 'purchase_requests.id')
+                                 ->whereIn('document_approvals.document_type', [\App\Models\PurchaseRequest::class, 'PR', 'PurchaseRequest'])
+                                 ->whereIn('document_approvals.role_id', $userRoleIds)
+                                 ->where(function ($deptQ) use ($user) {
+                                     // 1. Jika Matriks secara spesifik menunjuk ke departemen user ini
+                                     $deptQ->where('document_approvals.target_department_id', $user->department_id)
+                                           // 2. Jika Matriks berlaku umum (Semua Departemen)
+                                           ->orWhere('document_approvals.target_department_id', 'all')
+                                           // 3. Jika Matriks Kosong (Default), maka departemen Pembuat PR harus SAMA dengan departemen Approver
+                                           ->orWhere(function ($emptyDeptQ) use ($user) {
+                                               $emptyDeptQ->where(function($qNull) {
+                                                    $qNull->whereNull('document_approvals.target_department_id')
+                                                          ->orWhere('document_approvals.target_department_id', '');
+                                               })->where('pembuat.department_id', $user->department_id);
+                                           });
+                                 });
+                    });
+                }
+            });
+        }
+        // =========================================================================
+
+        // 4. Terapkan Filter Pencarian & Dropdown
+        $query->when($search, function ($q) use ($search) {
+            $q->where(function($subQ) use ($search) {
+                $subQ->where('pr_number', 'like', "%{$search}%")
+                     ->orWhereHas('user', function ($userQuery) use ($search) {
+                         $userQuery->where('name', 'like', "%{$search}%");
+                     });
+            });
+        });
+
+        $query->when($statusFilter, function ($q) use ($statusFilter) {
+            $q->whereHas('status', function ($statusQuery) use ($statusFilter) {
+                $statusQuery->where('name', $statusFilter);
+            });
+        });
+
+        $query->when($departmentFilter, function ($q) use ($departmentFilter) {
+            $q->whereHas('company', function ($companyQuery) use ($departmentFilter) {
+                $companyQuery->where('name', $departmentFilter);
+            });
+        });
+
+        // 5. Eksekusi Kueri dengan Paginasi
+        $requests = $query->latest()->paginate(10);
+
+        // 6. Tarik data untuk mengisi dropdown filter di atas tabel
         $statuses = \App\Models\Status::where('type', 'PR')->get();
         $companies = \App\Models\Company::orderBy('name')->get();
 
-        // 4. Lempar data ke halaman pr.index
+        // 7. Lempar data ke halaman pr.index
         return view('pr.index', compact('requests', 'statuses', 'companies'));
     }
+
 
     public function create()
     {
@@ -74,7 +127,18 @@ class PurchaseRequestController extends Controller
         $currencies = \App\Models\Currency::where('is_active', true)->get();
         $users = \App\Models\User::with('company')->orderBy('name')->get();
 
-        return view('pr.create', compact('companies', 'vendors', 'currencies', 'users'));
+        // 🔥 TARIK DATA MATRIKS KHUSUS PR 🔥
+        $customWorkflows = [];
+        if (class_exists('\App\Models\ApprovalWorkflow')) {
+            $customWorkflows = \App\Models\ApprovalWorkflow::where('is_active', true)
+                ->where(function($q) {
+                    $q->where('document_type', 'App\Models\PurchaseRequest')
+                      ->orWhere('document_type', 'PR')
+                      ->orWhere('document_type', 'PurchaseRequest');
+                })->get();
+        }
+
+        return view('pr.create', compact('companies', 'vendors', 'currencies', 'users', 'customWorkflows'));
     }
 
     public function searchItems(Request $request)
@@ -273,21 +337,54 @@ class PurchaseRequestController extends Controller
                     }
                 }
 
-                $pr->amount = $estimasiGrandTotal;
-                $needsApproval = \App\Services\ApprovalService::generateWorkflow($pr);
-                unset($pr->amount);
+                // ====================================================================
+                // 🔥 LOGIKA OVERRIDE WORKFLOW (JALUR TIKUS / CUSTOM ROUTE) 🔥
+                // ====================================================================
+                $customWorkflowId = $request->input('custom_workflow_id');
+                $needsApproval = false;
 
+                if ($customWorkflowId) {
+                    // JIKA MEMILIH MATRIKS MANUAL DARI DROPDOWN
+                    $workflow = \App\Models\ApprovalWorkflow::with('steps')->find($customWorkflowId);
+
+                    if ($workflow && $workflow->steps->count() > 0) {
+                        foreach ($workflow->steps as $step) {
+                            $targetDept = $step->target_department_id ?? $step->department_id ?? null;
+
+                            \App\Models\DocumentApproval::create([
+                                'document_id'          => $pr->id,
+                                'document_type'        => get_class($pr),
+                                'role_id'              => $step->role_id,
+                                'target_department_id' => $targetDept,
+                                'step_order'           => $step->step_order,
+                                'status'               => 'PENDING'
+                            ]);
+                        }
+                        $needsApproval = true;
+                        $this->logHistory($pr->id, 'SYSTEM', "Menggunakan Rute Persetujuan Khusus: " . $workflow->name);
+                    }
+                } else {
+                    // JIKA DROPDOWN KOSONG (GUNAKAN STANDAR DEPARTEMEN)
+                    $pr->amount = $estimasiGrandTotal; // Set sementara untuk perhitungan
+                    $needsApproval = \App\Services\ApprovalService::generateWorkflow($pr);
+                    unset($pr->amount); // Bersihkan kembali agar tidak error saat disimpan
+
+                    if ($needsApproval) {
+                        $this->logHistory($pr->id, 'SYSTEM', "Rute persetujuan standar (Departemen) berhasil di-generate.");
+                    }
+                }
+
+                // UPDATE STATUS PR BERDASARKAN HASIL MATRIKS
                 if ($needsApproval) {
                     $pendingStatus = \App\Models\Status::where('type', 'PR')->where('slug', 'pending_approval')->first();
                     $pr->update(['status_id' => $pendingStatus ? $pendingStatus->id : 1]);
-                    $this->logHistory($pr->id, 'CREATED', "PR {$newPrNumber} diajukan dan masuk ke antrean persetujuan.");
                 } else {
                     $approvedStatus = \App\Models\Status::where('type', 'PR')->where('slug', 'approved')->first();
                     $pr->update(['status_id' => $approvedStatus ? $approvedStatus->id : 3]);
-                    $this->logHistory($pr->id, 'AUTO-APPROVED', "PR {$newPrNumber} disetujui otomatis karena tidak ada aturan/nominal di bawah batas.");
+                    $this->logHistory($pr->id, 'AUTO-APPROVED', "PR {$newPrNumber} disetujui otomatis karena tidak ada aturan aktif atau nominal di bawah batas.");
                 }
 
-            });
+            }); // <-- Ini penutup dari DB::transaction
 
             return redirect()->route('pr.index')->with('success', 'PR Berhasil Diajukan beserta seluruh data Vendor!');
         } catch (\Exception $e) {
@@ -309,9 +406,40 @@ class PurchaseRequestController extends Controller
         $vendors = \App\Models\Vendor::where('is_active', true)->get();
         $users = \App\Models\User::orderBy('name')->get();
 
-        return view('pr.edit', compact('pr', 'companies', 'currencies', 'vendors', 'users'));
+        // 🔥 TARIK DATA MATRIKS KHUSUS PR 🔥
+        $customWorkflows = [];
+        $selectedWorkflowId = null;
+
+        if (class_exists('\App\Models\ApprovalWorkflow')) {
+            $customWorkflows = \App\Models\ApprovalWorkflow::with('steps')
+                ->where('is_active', true)
+                ->where(function($q) {
+                    $q->where('document_type', 'App\Models\PurchaseRequest')
+                      ->orWhere('document_type', 'PR')
+                      ->orWhere('document_type', 'PurchaseRequest');
+                })->get();
+
+            // Lacak matriks apa yang dipakai sebelumnya dari histori
+            $historyLog = \App\Models\PurchaseRequestHistory::where('purchase_request_id', $pr->id)
+                ->where('action', 'SYSTEM')
+                ->where('note', 'like', 'Menggunakan Rute Persetujuan Khusus:%')
+                ->orderBy('id', 'desc')->first();
+
+            if ($historyLog) {
+                $workflowName = trim(str_replace('Menggunakan Rute Persetujuan Khusus:', '', $historyLog->note));
+                $matchedWorkflow = $customWorkflows->where('name', $workflowName)->first();
+                if ($matchedWorkflow) {
+                    $selectedWorkflowId = $matchedWorkflow->id;
+                }
+            }
+        }
+
+        return view('pr.edit', compact('pr', 'companies', 'currencies', 'vendors', 'users', 'customWorkflows', 'selectedWorkflowId'));
     }
 
+    // =========================================================================
+    // 6. UPDATE (SIMPAN REVISI + OVERRIDE WORKFLOW)
+    // =========================================================================
     public function update(Request $request, $slug, \App\Services\SystemSettingService $settingService)
     {
         $request->validate([
@@ -323,13 +451,13 @@ class PurchaseRequestController extends Controller
             'items'           => 'required|array|min:1',
             'items.*.item_id' => 'required|exists:items,id',
             'items.*.qty'     => 'required|numeric|min:0.01',
-            'items.*.item_name'     => 'nullable|string|max:255', // 🔥 Validasi Tambahan
+            'items.*.item_name'     => 'nullable|string|max:255',
             'items.*.specification' => 'nullable|string',
         ]);
 
         try {
             DB::transaction(function () use ($request, $slug, $settingService) {
-                $pr = \App\Models\PurchaseRequest::where('pr_number', $slug)->firstOrFail();
+                $pr = \App\Models\PurchaseRequest::with('items.vendorQuotes')->where('pr_number', $slug)->firstOrFail();
 
                 $pr->update([
                     'user_id'      => $request->user_id,
@@ -339,7 +467,7 @@ class PurchaseRequestController extends Controller
                     'description'  => $request->description,
                 ]);
 
-                // 1. HITUNG ULANG ESTIMASI
+                // 1. HITUNG ULANG ESTIMASI GRAND TOTAL
                 $estimasiGrandTotal = 0;
                 foreach ($request->items as $itemData) {
                     $hargaTermurah = 0;
@@ -350,7 +478,7 @@ class PurchaseRequestController extends Controller
                     $estimasiGrandTotal += ($itemData['qty'] * $hargaTermurah);
                 }
 
-                // 2. PENYELAMATAN FILE LAMA
+                // 2. PENYELAMATAN & PEMBERSIHAN FILE LAMA
                 $keptFileIds = [];
                 foreach ($request->items as $itemData) {
                     if (isset($itemData['vendors'])) {
@@ -361,20 +489,30 @@ class PurchaseRequestController extends Controller
                         }
                     }
                 }
+
+                // Ambil data file yang dipertahankan untuk dimasukkan lagi nanti
                 $savedFilesData = DB::table('pr_vendor_attachments')->whereIn('id', $keptFileIds)->get()->keyBy('id');
 
-                // BERSINKAN RECORD LAMA
-                $oldItems = $pr->items;
-                foreach($oldItems as $oldItem) {
+                // BERSINKAN RECORD LAMA & HAPUS FILE FISIK YANG TIDAK DIPERTAHANKAN
+                foreach($pr->items as $oldItem) {
                     $oldVendors = $oldItem->vendorQuotes ?? $oldItem->vendors ?? [];
                     foreach($oldVendors as $oldVendor) {
+                        $attachments = DB::table('pr_vendor_attachments')->where('pr_item_vendor_id', $oldVendor->id)->get();
+                        foreach($attachments as $att) {
+                            if (!in_array($att->id, $keptFileIds)) {
+                                // 🔥 Hapus fisik file dari server jika user menghapusnya dari layar 🔥
+                                if (\Illuminate\Support\Facades\Storage::disk('public')->exists($att->file_path)) {
+                                    \Illuminate\Support\Facades\Storage::disk('public')->delete($att->file_path);
+                                }
+                            }
+                        }
                         DB::table('pr_vendor_attachments')->where('pr_item_vendor_id', $oldVendor->id)->delete();
                     }
                     DB::table('purchase_request_item_vendors')->where('pr_item_id', $oldItem->id)->delete();
                     $oldItem->delete();
                 }
 
-                // MASUKKAN ITEM & VENDOR BARU
+                // 3. MASUKKAN ITEM & VENDOR BARU
                 foreach ($request->items as $itemIndex => $itemData) {
                     $uomName = 'Unit';
                     $masterItem = \App\Models\Item::with('uom', 'itemUoms')->find($itemData['item_id']);
@@ -386,11 +524,8 @@ class PurchaseRequestController extends Controller
                     $prItem = \App\Models\PurchaseRequestItem::create([
                         'purchase_request_id' => $pr->id,
                         'item_id'             => $itemData['item_id'],
-
-                        // 🔥 SIMPAN NAMA SPESIFIK & SPESIFIKASI 🔥
                         'item_name'           => $itemData['item_name'] ?? null,
                         'specification'       => $itemData['specification'] ?? null,
-
                         'qty'                 => $itemData['qty'],
                         'uom_id'              => $itemData['uom_id'],
                         'uom'                 => $uomName,
@@ -400,12 +535,8 @@ class PurchaseRequestController extends Controller
                     if (isset($itemData['vendors'])) {
                         foreach ($itemData['vendors'] as $vIdx => $vData) {
 
-                            // =========================================================================
-                            // 🔥 PENJAGA PINTU: JIKA VENDOR KOSONG, LANGSUNG LOMPATI (SKIP) 🔥
-                            // =========================================================================
-                            if (empty($vData['vendor_id'])) {
-                                continue;
-                            }
+                            // LOMPATI JIKA VENDOR KOSONG
+                            if (empty($vData['vendor_id'])) continue;
 
                             $currencyObj = \App\Models\Currency::where('code', $vData['currency'] ?? 'IDR')->first();
 
@@ -419,7 +550,7 @@ class PurchaseRequestController extends Controller
                                 'created_at'     => now(), 'updated_at' => now(),
                             ]);
 
-                            // KEMBALIKAN FILE LAMA
+                            // A. KEMBALIKAN FILE LAMA YANG DIPERTAHANKAN
                             if (!empty($vData['existing_files'])) {
                                 foreach ($vData['existing_files'] as $oldFileId) {
                                     if ($savedFilesData->has($oldFileId)) {
@@ -434,7 +565,7 @@ class PurchaseRequestController extends Controller
                                 }
                             }
 
-                            // SIMPAN FILE BARU
+                            // B. SIMPAN FILE UPLOAD BARU
                             if ($request->hasFile("items.$itemIndex.vendors.$vIdx.files")) {
                                 $settingPath = \Illuminate\Support\Facades\DB::table('system_settings')->where('setting_key', 'path_pr_attachment')->value('setting_value');
                                 $basePath = $settingPath ? $settingPath : 'attachments/purchase_requests';
@@ -448,7 +579,7 @@ class PurchaseRequestController extends Controller
                                         'pr_item_vendor_id' => $quoteId,
                                         'file_name'         => $file->getClientOriginalName(),
                                         'file_path'         => str_replace('\\', '/', $path),
-                                        'created_at' => now(), 'updated_at' => now(),
+                                        'created_at'        => now(), 'updated_at' => now(),
                                     ]);
                                 }
                             }
@@ -458,26 +589,61 @@ class PurchaseRequestController extends Controller
 
                 $this->logHistory($pr->id, 'UPDATED', "Data PR diperbarui oleh " . auth()->user()->name);
 
-                $pr->amount = $estimasiGrandTotal;
-                $needsApproval = \App\Services\ApprovalService::generateWorkflow($pr);
-                unset($pr->amount);
+                // ====================================================================
+                // 🔥 4. LOGIKA OVERRIDE WORKFLOW (JALUR TIKUS / CUSTOM ROUTE) 🔥
+                // ====================================================================
 
+                // Bersihkan matriks lama terlebih dahulu agar tidak dobel
+                \App\Models\DocumentApproval::where('document_id', $pr->id)->whereIn('document_type', [get_class($pr), 'PR', 'PurchaseRequest'])->delete();
+
+                $customWorkflowId = $request->input('custom_workflow_id');
+                $needsApproval = false;
+
+                if ($customWorkflowId) {
+                    $workflow = \App\Models\ApprovalWorkflow::with('steps')->find($customWorkflowId);
+                    if ($workflow && $workflow->steps->count() > 0) {
+                        foreach ($workflow->steps as $step) {
+                            $targetDept = $step->target_department_id ?? $step->department_id ?? null;
+                            \App\Models\DocumentApproval::create([
+                                'document_id'          => $pr->id,
+                                'document_type'        => get_class($pr),
+                                'role_id'              => $step->role_id,
+                                'target_department_id' => $targetDept,
+                                'step_order'           => $step->step_order,
+                                'status'               => 'PENDING'
+                            ]);
+                        }
+                        $needsApproval = true;
+                        $this->logHistory($pr->id, 'SYSTEM', "Revisi menggunakan Rute Persetujuan Khusus: " . $workflow->name);
+                    }
+                } else {
+                    $pr->amount = $estimasiGrandTotal; // Set sementara untuk perhitungan
+                    $needsApproval = \App\Services\ApprovalService::generateWorkflow($pr);
+                    unset($pr->amount);
+
+                    if ($needsApproval) {
+                        $this->logHistory($pr->id, 'SYSTEM', 'Rute persetujuan (Workflow) PR telah di-reset menyesuaikan data revisi.');
+                    }
+                }
+
+                // 5. UPDATE STATUS PR BERDASARKAN HASIL MATRIKS
                 if ($needsApproval) {
                     $pendingStatus = \App\Models\Status::where('type', 'PR')->where('slug', 'pending_approval')->first();
                     $pr->update(['status_id' => $pendingStatus ? $pendingStatus->id : 1]);
-                    $this->logHistory($pr->id, 'SYSTEM', 'Rute persetujuan (Workflow) PR telah di-reset menyesuaikan data revisi.');
                 } else {
                     $approvedStatus = \App\Models\Status::where('type', 'PR')->where('slug', 'approved')->first();
                     $pr->update(['status_id' => $approvedStatus ? $approvedStatus->id : 3]);
-                    $this->logHistory($pr->id, 'APPROVED', 'PR Auto-Approved karena tidak ada aturan aktif atau nominal di bawah batas.');
+                    $this->logHistory($pr->id, 'AUTO-APPROVED', 'PR Auto-Approved karena tidak ada aturan aktif atau nominal di bawah batas.');
                 }
             });
 
-            return redirect()->route('pr.index')->with('success', 'Perubahan PR Berhasil Disimpan, File Aman & Rute Persetujuan Diperbarui!');
+            return redirect()->route('pr.show', $slug)->with('success', 'Perubahan PR Berhasil Disimpan, File Terkelola & Rute Persetujuan Diperbarui!');
         } catch (\Exception $e) {
             return back()->withInput()->with('error', 'Gagal Update: ' . $e->getMessage());
         }
     }
+
+
     public function show(string $slug)
     {
         $pr = \App\Models\PurchaseRequest::with([
@@ -497,23 +663,51 @@ class PurchaseRequestController extends Controller
         $isEditable = in_array(optional($pr->status)->slug, ['pending_approval', 'draft']);
 
         $user = auth()->user();
-        $currentApproval = \App\Models\DocumentApproval::where('document_id', $pr->id)
+        $currentApproval = \App\Models\DocumentApproval::with('role')->where('document_id', $pr->id)
             ->where('document_type', get_class($pr))
             ->where('status', 'PENDING')
             ->orderBy('step_order', 'asc')
             ->first();
 
         $canApprove = false;
-        $currentRoleName = null;
+        $roleDisplay = null;
 
         if ($currentApproval) {
             $currentRoleName = $currentApproval->role->name;
-            if ($user->hasRole($currentRoleName) || $user->hasRole('Super Admin')) {
+
+            // 🔥 1. Bikin Nama Lengkap (Jabatan + Departemen) untuk ditampilkan di Blade
+            $targetDeptId = $currentApproval->target_department_id;
+            $deptName = '';
+            if (!empty($targetDeptId) && $targetDeptId !== 'all') {
+                $dept = \App\Models\Department::find($targetDeptId);
+                if ($dept) $deptName = ' - ' . $dept->name;
+            } elseif (empty($targetDeptId)) {
+                $deptName = ' - Atasan Langsung';
+            }
+            $roleDisplay = $currentRoleName . $deptName;
+
+            // 🔥 2. Logika Kunci Ganda: Cek Jabatan (Role) & Cek Divisi (Department)
+            if ($user->hasRole('Super Admin') || $user->hasRole('Super Administrator')) {
                 $canApprove = true;
+            } elseif ($user->hasRole($currentRoleName)) {
+                if (!empty($targetDeptId) && $targetDeptId !== 'all') {
+                    // Harus dari departemen yang diwajibkan Matriks
+                    if ($user->department_id == $targetDeptId) {
+                        $canApprove = true;
+                    }
+                } else {
+                    // Atasan Langsung (Sama dengan departemen pembuat PR)
+                    $pembuatPR = \App\Models\User::find($pr->user_id);
+                    if ($pembuatPR && $user->department_id == $pembuatPR->department_id) {
+                        $canApprove = true;
+                    } elseif ($targetDeptId === 'all') {
+                        $canApprove = true; // Berlaku untuk semua departemen
+                    }
+                }
             }
         }
 
-        return view('pr.show', compact('pr', 'currencySymbols', 'isEditable', 'canApprove', 'currentRoleName'));
+        return view('pr.show', compact('pr', 'currencySymbols', 'isEditable', 'canApprove', 'roleDisplay'));
     }
 
     public function decide(Request $request, string $slug)
@@ -538,8 +732,29 @@ class PurchaseRequestController extends Controller
             return redirect()->back()->with('error', 'Dokumen ini tidak sedang menunggu persetujuan Anda.');
         }
 
-        if ($currentApproval && !auth()->user()->hasRole($currentApproval->role->name) && !auth()->user()->hasRole('Super Admin')) {
-            return redirect()->back()->with('error', 'AKSES DITOLAK: Giliran persetujuan saat ini adalah wewenang ' . $currentApproval->role->name . '. Anda tidak memiliki hak akses!');
+        // 🔥 LOGIKA KEAMANAN GANDA SAAT SUBMIT 🔥
+        $user = auth()->user();
+        $isAuthorized = false;
+
+        if ($currentApproval) {
+            if ($user->hasRole('Super Admin') || $user->hasRole('Super Administrator')) {
+                $isAuthorized = true;
+            } elseif ($user->hasRole($currentApproval->role->name)) {
+                $targetDeptId = $currentApproval->target_department_id;
+                if (!empty($targetDeptId) && $targetDeptId !== 'all') {
+                    if ($user->department_id == $targetDeptId) $isAuthorized = true;
+                } else {
+                    if ($pembuatPR && $user->department_id == $pembuatPR->department_id) {
+                        $isAuthorized = true;
+                    } elseif ($targetDeptId === 'all') {
+                        $isAuthorized = true;
+                    }
+                }
+            }
+        }
+
+        if ($currentApproval && !$isAuthorized) {
+            return redirect()->back()->with('error', 'AKSES DITOLAK: Giliran persetujuan saat ini adalah wewenang ' . $currentApproval->role->name . ' dari departemen terkait. Anda tidak memiliki hak akses!');
         }
 
         $approverRoleName = $currentApproval ? $currentApproval->role->name : 'Atasan';

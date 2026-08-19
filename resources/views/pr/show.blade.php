@@ -35,16 +35,16 @@
 @endpush
 
 @section('content')
-<div class="container-fluid pb-5 text-dark">
+<div class="pb-5 container-fluid text-dark">
 
     {{-- ========================================== --}}
     {{-- 1. HEADER & TOMBOL AKSI --}}
     {{-- ========================================== --}}
     <div class="pb-3 mb-4 d-flex flex-column flex-lg-row justify-content-between align-items-lg-center border-bottom">
         <div class="mb-3 mb-lg-0">
-            <div class="d-flex align-items-center flex-wrap gap-2 mb-1">
+            <div class="flex-wrap gap-2 mb-1 d-flex align-items-center">
                 <h4 class="mb-0 fw-bold text-dark"><i class="bi bi-file-earmark-text me-2 text-primary"></i>Detail PR</h4>
-                <span class="badge bg-dark rounded-pill px-3 py-2 shadow-sm fs-6">{{ $pr->pr_number }}</span>
+                <span class="px-3 py-2 shadow-sm badge bg-dark rounded-pill fs-6">{{ $pr->pr_number }}</span>
                 @if($pr->status)
                     <span class="badge bg-{{ $pr->status->color ?? 'secondary' }}-subtle text-{{ $pr->status->color ?? 'secondary' }} border border-{{ $pr->status->color ?? 'secondary' }}-subtle px-3 py-2 rounded-pill shadow-sm fs-6">
                         {{ mb_strtoupper($pr->status->name) }}
@@ -53,8 +53,8 @@
             </div>
         </div>
 
-        <div class="d-flex flex-wrap gap-2">
-            <a href="{{ route('pr.index') }}" class="px-4 shadow-sm btn btn-light rounded-pill fw-bold border">
+        <div class="flex-wrap gap-2 d-flex">
+            <a href="{{ route('pr.index') }}" class="px-4 border shadow-sm btn btn-light rounded-pill fw-bold">
                 <i class="bi bi-arrow-left me-1"></i> Kembali
             </a>
 
@@ -63,9 +63,9 @@
                 <button class="px-4 shadow-sm btn btn-outline-secondary rounded-pill fw-bold dropdown-toggle" type="button" data-bs-toggle="dropdown">
                     <i class="bi bi-printer-fill me-1"></i> Opsi Cetak
                 </button>
-                <ul class="dropdown-menu shadow-sm rounded-3">
-                    <li><a class="dropdown-item py-2 fw-medium" href="{{ route('pr.print', $pr->pr_number) }}" target="_blank"><i class="bi bi-file-pdf text-danger me-2"></i> Cetak Dokumen Standar</a></li>
-                    <li><a class="dropdown-item py-2 fw-medium text-success" href="{{ route('pr.print_complete', $pr->pr_number) }}" target="_blank"><i class="bi bi-file-earmark-pdf-fill me-2"></i> Cetak Lengkap (+ Lampiran)</a></li>
+                <ul class="shadow-sm dropdown-menu rounded-3">
+                    <li><a class="py-2 dropdown-item fw-medium" href="{{ route('pr.print', $pr->pr_number) }}" target="_blank"><i class="bi bi-file-pdf text-danger me-2"></i> Cetak Dokumen Standar</a></li>
+                    <li><a class="py-2 dropdown-item fw-medium text-success" href="{{ route('pr.print_complete', $pr->pr_number) }}" target="_blank"><i class="bi bi-file-earmark-pdf-fill me-2"></i> Cetak Lengkap (+ Lampiran)</a></li>
                 </ul>
             </div>
 
@@ -122,7 +122,7 @@
                             <div class="mt-1 info-value text-danger"><i class="bi bi-calendar-exclamation text-danger me-2"></i>{{ $pr->need_date ? \Carbon\Carbon::parse($pr->need_date)->format('d M Y') : '-' }}</div>
                         </div>
                         <div class="col-md-12">
-                            <div class="info-label mb-1">Tujuan / Keterangan Pengadaan</div>
+                            <div class="mb-1 info-label">Tujuan / Keterangan Pengadaan</div>
                             <div class="p-3 border rounded-3 info-value bg-light text-secondary">{{ $pr->description ?? '-' }}</div>
                         </div>
                     </div>
@@ -142,14 +142,14 @@
                     <div class="mb-3 border-0 shadow-sm alert alert-success rounded-4 d-flex align-items-center">
                         <i class="bi bi-shield-check fs-2 me-3"></i>
                         <div>
-                            <h6 class="mb-1 fw-bold">Mode Persetujuan Aktif ({{ $currentRoleName }})</h6>
+                            <h6 class="mb-1 fw-bold">Mode Persetujuan Aktif ({{ $roleDisplay }})</h6>
                             <small class="mb-0">Silakan periksa detail vendor dan berikan keputusan (Setuju/Tolak) untuk masing-masing item pada tabel di bawah.</small>
                         </div>
                     </div>
                 @endif
 
                 <div class="overflow-hidden border-0 shadow-sm card rounded-4">
-                    <div class="py-3 card-header bg-white border-bottom">
+                    <div class="py-3 bg-white card-header border-bottom">
                         <h6 class="mb-0 fw-bold text-dark text-uppercase"><i class="bi bi-box-seam me-2 text-primary"></i>Detail Item & Referensi Vendor</h6>
                     </div>
                     <div class="p-0 bg-white card-body">
@@ -160,8 +160,8 @@
                                         <th class="py-3 ps-4" width="30%">Barang & Spesifikasi</th>
                                         <th class="py-3" width="35%">Referensi Vendor & Penawaran</th>
                                         @if($canApprove)
-                                            <th class="py-3 text-center bg-success text-white" width="12%">Qty Disetujui</th>
-                                            <th class="py-3 bg-success text-white pe-4" width="23%">Keputusan & Alasan</th>
+                                            <th class="py-3 text-center text-white bg-success" width="12%">Qty Disetujui</th>
+                                            <th class="py-3 text-white bg-success pe-4" width="23%">Keputusan & Alasan</th>
                                         @else
                                             <th class="py-3 text-center" width="15%">Qty Permintaan</th>
                                             <th class="py-3 text-center pe-4" width="20%">Status Item</th>
@@ -241,21 +241,21 @@
                                                                     <tr>
                                                                         <td class="py-3 ps-3">
                                                                             <div class="fw-bold text-dark small">{{ optional($quote->vendor)->name ?? 'Vendor Terhapus' }}</div>
-                                                                            <div class="mt-1 badge bg-success-subtle text-success border border-success-subtle">{{ $currCode }} {{ number_format($quote->quoted_price ?? $quote->price ?? 0, 0, ',', '.') }}</div>
+                                                                            <div class="mt-1 border badge bg-success-subtle text-success border-success-subtle">{{ $currCode }} {{ number_format($quote->quoted_price ?? $quote->price ?? 0, 0, ',', '.') }}</div>
                                                                         </td>
                                                                         <td class="py-3">
                                                                             @if($quote->reference_link)
-                                                                                <a href="{{ $quote->reference_link }}" target="_blank" class="mb-1 text-decoration-none badge bg-primary-subtle text-primary border border-primary-subtle"><i class="bi bi-link-45deg"></i> Link Referensi</a><br>
+                                                                                <a href="{{ $quote->reference_link }}" target="_blank" class="mb-1 border text-decoration-none badge bg-primary-subtle text-primary border-primary-subtle"><i class="bi bi-link-45deg"></i> Link Referensi</a><br>
                                                                             @endif
                                                                             @if($quote->notes)
-                                                                                <div class="small text-muted fst-italic mt-1" style="font-size: 0.7rem;">"{{ $quote->notes }}"</div>
+                                                                                <div class="mt-1 small text-muted fst-italic" style="font-size: 0.7rem;">"{{ $quote->notes }}"</div>
                                                                             @endif
                                                                         </td>
                                                                         <td class="py-3 text-center align-middle">
                                                                             @if($quote->attachments && $quote->attachments->count() > 0)
-                                                                                <div class="d-flex flex-column gap-1 align-items-center">
+                                                                                <div class="gap-1 d-flex flex-column align-items-center">
                                                                                     @foreach($quote->attachments as $idx => $file)
-                                                                                        <a href="{{ asset('storage/' . $file->file_path) }}" target="_blank" class="btn btn-sm btn-outline-secondary py-0 px-2 text-truncate" style="font-size: 0.7rem; max-width: 90px;" title="{{ $file->file_name }}">
+                                                                                        <a href="{{ asset('storage/' . $file->file_path) }}" target="_blank" class="px-2 py-0 btn btn-sm btn-outline-secondary text-truncate" style="font-size: 0.7rem; max-width: 90px;" title="{{ $file->file_name }}">
                                                                                             <i class="bi bi-paperclip"></i> File {{ $idx + 1 }}
                                                                                         </a>
                                                                                     @endforeach
@@ -270,30 +270,30 @@
                                                         </table>
                                                     </div>
                                                 @else
-                                                    <div class="p-3 text-center border rounded text-muted small fst-italic bg-light border-dashed">Belum ada penawaran vendor.</div>
+                                                    <div class="p-3 text-center border border-dashed rounded text-muted small fst-italic bg-light">Belum ada penawaran vendor.</div>
                                                 @endif
                                             </td>
 
                                             {{-- KOLOM 3 & 4: APPROVAL ATAU STATUS --}}
                                             @if($canApprove)
                                                 <td class="py-4 text-center approval-column">
-                                                    <div class="input-group input-group-sm mx-auto shadow-sm" style="max-width: 120px;">
+                                                    <div class="mx-auto shadow-sm input-group input-group-sm" style="max-width: 120px;">
                                                         <input type="number" name="items[{{ $item->id }}][qty]" class="text-center form-control fw-bold text-success border-success" value="{{ (float)$item->qty }}" max="{{ (float)$item->qty }}" min="0" step="0.01">
                                                     </div>
                                                     <div class="mt-2 text-center">
-                                                        <span class="badge bg-white text-dark border border-secondary shadow-sm">{{ $tampilanSatuanLengkap }}</span>
+                                                        <span class="bg-white border shadow-sm badge text-dark border-secondary">{{ $tampilanSatuanLengkap }}</span>
                                                     </div>
-                                                    <div class="mt-1 small text-muted text-center" style="font-size: 0.7rem;">Maks: {{ (float)$item->qty }}</div>
+                                                    <div class="mt-1 text-center small text-muted" style="font-size: 0.7rem;">Maks: {{ (float)$item->qty }}</div>
                                                 </td>
 
                                                 <td class="py-4 pe-4 approval-column">
-                                                    <select name="items[{{ $item->id }}][status]" class="mb-2 form-select form-select-sm fw-bold border-secondary shadow-sm" onchange="toggleRejectReason(this, {{ $item->id }})">
+                                                    <select name="items[{{ $item->id }}][status]" class="mb-2 shadow-sm form-select form-select-sm fw-bold border-secondary" onchange="toggleRejectReason(this, {{ $item->id }})">
                                                         <option value="APPROVED" class="text-success">✅ Setujui Item Ini</option>
                                                         <option value="REJECTED" class="text-danger">❌ Tolak Item Ini</option>
                                                     </select>
 
                                                     @if($item->vendorQuotes && $item->vendorQuotes->count() > 0)
-                                                        <select name="items[{{ $item->id }}][vendor_id]" id="vendor_{{ $item->id }}" class="mb-2 form-select form-select-sm text-dark bg-white shadow-sm" style="font-size: 0.75rem;">
+                                                        <select name="items[{{ $item->id }}][vendor_id]" id="vendor_{{ $item->id }}" class="mb-2 bg-white shadow-sm form-select form-select-sm text-dark" style="font-size: 0.75rem;">
                                                             <option value="">-- Bebas Vendor --</option>
                                                             @foreach($item->vendorQuotes as $quote)
                                                                 <option value="{{ $quote->vendor_id }}">Pilih: {{ optional($quote->vendor)->name }}</option>
@@ -303,13 +303,13 @@
                                                         <input type="hidden" name="items[{{ $item->id }}][vendor_id]" value="">
                                                     @endif
 
-                                                    <textarea name="items[{{ $item->id }}][reject_reason]" id="reason_{{ $item->id }}" class="form-control form-control-sm bg-white text-danger d-none mt-2 shadow-sm" rows="2" placeholder="Alasan tolak wajib diisi..." disabled></textarea>
+                                                    <textarea name="items[{{ $item->id }}][reject_reason]" id="reason_{{ $item->id }}" class="mt-2 bg-white shadow-sm form-control form-control-sm text-danger d-none" rows="2" placeholder="Alasan tolak wajib diisi..." disabled></textarea>
                                                 </td>
                                             @else
                                                 <td class="py-4 text-center">
                                                     <div class="fw-bolder fs-5 text-dark">{{ (float)$item->qty }}</div>
                                                     <div class="mt-1">
-                                                        <span class="px-2 py-1 badge bg-secondary-subtle text-secondary border border-secondary-subtle fw-bold">{{ $tampilanSatuanLengkap }}</span>
+                                                        <span class="px-2 py-1 border badge bg-secondary-subtle text-secondary border-secondary-subtle fw-bold">{{ $tampilanSatuanLengkap }}</span>
                                                     </div>
                                                 </td>
 
@@ -336,8 +336,8 @@
                         </div>
 
                         @if($canApprove)
-                        <div class="p-3 bg-light border-top d-flex justify-content-end gap-3">
-                            <button type="button" class="px-4 py-2 shadow-sm btn btn-outline-danger fw-bold rounded-pill bg-white" onclick="submitGlobalReject()">
+                        <div class="gap-3 p-3 bg-light border-top d-flex justify-content-end">
+                            <button type="button" class="px-4 py-2 bg-white shadow-sm btn btn-outline-danger fw-bold rounded-pill" onclick="submitGlobalReject()">
                                 <i class="bi bi-x-circle-fill me-2"></i> Tolak Seluruh Dokumen
                             </button>
                             <button type="button" class="px-5 py-2 shadow-sm btn btn-success fw-bold rounded-pill" onclick="submitApproval()">
@@ -354,9 +354,95 @@
         {{-- ========================================== --}}
         {{-- 4. RIWAYAT PERJALANAN DOKUMEN --}}
         {{-- ========================================== --}}
+
+        {{-- ========================================== --}}
+        {{-- 🔥 STATUS PERSETUJUAN DOKUMEN (TRACKER) 🔥 --}}
+        {{-- ========================================== --}}
+        @php
+            $approvals = \App\Models\DocumentApproval::with(['role'])
+                ->where('document_id', $pr->id)
+                ->whereIn('document_type', ['App\Models\PurchaseRequest', 'PR', 'PurchaseRequest', get_class($pr)])
+                ->orderBy('step_order', 'asc')
+                ->get();
+        @endphp
+
+        @if($approvals->count() > 0)
         <div class="col-lg-12">
-            <div class="overflow-hidden border-0 shadow-sm card rounded-4 border-start border-4 border-info">
-                <div class="py-3 card-header bg-white border-bottom">
+            <div class="overflow-hidden border-0 border-4 shadow-sm card rounded-4 border-start border-success">
+                <div class="py-3 bg-white card-header border-bottom">
+                    <h6 class="mb-0 fw-bold text-dark text-uppercase"><i class="bi bi-shield-check me-2 text-success"></i>Status Persetujuan Dokumen</h6>
+                </div>
+                <div class="p-4 bg-white card-body">
+                    <div class="gap-3 d-flex flex-column">
+                        @foreach($approvals as $approval)
+                            @php
+                                $approverUser = $approval->approved_by ? \App\Models\User::find($approval->approved_by) : null;
+
+                                // Cari Departemen Penyetuju
+                                $deptName = '';
+                                if (!empty($approval->target_department_id) && $approval->target_department_id !== 'all') {
+                                    $dept = \App\Models\Department::find($approval->target_department_id);
+                                    if($dept) $deptName = $dept->name;
+                                } elseif (empty($approval->target_department_id)) {
+                                    // Jika target kosong, berarti atasan dari departemen pembuat PR
+                                    $pembuat = \App\Models\User::with('department')->find($pr->user_id);
+                                    if($pembuat && $pembuat->department) {
+                                        $deptName = $pembuat->department->name;
+                                    }
+                                }
+
+                                $roleDisplay = optional($approval->role)->name ?? 'Atasan';
+                                if($deptName) $roleDisplay .= ' - ' . $deptName;
+
+                                // Kondisi Tampilan (Warna, Icon, Teks)
+                                $bgClass = 'bg-white';
+                                $borderClass = 'border-warning-subtle';
+                                $icon = 'bi-hourglass-split text-warning';
+                                $statusBadge = '<span class="px-3 py-2 shadow-sm badge bg-warning text-dark rounded-pill"><i class="bi bi-clock me-1"></i>PENDING</span>';
+
+                                if($approval->status == 'APPROVED') {
+                                    $borderClass = 'border-success';
+                                    $icon = 'bi-check-circle-fill text-success';
+                                    $statusBadge = '<span class="px-3 py-2 shadow-sm badge bg-success rounded-pill"><i class="bi bi-check-all me-1"></i>APPROVED</span>';
+                                } elseif($approval->status == 'REJECTED') {
+                                    $borderClass = 'border-danger';
+                                    $icon = 'bi-x-circle-fill text-danger';
+                                    $statusBadge = '<span class="px-3 py-2 shadow-sm badge bg-danger rounded-pill"><i class="bi bi-x-circle me-1"></i>REJECTED</span>';
+                                }
+                            @endphp
+
+                            <div class="p-3 border {{ $borderClass }} rounded-4 bg-white shadow-sm d-flex flex-column flex-sm-row align-items-sm-center justify-content-between">
+                                <div class="mb-2 d-flex align-items-center mb-sm-0">
+                                    <i class="bi {{ $icon }} fs-2 me-3"></i>
+                                    <div>
+                                        <div class="mb-1 fw-bold text-dark">
+                                            <span class="badge bg-secondary me-2">Tahap {{ $approval->step_order }}</span>
+                                            {{ $roleDisplay }}
+                                        </div>
+                                        <div class="small text-muted">
+                                            @if($approval->status == 'APPROVED' || $approval->status == 'REJECTED')
+                                                Diproses oleh: <span class="fw-bold text-dark">{{ $approverUser->name ?? 'Unknown User' }}</span>
+                                                <br><i class="bi bi-calendar-check me-1"></i> {{ \Carbon\Carbon::parse($approval->approved_at)->format('d M Y, H:i') }} WIB
+                                            @else
+                                                <i class="bi bi-person-fill-exclamation me-1"></i> Menunggu tinjauan...
+                                            @endif
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="text-sm-end">
+                                    {!! $statusBadge !!}
+                                </div>
+                            </div>
+                        @endforeach
+                    </div>
+                </div>
+            </div>
+        </div>
+        @endif
+
+        <div class="col-lg-12">
+            <div class="overflow-hidden border-0 border-4 shadow-sm card rounded-4 border-start border-info">
+                <div class="py-3 bg-white card-header border-bottom">
                     <h6 class="mb-0 fw-bold text-dark text-uppercase"><i class="bi bi-clock-history me-2 text-info"></i>Riwayat Perjalanan Dokumen</h6>
                 </div>
                 <div class="p-4 bg-white card-body">
@@ -385,7 +471,7 @@
                         </ul>
                     @else
                         <div class="py-4 text-center text-muted fst-italic">
-                            <i class="bi bi-info-circle fs-3 d-block mb-2 text-secondary opacity-50"></i>
+                            <i class="mb-2 opacity-50 bi bi-info-circle fs-3 d-block text-secondary"></i>
                             Belum ada riwayat terekam untuk dokumen ini.
                         </div>
                     @endif
@@ -402,25 +488,25 @@
         <div class="border-0 shadow modal-content rounded-4">
             <form action="{{ route('pr.cancel', $pr->pr_number) }}" method="POST">
                 @csrf
-                <div class="text-white modal-header bg-danger rounded-top-4 border-0">
+                <div class="text-white border-0 modal-header bg-danger rounded-top-4">
                     <h5 class="modal-title fw-bold">
                         <i class="bi bi-exclamation-triangle-fill me-2"></i>Batalkan Dokumen PR
                     </h5>
                     <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
                 </div>
-                <div class="p-4 modal-body bg-light text-center">
-                    <i class="bi bi-x-octagon text-danger opacity-75 mb-3 d-block" style="font-size: 3rem;"></i>
+                <div class="p-4 text-center modal-body bg-light">
+                    <i class="mb-3 opacity-75 bi bi-x-octagon text-danger d-block" style="font-size: 3rem;"></i>
                     <p class="text-dark fw-medium">Anda yakin ingin membatalkan dokumen <strong>{{ $pr->pr_number }}</strong>?</p>
-                    <p class="text-muted small mb-4">Tindakan ini akan menghentikan seluruh proses persetujuan secara permanen.</p>
+                    <p class="mb-4 text-muted small">Tindakan ini akan menghentikan seluruh proses persetujuan secara permanen.</p>
 
                     <div class="text-start">
                         <label class="form-label fw-bold small text-dark">Alasan Pembatalan <span class="text-danger">*</span></label>
-                        <textarea name="cancel_reason" class="form-control border-secondary-subtle shadow-sm" rows="3" placeholder="Wajib diisi..." required></textarea>
+                        <textarea name="cancel_reason" class="shadow-sm form-control border-secondary-subtle" rows="3" placeholder="Wajib diisi..." required></textarea>
                     </div>
                 </div>
-                <div class="modal-footer border-0 bg-white rounded-bottom-4 justify-content-center">
-                    <button type="button" class="px-4 btn btn-light fw-bold rounded-pill border" data-bs-dismiss="modal">Kembali</button>
-                    <button type="submit" class="px-4 btn btn-danger fw-bold rounded-pill shadow-sm">
+                <div class="bg-white border-0 modal-footer rounded-bottom-4 justify-content-center">
+                    <button type="button" class="px-4 border btn btn-light fw-bold rounded-pill" data-bs-dismiss="modal">Kembali</button>
+                    <button type="submit" class="px-4 shadow-sm btn btn-danger fw-bold rounded-pill">
                         <i class="bi bi-check2-circle me-1"></i> Konfirmasi Pembatalan
                     </button>
                 </div>

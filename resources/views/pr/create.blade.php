@@ -88,6 +88,23 @@
                             <label class="form-label fw-bold small text-dark">Tujuan Pengadaan Umum <span class="text-danger">*</span></label>
                             <input type="text" name="description" class="form-control border-secondary-subtle bg-light" value="{{ old('description') }}" placeholder="Contoh: Pengadaan fasilitas IT untuk karyawan baru..." required>
                         </div>
+                        {{-- 🔥 JALUR TIKUS (OVERRIDE WORKFLOW) 🔥 --}}
+                            <div class="pt-3 mt-3 col-md-12 border-top">
+                                <label class="form-label fw-bold small text-primary text-uppercase">
+                                    <i class="bi bi-shuffle me-1"></i> Pilih Jalur Persetujuan Khusus (Opsional)
+                                </label>
+                                <select name="custom_workflow_id" class="form-select border-primary-subtle bg-primary bg-opacity-10" style="max-width: 500px;">
+                                    <option value="">-- Ikuti Standar Departemen (Default) --</option>
+                                    @if(isset($customWorkflows) && count($customWorkflows) > 0)
+                                        @foreach($customWorkflows as $cw)
+                                            <option value="{{ $cw->id }}">{{ $cw->name }}</option>
+                                        @endforeach
+                                    @endif
+                                </select>
+                                <div class="mt-1 form-text small text-muted">
+                                    <i class="bi bi-info-circle me-1"></i>Biarkan kosong jika ingin menggunakan rute standar departemen Anda.
+                                </div>
+                            </div>
                     </div>
                 </div>
             </div>
@@ -124,14 +141,14 @@
                     </div>
 
                     {{-- 1. KOTAK NAMA SPESIFIK (SHORT TEXT) --}}
-                    <div class="col-12 mt-3">
+                    <div class="mt-3 col-12">
                         <label class="form-label small fw-bold text-dark">Nama Spesifik Barang (Bisa disesuaikan)</label>
                         <input type="text" name="items[0][item_name]" class="form-control form-input-custom fw-bold text-primary" placeholder="Contoh: Asus VivoBook 14 A1404ZA...">
                         <div class="mt-1 form-text text-muted" style="font-size: 0.7rem;">*Nama ini yang akan tercetak di PDF. Master Data tetap aman.</div>
                     </div>
 
                     {{-- 🔥 CKEDITOR SPESIFIKASI 🔥 --}}
-                    <div class="col-12 mt-3">
+                    <div class="mt-3 col-12">
                         <label class="mb-2 small text-dark fw-bold"><i class="bi bi-card-text me-1 text-secondary"></i>Spesifikasi / Detail Khusus (Opsional)</label>
                         <textarea name="items[0][specification]" id="spec_0" rows="2" class="form-control border-secondary-subtle ckeditor-spec" placeholder="Tuliskan spesifikasi teknis panjang di sini..."></textarea>
                     </div>
@@ -186,7 +203,7 @@
                                     </div>
                                 </div>
 
-                                <div class="col-lg-6 mt-2">
+                                <div class="mt-2 col-lg-6">
                                     <label class="mb-1 x-small text-muted fw-bold">Link Produk (Tokopedia/dll)</label>
                                     <input type="url" name="items[0][vendors][0][link]" class="shadow-sm form-control form-control-sm" placeholder="https://...">
                                 </div>
