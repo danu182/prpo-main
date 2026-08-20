@@ -54,7 +54,7 @@
         @endphp
 
         <div class="flex-wrap gap-2 d-flex">
-            {{-- 🔥 MEGA DROPDOWN: 12 PILIHAN MENU CETAK PO & BPR 🔥 --}}
+            {{-- 🔥 MEGA DROPDOWN: 18 PILIHAN MENU CETAK (DIGITAL, MANUAL, HYBRID) 🔥 --}}
             @if(!in_array($statusSlug, ['rejected', 'canceled', 'cancelled']))
                 <div class="shadow-sm btn-group">
                     <button class="btn btn-dark fw-bold rounded-start-pill" type="button" style="pointer-events: none;">
@@ -64,69 +64,34 @@
                         <span class="visually-hidden">Toggle Dropdown</span>
                     </button>
                     
-                    <ul class="mt-2 border-0 shadow-lg dropdown-menu dropdown-menu-end" style="width: 420px; max-height: 80vh; overflow-y: auto;">
+                    <ul class="mt-2 border-0 shadow-lg dropdown-menu dropdown-menu-end" style="width: 450px; max-height: 80vh; overflow-y: auto;">
                         
-                        {{-- ================= OPSI 1: DIGITAL ================= --}}
-                        <li><h6 class="dropdown-header text-primary fw-bold fs-6"><i class="bi bi-laptop me-1"></i> VERSI DIGITAL (TTD OTOMATIS)</h6></li>
+                        {{-- ================= OPSI 1: DIGITAL (FULL STEMPEL & TTD) ================= --}}
+                        <li><h6 class="dropdown-header text-primary fw-bold fs-6 bg-primary-subtle py-2"><i class="bi bi-laptop me-1"></i> VERSI DIGITAL (TTD/Stempel Otomatis)</h6></li>
+                        <li><a class="py-2 dropdown-item fw-medium" href="{{ route('po.print', ['slug' => $po->po_number, 'type' => 'digital']) }}" target="_blank"><i class="bi bi-file-earmark text-primary me-2"></i> Cetak PO Standar</a></li>
+                        <li><a class="py-2 dropdown-item fw-medium" href="{{ route('po.print_complete', ['slug' => $po->po_number, 'type' => 'digital']) }}" target="_blank"><i class="bi bi-file-earmark-plus text-primary me-2"></i> Cetak PO + Lampiran</a></li>
+                        <li><a class="py-2 dropdown-item fw-medium" href="{{ route('po.print_bpr', ['slug' => $po->po_number, 'type' => 'digital']) }}" target="_blank"><i class="bi bi-grid-1x2 text-success me-2"></i> Cetak BPR Standar (Global)</a></li>
+                        <li><a class="py-2 dropdown-item fw-medium" href="{{ route('po.print_bpr_standar_attachments', ['slug' => $po->po_number, 'type' => 'digital']) }}" target="_blank"><i class="bi bi-grid-1x2-fill text-success me-2"></i> Cetak BPR Standar (Global) + Lampiran</a></li>
+                        <li><a class="py-2 dropdown-item fw-medium" href="{{ route('po.print_bpr_detail', ['slug' => $po->po_number, 'type' => 'digital']) }}" target="_blank"><i class="bi bi-list-columns-reverse text-warning-emphasis me-2"></i> Cetak BPR Detail (Pajak/Diskon)</a></li>
+                        <li><a class="py-2 dropdown-item fw-medium" href="{{ route('po.print_bpr_attachments', ['slug' => $po->po_number, 'type' => 'digital']) }}" target="_blank"><i class="bi bi-collection text-warning-emphasis me-2"></i> Cetak BPR Detail + Lampiran</a></li>
                         
-                        <li><a class="py-2 dropdown-item fw-medium" href="{{ route('po.print', ['slug' => $po->po_number, 'type' => 'digital']) }}" target="_blank">
-                            <i class="bi bi-file-earmark text-primary me-2"></i> Cetak PO
-                        </a></li>
-                        <li><a class="py-2 dropdown-item fw-medium" href="{{ route('po.print_complete', ['slug' => $po->po_number, 'type' => 'digital']) }}" target="_blank">
-                            <i class="bi bi-file-earmark-plus text-primary me-2"></i> Cetak PO + Lampiran
-                        </a></li>
-                        
-                        <li><hr class="dropdown-divider my-1"></li>
-                        
-                        <li><a class="py-2 dropdown-item fw-medium" href="{{ route('po.print_bpr', ['slug' => $po->po_number, 'type' => 'digital']) }}" target="_blank">
-                            <i class="bi bi-grid-1x2 text-success me-2"></i> Cetak BPR Standar (Global)
-                        </a></li>
-                        <li><a class="py-2 dropdown-item fw-medium" href="{{ route('po.print_bpr_standar_attachments', ['slug' => $po->po_number, 'type' => 'digital']) }}" target="_blank">
-                            <i class="bi bi-grid-1x2-fill text-success me-2"></i> Cetak BPR Standar (Global) + Lampiran
-                        </a></li>
-                        
-                        <li><hr class="dropdown-divider my-1"></li>
-                        
-                        <li><a class="py-2 dropdown-item fw-medium text-wrap lh-sm" href="{{ route('po.print_bpr_detail', ['slug' => $po->po_number, 'type' => 'digital']) }}" target="_blank">
-                            <i class="bi bi-list-columns-reverse text-warning-emphasis me-2"></i> Cetak BPR Detail<br>
-                            <span class="text-muted small ms-4" style="font-size: 0.75rem;">(Rincian Pajak, Diskon & Biaya)</span>
-                        </a></li>
-                        <li><a class="py-2 dropdown-item fw-medium text-wrap lh-sm" href="{{ route('po.print_bpr_attachments', ['slug' => $po->po_number, 'type' => 'digital']) }}" target="_blank">
-                            <i class="bi bi-collection text-warning-emphasis me-2"></i> Cetak BPR Detail + Lampiran<br>
-                            <span class="text-muted small ms-4" style="font-size: 0.75rem;">(Rincian Pajak, Diskon & Biaya)</span>
-                        </a></li>
-                        
-                        <li><hr class="dropdown-divider border-3 border-dark opacity-10 my-2"></li>
-                        
-                        {{-- ================= OPSI 2: MANUAL ================= --}}
-                        <li><h6 class="dropdown-header text-danger fw-bold fs-6"><i class="bi bi-pen me-1"></i> VERSI MANUAL (TTD BASAH)</h6></li>
-                        
-                        <li><a class="py-2 dropdown-item fw-medium" href="{{ route('po.print', ['slug' => $po->po_number, 'type' => 'manual']) }}" target="_blank">
-                            <i class="bi bi-file-earmark text-danger me-2"></i> Cetak PO
-                        </a></li>
-                        <li><a class="py-2 dropdown-item fw-medium" href="{{ route('po.print_complete', ['slug' => $po->po_number, 'type' => 'manual']) }}" target="_blank">
-                            <i class="bi bi-file-earmark-plus text-danger me-2"></i> Cetak PO + Lampiran
-                        </a></li>
-                        
-                        <li><hr class="dropdown-divider my-1"></li>
-                        
-                        <li><a class="py-2 dropdown-item fw-medium" href="{{ route('po.print_bpr', ['slug' => $po->po_number, 'type' => 'manual']) }}" target="_blank">
-                            <i class="bi bi-grid-1x2 text-danger me-2"></i> Cetak BPR Standar (Global)
-                        </a></li>
-                        <li><a class="py-2 dropdown-item fw-medium" href="{{ route('po.print_bpr_standar_attachments', ['slug' => $po->po_number, 'type' => 'manual']) }}" target="_blank">
-                            <i class="bi bi-grid-1x2-fill text-danger me-2"></i> Cetak BPR Standar (Global) + Lampiran
-                        </a></li>
-                        
-                        <li><hr class="dropdown-divider my-1"></li>
-                        
-                        <li><a class="py-2 dropdown-item fw-medium text-wrap lh-sm" href="{{ route('po.print_bpr_detail', ['slug' => $po->po_number, 'type' => 'manual']) }}" target="_blank">
-                            <i class="bi bi-list-columns-reverse text-danger me-2"></i> Cetak BPR Detail<br>
-                            <span class="text-muted small ms-4" style="font-size: 0.75rem;">(Rincian Pajak, Diskon & Biaya)</span>
-                        </a></li>
-                        <li><a class="py-2 dropdown-item fw-medium text-wrap lh-sm" href="{{ route('po.print_bpr_attachments', ['slug' => $po->po_number, 'type' => 'manual']) }}" target="_blank">
-                            <i class="bi bi-collection text-danger me-2"></i> Cetak BPR Detail + Lampiran<br>
-                            <span class="text-muted small ms-4" style="font-size: 0.75rem;">(Rincian Pajak, Diskon & Biaya)</span>
-                        </a></li>
+                        {{-- ================= OPSI 2: MANUAL (KOSONG TOTAL) ================= --}}
+                        <li><h6 class="dropdown-header text-danger fw-bold fs-6 bg-danger-subtle py-2 mt-2"><i class="bi bi-pen me-1"></i> VERSI MANUAL (TTD Basah Penuh)</h6></li>
+                        <li><a class="py-2 dropdown-item fw-medium" href="{{ route('po.print', ['slug' => $po->po_number, 'type' => 'manual']) }}" target="_blank"><i class="bi bi-file-earmark text-danger me-2"></i> Cetak PO Standar</a></li>
+                        <li><a class="py-2 dropdown-item fw-medium" href="{{ route('po.print_complete', ['slug' => $po->po_number, 'type' => 'manual']) }}" target="_blank"><i class="bi bi-file-earmark-plus text-danger me-2"></i> Cetak PO + Lampiran</a></li>
+                        <li><a class="py-2 dropdown-item fw-medium" href="{{ route('po.print_bpr', ['slug' => $po->po_number, 'type' => 'manual']) }}" target="_blank"><i class="bi bi-grid-1x2 text-danger me-2"></i> Cetak BPR Standar (Global)</a></li>
+                        <li><a class="py-2 dropdown-item fw-medium" href="{{ route('po.print_bpr_standar_attachments', ['slug' => $po->po_number, 'type' => 'manual']) }}" target="_blank"><i class="bi bi-grid-1x2-fill text-danger me-2"></i> Cetak BPR Standar (Global) + Lampiran</a></li>
+                        <li><a class="py-2 dropdown-item fw-medium" href="{{ route('po.print_bpr_detail', ['slug' => $po->po_number, 'type' => 'manual']) }}" target="_blank"><i class="bi bi-list-columns-reverse text-danger me-2"></i> Cetak BPR Detail (Pajak/Diskon)</a></li>
+                        <li><a class="py-2 dropdown-item fw-medium" href="{{ route('po.print_bpr_attachments', ['slug' => $po->po_number, 'type' => 'manual']) }}" target="_blank"><i class="bi bi-collection text-danger me-2"></i> Cetak BPR Detail + Lampiran</a></li>
+
+                        {{-- ================= OPSI 3: HYBRID (CERDAS) ================= --}}
+                        <li><h6 class="dropdown-header text-success fw-bold fs-6 bg-success-subtle py-2 mt-2"><i class="bi bi-magic me-1"></i> VERSI HYBRID (Gambar Jika Ada)</h6></li>
+                        <li><a class="py-2 dropdown-item fw-medium" href="{{ route('po.print', ['slug' => $po->po_number, 'type' => 'hybrid']) }}" target="_blank"><i class="bi bi-file-earmark text-success me-2"></i> Cetak PO Standar</a></li>
+                        <li><a class="py-2 dropdown-item fw-medium" href="{{ route('po.print_complete', ['slug' => $po->po_number, 'type' => 'hybrid']) }}" target="_blank"><i class="bi bi-file-earmark-plus text-success me-2"></i> Cetak PO + Lampiran</a></li>
+                        <li><a class="py-2 dropdown-item fw-medium" href="{{ route('po.print_bpr', ['slug' => $po->po_number, 'type' => 'hybrid']) }}" target="_blank"><i class="bi bi-grid-1x2 text-success me-2"></i> Cetak BPR Standar (Global)</a></li>
+                        <li><a class="py-2 dropdown-item fw-medium" href="{{ route('po.print_bpr_standar_attachments', ['slug' => $po->po_number, 'type' => 'hybrid']) }}" target="_blank"><i class="bi bi-grid-1x2-fill text-success me-2"></i> Cetak BPR Standar (Global) + Lampiran</a></li>
+                        <li><a class="py-2 dropdown-item fw-medium" href="{{ route('po.print_bpr_detail', ['slug' => $po->po_number, 'type' => 'hybrid']) }}" target="_blank"><i class="bi bi-list-columns-reverse text-success me-2"></i> Cetak BPR Detail (Pajak/Diskon)</a></li>
+                        <li><a class="py-2 dropdown-item fw-medium" href="{{ route('po.print_bpr_attachments', ['slug' => $po->po_number, 'type' => 'hybrid']) }}" target="_blank"><i class="bi bi-collection text-success me-2"></i> Cetak BPR Detail + Lampiran</a></li>
                     </ul>
                 </div>
             @endif

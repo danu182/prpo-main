@@ -9,7 +9,6 @@
         .company-name { font-size: 16pt; font-weight: bold; margin: 0; text-transform: uppercase; }
         .doc-title { font-size: 12pt; margin: 5px 0 15px 0; }
         
-        /* 🔥 SEAMLESS BOX UTAMA 🔥 */
         .wrapper { border: 1px solid #000; width: 100%; }
         
         table.grid { width: 100%; border-collapse: collapse; border-top: 1px solid #000; }
@@ -39,7 +38,8 @@
 <body>
 
     @php
-        $isDigital = (!isset($type) || $type === 'digital');
+        $isDigital = (!isset($type) || $type === 'digital' || $type === 'hybrid');
+        $printType = $type ?? 'digital';
         $currency = $po->currency ?? 'IDR';
         $companyName = optional($po->company)->name ?? optional(optional($po->purchaseRequest)->company)->name ?? 'PT. KANTOR PUSAT';
     @endphp
@@ -139,14 +139,7 @@
                     @endif
                 @endforeach
 
-                @if(isset($charges)) @foreach($charges as $charge)
-                <tr>
-                    <td style="border-right: none;"></td><td style="border-right: none; border-left: none;"></td>
-                    <td style="border-left: none;">{{ $charge->name ?? 'Biaya Tambahan' }}</td><td style="text-align: center;">1</td><td style="text-align: center;">-</td>
-                    <td><table class="amount-box"><tr><td class="curr-txt">{{ $currency }}</td><td class="num-txt">{{ number_format($charge->amount, 0, ',', '.') }}</td></tr></table></td>
-                </tr>
-                @endforeach @endif
-
+                {{-- URUTAN DIPERBAIKI: 1. DISKON GLOBAL --}}
                 @if($actualGlobalDisc > 0)
                 <tr>
                     <td style="border-right: none;"></td><td style="border-right: none; border-left: none;"></td>
@@ -155,14 +148,7 @@
                 </tr>
                 @endif
 
-                @if($actualGlobalTax > 0)
-                <tr>
-                    <td style="border-right: none;"></td><td style="border-right: none; border-left: none;"></td>
-                    <td style="border-left: none;">Pajak Header (VAT/PPN)</td><td style="text-align: center;">1</td><td style="text-align: center;">-</td>
-                    <td><table class="amount-box"><tr><td class="curr-txt">{{ $currency }}</td><td class="num-txt">{{ number_format($actualGlobalTax, 0, ',', '.') }}</td></tr></table></td>
-                </tr>
-                @endif
-
+                {{-- URUTAN DIPERBAIKI: 2. POTONGAN TAMBAHAN --}}
                 @if(isset($extraDiscounts)) @foreach($extraDiscounts as $disc)
                 <tr>
                     <td style="border-right: none;"></td><td style="border-right: none; border-left: none;"></td>
@@ -171,6 +157,24 @@
                 </tr>
                 @endforeach @endif
 
+                {{-- URUTAN DIPERBAIKI: 3. BIAYA TAMBAHAN --}}
+                @if(isset($charges)) @foreach($charges as $charge)
+                <tr>
+                    <td style="border-right: none;"></td><td style="border-right: none; border-left: none;"></td>
+                    <td style="border-left: none;">{{ $charge->name ?? 'Biaya Tambahan' }}</td><td style="text-align: center;">1</td><td style="text-align: center;">-</td>
+                    <td><table class="amount-box"><tr><td class="curr-txt">{{ $currency }}</td><td class="num-txt">{{ number_format($charge->amount, 0, ',', '.') }}</td></tr></table></td>
+                </tr>
+                @endforeach @endif
+
+                {{-- URUTAN DIPERBAIKI: 4. PAJAK GLOBAL (VAT/PPN) Paling Bawah --}}
+                @if($actualGlobalTax > 0)
+                <tr>
+                    <td style="border-right: none;"></td><td style="border-right: none; border-left: none;"></td>
+                    <td style="border-left: none;">Pajak Header (VAT/PPN)</td><td style="text-align: center;">1</td><td style="text-align: center;">-</td>
+                    <td><table class="amount-box"><tr><td class="curr-txt">{{ $currency }}</td><td class="num-txt">{{ number_format($actualGlobalTax, 0, ',', '.') }}</td></tr></table></td>
+                </tr>
+                @endif
+
                 <tr>
                     <td colspan="5" style="text-align: center; font-weight: bold; padding: 10px;">GRAND TOTAL</td>
                     <td style="padding: 10px;"><table class="amount-box fw-bold"><tr><td class="curr-txt" style="font-size: 10pt; font-weight: normal;">{{ $currency }}</td><td class="num-txt" style="font-weight: bold; font-size: 12pt;">{{ number_format($po->grand_total, 0, ',', '.') }}</td></tr></table></td>
@@ -178,10 +182,11 @@
             </tbody>
         </table>
 
-        {{-- KOTAK TANDA TANGAN (HANYA NAMA) --}}
+        {{-- KOTAK TANDA TANGAN (DIGITAL / MANUAL / HYBRID) --}}
         @php
             $approvals = \App\Models\DocumentApproval::with('role')->where('document_id', $po->id)->where('document_type', get_class($po))->orderBy('step_order', 'asc')->get();
             $totalCols = 1 + $approvals->count();
+            
             $prepUser = $po->user; $prepSigBase64 = null;
             if ($prepUser && $prepUser->signature) {
                 $path = public_path('storage/' . $prepUser->signature);
@@ -198,26 +203,32 @@
             </tr>
             <tr>
                 <td style="height: 70px;">
-                    @if($isDigital)
+                    @if($printType == 'digital')
                         @if($prepSigBase64) <img src="{{ $prepSigBase64 }}" style="max-height: 60px; max-width: 130px; object-fit: contain;"> @else <div class="stamp stamp-issued">ISSUED</div> @endif
+                    @elseif($printType == 'hybrid')
+                        @if($prepSigBase64) <img src="{{ $prepSigBase64 }}" style="max-height: 60px; max-width: 130px; object-fit: contain;"> @endif
                     @endif
                 </td>
                 @foreach($approvals as $app)
+                    @php
+                        $apprSigBase64 = null;
+                        if ($app->status == 'APPROVED' && optional($app->approver)->signature) {
+                            $path = public_path('storage/' . $app->approver->signature);
+                            if (file_exists($path)) { $apprSigBase64 = 'data:image/' . pathinfo($path, PATHINFO_EXTENSION) . ';base64,' . base64_encode(file_get_contents($path)); }
+                        }
+                    @endphp
                     <td style="height: 70px;">
-                        @if($isDigital)
+                        @if($printType == 'digital')
                             @if($app->status == 'APPROVED')
-                                @php
-                                    $apprUser = \App\Models\User::find($app->approved_by); $apprSigBase64 = null;
-                                    if ($apprUser && $apprUser->signature) {
-                                        $path = public_path('storage/' . $apprUser->signature);
-                                        if (file_exists($path)) { $apprSigBase64 = 'data:image/' . pathinfo($path, PATHINFO_EXTENSION) . ';base64,' . base64_encode(file_get_contents($path)); }
-                                    }
-                                @endphp
                                 @if($apprSigBase64) <img src="{{ $apprSigBase64 }}" style="max-height: 60px; max-width: 130px; object-fit: contain;"> @else <div class="stamp stamp-approved">APPROVED</div> @endif
                             @elseif($app->status == 'REJECTED')
                                 <div class="stamp stamp-rejected">REJECTED</div>
                             @else
                                 <div class="stamp stamp-pending">PENDING</div>
+                            @endif
+                        @elseif($printType == 'hybrid')
+                            @if($app->status == 'APPROVED' && $apprSigBase64)
+                                <img src="{{ $apprSigBase64 }}" style="max-height: 60px; max-width: 130px; object-fit: contain;">
                             @endif
                         @endif
                     </td>
@@ -229,8 +240,7 @@
                     @php
                         $approverName = '<span style="color:#fff;">_</span>';
                         if ($app->status == 'APPROVED' || $app->status == 'REJECTED') {
-                            $apprUser = \App\Models\User::find($app->approved_by);
-                            $approverName = $apprUser->name ?? optional($app->role)->name;
+                            $approverName = optional($app->approver)->name ?? optional($app->role)->name;
                         } else {
                             $roleName = optional($app->role)->name;
                             $potentialUsers = \App\Models\User::role($roleName);

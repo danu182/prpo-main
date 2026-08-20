@@ -155,8 +155,9 @@
             </tbody>
         </table>
 
-        {{-- KOTAK TANDA TANGAN (HANYA NAMA, TANPA JABATAN) --}}
+        {{-- KOTAK TANDA TANGAN (DIGITAL / MANUAL / HYBRID) --}}
         @php
+            $printType = $type ?? 'digital';
             $approvals = \App\Models\DocumentApproval::with('role')->where('document_id', $po->id)->where('document_type', get_class($po))->orderBy('step_order', 'asc')->get();
             $totalCols = 1 + $approvals->count();
             
@@ -176,26 +177,32 @@
             </tr>
             <tr>
                 <td style="height: 70px;">
-                    @if($isDigital)
+                    @if($printType == 'digital')
                         @if($prepSigBase64) <img src="{{ $prepSigBase64 }}" style="max-height: 60px; max-width: 130px; object-fit: contain;"> @else <div class="stamp stamp-issued">ISSUED</div> @endif
+                    @elseif($printType == 'hybrid')
+                        @if($prepSigBase64) <img src="{{ $prepSigBase64 }}" style="max-height: 60px; max-width: 130px; object-fit: contain;"> @endif
                     @endif
                 </td>
                 @foreach($approvals as $app)
+                    @php
+                        $apprSigBase64 = null;
+                        if ($app->status == 'APPROVED' && optional($app->approver)->signature) {
+                            $path = public_path('storage/' . $app->approver->signature);
+                            if (file_exists($path)) { $apprSigBase64 = 'data:image/' . pathinfo($path, PATHINFO_EXTENSION) . ';base64,' . base64_encode(file_get_contents($path)); }
+                        }
+                    @endphp
                     <td style="height: 70px;">
-                        @if($isDigital)
+                        @if($printType == 'digital')
                             @if($app->status == 'APPROVED')
-                                @php
-                                    $apprUser = \App\Models\User::find($app->approved_by); $apprSigBase64 = null;
-                                    if ($apprUser && $apprUser->signature) {
-                                        $path = public_path('storage/' . $apprUser->signature);
-                                        if (file_exists($path)) { $apprSigBase64 = 'data:image/' . pathinfo($path, PATHINFO_EXTENSION) . ';base64,' . base64_encode(file_get_contents($path)); }
-                                    }
-                                @endphp
                                 @if($apprSigBase64) <img src="{{ $apprSigBase64 }}" style="max-height: 60px; max-width: 130px; object-fit: contain;"> @else <div class="stamp stamp-approved">APPROVED</div> @endif
                             @elseif($app->status == 'REJECTED')
                                 <div class="stamp stamp-rejected">REJECTED</div>
                             @else
                                 <div class="stamp stamp-pending">PENDING</div>
+                            @endif
+                        @elseif($printType == 'hybrid')
+                            @if($app->status == 'APPROVED' && $apprSigBase64)
+                                <img src="{{ $apprSigBase64 }}" style="max-height: 60px; max-width: 130px; object-fit: contain;">
                             @endif
                         @endif
                     </td>
@@ -207,8 +214,7 @@
                     @php
                         $approverName = '<span style="color:#fff;">_</span>';
                         if ($app->status == 'APPROVED' || $app->status == 'REJECTED') {
-                            $apprUser = \App\Models\User::find($app->approved_by);
-                            $approverName = $apprUser->name ?? optional($app->role)->name;
+                            $approverName = optional($app->approver)->name ?? optional($app->role)->name;
                         } else {
                             $roleName = optional($app->role)->name;
                             $potentialUsers = \App\Models\User::role($roleName);
@@ -221,6 +227,7 @@
                 @endforeach
             </tr>
         </table>
+
     </div>
 
 </body>

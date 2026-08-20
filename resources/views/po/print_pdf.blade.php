@@ -209,15 +209,21 @@
 
     <div class="clear"></div>
 
+    {{-- KOTAK TANDA TANGAN HYBRID (PO) --}}
     @php
-        // Ambil data approval dan urutkan sesuai hierarki
+        $printType = $type ?? 'digital';
         $approvals = $po->approvals->sortBy('step_order');
-
-        // Hitung total kolom: 1 (Pembuat) + Jumlah Atasan + 1 (Vendor)
         $totalColumns = 2 + $approvals->count();
-
-        // Bagi lebar kertas secara merata
         $tdWidth = (100 / $totalColumns) . '%';
+        
+        $prepSigBase64 = null;
+        if (optional($po->user)->signature) {
+            $path = public_path('storage/' . $po->user->signature);
+            if (file_exists($path)) {
+                $ext = pathinfo($path, PATHINFO_EXTENSION);
+                $prepSigBase64 = 'data:image/' . $ext . ';base64,' . base64_encode(file_get_contents($path));
+            }
+        }
     @endphp
 
     <table class="signature-table" style="width: 100%; margin-top: 50px; text-align: center; font-size: 9pt; page-break-inside: avoid;">
@@ -225,97 +231,63 @@
             {{-- 1. KOLOM PEMBUAT PO --}}
             <td style="width: {{ $tdWidth }}; vertical-align: bottom;">
                 <div style="margin-bottom: 5px;"><strong>Dibuat Oleh,</strong></div>
-
-                {{-- KOTAK TTD PEMBUAT --}}
                 <div style="height: 65px; padding-top: 5px;">
-                    @if($isDigital)
-                        @php
-                            $prepSigBase64 = null;
-                            if (optional($po->user)->signature) {
-                                $path = public_path('storage/' . $po->user->signature);
-                                if (file_exists($path)) {
-                                    $ext = pathinfo($path, PATHINFO_EXTENSION);
-                                    $prepSigBase64 = 'data:image/' . $ext . ';base64,' . base64_encode(file_get_contents($path));
-                                }
-                            }
-                        @endphp
-
-                        @if($prepSigBase64)
-                            <img src="{{ $prepSigBase64 }}" class="signature-img">
-                        @else
-                            <span style="color: #198754; border: 2px solid #198754; padding: 3px 8px; font-weight: bold; display: inline-block; margin-top: 15px; letter-spacing: 1px;">ISSUED</span>
-                        @endif
+                    @if($printType == 'digital')
+                        @if($prepSigBase64) <img src="{{ $prepSigBase64 }}" class="signature-img"> @else <span style="color: #198754; border: 2px solid #198754; padding: 3px 8px; font-weight: bold; display: inline-block; margin-top: 15px; letter-spacing: 1px;">ISSUED</span> @endif
+                    @elseif($printType == 'hybrid')
+                        @if($prepSigBase64) <img src="{{ $prepSigBase64 }}" class="signature-img"> @endif
                     @endif
                 </div>
-
                 <div style="margin-bottom: 2px;"><u><strong>{{ optional($po->user)->name ?? 'Purchasing Staff' }}</strong></u></div>
                 <div style="font-size: 8pt; color: #555;">Purchasing Dept.</div>
-                <div style="font-size: 7pt; color: #555;">
-                    {{ $isDigital ? \Carbon\Carbon::parse($po->created_at)->format('d/m/Y') : 'Tgl: .....................' }}
-                </div>
+                <div style="font-size: 7pt; color: #555;">{{ ($printType == 'digital' || ($printType == 'hybrid' && $prepSigBase64)) ? \Carbon\Carbon::parse($po->created_at)->format('d/m/Y') : 'Tgl: .....................' }}</div>
             </td>
 
             {{-- 2. KOLOM ATASAN (LOOPING DINAMIS) --}}
             @foreach($approvals as $app)
+                @php
+                    $apprSigBase64 = null;
+                    if (optional($app->approver)->signature) {
+                        $path = public_path('storage/' . $app->approver->signature);
+                        if (file_exists($path)) {
+                            $ext = pathinfo($path, PATHINFO_EXTENSION);
+                            $apprSigBase64 = 'data:image/' . $ext . ';base64,' . base64_encode(file_get_contents($path));
+                        }
+                    }
+
+                    $roleName = optional($app->role)->name ?? 'Atasan';
+                    $approverName = '.................................';
+                    if ($app->status == 'APPROVED' || $app->status == 'REJECTED') {
+                        $approverName = optional($app->approver)->name ?? 'Nama Tidak Terdata';
+                    } else {
+                        $potentialUsers = \App\Models\User::role($roleName);
+                        if (!empty($app->target_department_id) && $app->target_department_id !== 'all') { $potentialUsers->where('department_id', $app->target_department_id); }
+                        $firstUser = $potentialUsers->first();
+                        if ($firstUser) $approverName = $firstUser->name;
+                    }
+                @endphp
                 <td style="width: {{ $tdWidth }}; vertical-align: bottom;">
                     <div style="margin-bottom: 5px;"><strong>Disetujui Oleh,</strong></div>
-
-                    {{-- KOTAK TTD APPROVER --}}
                     <div style="height: 65px; padding-top: 5px;">
-                        @if($isDigital)
+                        @if($printType == 'digital')
                             @if(in_array(strtolower(optional($po->status)->slug), ['canceled', 'cancelled']))
                                 <span style="color: #dc3545; border: 2px solid #dc3545; padding: 3px 8px; font-weight: bold; display: inline-block; margin-top: 15px; letter-spacing: 1px;">VOID</span>
                             @elseif($app->status === 'APPROVED')
-                                @php
-                                    $apprSigBase64 = null;
-                                    if (optional($app->approver)->signature) {
-                                        $path = public_path('storage/' . $app->approver->signature);
-                                        if (file_exists($path)) {
-                                            $ext = pathinfo($path, PATHINFO_EXTENSION);
-                                            $apprSigBase64 = 'data:image/' . $ext . ';base64,' . base64_encode(file_get_contents($path));
-                                        }
-                                    }
-                                @endphp
-
-                                @if($apprSigBase64)
-                                    <img src="{{ $apprSigBase64 }}" class="signature-img">
-                                @else
-                                    <span style="color: #0d6efd; border: 2px solid #0d6efd; padding: 3px 8px; font-weight: bold; display: inline-block; margin-top: 15px; letter-spacing: 1px;">APPROVED</span>
-                                @endif
+                                @if($apprSigBase64) <img src="{{ $apprSigBase64 }}" class="signature-img"> @else <span style="color: #0d6efd; border: 2px solid #0d6efd; padding: 3px 8px; font-weight: bold; display: inline-block; margin-top: 15px; letter-spacing: 1px;">APPROVED</span> @endif
                             @elseif($app->status === 'REJECTED')
                                 <span style="color: #dc3545; border: 2px solid #dc3545; padding: 3px 8px; font-weight: bold; display: inline-block; margin-top: 15px; letter-spacing: 1px;">REJECTED</span>
                             @else
                                 <span style="color: #aaa; border: 2px dashed #aaa; padding: 3px 8px; font-weight: bold; display: inline-block; margin-top: 15px; letter-spacing: 1px;">PENDING</span>
                             @endif
+                        @elseif($printType == 'hybrid')
+                            @if($app->status === 'APPROVED' && $apprSigBase64)
+                                <img src="{{ $apprSigBase64 }}" class="signature-img">
+                            @endif
                         @endif
                     </div>
-
-                    @php
-                        $roleName = optional($app->role)->name ?? 'Atasan';
-                        $approverName = '.................................'; // Default untuk versi Manual / Belum Approve
-
-                        // Coba nebak nama manager dari role & departemen terkait (Pre-fill name)
-                        $potentialUsers = \App\Models\User::role($roleName);
-                        if (!empty($app->target_department_id) && $app->target_department_id !== 'all') {
-                            $potentialUsers->where('department_id', $app->target_department_id);
-                        }
-                        $firstUser = $potentialUsers->first();
-                        
-                        if ($app->status === 'APPROVED' || $app->status === 'REJECTED') {
-                            $approverName = optional($app->approver)->name ?? 'Nama Tidak Terdata';
-                        } elseif ($firstUser) {
-                            $approverName = $firstUser->name;
-                        }
-                    @endphp
-
                     <div style="margin-bottom: 2px;"><u><strong>{{ $approverName }}</strong></u></div>
                     <div style="font-size: 8pt; color: #555;">{{ $roleName }}</div>
-                    
-                    @if($isDigital && in_array($app->status, ['APPROVED', 'REJECTED']))
-                        <div style="font-size: 7pt; color: #555;">{{ \Carbon\Carbon::parse($app->approved_at)->format('d/m/Y') }}</div>
-                    @else
-                        <div style="font-size: 7pt; color: #555;">Tgl: .....................</div>
-                    @endif
+                    <div style="font-size: 7pt; color: #555;">{{ ($printType == 'digital' && in_array($app->status, ['APPROVED', 'REJECTED'])) || ($printType == 'hybrid' && $app->status === 'APPROVED' && $apprSigBase64) ? \Carbon\Carbon::parse($app->approved_at)->format('d/m/Y') : 'Tgl: .....................' }}</div>
                 </td>
             @endforeach
 
