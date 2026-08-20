@@ -678,6 +678,13 @@ Route::middleware('auth')->group(function () {
 
         // Cetak Rekap (Statement) pakai slug Tagihan
         Route::get('/statement/print/{slug}', [BillPaymentController::class, 'printStatement'])->name('statement.print')->where('slug', '.*');
+
+
+        // 🔥 RUTE CETAK BPR UNTUK OPEX 🔥
+        Route::get('/print-bpr/{slug}', [BillPaymentController::class, 'printBpr'])->name('print_bpr')->where('slug', '.*');
+        Route::get('/print-bpr-detail/{slug}', [BillPaymentController::class, 'printBprDetail'])->name('print_bpr_detail')->where('slug', '.*');
+        Route::get('/print-bpr-attachments/{slug}', [BillPaymentController::class, 'printBprWithAttachments'])->name('print_bpr_attachments')->where('slug', '.*');
+        
     });
 
 

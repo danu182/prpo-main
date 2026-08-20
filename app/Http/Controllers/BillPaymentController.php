@@ -432,4 +432,165 @@ class BillPaymentController extends Controller
                 ->header('Content-Disposition', 'inline; filename="' . $filename . '"');
     }
 
+
+
+
+    // =========================================================================
+    // CETAK BPR STANDAR (RINGKAS)
+    // =========================================================================
+    public function printBpr(Request $request, $slug)
+    {
+        $type = $request->query('type', 'digital');
+
+        // 🔥 PERBAIKAN: Hapus eager load 'approvals' karena belum ada di Model BillRequest
+        $bill = \App\Models\BillRequest::with(['items', 'company', 'user', 'payments'])
+            ->where('bill_number', $slug)->firstOrFail();
+
+        $pdf = \Barryvdh\DomPDF\Facade\Pdf::loadView('payments.print_bpr', compact('bill', 'type'))
+                ->setPaper('A4', 'portrait');
+
+        $prefix = $type === 'manual' ? 'Manual_' : 'Digital_';
+        return $pdf->stream('BPR_OPEX_' . $prefix . str_replace(['/', '\\'], '_', $bill->bill_number) . '.pdf');
+    }
+
+    // =========================================================================
+    // CETAK BPR DETAIL (BIAYA & DISKON)
+    // =========================================================================
+    public function printBprDetail(Request $request, $slug)
+    {
+        $type = $request->query('type', 'digital');
+
+        // 🔥 PERBAIKAN: Hapus eager load 'approvals' karena belum ada di Model BillRequest
+        $bill = \App\Models\BillRequest::with(['items', 'company', 'user', 'payments', 'charges', 'discounts'])
+            ->where('bill_number', $slug)->firstOrFail();
+
+        $pdf = \Barryvdh\DomPDF\Facade\Pdf::loadView('payments.print_bpr_detail', compact('bill', 'type'))
+                ->setPaper('A4', 'portrait');
+
+        $prefix = $type === 'manual' ? 'Manual_' : 'Digital_';
+        return $pdf->stream('BPR_OPEX_Detail_' . $prefix . str_replace(['/', '\\'], '_', $bill->bill_number) . '.pdf');
+    }
+
+    
+    // =========================================================================
+    // CETAK BPR + LAMPIRAN (SMART MERGER SUPER OPEX)
+    // =========================================================================
+    public function printBprWithAttachments(Request $request, $slug)
+    {
+        $type = $request->query('type', 'digital');
+        $format = $request->query('format', 'standar'); // standar / detail
+
+        // 🔥 PERBAIKAN FINAL: Hapus 'approvals.role' dan 'approvals.approver' dari query with()
+        if ($format == 'detail') {
+            $bill = \App\Models\BillRequest::with(['items', 'company', 'user', 'payments', 'charges', 'discounts', 'media'])
+                ->where('bill_number', $slug)->firstOrFail();
+            $pdf = \Barryvdh\DomPDF\Facade\Pdf::loadView('payments.print_bpr_detail', compact('bill', 'type'))->setPaper('A4', 'portrait');
+            $fileNamePrefix = 'BPR_OPEX_Detail_';
+        } else {
+            $bill = \App\Models\BillRequest::with(['items', 'company', 'user', 'payments', 'media'])
+                ->where('bill_number', $slug)->firstOrFail();
+            $pdf = \Barryvdh\DomPDF\Facade\Pdf::loadView('payments.print_bpr', compact('bill', 'type'))->setPaper('A4', 'portrait');
+            $fileNamePrefix = 'BPR_OPEX_Standar_';
+        }
+
+        $tempDir = storage_path('app/public/temp_pdf');
+        if (!file_exists($tempDir)) mkdir($tempDir, 0777, true);
+
+        $tempMainPdfPath = $tempDir . '/temp_opex_bpr_' . uniqid() . '.pdf';
+        file_put_contents($tempMainPdfPath, $pdf->output());
+
+        $oMerger = \Webklex\PDFMerger\Facades\PDFMergerFacade::init();
+        $oMerger->addPDF($tempMainPdfPath, 'all');
+        $tempFilesToDelete = [$tempMainPdfPath];
+        
+        $totalLampiran = 0;
+        $allFiles = [];
+
+        // 1. TARIK LAMPIRAN DARI SPATIE MEDIA LIBRARY (UTAMA)
+        if ($bill->media && $bill->media->count() > 0) {
+            foreach ($bill->media as $media) {
+                if (method_exists($media, 'getPath')) {
+                    $allFiles[] = ['path' => $media->getPath(), 'name' => $media->file_name];
+                } else {
+                    $allFiles[] = ['path' => storage_path('app/public/' . ltrim($media->id . '/' . $media->file_name, '/')), 'name' => $media->file_name];
+                }
+            }
+        }
+
+        // 2. TARIK LAMPIRAN DARI TABEL CUSTOM (FALLBACK JIKA ADA)
+        if (\Illuminate\Support\Facades\Schema::hasTable('bill_attachments')) {
+            $dbAttachments = \DB::table('bill_attachments')->where('bill_request_id', $bill->id)->get();
+            foreach ($dbAttachments as $att) {
+                $allFiles[] = ['path' => storage_path('app/public/' . ltrim($att->file_path, '/')), 'name' => $att->file_name ?? 'Lampiran'];
+            }
+        }
+
+        // 3. TARIK BUKTI TRANSFER/PEMBAYARAN KASIR (BONUS OTOMATIS)
+        $paymentAttachments = \DB::table('payment_attachments')->whereIn('bill_payment_id', $bill->payments->pluck('id')->toArray())->get();
+        foreach ($paymentAttachments as $att) {
+            $allFiles[] = ['path' => storage_path('app/public/' . ltrim($att->file_path, '/')), 'name' => 'Bukti_Transfer_' . ($att->file_name ?? '')];
+        }
+
+        // PROSES PENGGABUNGAN SEMUA FILE
+        if (count($allFiles) > 0) {
+            foreach ($allFiles as $file) {
+                $finalFilePath = $file['path'];
+                $fileName = $file['name'];
+
+                if (file_exists($finalFilePath)) {
+                    $totalLampiran++;
+                    $extension = strtolower(pathinfo($finalFilePath, PATHINFO_EXTENSION));
+
+                    if ($extension === 'pdf') {
+                        try {
+                            $fpdi = new \setasign\Fpdi\Fpdi();
+                            $fpdi->setSourceFile($finalFilePath);
+                            $oMerger->addPDF($finalFilePath, 'all');
+                        } catch (\Exception $e) { 
+                             // Jika PDF Terkunci / Enkripsi
+                             $html = "<div style='border:2px solid #0d6efd; padding:20px; text-align:center; font-family:sans-serif; margin-top:50px;'>
+                                        <h2 style='color:#0d6efd;'>📄 LAMPIRAN PDF (TERENKRIPSI/TERKOMPRESI)</h2>
+                                        <p>File pendukung bernama: <b>{$fileName}</b></p>
+                                        <p>File ini menggunakan format PDF terkunci yang tidak bisa digabungkan secara otomatis oleh sistem.</p>
+                                     </div>";
+                             $infoPdf = \Barryvdh\DomPDF\Facade\Pdf::loadHTML($html)->setPaper('a4', 'portrait');
+                             $infoPath = $tempDir . '/info_' . uniqid() . '.pdf';
+                             file_put_contents($infoPath, $infoPdf->output());
+                             $oMerger->addPDF($infoPath, 'all');
+                             $tempFilesToDelete[] = $infoPath;
+                        }
+                    } elseif (in_array($extension, ['jpg', 'jpeg', 'png'])) {
+                        // Ubah Gambar jadi Halaman PDF
+                        $imgPdf = \Barryvdh\DomPDF\Facade\Pdf::loadHTML("<html><body style='margin:0;text-align:center;'><img src='data:" . mime_content_type($finalFilePath) . ";base64," . base64_encode(file_get_contents($finalFilePath)) . "' style='max-width:100%;'></body></html>")->setPaper('a4', 'portrait');
+                        $imgTempPath = $tempDir . '/img_' . uniqid() . '.pdf';
+                        file_put_contents($imgTempPath, $imgPdf->output());
+                        $oMerger->addPDF($imgTempPath, 'all');
+                        $tempFilesToDelete[] = $imgTempPath;
+                    }
+                }
+            }
+        }
+
+        // JIKA TETAP KOSONG
+        if ($totalLampiran === 0) {
+            $noDataPdf = \Barryvdh\DomPDF\Facade\Pdf::loadHTML("<div style='border: 2px solid orange; padding: 20px; font-family: sans-serif; text-align:center; margin-top:50px;'><h2 style='color: orange;'>⚠️ INFO SISTEM ⚠️</h2><p>TIDAK ADA DATA LAMPIRAN (Dokumen atau Bukti Transfer) untuk Tagihan ini.</p></div>")->setPaper('a4', 'portrait');
+            $noDataTempPath = $tempDir . '/err_nodata_' . uniqid() . '.pdf';
+            file_put_contents($noDataTempPath, $noDataPdf->output());
+            $oMerger->addPDF($noDataTempPath, 'all');
+            $tempFilesToDelete[] = $noDataTempPath;
+        }
+
+        $oMerger->merge();
+        $finalPdfOutput = $oMerger->output();
+
+        // Bersihkan Sampah Temporary
+        foreach ($tempFilesToDelete as $trashPath) {
+            if (file_exists($trashPath)) unlink($trashPath);
+        }
+
+        $prefix = $type === 'manual' ? 'Manual_' : 'Digital_';
+        return response($finalPdfOutput)->header('Content-Type', 'application/pdf')->header('Content-Disposition', 'inline; filename="' . $fileNamePrefix . $prefix . str_replace('/', '_', $bill->bill_number) . '.pdf"');
+    }
+
+
 }
