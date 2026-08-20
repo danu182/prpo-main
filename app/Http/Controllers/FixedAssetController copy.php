@@ -654,19 +654,70 @@ class FixedAssetController extends Controller
         return response()->json($formattedItems);
     }
 
-    public function hibahHistory()
-    {
-        $hibahs = \App\Models\FixedAsset::select(
-                'batch_id', 'created_at', 'supporting_document', 'notes',
-                \DB::raw('COUNT(id) as total_items'),
-                \DB::raw('MAX(name) as sample_name')
-            )
-            ->where('batch_id', 'like', 'HIBAH-%')
-            ->groupBy('batch_id', 'created_at', 'supporting_document', 'notes')
-            ->orderBy('created_at', 'desc')
-            ->paginate(10);
+    // public function hibahHistory()
+    // {
+    //     $hibahs = \App\Models\FixedAsset::select(
+    //             'batch_id', 'created_at', 'supporting_document', 'notes',
+    //             \DB::raw('COUNT(id) as total_items'),
+    //             \DB::raw('MAX(name) as sample_name')
+    //         )
+    //         ->where('batch_id', 'like', 'HIBAH-%')
+    //         ->groupBy('batch_id', 'created_at', 'supporting_document', 'notes')
+    //         ->orderBy('created_at', 'desc')
+    //         ->paginate(10);
 
-        return view('fixed_assets.hibah_history', compact('hibahs'));
+    //     return view('fixed_assets.hibah_history', compact('hibahs'));
+    // }
+
+
+    public function hibahHistory(\Illuminate\Http\Request $request)
+    {
+        $search = $request->input('search');
+        $status = $request->input('status');
+
+        // 1. Fokus pencarian hanya pada aset yang diinput manual (HIBAH)
+        $baseQuery = \App\Models\FixedAsset::where('batch_id', 'like', 'HIBAH-%');
+
+        // 2. Kalkulasi Data untuk 4 Kotak KPI di Header
+        $totalAssets = (clone $baseQuery)->count();
+        $inUse = (clone $baseQuery)->whereHas('status', function($q) { $q->where('slug', 'in_use'); })->count();
+        $inWarehouse = (clone $baseQuery)->whereHas('status', function($q) { $q->whereIn('slug', ['available', 'returned']); })->count();
+        $totalValue = (clone $baseQuery)->sum('purchase_price');
+
+        // 3. Logika Filter Pencarian Universal
+        if ($search) {
+            $baseQuery->where(function($q) use ($search) {
+                $q->where('asset_number', 'like', "%{$search}%")
+                  ->orWhere('serial_number', 'like', "%{$search}%")
+                  ->orWhere('name', 'like', "%{$search}%")
+                  ->orWhereHas('assignee', function($userQ) use ($search) {
+                      $userQ->where('name', 'like', "%{$search}%");
+                  });
+            });
+        }
+
+        // 4. Logika Filter Status Aset
+        if ($status) {
+            if ($status == 'in_use') {
+                $baseQuery->whereHas('status', function($q) { $q->where('slug', 'in_use'); });
+            } elseif ($status == 'in_warehouse') {
+                $baseQuery->whereHas('status', function($q) { $q->whereIn('slug', ['available', 'returned']); });
+            }
+        }
+
+        // 5. Ambil Data untuk Tabel Lengkap dengan Relasinya
+        $assets = $baseQuery->with(['item.category', 'company', 'status', 'assignee.department', 'warehouse'])
+                            ->latest()
+                            ->paginate(15)
+                            ->withQueryString();
+        
+        // 6. Hitung Nilai Buku hanya untuk halaman yang sedang aktif
+        $totalCurrentValue = collect($assets->items())->sum('purchase_price');
+
+        // 7. Lempar semua variabel ke View Blade Komandan
+        return view('fixed_assets.hibah_history', compact(
+            'assets', 'search', 'totalAssets', 'inUse', 'inWarehouse', 'totalValue', 'totalCurrentValue'
+        ));
     }
 
 

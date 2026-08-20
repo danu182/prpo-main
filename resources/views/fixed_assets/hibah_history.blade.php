@@ -56,14 +56,61 @@
 @endpush
 
 @section('content')
+
+{{-- 🔥 MESIN PINTAR: MENGHITUNG OTOMATIS DATA ASET HIBAH AGAR TIDAK ERROR 🔥 --}}
+@php
+    $search = request('search');
+    $status = request('status');
+
+    // Fokus hanya pada aset Hibah
+    $baseQuery = \App\Models\FixedAsset::where('batch_id', 'like', 'HIBAH-%');
+
+    // Kalkulasi KPI
+    $totalAssets = (clone $baseQuery)->count();
+    $inUse = (clone $baseQuery)->whereHas('status', function($q) { $q->where('slug', 'in_use'); })->count();
+    $inWarehouse = (clone $baseQuery)->whereHas('status', function($q) { $q->whereIn('slug', ['available', 'returned']); })->count();
+    $totalValue = (clone $baseQuery)->sum('purchase_price');
+
+    // Filter Pencarian
+    if ($search) {
+        $baseQuery->where(function($q) use ($search) {
+            $q->where('asset_number', 'like', "%{$search}%")
+              ->orWhere('serial_number', 'like', "%{$search}%")
+              ->orWhere('name', 'like', "%{$search}%")
+              ->orWhereHas('assignee', function($userQ) use ($search) {
+                  $userQ->where('name', 'like', "%{$search}%");
+              });
+        });
+    }
+
+    // Filter Status
+    if ($status) {
+        if ($status == 'in_use') {
+            $baseQuery->whereHas('status', function($q) { $q->where('slug', 'in_use'); });
+        } elseif ($status == 'in_warehouse') {
+            $baseQuery->whereHas('status', function($q) { $q->whereIn('slug', ['available', 'returned']); });
+        }
+    }
+
+    // Ambil Data Pagination
+    $assets = $baseQuery->with(['item.category', 'company', 'status', 'assignee.department', 'warehouse'])
+                        ->latest()
+                        ->paginate(15)
+                        ->withQueryString();
+
+    $totalCurrentValue = collect($assets->items())->sum('purchase_price');
+@endphp
+{{-- 🔥 MESIN PINTAR SELESAI 🔥 --}}
+
+
 {{-- 🔥 FULL WIDTH CONTAINER 🔥 --}}
 <div class="pb-5 container-fluid px-md-4">
 
     {{-- 1. HEADER --}}
     <div class="mb-4 d-flex flex-column flex-md-row justify-content-between align-items-md-center">
         <div>
-            <h3 class="mb-0 fw-bold text-dark"><i class="bi bi-hdd-network text-primary me-2"></i>Laporan Induk Aset</h3>
-            <p class="mt-1 mb-0 text-muted small">Manajemen inventaris IT, riwayat pengguna, departemen, dan nilai perolehan.</p>
+            <h3 class="mb-0 fw-bold text-dark"><i class="bi bi-hdd-network text-primary me-2"></i>Laporan Induk Aset (Hibah)</h3>
+            <p class="mt-1 mb-0 text-muted small">Manajemen inventaris IT, riwayat pengguna, departemen, dan nilai perolehan khusus Aset Hibah.</p>
         </div>
         <div class="gap-2 mt-3 mt-md-0 d-flex">
             <a href="{{ route('fixed-assets.master_list_export', request()->all()) }}" class="border shadow-sm btn btn-light fw-bold text-success">
@@ -120,7 +167,7 @@
     {{-- 3. FILTER PENCARIAN DINAMIS --}}
     <div class="mb-4 border-0 shadow-sm card rounded-4">
         <div class="p-3 border card-body bg-light rounded-4 border-secondary-subtle">
-            <form action="{{ route('fixed-assets.master_list') }}" method="GET" class="row g-2 align-items-end">
+            <form action="{{ route('fixed-assets.hibah_history') }}" method="GET" class="row g-2 align-items-end">
                 <div class="col-md-3">
                     <label class="form-label small fw-bold text-dark">Status Keberadaan Aset</label>
                     <select name="status" class="form-select border-secondary-subtle">
