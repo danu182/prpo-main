@@ -54,27 +54,79 @@
         @endphp
 
         <div class="flex-wrap gap-2 d-flex">
-            {{-- 1. TOMBOL CETAK PO & BPR --}}
-            @if(in_array($statusSlug, ['approved', 'issued', 'partial_receipt', 'partial_received', 'fully_received', 'completed']))
-                <a href="{{ route('po.print', $po->po_number) }}" target="_blank" class="px-4 shadow-sm btn btn-dark rounded-pill fw-bold">
-                    <i class="bi bi-printer-fill me-1"></i> Cetak PO
-                </a>
-                
-                <div class="dropdown d-inline-block">
-                    <button class="shadow-sm btn btn-success rounded-pill fw-bold dropdown-toggle" type="button" data-bs-toggle="dropdown">
-                        <i class="bi bi-bank me-1"></i> Cetak Form BPR
+            {{-- 🔥 MEGA DROPDOWN: 12 PILIHAN MENU CETAK PO & BPR 🔥 --}}
+            @if(!in_array($statusSlug, ['rejected', 'canceled', 'cancelled']))
+                <div class="shadow-sm btn-group">
+                    <button class="btn btn-dark fw-bold rounded-start-pill" type="button" style="pointer-events: none;">
+                        <i class="bi bi-printer me-1"></i> Opsi Cetak Dokumen
                     </button>
-                    <ul class="border-0 shadow-lg dropdown-menu rounded-3">
-                        <li>
-                            <a class="dropdown-item fw-bold py-2" href="{{ route('po.print_bpr_attachments', $po->po_number) }}" target="_blank">
-                                <i class="bi bi-file-earmark-text me-2 text-secondary"></i> BPR Standar (Ringkas)
-                            </a>
-                        </li>
-                        <li>
-                            <a class="dropdown-item fw-bold py-2 text-primary" href="{{ route('po.print_bpr_detail', $po->po_number) }}" target="_blank">
-                                <i class="bi bi-list-columns-reverse me-2"></i> BPR Detail (Rincian Biaya)
-                            </a>
-                        </li>
+                    <button type="button" class="btn btn-dark dropdown-toggle dropdown-toggle-split rounded-end-pill px-3" data-bs-toggle="dropdown" aria-expanded="false">
+                        <span class="visually-hidden">Toggle Dropdown</span>
+                    </button>
+                    
+                    <ul class="mt-2 border-0 shadow-lg dropdown-menu dropdown-menu-end" style="width: 420px; max-height: 80vh; overflow-y: auto;">
+                        
+                        {{-- ================= OPSI 1: DIGITAL ================= --}}
+                        <li><h6 class="dropdown-header text-primary fw-bold fs-6"><i class="bi bi-laptop me-1"></i> VERSI DIGITAL (TTD OTOMATIS)</h6></li>
+                        
+                        <li><a class="py-2 dropdown-item fw-medium" href="{{ route('po.print', ['slug' => $po->po_number, 'type' => 'digital']) }}" target="_blank">
+                            <i class="bi bi-file-earmark text-primary me-2"></i> Cetak PO
+                        </a></li>
+                        <li><a class="py-2 dropdown-item fw-medium" href="{{ route('po.print_complete', ['slug' => $po->po_number, 'type' => 'digital']) }}" target="_blank">
+                            <i class="bi bi-file-earmark-plus text-primary me-2"></i> Cetak PO + Lampiran
+                        </a></li>
+                        
+                        <li><hr class="dropdown-divider my-1"></li>
+                        
+                        <li><a class="py-2 dropdown-item fw-medium" href="{{ route('po.print_bpr', ['slug' => $po->po_number, 'type' => 'digital']) }}" target="_blank">
+                            <i class="bi bi-grid-1x2 text-success me-2"></i> Cetak BPR Standar (Global)
+                        </a></li>
+                        <li><a class="py-2 dropdown-item fw-medium" href="{{ route('po.print_bpr_standar_attachments', ['slug' => $po->po_number, 'type' => 'digital']) }}" target="_blank">
+                            <i class="bi bi-grid-1x2-fill text-success me-2"></i> Cetak BPR Standar (Global) + Lampiran
+                        </a></li>
+                        
+                        <li><hr class="dropdown-divider my-1"></li>
+                        
+                        <li><a class="py-2 dropdown-item fw-medium text-wrap lh-sm" href="{{ route('po.print_bpr_detail', ['slug' => $po->po_number, 'type' => 'digital']) }}" target="_blank">
+                            <i class="bi bi-list-columns-reverse text-warning-emphasis me-2"></i> Cetak BPR Detail<br>
+                            <span class="text-muted small ms-4" style="font-size: 0.75rem;">(Rincian Pajak, Diskon & Biaya)</span>
+                        </a></li>
+                        <li><a class="py-2 dropdown-item fw-medium text-wrap lh-sm" href="{{ route('po.print_bpr_attachments', ['slug' => $po->po_number, 'type' => 'digital']) }}" target="_blank">
+                            <i class="bi bi-collection text-warning-emphasis me-2"></i> Cetak BPR Detail + Lampiran<br>
+                            <span class="text-muted small ms-4" style="font-size: 0.75rem;">(Rincian Pajak, Diskon & Biaya)</span>
+                        </a></li>
+                        
+                        <li><hr class="dropdown-divider border-3 border-dark opacity-10 my-2"></li>
+                        
+                        {{-- ================= OPSI 2: MANUAL ================= --}}
+                        <li><h6 class="dropdown-header text-danger fw-bold fs-6"><i class="bi bi-pen me-1"></i> VERSI MANUAL (TTD BASAH)</h6></li>
+                        
+                        <li><a class="py-2 dropdown-item fw-medium" href="{{ route('po.print', ['slug' => $po->po_number, 'type' => 'manual']) }}" target="_blank">
+                            <i class="bi bi-file-earmark text-danger me-2"></i> Cetak PO
+                        </a></li>
+                        <li><a class="py-2 dropdown-item fw-medium" href="{{ route('po.print_complete', ['slug' => $po->po_number, 'type' => 'manual']) }}" target="_blank">
+                            <i class="bi bi-file-earmark-plus text-danger me-2"></i> Cetak PO + Lampiran
+                        </a></li>
+                        
+                        <li><hr class="dropdown-divider my-1"></li>
+                        
+                        <li><a class="py-2 dropdown-item fw-medium" href="{{ route('po.print_bpr', ['slug' => $po->po_number, 'type' => 'manual']) }}" target="_blank">
+                            <i class="bi bi-grid-1x2 text-danger me-2"></i> Cetak BPR Standar (Global)
+                        </a></li>
+                        <li><a class="py-2 dropdown-item fw-medium" href="{{ route('po.print_bpr_standar_attachments', ['slug' => $po->po_number, 'type' => 'manual']) }}" target="_blank">
+                            <i class="bi bi-grid-1x2-fill text-danger me-2"></i> Cetak BPR Standar (Global) + Lampiran
+                        </a></li>
+                        
+                        <li><hr class="dropdown-divider my-1"></li>
+                        
+                        <li><a class="py-2 dropdown-item fw-medium text-wrap lh-sm" href="{{ route('po.print_bpr_detail', ['slug' => $po->po_number, 'type' => 'manual']) }}" target="_blank">
+                            <i class="bi bi-list-columns-reverse text-danger me-2"></i> Cetak BPR Detail<br>
+                            <span class="text-muted small ms-4" style="font-size: 0.75rem;">(Rincian Pajak, Diskon & Biaya)</span>
+                        </a></li>
+                        <li><a class="py-2 dropdown-item fw-medium text-wrap lh-sm" href="{{ route('po.print_bpr_attachments', ['slug' => $po->po_number, 'type' => 'manual']) }}" target="_blank">
+                            <i class="bi bi-collection text-danger me-2"></i> Cetak BPR Detail + Lampiran<br>
+                            <span class="text-muted small ms-4" style="font-size: 0.75rem;">(Rincian Pajak, Diskon & Biaya)</span>
+                        </a></li>
                     </ul>
                 </div>
             @endif
@@ -277,7 +329,7 @@
                             </button>
                         @endif
                     </div>
-                    
+
                     <div class="p-3 border small text-muted rounded-3 h-100 bg-light position-relative">
                         <strong>Mata Uang:</strong> {{ $po->currency ?? 'IDR' }}<br>
                         <strong>Termin:</strong> {{ $po->payment_terms ?? '-' }}<br>
@@ -319,15 +371,6 @@
                                 </form>
                             </div>
                         </div>
-                    </div>
-                </div>
-                
-                <div class="col-sm-3">
-                    <h6 class="mb-3 fw-bold text-muted text-uppercase"><i class="bi bi-info-circle me-1"></i> Detail Pembayaran:</h6>
-                    <div class="p-3 border small text-muted rounded-3 h-100 bg-light">
-                        <strong>Mata Uang:</strong> {{ $po->currency ?? 'IDR' }}<br>
-                        <strong>Termin:</strong> {{ $po->payment_terms ?? '-' }}<br>
-                        <strong>Estimasi Tiba:</strong> {{ $po->delivery_date ? \Carbon\Carbon::parse($po->delivery_date)->format('d M Y') : 'TBD' }}
                     </div>
                 </div>
             </div>
@@ -795,7 +838,7 @@
         <div class="card-body">
             <div class="mt-2 timeline ps-3">
                 @if(isset($po->histories) && $po->histories->count() > 0)
-                    @foreach($po->histories as $log)
+                    @foreach($po->histories->sortByDesc('created_at') as $log)
                         <div class="pb-4 border-2 border-opacity-25 position-relative timeline-item border-start border-primary ps-4">
                             <span class="top-0 border border-2 border-white position-absolute start-0 translate-middle bg-primary rounded-circle" style="width: 14px; height: 14px;"></span>
 

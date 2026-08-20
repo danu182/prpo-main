@@ -904,20 +904,8 @@ class BillRequestController extends Controller
         return $pdf->stream('Tagihan_Opex_' . str_replace('/', '_', $bill->bill_number) . '.pdf');
     }
 
-    // untuk print BPR
-    public function prinBpr($slug)
-    {
-        // Pastikan relasi user dan company terpanggil agar nama PT dan nama Requester muncul
-        $bill = \App\Models\BillRequest::with(['items', 'user', 'company'])->where('bill_number', $slug)->firstOrFail();
 
-        $pdf = \Barryvdh\DomPDF\Facade\Pdf::loadView('bills.pdf_bpr', compact('bill'))
-                ->setPaper('a4', 'portrait');
 
-        // 🔥 PERBAIKAN: Ganti karakter '/' menjadi '_' agar tidak ditolak oleh sistem sebagai folder
-        $safeFilename = 'BPR_' . str_replace('/', '_', $bill->bill_number) . '.pdf';
-
-        return $pdf->stream($safeFilename);
-    }
 
     public function destroyAttachment($slug, $attachmentId)
     {
@@ -1145,38 +1133,64 @@ class BillRequestController extends Controller
 
 
     // =========================================================================
+    // CETAK BPR BIASA (TANPA MERGE PDF)
+    // =========================================================================
+    public function prinBpr(\Illuminate\Http\Request $request, $slug)
+    {
+        // 1. Deteksi URL, defaultnya pakai digital jika tidak ada parameter
+        $type = $request->query('type', 'digital');
+        $viewTemplate = $type === 'manual' ? 'bills.pdf_bpr_manual' : 'bills.pdf_bpr_digital';
+
+        $bill = \App\Models\BillRequest::with(['items', 'user', 'company'])->where('bill_number', $slug)->firstOrFail();
+
+        $attachments = \DB::table('bill_attachments')->where('bill_request_id', $bill->id)->get();
+
+        // 2. Load View secara dinamis berdasarkan pilihan
+        $pdf = \Barryvdh\DomPDF\Facade\Pdf::loadView($viewTemplate, compact('bill', 'attachments'))
+                ->setPaper('a4', 'portrait');
+
+        $safeFilename = 'BPR_' . ucfirst($type) . '_' . str_replace(['/', '\\'], '_', $bill->bill_number) . '.pdf';
+
+        return $pdf->stream($safeFilename);
+    }
+
+    // =========================================================================
     // CETAK BPR LENGKAP DENGAN LAMPIRAN (SMART MERGE / ANTI-BADAI)
     // =========================================================================
-    public function printBprWithAttachments($slug)
+    public function printBprWithAttachments(\Illuminate\Http\Request $request, $slug)
     {
+        // 1. Deteksi URL
+        $type = $request->query('type', 'digital');
+        $viewTemplate = $type === 'manual' ? 'bills.pdf_bpr_manual' : 'bills.pdf_bpr_digital';
+
         $bill = \App\Models\BillRequest::with([
             'items', 'company', 'user', 'charges.chargeType', 'discounts.discountType'
         ])->where('bill_number', $slug)->firstOrFail();
 
-        // 1. RENDER DOMPDF MENGGUNAKAN TEMPLATE BPR
+        // 2. RENDER DOMPDF MENGGUNAKAN TEMPLATE DINAMIS
         $attachments = \DB::table('bill_attachments')->where('bill_request_id', $bill->id)->get();
-        $pdf = \Barryvdh\DomPDF\Facade\Pdf::loadView('bills.pdf_bpr', compact('bill', 'attachments'))
+        $pdf = \Barryvdh\DomPDF\Facade\Pdf::loadView($viewTemplate, compact('bill', 'attachments'))
                 ->setPaper('A4', 'portrait');
 
-        // 2. SIAPKAN FOLDER SEMENTARA
+        // 3. SIAPKAN FOLDER SEMENTARA
         $tempDir = storage_path('app/public/temp_pdf');
         if (!file_exists($tempDir)) {
             mkdir($tempDir, 0777, true);
         }
 
-        // 3. SIMPAN HASIL DOMPDF UTAMA
+        // 4. SIMPAN HASIL DOMPDF UTAMA
         $tempMainPdfName = 'main_bpr_' . $bill->id . '_' . time() . '.pdf';
         $tempMainPdfPath = $tempDir . '/' . $tempMainPdfName;
         file_put_contents($tempMainPdfPath, $pdf->output());
 
-        // 4. INISIASI MESIN PENGGABUNG PDF
+        // 5. INISIASI MESIN PENGGABUNG PDF
         $oMerger = \Webklex\PDFMerger\Facades\PDFMergerFacade::init();
         $oMerger->addPDF($tempMainPdfPath, 'all');
 
         $tempFilesToDelete = [$tempMainPdfPath];
         $totalLampiranDiDatabase = 0;
 
-        // 5. PROSES LAMPIRAN
+        // 6. PROSES LAMPIRAN (ANTI-BADAI FPDI)
         if ($attachments && $attachments->count() > 0) {
             $totalLampiranDiDatabase = $attachments->count();
 
@@ -1184,18 +1198,15 @@ class BillRequestController extends Controller
                 $cleanFilePath = ltrim($file->file_path, '/');
                 $finalFilePath = storage_path('app/public/' . $cleanFilePath);
 
-                // 🔥 JIKA FILE FISIK DITEMUKAN 🔥
                 if (file_exists($finalFilePath)) {
                     $extension = strtolower(pathinfo($finalFilePath, PATHINFO_EXTENSION));
 
-                    // A. PENANGANAN FILE PDF (DENGAN TRY-CATCH ANTI BADAI)
                     if ($extension === 'pdf') {
                         try {
                             $fpdi = new \setasign\Fpdi\Fpdi();
                             $fpdi->setSourceFile($finalFilePath);
                             $oMerger->addPDF($finalFilePath, 'all');
                         } catch (\Exception $e) {
-                            // Jika PDF terkompresi / terkunci, buat halaman info
                             $html = "<div style='border:2px solid #0d6efd; padding:20px; text-align:center; font-family:sans-serif; margin-top:50px;'>
                                         <h2 style='color:#0d6efd;'>📄 LAMPIRAN PDF (TERENKRIPSI/TERKOMPRESI)</h2>
                                         <p>File pendukung bernama: <b>{$file->file_name}</b></p>
@@ -1208,9 +1219,7 @@ class BillRequestController extends Controller
                             $oMerger->addPDF($infoPath, 'all');
                             $tempFilesToDelete[] = $infoPath;
                         }
-                    }
-                    // B. PENANGANAN FILE GAMBAR (UBAH KE PDF DULU SEBELUM DIGABUNG)
-                    elseif (in_array($extension, ['jpg', 'jpeg', 'png'])) {
+                    } elseif (in_array($extension, ['jpg', 'jpeg', 'png'])) {
                         $imageData = base64_encode(file_get_contents($finalFilePath));
                         $mime = mime_content_type($finalFilePath);
                         $base64Src = 'data:' . $mime . ';base64,' . $imageData;
@@ -1225,9 +1234,7 @@ class BillRequestController extends Controller
                         file_put_contents($imgTempPath, $imgPdf->output());
                         $oMerger->addPDF($imgTempPath, 'all');
                         $tempFilesToDelete[] = $imgTempPath;
-                    }
-                    // C. PENANGANAN FILE WORD / EXCEL / LAINNYA
-                    else {
+                    } else {
                         $html = "<div style='border:2px solid #198754; padding:20px; text-align:center; font-family:sans-serif; margin-top:50px;'>
                                     <h2 style='color:#198754;'>📎 LAMPIRAN BERKAS (".strtoupper($extension).")</h2>
                                     <p>File pendukung bernama: <b>{$file->file_name}</b></p>
@@ -1240,9 +1247,7 @@ class BillRequestController extends Controller
                         $oMerger->addPDF($infoPath, 'all');
                         $tempFilesToDelete[] = $infoPath;
                     }
-                }
-                // 🔥 JIKA FILE FISIK HILANG DARI SERVER 🔥
-                else {
+                } else {
                     $errorHtml = "<div style='border:2px solid red; padding:20px; text-align:center; font-family:sans-serif; margin-top:50px;'>
                                     <h2 style='color:red;'>⚠️ FILE FISIK HILANG ⚠️</h2>
                                     <p>Data lampiran <b>{$file->file_name}</b> tercatat di sistem, tapi file aslinya tidak ditemukan di server.</p>
@@ -1256,7 +1261,6 @@ class BillRequestController extends Controller
             }
         }
 
-        // JIKA DI DATABASE TIDAK ADA LAMPIRAN SAMA SEKALI
         if ($totalLampiranDiDatabase === 0) {
             $noDataHtml = "<div style='border: 2px solid orange; padding: 20px; font-family: sans-serif; text-align:center; margin-top:50px;'>
                             <h2 style='color: orange;'>⚠️ INFO SISTEM ⚠️</h2><p>TIDAK ADA DATA LAMPIRAN untuk Tagihan ini.</p></div>";
@@ -1267,18 +1271,17 @@ class BillRequestController extends Controller
             $tempFilesToDelete[] = $noDataTempPath;
         }
 
-        // 6. JAHIT SEMUA PDF MENJADI SATU KESATUAN
+        // 7. JAHIT SEMUA PDF MENJADI SATU KESATUAN
         $oMerger->merge();
         $finalPdfOutput = $oMerger->output();
 
-        // 7. BERSIHKAN FILE SEMENTARA
         foreach ($tempFilesToDelete as $trashPath) {
             if (file_exists($trashPath)) {
                 unlink($trashPath);
             }
         }
 
-        $filename = 'BPR_Lengkap_Dengan_Lampiran_' . str_replace('/', '_', $bill->bill_number) . '.pdf';
+        $filename = 'BPR_' . ucfirst($type) . '_Lampiran_' . str_replace(['/', '\\'], '_', $bill->bill_number) . '.pdf';
 
         return response($finalPdfOutput)
                 ->header('Content-Type', 'application/pdf')
@@ -1286,6 +1289,19 @@ class BillRequestController extends Controller
     }
 
 
+    // Fungsi Cetak Manual
+    public function printBprManual($slug) {
+        $bill = \App\Models\BillRequest::with(['items', 'user', 'company'])->where('bill_number', $slug)->firstOrFail();
+        $pdf = \Barryvdh\DomPDF\Facade\Pdf::loadView('bills.pdf_bpr_manual', compact('bill'))->setPaper('a4', 'portrait');
+        return $pdf->stream('BPR_Manual_' . str_replace('/', '_', $bill->bill_number) . '.pdf');
+    }
+
+    // Fungsi Cetak Digital (Otomatis)
+    public function printBprDigital($slug) {
+        $bill = \App\Models\BillRequest::with(['items', 'user', 'company'])->where('bill_number', $slug)->firstOrFail();
+        $pdf = \Barryvdh\DomPDF\Facade\Pdf::loadView('bills.pdf_bpr_digital', compact('bill'))->setPaper('a4', 'portrait');
+        return $pdf->stream('BPR_Digital_' . str_replace('/', '_', $bill->bill_number) . '.pdf');
+    }
 
 
 

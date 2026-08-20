@@ -37,32 +37,42 @@
                 </a>
             @endif
 
-            {{-- 🔥 TOMBOL CETAK DIPERBARUI: SPLIT DROPDOWN DENGAN BPR 🔥 --}}
+            {{-- 🔥 TOMBOL CETAK DIPERBARUI: 4 PILIHAN DINAMIS 🔥 --}}
             <div class="shadow-sm btn-group">
                 {{-- Tombol Utama (Kiri) --}}
                 <a href="{{ route('bills.print', $bill->bill_number) }}" target="_blank" class="btn btn-dark fw-bold rounded-start-pill">
-                    <i class="bi bi-printer me-1"></i> Cetak PDF Resmi
+                    <i class="bi bi-printer me-1"></i> Cetak Opex Standar
                 </a>
                 {{-- Tombol Panah Dropdown (Kanan) --}}
                 <button type="button" class="btn btn-dark dropdown-toggle dropdown-toggle-split rounded-end-pill" data-bs-toggle="dropdown" aria-expanded="false">
                     <span class="visually-hidden">Toggle Dropdown</span>
                 </button>
+
                 {{-- Menu Pilihan (Dropdown) --}}
                 <ul class="mt-2 border-0 shadow dropdown-menu dropdown-menu-end">
+                    <li><h6 class="dropdown-header text-primary fw-bold"><i class="bi bi-laptop"></i> Versi Digital (Otomatis)</h6></li>
                     <li>
-                        <a class="py-2 dropdown-item fw-medium" href="{{ route('bills.print_with_attachments', $bill->bill_number) }}" target="_blank">
-                            <i class="bi bi-file-earmark-plus text-primary me-2"></i> Cetak + Lampiran
-                        </a>
-                    </li>
-                    <li><hr class="dropdown-divider"></li>
-                    <li>
-                        <a class="py-2 dropdown-item fw-medium" href="{{ route('bills.prinBpr', $bill->bill_number) }}" target="_blank">
+                        <a class="py-2 dropdown-item fw-medium" href="{{ route('bills.prinBpr', ['slug' => $bill->bill_number, 'type' => 'digital']) }}" target="_blank">
                             <i class="bi bi-bank text-success me-2"></i> Cetak Form BPR
                         </a>
                     </li>
                     <li>
-                        <a class="py-2 dropdown-item fw-medium" href="{{ route('bills.printBprWithAttachments', $bill->bill_number) }}" target="_blank">
-                            <i class="bi bi-bank text-success me-2"></i> Cetak Form BPR + Lampiran
+                        <a class="py-2 dropdown-item fw-medium" href="{{ route('bills.printBprWithAttachments', ['slug' => $bill->bill_number, 'type' => 'digital']) }}" target="_blank">
+                            <i class="bi bi-file-earmark-plus text-primary me-2"></i> Cetak BPR + Lampiran
+                        </a>
+                    </li>
+
+                    <li><hr class="dropdown-divider"></li>
+
+                    <li><h6 class="dropdown-header text-danger fw-bold"><i class="bi bi-pen"></i> Versi Manual (Tanda Tangan Basah)</h6></li>
+                    <li>
+                        <a class="py-2 dropdown-item fw-medium" href="{{ route('bills.prinBpr', ['slug' => $bill->bill_number, 'type' => 'manual']) }}" target="_blank">
+                            <i class="bi bi-bank text-danger me-2"></i> Cetak Form BPR
+                        </a>
+                    </li>
+                    <li>
+                        <a class="py-2 dropdown-item fw-medium" href="{{ route('bills.printBprWithAttachments', ['slug' => $bill->bill_number, 'type' => 'manual']) }}" target="_blank">
+                            <i class="bi bi-file-earmark-plus text-danger me-2"></i> Cetak BPR + Lampiran
                         </a>
                     </li>
                 </ul>

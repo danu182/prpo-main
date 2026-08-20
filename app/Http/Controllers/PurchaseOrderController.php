@@ -1120,174 +1120,6 @@ class PurchaseOrderController extends Controller
     }
 
 
-    // =========================================================================
-    // CETAK PURCHASE ORDER (PDF)
-    // =========================================================================
-    public function printPdf($slug)
-    {
-        $po = \App\Models\PurchaseOrder::with([
-            'items.item.itemUoms',
-            'vendor',
-            'company',
-            'billToCompany',
-            'status',
-            'user',
-            'purchaseRequest.department',
-            'approvals.approver',
-            'approvals.role'
-        ])->where('po_number', $slug)->firstOrFail();
-
-        $charges = \DB::table('purchase_order_charges')->where('purchase_order_id', $po->id)->get();
-        $extraDiscounts = \DB::table('purchase_order_discounts')->where('purchase_order_id', $po->id)->get();
-
-        $hasBeenApproved = $po->approvals->where('status', 'APPROVED')->isNotEmpty();
-
-        $pdf = \Barryvdh\DomPDF\Facade\Pdf::loadView('po.print_pdf', compact('po', 'charges', 'extraDiscounts', 'hasBeenApproved'))
-                  ->setPaper('A4', 'portrait');
-
-        return $pdf->stream('Purchase_Order_' . str_replace('/', '_', $po->po_number) . '.pdf');
-    }
-
-    // =========================================================================
-    // 🔥 CETAK PURCHASE ORDER + LAMPIRAN PENDUKUNG (ANTI-BADAI / SMART MERGE) 🔥
-    // =========================================================================
-    public function printCompletePdf($slug)
-    {
-        $po = \App\Models\PurchaseOrder::with([
-            'items.item.itemUoms', 'vendor', 'company', 'status', 'user', 'approvals.approver', 'approvals.role'
-        ])->where('po_number', $slug)->firstOrFail();
-
-        $charges = \DB::table('purchase_order_charges')->where('purchase_order_id', $po->id)->get();
-        $extraDiscounts = \DB::table('purchase_order_discounts')->where('purchase_order_id', $po->id)->get();
-        $hasBeenApproved = $po->approvals->where('status', 'APPROVED')->isNotEmpty();
-
-        $poPdf = \Barryvdh\DomPDF\Facade\Pdf::loadView('po.print_pdf', compact('po', 'charges', 'extraDiscounts', 'hasBeenApproved'))
-                 ->setPaper('A4', 'portrait');
-
-        $tempDir = storage_path('app/public/temp_pdf');
-        if (!file_exists($tempDir)) {
-            mkdir($tempDir, 0777, true);
-        }
-
-        $poFilename = 'main_po_' . $po->id . '_' . time() . '.pdf';
-        $poPath = $tempDir . '/' . $poFilename;
-        file_put_contents($poPath, $poPdf->output());
-
-        $oMerger = \Webklex\PDFMerger\Facades\PDFMergerFacade::init();
-        $oMerger->addPDF($poPath, 'all');
-
-        $tempFilesToDelete = [$poPath];
-        $totalLampiranDiDatabase = 0;
-
-        foreach ($po->items as $item) {
-
-            $attachments = \DB::table('purchase_order_item_attachments')
-                              ->where('purchase_order_item_id', $item->id)
-                              ->get();
-
-            if ($attachments && $attachments->count() > 0) {
-
-                $totalLampiranDiDatabase += $attachments->count();
-
-                foreach ($attachments as $file) {
-                    $cleanFilePath = ltrim($file->file_path, '/');
-                    $finalFilePath = storage_path('app/public/' . $cleanFilePath);
-
-                    // 🔥 JIKA FILE FISIK DITEMUKAN 🔥
-                    if (file_exists($finalFilePath)) {
-                        $extension = strtolower(pathinfo($finalFilePath, PATHINFO_EXTENSION));
-
-                        // 1. PENANGANAN FILE PDF
-                        if ($extension === 'pdf') {
-                            try {
-                                $fpdi = new \setasign\Fpdi\Fpdi();
-                                $fpdi->setSourceFile($finalFilePath);
-                                $oMerger->addPDF($finalFilePath, 'all');
-                            } catch (\Exception $e) {
-                                $html = "<div style='border:2px solid #0d6efd; padding:20px; text-align:center; font-family:sans-serif; margin-top:50px;'>
-                                            <h2 style='color:#0d6efd;'>📄 LAMPIRAN PDF (TERENKRIPSI/TERKOMPRESI)</h2>
-                                            <p>File pendukung bernama: <b>{$file->file_name}</b></p>
-                                            <p>File ini menggunakan format PDF modern yang tidak bisa digabungkan ke dalam dokumen ini secara otomatis.</p>
-                                            <p><i>Silakan lihat atau unduh file ini langsung melalui sistem ProcureApp.</i></p>
-                                         </div>";
-                                $infoPdf = \Barryvdh\DomPDF\Facade\Pdf::loadHTML($html)->setPaper('a4', 'portrait');
-                                $infoPath = $tempDir . '/info_' . uniqid() . '.pdf';
-                                file_put_contents($infoPath, $infoPdf->output());
-                                $oMerger->addPDF($infoPath, 'all');
-                                $tempFilesToDelete[] = $infoPath;
-                            }
-                        }
-                        // 2. PENANGANAN FILE GAMBAR
-                        elseif (in_array($extension, ['jpg', 'jpeg', 'png'])) {
-                            $imageData = base64_encode(file_get_contents($finalFilePath));
-                            $mime = mime_content_type($finalFilePath);
-                            $base64Src = 'data:' . $mime . ';base64,' . $imageData;
-
-                            $imgPdf = \Barryvdh\DomPDF\Facade\Pdf::loadHTML("
-                                <html><head><style>@page{margin:0px;} body{margin:0;padding:20px;text-align:center;} img{max-width:100%;max-height:1050px;}</style></head>
-                                <body><img src='" . $base64Src . "'></body></html>
-                            ")->setPaper('a4', 'portrait');
-
-                            $imgTempName = 'img_convert_' . uniqid() . '.pdf';
-                            $imgTempPath = $tempDir . '/' . $imgTempName;
-                            file_put_contents($imgTempPath, $imgPdf->output());
-                            $oMerger->addPDF($imgTempPath, 'all');
-                            $tempFilesToDelete[] = $imgTempPath;
-                        }
-                        // 3. PENANGANAN FILE WORD / EXCEL / LAINNYA
-                        else {
-                            $html = "<div style='border:2px solid #198754; padding:20px; text-align:center; font-family:sans-serif; margin-top:50px;'>
-                                        <h2 style='color:#198754;'>📎 LAMPIRAN BERKAS ({strtoupper($extension)})</h2>
-                                        <p>File pendukung bernama: <b>{$file->file_name}</b></p>
-                                        <p>File ini berformat Excel / Word / Lainnya sehingga tidak dapat ditampilkan sebagai halaman PDF.</p>
-                                        <p><i>Silakan unduh lampiran ini melalui menu detail PO di sistem.</i></p>
-                                     </div>";
-                            $infoPdf = \Barryvdh\DomPDF\Facade\Pdf::loadHTML($html)->setPaper('a4', 'portrait');
-                            $infoPath = $tempDir . '/info_' . uniqid() . '.pdf';
-                            file_put_contents($infoPath, $infoPdf->output());
-                            $oMerger->addPDF($infoPath, 'all');
-                            $tempFilesToDelete[] = $infoPath;
-                        }
-                    }
-                    // 🔥 JIKA FILE FISIK HILANG 🔥
-                    else {
-                        $errorHtml = "<div style='border:2px solid red; padding:20px; text-align:center; font-family:sans-serif; margin-top:50px;'>
-                                        <h2 style='color:red;'>⚠️ FILE FISIK HILANG ⚠️</h2>
-                                        <p>Data lampiran <b>{$file->file_name}</b> tercatat di sistem, tapi file aslinya tidak ditemukan di server.</p>
-                                      </div>";
-                        $errorPdf = \Barryvdh\DomPDF\Facade\Pdf::loadHTML($errorHtml)->setPaper('a4', 'portrait');
-                        $errorTempPath = $tempDir . '/err_notfound_' . uniqid() . '.pdf';
-                        file_put_contents($errorTempPath, $errorPdf->output());
-                        $oMerger->addPDF($errorTempPath, 'all');
-                        $tempFilesToDelete[] = $errorTempPath;
-                    }
-                }
-            }
-        }
-
-        if ($totalLampiranDiDatabase === 0) {
-            $noDataHtml = "<div style='border: 2px solid orange; padding: 20px; font-family: sans-serif; text-align:center; margin-top:50px;'>
-                            <h2 style='color: orange;'>⚠️ INFO SISTEM ⚠️</h2><p>TIDAK ADA DATA LAMPIRAN untuk PO ini.</p></div>";
-            $noDataPdf = \Barryvdh\DomPDF\Facade\Pdf::loadHTML($noDataHtml)->setPaper('a4', 'portrait');
-            $noDataTempPath = $tempDir . '/err_nodata_' . uniqid() . '.pdf';
-            file_put_contents($noDataTempPath, $noDataPdf->output());
-            $oMerger->addPDF($noDataTempPath, 'all');
-            $tempFilesToDelete[] = $noDataTempPath;
-        }
-
-        $oMerger->merge();
-        $finalPdfOutput = $oMerger->output();
-
-        foreach ($tempFilesToDelete as $trashPath) {
-            if (file_exists($trashPath)) {
-                unlink($trashPath);
-            }
-        }
-
-        return response($finalPdfOutput)
-                ->header('Content-Type', 'application/pdf')
-                ->header('Content-Disposition', 'inline; filename="PO_Lengkap_' . str_replace('/', '_', $po->po_number) . '.pdf"');
-    }
 
     // =========================================================================
     // 8. HALAMAN INDEX PO & 🔥 VISIBILITAS APPROVAL (STRICT PRIVACY PO) 🔥
@@ -1723,69 +1555,6 @@ class PurchaseOrderController extends Controller
         ]);
     }
 
-    public function printBprWithAttachments($slug)
-    {
-        $po = \App\Models\PurchaseOrder::with([
-            'items.item', 'company', 'user', 'vendor', 'attachments', 'purchaseRequest'
-        ])->where('po_number', $slug)->firstOrFail();
-
-        // 🔥 TAMBAHAN WAJIB: Panggil data Biaya & Diskon agar muncul di PDF BPR 🔥
-        $charges = \DB::table('purchase_order_charges')->where('purchase_order_id', $po->id)->get();
-        $extraDiscounts = \DB::table('purchase_order_discounts')->where('purchase_order_id', $po->id)->get();
-
-        $poItemIds = $po->items->pluck('id')->toArray();
-        $itemAttachments = \DB::table('purchase_order_item_attachments')
-                            ->whereIn('purchase_order_item_id', $poItemIds)
-                            ->get();
-
-        foreach ($po->items as $item) {
-            $item->raw_attachments = $itemAttachments->where('purchase_order_item_id', $item->id)->values();
-        }
-
-        // 🔥 Jangan lupa selipkan variabel $charges dan $extraDiscounts di fungsi compact() 🔥
-        $pdf = \Barryvdh\DomPDF\Facade\Pdf::loadView('po.print_bpr_detail', compact('po', 'charges', 'extraDiscounts'))
-                ->setPaper('A4', 'portrait');
-
-        $tempMainPdfPath = storage_path('app/temp_po_bpr_' . uniqid() . '.pdf');
-        $pdf->save($tempMainPdfPath);
-
-        $merger = new \iio\libmergepdf\Merger();
-        $merger->addFile($tempMainPdfPath);
-
-        if ($po->attachments) {
-            foreach ($po->attachments as $attachment) {
-                $ext = strtolower(pathinfo($attachment->file_path, PATHINFO_EXTENSION));
-                if ($ext === 'pdf') {
-                    $pdfPath = public_path('storage/' . $attachment->file_path);
-                    if (file_exists($pdfPath)) $merger->addFile($pdfPath);
-                }
-            }
-        }
-
-        foreach ($po->items as $item) {
-            if (isset($item->raw_attachments) && count($item->raw_attachments) > 0) {
-                foreach ($item->raw_attachments as $attachment) {
-                    $ext = strtolower(pathinfo($attachment->file_name ?? $attachment->file_path, PATHINFO_EXTENSION));
-                    if ($ext === 'pdf') {
-                        $pdfPath = public_path('storage/' . $attachment->file_path);
-                        if (file_exists($pdfPath)) $merger->addFile($pdfPath);
-                    }
-                }
-            }
-        }
-
-        $mergedPdfData = $merger->merge();
-
-        if (file_exists($tempMainPdfPath)) {
-            unlink($tempMainPdfPath);
-        }
-
-        $filename = 'BPR_PO_' . str_replace('/', '_', $po->po_number) . '.pdf';
-
-        return response($mergedPdfData)
-                ->header('Content-Type', 'application/pdf')
-                ->header('Content-Disposition', 'inline; filename="' . $filename . '"');
-    }
 
     // =========================================================================
     // 🔥 FUNGSI HAPUS LAMPIRAN HEADER PO 🔥
@@ -2231,71 +2000,373 @@ class PurchaseOrderController extends Controller
 
 
     // =========================================================================
-    // 🔥 FUNGSI CETAK BPR DETAIL (RINCIAN BIAYA & DISKON) 🔥
+    // 1. CETAK PURCHASE ORDER (PDF)
     // =========================================================================
-    public function printBprDetail($slug)
+    public function printPdf(\Illuminate\Http\Request $request, $slug)
     {
+        $type = $request->query('type', 'digital'); // Ambil parameter manual/digital
 
         $po = \App\Models\PurchaseOrder::with([
-            'items.item', 'company', 'user', 'vendor', 'attachments', 'purchaseRequest'
+            'items.item.itemUoms', 'vendor', 'company', 'billToCompany', 'status', 'user',
+            'purchaseRequest.department', 'approvals.approver', 'approvals.role'
         ])->where('po_number', $slug)->firstOrFail();
 
-        // 🔥 TAMBAHAN WAJIB: Panggil data Biaya & Diskon agar muncul di PDF BPR 🔥
         $charges = \DB::table('purchase_order_charges')->where('purchase_order_id', $po->id)->get();
         $extraDiscounts = \DB::table('purchase_order_discounts')->where('purchase_order_id', $po->id)->get();
+        $hasBeenApproved = $po->approvals->where('status', 'APPROVED')->isNotEmpty();
 
-        $poItemIds = $po->items->pluck('id')->toArray();
-        $itemAttachments = \DB::table('purchase_order_item_attachments')
-                            ->whereIn('purchase_order_item_id', $poItemIds)
-                            ->get();
+        // 🔥 Lempar variabel $type ke Blade 🔥
+        $pdf = \Barryvdh\DomPDF\Facade\Pdf::loadView('po.print_pdf', compact('po', 'charges', 'extraDiscounts', 'hasBeenApproved', 'type'))
+                  ->setPaper('A4', 'portrait');
 
+        $prefix = $type === 'manual' ? 'Manual_' : 'Digital_';
+        return $pdf->stream('Purchase_Order_' . $prefix . str_replace('/', '_', $po->po_number) . '.pdf');
+    }
+
+    // =========================================================================
+    // 2. CETAK PURCHASE ORDER + LAMPIRAN
+    // =========================================================================
+    public function printCompletePdf(\Illuminate\Http\Request $request, $slug)
+    {
+        $type = $request->query('type', 'digital');
+
+        $po = \App\Models\PurchaseOrder::with([
+            'items.item.itemUoms', 'vendor', 'company', 'status', 'user', 'approvals.approver', 'approvals.role'
+        ])->where('po_number', $slug)->firstOrFail();
+
+        $charges = \DB::table('purchase_order_charges')->where('purchase_order_id', $po->id)->get();
+        $extraDiscounts = \DB::table('purchase_order_discounts')->where('purchase_order_id', $po->id)->get();
+        $hasBeenApproved = $po->approvals->where('status', 'APPROVED')->isNotEmpty();
+
+        $poPdf = \Barryvdh\DomPDF\Facade\Pdf::loadView('po.print_pdf', compact('po', 'charges', 'extraDiscounts', 'hasBeenApproved', 'type'))
+                 ->setPaper('A4', 'portrait');
+
+        $tempDir = storage_path('app/public/temp_pdf');
+        if (!file_exists($tempDir)) mkdir($tempDir, 0777, true);
+
+        $poPath = $tempDir . '/main_po_' . $po->id . '_' . time() . '.pdf';
+        file_put_contents($poPath, $poPdf->output());
+
+        $oMerger = \Webklex\PDFMerger\Facades\PDFMergerFacade::init();
+        $oMerger->addPDF($poPath, 'all');
+
+        $tempFilesToDelete = [$poPath];
         foreach ($po->items as $item) {
-            $item->raw_attachments = $itemAttachments->where('purchase_order_item_id', $item->id)->values();
-        }
-
-        // 🔥 Jangan lupa selipkan variabel $charges dan $extraDiscounts di fungsi compact() 🔥
-        $pdf = \Barryvdh\DomPDF\Facade\Pdf::loadView('po.print_bpr_detail', compact('po', 'charges', 'extraDiscounts'))
-                ->setPaper('A4', 'portrait');
-
-        $tempMainPdfPath = storage_path('app/temp_po_bpr_' . uniqid() . '.pdf');
-        $pdf->save($tempMainPdfPath);
-
-        $merger = new \iio\libmergepdf\Merger();
-        $merger->addFile($tempMainPdfPath);
-
-        if ($po->attachments) {
-            foreach ($po->attachments as $attachment) {
-                $ext = strtolower(pathinfo($attachment->file_path, PATHINFO_EXTENSION));
-                if ($ext === 'pdf') {
-                    $pdfPath = public_path('storage/' . $attachment->file_path);
-                    if (file_exists($pdfPath)) $merger->addFile($pdfPath);
-                }
-            }
-        }
-
-        foreach ($po->items as $item) {
-            if (isset($item->raw_attachments) && count($item->raw_attachments) > 0) {
-                foreach ($item->raw_attachments as $attachment) {
-                    $ext = strtolower(pathinfo($attachment->file_name ?? $attachment->file_path, PATHINFO_EXTENSION));
-                    if ($ext === 'pdf') {
-                        $pdfPath = public_path('storage/' . $attachment->file_path);
-                        if (file_exists($pdfPath)) $merger->addFile($pdfPath);
+            $attachments = \DB::table('purchase_order_item_attachments')->where('purchase_order_item_id', $item->id)->get();
+            if ($attachments && $attachments->count() > 0) {
+                foreach ($attachments as $file) {
+                    $cleanFilePath = ltrim($file->file_path, '/');
+                    $finalFilePath = storage_path('app/public/' . $cleanFilePath);
+                    if (file_exists($finalFilePath)) {
+                        $extension = strtolower(pathinfo($finalFilePath, PATHINFO_EXTENSION));
+                        if ($extension === 'pdf') {
+                            try {
+                                $fpdi = new \setasign\Fpdi\Fpdi();
+                                $fpdi->setSourceFile($finalFilePath);
+                                $oMerger->addPDF($finalFilePath, 'all');
+                            } catch (\Exception $e) { /* Abaikan jika encrypted */ }
+                        } elseif (in_array($extension, ['jpg', 'jpeg', 'png'])) {
+                            $imgPdf = \Barryvdh\DomPDF\Facade\Pdf::loadHTML("<html><body style='margin:0;text-align:center;'><img src='data:" . mime_content_type($finalFilePath) . ";base64," . base64_encode(file_get_contents($finalFilePath)) . "' style='max-width:100%;'></body></html>")->setPaper('a4', 'portrait');
+                            $imgTempPath = $tempDir . '/img_' . uniqid() . '.pdf';
+                            file_put_contents($imgTempPath, $imgPdf->output());
+                            $oMerger->addPDF($imgTempPath, 'all');
+                            $tempFilesToDelete[] = $imgTempPath;
+                        }
                     }
                 }
             }
         }
 
-        $mergedPdfData = $merger->merge();
+        $oMerger->merge();
+        $finalPdfOutput = $oMerger->output();
 
-        if (file_exists($tempMainPdfPath)) {
-            unlink($tempMainPdfPath);
+        foreach ($tempFilesToDelete as $trashPath) if (file_exists($trashPath)) unlink($trashPath);
+
+        $prefix = $type === 'manual' ? 'Manual_' : 'Digital_';
+        return response($finalPdfOutput)->header('Content-Type', 'application/pdf')->header('Content-Disposition', 'inline; filename="PO_Lengkap_' . $prefix . str_replace('/', '_', $po->po_number) . '.pdf"');
+    }
+
+    // =========================================================================
+    // 3. CETAK BPR DETAIL (RINCIAN BIAYA & DISKON)
+    // =========================================================================
+    public function printBprDetail(\Illuminate\Http\Request $request, $slug)
+    {
+        $type = $request->query('type', 'digital');
+
+        $po = \App\Models\PurchaseOrder::with(['items.item', 'company', 'user', 'vendor', 'attachments', 'purchaseRequest'])->where('po_number', $slug)->firstOrFail();
+        $charges = \DB::table('purchase_order_charges')->where('purchase_order_id', $po->id)->get();
+        $extraDiscounts = \DB::table('purchase_order_discounts')->where('purchase_order_id', $po->id)->get();
+
+        $pdf = \Barryvdh\DomPDF\Facade\Pdf::loadView('po.print_bpr_detail', compact('po', 'charges', 'extraDiscounts', 'type'))
+                ->setPaper('A4', 'portrait');
+
+        $prefix = $type === 'manual' ? 'Manual_' : 'Digital_';
+        return $pdf->stream('BPR_PO_Detail_' . $prefix . str_replace('/', '_', $po->po_number) . '.pdf');
+    }
+
+    // =========================================================================
+    // 4. CETAK BPR DETAIL + LAMPIRAN (ANTI-BADAI SMART MERGE)
+    // =========================================================================
+    public function printBprWithAttachments(\Illuminate\Http\Request $request, $slug)
+    {
+        $type = $request->query('type', 'digital');
+
+        $po = \App\Models\PurchaseOrder::with(['items.item', 'company', 'user', 'vendor', 'attachments', 'purchaseRequest'])->where('po_number', $slug)->firstOrFail();
+        $charges = \DB::table('purchase_order_charges')->where('purchase_order_id', $po->id)->get();
+        $extraDiscounts = \DB::table('purchase_order_discounts')->where('purchase_order_id', $po->id)->get();
+
+        $pdf = \Barryvdh\DomPDF\Facade\Pdf::loadView('po.print_bpr_detail', compact('po', 'charges', 'extraDiscounts', 'type'))->setPaper('A4', 'portrait');
+
+        $tempDir = storage_path('app/public/temp_pdf');
+        if (!file_exists($tempDir)) mkdir($tempDir, 0777, true);
+
+        $tempMainPdfPath = $tempDir . '/temp_po_bpr_dtl_' . uniqid() . '.pdf';
+        file_put_contents($tempMainPdfPath, $pdf->output());
+
+        $oMerger = \Webklex\PDFMerger\Facades\PDFMergerFacade::init();
+        $oMerger->addPDF($tempMainPdfPath, 'all');
+
+        $tempFilesToDelete = [$tempMainPdfPath];
+        $totalLampiran = 0;
+
+        // Kumpulkan semua lampiran (Header & Item)
+        $allAttachments = [];
+        if ($po->attachments) {
+            foreach ($po->attachments as $att) { $allAttachments[] = $att; }
+        }
+        
+        $poItemIds = $po->items->pluck('id')->toArray();
+        $itemAttachments = \DB::table('purchase_order_item_attachments')->whereIn('purchase_order_item_id', $poItemIds)->get();
+        foreach ($itemAttachments as $att) { $allAttachments[] = $att; }
+
+        if (count($allAttachments) > 0) {
+            $totalLampiran = count($allAttachments);
+            foreach ($allAttachments as $file) {
+                $cleanFilePath = ltrim($file->file_path, '/');
+                $finalFilePath = storage_path('app/public/' . $cleanFilePath);
+
+                if (file_exists($finalFilePath)) {
+                    $extension = strtolower(pathinfo($finalFilePath, PATHINFO_EXTENSION));
+
+                    if ($extension === 'pdf') {
+                        try {
+                            $fpdi = new \setasign\Fpdi\Fpdi();
+                            $fpdi->setSourceFile($finalFilePath);
+                            $oMerger->addPDF($finalFilePath, 'all');
+                        } catch (\Exception $e) {
+                            $html = "<div style='border:2px solid #0d6efd; padding:20px; text-align:center; font-family:sans-serif; margin-top:50px;'>
+                                        <h2 style='color:#0d6efd;'>📄 LAMPIRAN PDF (TERENKRIPSI/TERKOMPRESI)</h2>
+                                        <p>File pendukung bernama: <b>{$file->file_name}</b></p>
+                                        <p>File ini menggunakan format PDF modern yang tidak bisa digabungkan ke dalam dokumen ini secara otomatis.</p>
+                                        <p><i>Silakan lihat atau unduh file ini langsung melalui sistem ProcureApp.</i></p>
+                                     </div>";
+                            $infoPdf = \Barryvdh\DomPDF\Facade\Pdf::loadHTML($html)->setPaper('a4', 'portrait');
+                            $infoPath = $tempDir . '/info_' . uniqid() . '.pdf';
+                            file_put_contents($infoPath, $infoPdf->output());
+                            $oMerger->addPDF($infoPath, 'all');
+                            $tempFilesToDelete[] = $infoPath;
+                        }
+                    } elseif (in_array($extension, ['jpg', 'jpeg', 'png'])) {
+                        $imageData = base64_encode(file_get_contents($finalFilePath));
+                        $mime = mime_content_type($finalFilePath);
+                        $base64Src = 'data:' . $mime . ';base64,' . $imageData;
+
+                        $imgPdf = \Barryvdh\DomPDF\Facade\Pdf::loadHTML("
+                            <html><head><style>@page{margin:0px;} body{margin:0;padding:20px;text-align:center;} img{max-width:100%;max-height:1050px;}</style></head>
+                            <body><img src='" . $base64Src . "'></body></html>
+                        ")->setPaper('a4', 'portrait');
+
+                        $imgTempName = 'img_convert_' . uniqid() . '.pdf';
+                        $imgTempPath = $tempDir . '/' . $imgTempName;
+                        file_put_contents($imgTempPath, $imgPdf->output());
+                        $oMerger->addPDF($imgTempPath, 'all');
+                        $tempFilesToDelete[] = $imgTempPath;
+                    } else {
+                        $html = "<div style='border:2px solid #198754; padding:20px; text-align:center; font-family:sans-serif; margin-top:50px;'>
+                                    <h2 style='color:#198754;'>📎 LAMPIRAN BERKAS (".strtoupper($extension).")</h2>
+                                    <p>File pendukung bernama: <b>{$file->file_name}</b></p>
+                                    <p>File ini berformat Excel / Word / Lainnya sehingga tidak dapat ditampilkan sebagai halaman PDF.</p>
+                                    <p><i>Silakan unduh lampiran ini melalui menu detail PO di sistem.</i></p>
+                                 </div>";
+                        $infoPdf = \Barryvdh\DomPDF\Facade\Pdf::loadHTML($html)->setPaper('a4', 'portrait');
+                        $infoPath = $tempDir . '/info_' . uniqid() . '.pdf';
+                        file_put_contents($infoPath, $infoPdf->output());
+                        $oMerger->addPDF($infoPath, 'all');
+                        $tempFilesToDelete[] = $infoPath;
+                    }
+                } else {
+                    $errorHtml = "<div style='border:2px solid red; padding:20px; text-align:center; font-family:sans-serif; margin-top:50px;'>
+                                    <h2 style='color:red;'>⚠️ FILE FISIK HILANG ⚠️</h2>
+                                    <p>Data lampiran <b>{$file->file_name}</b> tercatat di sistem, tapi file aslinya tidak ditemukan di server.</p>
+                                  </div>";
+                    $errorPdf = \Barryvdh\DomPDF\Facade\Pdf::loadHTML($errorHtml)->setPaper('a4', 'portrait');
+                    $errorTempPath = $tempDir . '/err_notfound_' . uniqid() . '.pdf';
+                    file_put_contents($errorTempPath, $errorPdf->output());
+                    $oMerger->addPDF($errorTempPath, 'all');
+                    $tempFilesToDelete[] = $errorTempPath;
+                }
+            }
         }
 
-        $filename = 'BPR_PO_' . str_replace('/', '_', $po->po_number) . '.pdf';
+        if ($totalLampiran === 0) {
+            $noDataHtml = "<div style='border: 2px solid orange; padding: 20px; font-family: sans-serif; text-align:center; margin-top:50px;'>
+                            <h2 style='color: orange;'>⚠️ INFO SISTEM ⚠️</h2><p>TIDAK ADA DATA LAMPIRAN untuk PO ini.</p></div>";
+            $noDataPdf = \Barryvdh\DomPDF\Facade\Pdf::loadHTML($noDataHtml)->setPaper('a4', 'portrait');
+            $noDataTempPath = $tempDir . '/err_nodata_' . uniqid() . '.pdf';
+            file_put_contents($noDataTempPath, $noDataPdf->output());
+            $oMerger->addPDF($noDataTempPath, 'all');
+            $tempFilesToDelete[] = $noDataTempPath;
+        }
 
-        return response($mergedPdfData)
-                ->header('Content-Type', 'application/pdf')
-                ->header('Content-Disposition', 'inline; filename="' . $filename . '"');
+        $oMerger->merge();
+        $finalPdfOutput = $oMerger->output();
+
+        foreach ($tempFilesToDelete as $trashPath) if (file_exists($trashPath)) unlink($trashPath);
+
+        $prefix = $type === 'manual' ? 'Manual_' : 'Digital_';
+        return response($finalPdfOutput)->header('Content-Type', 'application/pdf')->header('Content-Disposition', 'inline; filename="BPR_Detail_Lengkap_' . $prefix . str_replace('/', '_', $po->po_number) . '.pdf"');
+    }
+
+
+    // =========================================================================
+    // CETAK BPR STANDAR (RINGKAS TANPA RINCIAN BIAYA/DISKON)
+    // =========================================================================
+    public function printBpr(\Illuminate\Http\Request $request, $slug)
+    {
+        $type = $request->query('type', 'digital');
+
+        $po = \App\Models\PurchaseOrder::with(['items.item', 'company', 'user', 'vendor', 'purchaseRequest'])
+            ->where('po_number', $slug)->firstOrFail();
+
+        $pdf = \Barryvdh\DomPDF\Facade\Pdf::loadView('po.print_bpr', compact('po', 'type'))
+                ->setPaper('A4', 'portrait');
+
+        $prefix = $type === 'manual' ? 'Manual_' : 'Digital_';
+        return $pdf->stream('BPR_PO_Standar_' . $prefix . str_replace(['/', '\\'], '_', $po->po_number) . '.pdf');
+    }
+
+
+    // =========================================================================
+    // CETAK BPR STANDAR (RINGKAS) + LAMPIRAN (ANTI-BADAI SMART MERGE)
+    // =========================================================================
+    public function printBprStandarWithAttachments(\Illuminate\Http\Request $request, $slug)
+    {
+        $type = $request->query('type', 'digital');
+
+        $po = \App\Models\PurchaseOrder::with(['items.item', 'company', 'user', 'vendor', 'attachments', 'purchaseRequest'])
+            ->where('po_number', $slug)->firstOrFail();
+
+        $pdf = \Barryvdh\DomPDF\Facade\Pdf::loadView('po.print_bpr', compact('po', 'type'))
+                ->setPaper('A4', 'portrait');
+
+        $tempDir = storage_path('app/public/temp_pdf');
+        if (!file_exists($tempDir)) mkdir($tempDir, 0777, true);
+
+        $tempMainPdfPath = $tempDir . '/temp_po_bpr_std_' . uniqid() . '.pdf';
+        file_put_contents($tempMainPdfPath, $pdf->output());
+
+        $oMerger = \Webklex\PDFMerger\Facades\PDFMergerFacade::init();
+        $oMerger->addPDF($tempMainPdfPath, 'all');
+
+        $tempFilesToDelete = [$tempMainPdfPath];
+        $totalLampiran = 0;
+
+        // Kumpulkan semua lampiran (Header & Item)
+        $allAttachments = [];
+        if ($po->attachments) {
+            foreach ($po->attachments as $att) { $allAttachments[] = $att; }
+        }
+        
+        $poItemIds = $po->items->pluck('id')->toArray();
+        $itemAttachments = \DB::table('purchase_order_item_attachments')->whereIn('purchase_order_item_id', $poItemIds)->get();
+        foreach ($itemAttachments as $att) { $allAttachments[] = $att; }
+
+        if (count($allAttachments) > 0) {
+            $totalLampiran = count($allAttachments);
+            foreach ($allAttachments as $file) {
+                $cleanFilePath = ltrim($file->file_path, '/');
+                $finalFilePath = storage_path('app/public/' . $cleanFilePath);
+
+                if (file_exists($finalFilePath)) {
+                    $extension = strtolower(pathinfo($finalFilePath, PATHINFO_EXTENSION));
+
+                    if ($extension === 'pdf') {
+                        try {
+                            $fpdi = new \setasign\Fpdi\Fpdi();
+                            $fpdi->setSourceFile($finalFilePath);
+                            $oMerger->addPDF($finalFilePath, 'all');
+                        } catch (\Exception $e) {
+                            $html = "<div style='border:2px solid #0d6efd; padding:20px; text-align:center; font-family:sans-serif; margin-top:50px;'>
+                                        <h2 style='color:#0d6efd;'>📄 LAMPIRAN PDF (TERENKRIPSI/TERKOMPRESI)</h2>
+                                        <p>File pendukung bernama: <b>{$file->file_name}</b></p>
+                                        <p>File ini menggunakan format PDF modern yang tidak bisa digabungkan ke dalam dokumen ini secara otomatis.</p>
+                                        <p><i>Silakan lihat atau unduh file ini langsung melalui sistem ProcureApp.</i></p>
+                                     </div>";
+                            $infoPdf = \Barryvdh\DomPDF\Facade\Pdf::loadHTML($html)->setPaper('a4', 'portrait');
+                            $infoPath = $tempDir . '/info_' . uniqid() . '.pdf';
+                            file_put_contents($infoPath, $infoPdf->output());
+                            $oMerger->addPDF($infoPath, 'all');
+                            $tempFilesToDelete[] = $infoPath;
+                        }
+                    } elseif (in_array($extension, ['jpg', 'jpeg', 'png'])) {
+                        $imageData = base64_encode(file_get_contents($finalFilePath));
+                        $mime = mime_content_type($finalFilePath);
+                        $base64Src = 'data:' . $mime . ';base64,' . $imageData;
+
+                        $imgPdf = \Barryvdh\DomPDF\Facade\Pdf::loadHTML("
+                            <html><head><style>@page{margin:0px;} body{margin:0;padding:20px;text-align:center;} img{max-width:100%;max-height:1050px;}</style></head>
+                            <body><img src='" . $base64Src . "'></body></html>
+                        ")->setPaper('a4', 'portrait');
+
+                        $imgTempName = 'img_convert_' . uniqid() . '.pdf';
+                        $imgTempPath = $tempDir . '/' . $imgTempName;
+                        file_put_contents($imgTempPath, $imgPdf->output());
+                        $oMerger->addPDF($imgTempPath, 'all');
+                        $tempFilesToDelete[] = $imgTempPath;
+                    } else {
+                        $html = "<div style='border:2px solid #198754; padding:20px; text-align:center; font-family:sans-serif; margin-top:50px;'>
+                                    <h2 style='color:#198754;'>📎 LAMPIRAN BERKAS (".strtoupper($extension).")</h2>
+                                    <p>File pendukung bernama: <b>{$file->file_name}</b></p>
+                                    <p>File ini berformat Excel / Word / Lainnya sehingga tidak dapat ditampilkan sebagai halaman PDF.</p>
+                                    <p><i>Silakan unduh lampiran ini melalui menu detail PO di sistem.</i></p>
+                                 </div>";
+                        $infoPdf = \Barryvdh\DomPDF\Facade\Pdf::loadHTML($html)->setPaper('a4', 'portrait');
+                        $infoPath = $tempDir . '/info_' . uniqid() . '.pdf';
+                        file_put_contents($infoPath, $infoPdf->output());
+                        $oMerger->addPDF($infoPath, 'all');
+                        $tempFilesToDelete[] = $infoPath;
+                    }
+                } else {
+                    $errorHtml = "<div style='border:2px solid red; padding:20px; text-align:center; font-family:sans-serif; margin-top:50px;'>
+                                    <h2 style='color:red;'>⚠️ FILE FISIK HILANG ⚠️</h2>
+                                    <p>Data lampiran <b>{$file->file_name}</b> tercatat di sistem, tapi file aslinya tidak ditemukan di server.</p>
+                                  </div>";
+                    $errorPdf = \Barryvdh\DomPDF\Facade\Pdf::loadHTML($errorHtml)->setPaper('a4', 'portrait');
+                    $errorTempPath = $tempDir . '/err_notfound_' . uniqid() . '.pdf';
+                    file_put_contents($errorTempPath, $errorPdf->output());
+                    $oMerger->addPDF($errorTempPath, 'all');
+                    $tempFilesToDelete[] = $errorTempPath;
+                }
+            }
+        }
+
+        if ($totalLampiran === 0) {
+            $noDataHtml = "<div style='border: 2px solid orange; padding: 20px; font-family: sans-serif; text-align:center; margin-top:50px;'>
+                            <h2 style='color: orange;'>⚠️ INFO SISTEM ⚠️</h2><p>TIDAK ADA DATA LAMPIRAN untuk PO ini.</p></div>";
+            $noDataPdf = \Barryvdh\DomPDF\Facade\Pdf::loadHTML($noDataHtml)->setPaper('a4', 'portrait');
+            $noDataTempPath = $tempDir . '/err_nodata_' . uniqid() . '.pdf';
+            file_put_contents($noDataTempPath, $noDataPdf->output());
+            $oMerger->addPDF($noDataTempPath, 'all');
+            $tempFilesToDelete[] = $noDataTempPath;
+        }
+
+        $oMerger->merge();
+        $finalPdfOutput = $oMerger->output();
+
+        foreach ($tempFilesToDelete as $trashPath) if (file_exists($trashPath)) unlink($trashPath);
+
+        $prefix = $type === 'manual' ? 'Manual_' : 'Digital_';
+        return response($finalPdfOutput)->header('Content-Type', 'application/pdf')->header('Content-Disposition', 'inline; filename="BPR_Standar_Lengkap_' . $prefix . str_replace('/', '_', $po->po_number) . '.pdf"');
     }
 
 

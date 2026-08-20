@@ -114,7 +114,7 @@
                                 - {{ optional($quote->currency)->code ?? 'IDR' }} {{ number_format($quote->quoted_price, 2, ',', '.') }}
 
                                 @if(!empty($quote->reference_link))
-                                    <br>🔗 <a href="{{ $quote->reference_link }}" class="link-text" target="_blank">{{ $quote->reference_link }}</a>
+                                    <br><a href="{{ $quote->reference_link }}" class="link-text" target="_blank">{{ $quote->reference_link }}</a>
                                 @endif
 
                                 @if(!empty($quote->notes))

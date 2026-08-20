@@ -76,6 +76,7 @@ Route::middleware('auth')->group(function () {
 
     });
 
+
     // ====================================================
     // 2. MODUL PURCHASE ORDER (PO) -> Izin: view_po / create_po
     // ====================================================
@@ -98,13 +99,21 @@ Route::middleware('auth')->group(function () {
         Route::get('/create-direct', [PurchaseOrderController::class, 'createDirect'])->name('create_direct');
         Route::post('/store-direct', [PurchaseOrderController::class, 'storeDirect'])->name('store_direct');
 
-        // 🔥 RUTE PRINT 🔥
+        // ==========================================================
+        // 🔥 RUTE PRINT (KUMPULAN SEMUA JENIS CETAKAN PDF) 🔥
+        // ==========================================================
         Route::get('/print/{slug}', [PurchaseOrderController::class, 'printPdf'])->name('print')->middleware('can:view_po');
-
-        // 💡 PERBAIKAN: Hapus awalan '/po' di sini karena sudah otomatis dari prefix grup
         Route::get('/{slug}/print-complete', [PurchaseOrderController::class, 'printCompletePdf'])->name('print_complete');
 
+        // Cetak BPR Standar (Baru)
+        Route::get('/print-bpr/{slug}', [\App\Http\Controllers\PurchaseOrderController::class, 'printBpr'])->name('print_bpr');
+        // Cetak BPR Standar (Global) + Lampiran ---> 🔥 RUTE BARU DITAMBAHKAN DI SINI 🔥
+        Route::get('/{slug}/print-bpr-standar-attachments', [\App\Http\Controllers\PurchaseOrderController::class, 'printBprStandarWithAttachments'])->name('print_bpr_standar_attachments')->where('slug', '.*');
+        // Cetak BPR Detail (Ada Rincian Pajak & Diskon)
+        Route::get('/print-bpr-detail/{slug}', [\App\Http\Controllers\PurchaseOrderController::class, 'printBprDetail'])->name('print_bpr_detail');
+        // Cetak BPR Detail + Lampiran
         Route::get('/{slug}/print-bpr-attachments', [\App\Http\Controllers\PurchaseOrderController::class, 'printBprWithAttachments'])->name('print_bpr_attachments')->where('slug', '.*');
+        // ==========================================================
 
         // Approval Khusus
         Route::post('/decide/{slug}', [PurchaseOrderController::class, 'decide'])->name('decide');
@@ -122,9 +131,6 @@ Route::middleware('auth')->group(function () {
         Route::get('/attachment/item/delete/{id}', [App\Http\Controllers\PurchaseOrderController::class, 'deleteItemAttachment'])->name('delete_item_attachment');
 
         Route::post('/update-billing/{slug}', [App\Http\Controllers\PurchaseOrderController::class, 'updateBillingInfo'])->name('update_billing');
-
-        Route::get('/print-bpr-detail/{slug}', [App\Http\Controllers\PurchaseOrderController::class, 'printBprDetail'])->name('print_bpr_detail');
-
     });
 
 
