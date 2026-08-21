@@ -19,7 +19,7 @@ class InventoryController extends Controller
 {
 
     // ==========================================
-    // 1. Tampilkan Semua Saldo Stok (DENGAN SILENT AUTO-FIX)
+    // 1. Tampilkan Semua Saldo Stok (Diringkas per Barang & Gudang)
     // ==========================================
     public function index(Request $request)
     {
@@ -28,58 +28,37 @@ class InventoryController extends Controller
 
         $warehouses = \App\Models\Warehouse::orderBy('name')->get();
 
+        // 🔥 FILTER SUPER AMAN: Kecualikan JSA/NST, tapi TETAP BAWA kode yang KOSONG (NULL)
         $allItems = \App\Models\Item::where(function($q) {
             $q->whereNotIn('item_type_code', ['JSA', 'NST'])
               ->orWhereNull('item_type_code');
         })->orderBy('name')->get();
 
         // =====================================================================
-        // 🔥 RADAR BARANG KRITIS & SILENT AUTO-FIX 🔥
-        // Mengecek mutasi murni, dan membersihkan error masa lalu secara diam-diam
+        // 🔥 RADAR BARANG KRITIS (SUDAH MULTI-GUDANG) 🔥
+        // Membaca tabel InventoryStock, bukan lagi tabel Items
         // =====================================================================
-        $criticalStocksRaw = \App\Models\InventoryStock::with(['item.uom', 'warehouse'])
+        $criticalStocks = \App\Models\InventoryStock::with(['item.uom', 'warehouse'])
             ->whereHas('item', function($q) {
+                // Abaikan Jasa & Non-Stok
                 $q->whereNotIn('item_type_code', ['JSA', 'NST'])
                   ->orWhereNull('item_type_code');
             })
             ->whereNotNull('min_stock')
             ->where('min_stock', '>', 0)
+            ->whereColumn('stock_qty', '<=', 'min_stock')
             ->get();
 
-        $criticalStocks = $criticalStocksRaw->filter(function($stock) {
-            // Hitung kebenaran mutlak dari tabel StockMutation
-            $trueQty = \App\Models\StockMutation::where('item_id', $stock->item_id)
-                ->where('warehouse_id', $stock->warehouse_id)
-                ->selectRaw('COALESCE(SUM(CASE WHEN type = "IN" THEN qty ELSE -qty END), 0) as total')
-                ->first()->total ?? 0;
-
-            // 🔥 SILENT AUTO-FIX: Jika data kotor akibat bug lama, perbaiki di background!
-            if ($stock->stock_qty != $trueQty) {
-                $stock->update(['stock_qty' => $trueQty]);
-                // Hapus duplikat jika ada (Sisa bug lama)
-                \App\Models\InventoryStock::where('item_id', $stock->item_id)
-                    ->where('warehouse_id', $stock->warehouse_id)
-                    ->where('id', '!=', $stock->id)
-                    ->delete();
-            }
-
-            $stock->stock_qty = $trueQty; // Set untuk tampilan
-            return $trueQty <= $stock->min_stock;
-        });
-
-        // =====================================================================
-        // 🔥 QUERY DAFTAR INVENTORY (MENGGUNAKAN MUTASI SEBAGAI SUMBER KEBENARAN)
-        // =====================================================================
+        // 🔥 QUERY DAFTAR INVENTORY
         $stocks = \App\Models\Item::query()
             ->select('items.*')
             ->with('uom')
             ->where(function($q) {
                 $q->whereNotIn('item_type_code', ['JSA', 'NST'])
-                  ->orWhereNull('item_type_code');
+                  ->orWhereNull('item_type_code'); // Mengatasi masalah data lama / null
             })
             ->addSelect([
-                // MENGAMBIL SUMBER DARI MUTASI BUKAN INVENTORY STOCK
-                'total_stock' => \App\Models\StockMutation::selectRaw('COALESCE(SUM(CASE WHEN type = "IN" THEN qty ELSE -qty END), 0)')
+                'total_stock' => \App\Models\InventoryStock::selectRaw('COALESCE(SUM(stock_qty), 0)')
                     ->whereColumn('item_id', 'items.id')
                     ->when($warehouseId, function($q) use ($warehouseId) {
                         $q->where('warehouse_id', $warehouseId);
@@ -94,13 +73,6 @@ class InventoryController extends Controller
             ->orderBy('name')
             ->paginate(15)
             ->withQueryString();
-
-        // 🔥 SILENT AUTO-FIX MASTER ITEM: Perbaiki stok master jika ada pergeseran
-        foreach($stocks as $st) {
-            if ($st->current_stock != $st->total_stock && empty($warehouseId)) {
-                \App\Models\Item::where('id', $st->id)->update(['current_stock' => $st->total_stock]);
-            }
-        }
 
         return view('inventory.index', compact('stocks', 'warehouses', 'search', 'warehouseId', 'allItems', 'criticalStocks'));
     }
@@ -128,22 +100,18 @@ class InventoryController extends Controller
                             ->lockForUpdate()
                             ->firstOrFail();
 
-                // Validasi ulang dengan data mutasi murni
-                $trueQty = \App\Models\StockMutation::where('item_id', $request->item_id)
-                            ->where('warehouse_id', $request->warehouse_id)
-                            ->selectRaw('COALESCE(SUM(CASE WHEN type = "IN" THEN qty ELSE -qty END), 0) as total')
-                            ->first()->total ?? 0;
-
-                if ($trueQty < $request->qty) {
-                    throw new \Exception("Stok di gudang ini tidak mencukupi. Sisa riil: " . $trueQty);
+                if ($stock->stock_qty < $request->qty) {
+                    throw new \Exception("Stok di gudang ini tidak mencukupi. Sisa: " . $stock->stock_qty);
                 }
 
                 // Kurangi Stok
-                $stock->update(['stock_qty' => $trueQty - $request->qty]);
+                $stock->decrement('stock_qty', $request->qty);
 
                 // Kurangi Stok Global di Master Item
                 $item = Item::lockForUpdate()->findOrFail($request->item_id);
-                $item->update(['current_stock' => $item->current_stock - $request->qty]);
+                $balanceBefore = (float) $item->current_stock;
+                $balanceAfter  = $balanceBefore - $request->qty;
+                $item->update(['current_stock' => $balanceAfter]);
 
                 // Catat Log Keluar
                 if (class_exists(InventoryMovement::class)) {
@@ -164,8 +132,8 @@ class InventoryController extends Controller
                     'warehouse_id'     => $request->warehouse_id,
                     'type'             => 'OUT',
                     'qty'              => $request->qty,
-                    'balance_before'   => $trueQty,
-                    'balance_after'    => $trueQty - $request->qty,
+                    'balance_before'   => $balanceBefore,
+                    'balance_after'    => $balanceAfter,
                     'reference_number' => 'USE/' . date('YmdHis'),
                     'notes'            => $request->notes,
                     'created_by'       => auth()->id()
@@ -186,13 +154,11 @@ class InventoryController extends Controller
         $warehouseId = $request->input('warehouse_id');
         $item = \App\Models\Item::with('uom')->where('item_type_code', 'STK')->findOrFail($id);
 
-        // 1. HITUNG SALDO TERKINI - LANGSUNG DARI MUTASI (ANTI-DUPLIKAT)
-        $bulkStock = \App\Models\StockMutation::where('item_id', $id)
+        // 1. HITUNG SALDO TERKINI (Kotak Biru) - Mutlak dari Database Fisik
+        $bulkStock = \App\Models\InventoryStock::where('item_id', $id)
             ->when($warehouseId, function($q) use ($warehouseId) {
                 $q->where('warehouse_id', $warehouseId);
-            })
-            ->selectRaw('COALESCE(SUM(CASE WHEN type = "IN" THEN qty ELSE -qty END), 0) as total')
-            ->first()->total ?? 0;
+            })->sum('stock_qty');
 
         $assetStock = \App\Models\FixedAsset::where('item_id', $id)
             ->whereHas('status', function($q) {
@@ -275,6 +241,7 @@ class InventoryController extends Controller
         try {
             DB::transaction(function () use ($request) {
                 $userCompanyId = auth()->user()->company_id ?? 1;
+
                 $item = Item::lockForUpdate()->findOrFail($request->item_id);
 
                 $stock = InventoryStock::firstOrCreate(
@@ -290,21 +257,16 @@ class InventoryController extends Controller
 
                 $balanceBefore = (float) $item->current_stock;
                 $balanceAfter  = $balanceBefore + $request->qty;
-                $item->update(['current_stock' => $balanceAfter]);
 
-                // Mengambil trueQty spesifik gudang untuk Kartu Mutasi
-                $trueQty = \App\Models\StockMutation::where('item_id', $request->item_id)
-                            ->where('warehouse_id', $request->warehouse_id)
-                            ->selectRaw('COALESCE(SUM(CASE WHEN type = "IN" THEN qty ELSE -qty END), 0) as total')
-                            ->first()->total ?? 0;
+                $item->update(['current_stock' => $balanceAfter]);
 
                 StockMutation::create([
                     'item_id'          => $request->item_id,
                     'warehouse_id'     => $request->warehouse_id,
                     'type'             => 'IN',
                     'qty'              => $request->qty,
-                    'balance_before'   => $trueQty,
-                    'balance_after'    => $trueQty + $request->qty,
+                    'balance_before'   => $balanceBefore,
+                    'balance_after'    => $balanceAfter,
                     'reference_number' => 'SA/' . date('YmdHis'),
                     'notes'            => $request->notes,
                     'created_by'       => auth()->id()
@@ -381,6 +343,7 @@ class InventoryController extends Controller
             $previewData = [];
             $hasError = false;
 
+            // 🔥 TARIK DATA MASTER (HANYA AMBIL item_type_code) 🔥
             $allItems = \App\Models\Item::select('id', 'code', 'name', 'item_type_code')
                 ->get()->keyBy(function($item) { return strtolower(trim($item->code)); });
 
@@ -394,6 +357,7 @@ class InventoryController extends Controller
                 $errorMessages = [];
                 $realName = '-';
 
+                // 🔥 VALIDASI KODE MENGGUNAKAN item_type_code 🔥
                 $itemCode = strtolower(trim($row['kode_barang'] ?? ''));
                 if (empty($itemCode)) {
                     $isRowValid = false; $errorMessages[] = 'Kode Barang KOSONG.';
@@ -507,6 +471,7 @@ class InventoryController extends Controller
         };
         $rows = \Maatwebsite\Excel\Facades\Excel::toArray($importClass, $fullPath)[0];
 
+        // 🔥 GANTI KODINGAN INI UNTUK SESUAIKAN DENGAN STRUKTUR KOMANDAN
         $allItems = \App\Models\Item::select('id', 'code', 'item_type_code')->get()->keyBy(function($item) { return strtolower(trim($item->code)); });
         $warehouses = \App\Models\Warehouse::pluck('id', 'name')->mapWithKeys(function ($id, $name) { return [strtolower(trim($name)) => $id]; })->toArray();
         $validCurrencies = \App\Models\Currency::where('is_active', 1)->pluck('id', 'code')->mapWithKeys(function ($id, $code) { return [strtoupper(trim($code)) => $id]; })->toArray();
@@ -519,6 +484,7 @@ class InventoryController extends Controller
             $isRowValid = true;
             $errorMessages = [];
 
+            // 🔥 VALIDASI ERROR DOWNLOAD MENGGUNAKAN item_type_code 🔥
             $itemCode = strtolower(trim($row['kode_barang'] ?? ''));
             if (empty($itemCode)) {
                 $isRowValid = false; $errorMessages[] = 'Kode KOSONG';
@@ -566,19 +532,19 @@ class InventoryController extends Controller
         return \Maatwebsite\Excel\Facades\Excel::download(new \App\Exports\InventoryErrorExport($errorData), 'Error_Log_Saldo_Awal.xlsx');
     }
 
+
     // ==========================================
-    // 2. TAMPILKAN FORM KAPITALISASI ASET
+    // 2. TAMPILKAN FORM KAPITALISASI ASET (VERSI SLUG)
     // ==========================================
     public function capitalizeForm($slug)
     {
+        // 🔥 Ubah pencarian: cari berdasarkan kolom 'code' (slug) 🔥
         $item = \App\Models\Item::with('uom')->where('code', $slug)->firstOrFail();
         $warehouses = \App\Models\Warehouse::orderBy('name')->get();
 
+        // Hitung stok bulk yang tersedia di setiap gudang
         foreach ($warehouses as $wh) {
-            $totalPhysical = \App\Models\StockMutation::where('item_id', $item->id)
-                ->where('warehouse_id', $wh->id)
-                ->selectRaw('COALESCE(SUM(CASE WHEN type = "IN" THEN qty ELSE -qty END), 0) as total')
-                ->first()->total ?? 0;
+            $totalPhysical = \App\Models\InventoryStock::where('item_id', $item->id)->where('warehouse_id', $wh->id)->sum('stock_qty');
 
             $totalAsAsset = \App\Models\FixedAsset::where('item_id', $item->id)->where('warehouse_id', $wh->id)
                 ->whereHas('status', function($q) { $q->where('slug', 'available'); })
@@ -591,7 +557,14 @@ class InventoryController extends Controller
     }
 
     // ==========================================
-    // 3. EKSEKUSI SULAP STOK BIASA -> ASET TETAP
+    // 3. EKSEKUSI SULAP STOK BIASA -> ASET TETAP (VERSI SLUG)
+    // ==========================================
+
+
+
+
+   // ==========================================
+    // 3. EKSEKUSI SULAP STOK BIASA -> ASET TETAP (MAPPING DATABASE SEMPURNA)
     // ==========================================
     public function capitalizeStore(Request $request, $slug)
     {
@@ -612,11 +585,7 @@ class InventoryController extends Controller
                 $qtyToConvert = (int) $request->qty;
 
                 // 1. Validasi ketersediaan stok
-                $totalPhysical = \App\Models\StockMutation::where('item_id', $item->id)
-                    ->where('warehouse_id', $request->warehouse_id)
-                    ->selectRaw('COALESCE(SUM(CASE WHEN type = "IN" THEN qty ELSE -qty END), 0) as total')
-                    ->first()->total ?? 0;
-
+                $totalPhysical = \App\Models\InventoryStock::where('item_id', $item->id)->where('warehouse_id', $request->warehouse_id)->sum('stock_qty');
                 $totalAsAsset = \App\Models\FixedAsset::where('item_id', $item->id)->where('warehouse_id', $request->warehouse_id)
                     ->whereHas('status', function($q) { $q->where('slug', 'available'); })->count();
                 $availableRegular = $totalPhysical - $totalAsAsset;
@@ -632,7 +601,7 @@ class InventoryController extends Controller
                 $lastAsset = \App\Models\FixedAsset::where('asset_number', 'like', "AST/{$yearMonth}/%")->orderBy('id', 'desc')->lockForUpdate()->first();
                 $nextSeq = $lastAsset ? ((int) substr($lastAsset->asset_number, -4)) + 1 : 1;
 
-                // 3. Daftarkan aset ke database
+                // 3. Daftarkan aset ke database (Mapping langsung ke kolom tabel)
                 for ($i = 0; $i < $qtyToConvert; $i++) {
                     $sysAssetNumber = "AST/{$yearMonth}/" . str_pad($nextSeq, 4, '0', STR_PAD_LEFT);
 
@@ -642,10 +611,10 @@ class InventoryController extends Controller
                     $currentNote = trim($request->notes[$i] ?? '');
 
                     \App\Models\FixedAsset::create([
-                        'asset_number'             => $sysAssetNumber,
-                        'accounting_asset_number'  => $accAssetNum,
-                        'serial_number'            => $currentSn,
-                        'spesifikasi_detail'       => $currentSpec,
+                        'asset_number'             => $sysAssetNumber,        // Kode Sistem IT
+                        'accounting_asset_number'  => $accAssetNum,           // 🔥 MASUK KE KOLOM AKUNTANSI 🔥
+                        'serial_number'            => $currentSn,             // SN Pabrik / Rangka
+                        'spesifikasi_detail'       => $currentSpec,           // 🔥 MASUK KE KOLOM SPESIFIKASI 🔥
                         'item_id'                  => $item->id,
                         'warehouse_id'             => $request->warehouse_id,
                         'company_id'               => \App\Models\Warehouse::find($request->warehouse_id)->company_id ?? 1,
@@ -666,18 +635,22 @@ class InventoryController extends Controller
         }
     }
 
+
+
+
+
     // =========================================================================
-    // 🔥 LAPORAN MUTASI & VALUASI 🔥
+    // 🔥 1. LAPORAN MUTASI STOK (QTY SAJA - UNTUK GUDANG) 🔥
     // =========================================================================
     public function stockAsOf(\Illuminate\Http\Request $request)
     {
-        $data = $this->calculateStockAsOfData($request, false);
+        $data = $this->calculateStockAsOfData($request, false); // false = gunakan paginasi
         return view('inventory.stock_as_of', $data);
     }
 
     public function printStockAsOf(\Illuminate\Http\Request $request)
     {
-        $data = $this->calculateStockAsOfData($request, true);
+        $data = $this->calculateStockAsOfData($request, true); // true = tarik semua data
         $pdf = \Barryvdh\DomPDF\Facade\Pdf::loadView('inventory.print_stock_as_of', $data)->setPaper('A4', 'landscape');
         return $pdf->stream('Laporan_Mutasi_Inventory_' . date('Ymd_His') . '.pdf');
     }
@@ -695,6 +668,9 @@ class InventoryController extends Controller
         return view('inventory.print_stock_as_of', $data)->with('isExcel', true);
     }
 
+    // =========================================================================
+    // 🔥 2. LAPORAN VALUASI STOK (QTY + RUPIAH - UNTUK FINANCE) 🔥
+    // =========================================================================
     public function valuation(\Illuminate\Http\Request $request)
     {
         $data = $this->calculateStockAsOfData($request, false);
@@ -721,6 +697,9 @@ class InventoryController extends Controller
         return view('inventory.print_valuation', $data)->with('isExcel', true);
     }
 
+    // =========================================================================
+    // 🔥 3. MESIN HITUNG SAKTI (DIGUNAKAN OLEH SEMUA LAPORAN DI ATAS) 🔥
+    // =========================================================================
     private function calculateStockAsOfData(\Illuminate\Http\Request $request, $isPrint = false)
     {
         $startDate = $request->input('start_date', now()->startOfMonth()->format('Y-m-d'));
@@ -731,6 +710,7 @@ class InventoryController extends Controller
         $start = \Carbon\Carbon::parse($startDate)->startOfDay();
         $end = \Carbon\Carbon::parse($endDate)->endOfDay();
 
+        // 🔥 WAJIB ADA: Data Master untuk Dropdown dan Kop Surat Cetakan 🔥
         $warehouses = \App\Models\Warehouse::orderBy('name')->get();
         $warehouse = $warehouseId ? \App\Models\Warehouse::find($warehouseId) : null;
 
@@ -745,6 +725,7 @@ class InventoryController extends Controller
             });
         }
 
+        // 🔥 LOGIKA PINTAR: Jika cetak, ambil semua (get). Jika tampilan web, gunakan paginasi (paginate) 🔥
         if ($isPrint) {
             $items = $query->orderBy('name', 'asc')->get();
         } else {
@@ -757,6 +738,7 @@ class InventoryController extends Controller
                 $mutations->where('warehouse_id', $warehouseId);
             }
 
+            // 1. QTY CALCULATIONS
             $inBefore = (clone $mutations)->where('type', 'IN')->where('created_at', '<', $start)->sum('qty');
             $outBefore = (clone $mutations)->where('type', 'OUT')->where('created_at', '<', $start)->sum('qty');
             $item->saldo_awal = $inBefore - $outBefore;
@@ -766,27 +748,44 @@ class InventoryController extends Controller
 
             $item->saldo_akhir = $item->saldo_awal + $item->mutasi_in - $item->mutasi_out;
 
+            // =================================================================
+            // 2. RUPIAH VALUATION (DINAMIS & AMAN)
+            // =================================================================
+
+            // Cari harga beli TERAKHIR dari riwayat PO
             $latestPOItem = \Illuminate\Support\Facades\DB::table('purchase_order_items')
                                 ->where('item_id', $item->id)
                                 ->orderBy('created_at', 'desc')
                                 ->first();
 
-            $hargaSatuan = $latestPOItem ? $latestPOItem->unit_price : ($item->purchase_price ?? ($item->price ?? 0));
+            // 🔥 LOGIKA CERDAS: Gunakan harga PO terakhir.
+            // JIKA belum pernah di-PO (misal barang Saldo Awal), ambil harga dari tabel items
+            $hargaSatuan = $latestPOItem
+                            ? $latestPOItem->unit_price
+                            : ($item->purchase_price ?? ($item->price ?? 0));
 
             $item->harga_satuan = $hargaSatuan;
+
             $item->nilai_awal = $item->saldo_awal * $hargaSatuan;
             $item->nilai_in = $item->mutasi_in * $hargaSatuan;
             $item->nilai_out = $item->mutasi_out * $hargaSatuan;
             $item->nilai_akhir = $item->saldo_akhir * $hargaSatuan;
         }
 
+        // Lempar semua data yang dibutuhkan View
         return compact('items', 'startDate', 'endDate', 'warehouseId', 'warehouse', 'warehouses', 'search');
     }
 
+
+
+    // =========================================================================
+    // 🔥 LAPORAN ANALISIS HARGA PEMBELIAN (MIN, MAX, AVG, LATEST) 🔥
+    // =========================================================================
     public function priceAnalysis(\Illuminate\Http\Request $request)
     {
         $search = $request->input('search');
 
+        // Ambil Item Inventory (Abaikan Aset Tetap)
         $query = \App\Models\Item::with('category')->whereHas('category', function($q) {
             $q->where('code', '!=', 'AST');
         });
@@ -801,6 +800,7 @@ class InventoryController extends Controller
         $items = $query->paginate(20)->withQueryString();
 
         foreach ($items as $item) {
+            // 1. Ambil agregat harga dari riwayat PO (Termahal, Termurah, Rata-rata)
             $poStats = \Illuminate\Support\Facades\DB::table('purchase_order_items')
                 ->selectRaw('
                     MAX(unit_price) as max_price,
@@ -811,11 +811,13 @@ class InventoryController extends Controller
                 ->where('item_id', $item->id)
                 ->first();
 
+            // 2. Ambil harga pembelian paling akhir (Latest)
             $latestPO = \Illuminate\Support\Facades\DB::table('purchase_order_items')
                 ->where('item_id', $item->id)
                 ->orderBy('created_at', 'desc')
                 ->first();
 
+            // 3. Masukkan ke dalam objek item
             if ($latestPO) {
                 $item->harga_termahal = $poStats->max_price;
                 $item->harga_termurah = $poStats->min_price;
@@ -823,6 +825,7 @@ class InventoryController extends Controller
                 $item->harga_terakhir = $latestPO->unit_price;
                 $item->total_dibeli = $poStats->total_qty;
             } else {
+                // Fallback jika belum pernah ada PO
                 $basePrice = $item->purchase_price ?? ($item->price ?? 0);
                 $item->harga_termahal = $basePrice;
                 $item->harga_termurah = $basePrice;
@@ -835,6 +838,11 @@ class InventoryController extends Controller
         return view('inventory.price_analysis', compact('items', 'search'));
     }
 
+
+
+    // =========================================================================
+    // 🔥 LAPORAN RIWAYAT HARGA BELI (UPDATE FIELD VENDOR_ID) 🔥
+    // =========================================================================
     public function purchaseHistory(\Illuminate\Http\Request $request)
     {
         $startDate = $request->input('start_date', now()->startOfMonth()->format('Y-m-d'));
@@ -847,15 +855,18 @@ class InventoryController extends Controller
         $query = \Illuminate\Support\Facades\DB::table('purchase_order_items as poi')
             ->join('items as i', 'poi.item_id', '=', 'i.id')
             ->join('purchase_orders as po', 'poi.purchase_order_id', '=', 'po.id')
+
+            // 🔥 REVISI: Menggunakan vendor_id (Asumsi nama tabel adalah 'vendors')
             ->leftJoin('vendors as v', 'po.vendor_id', '=', 'v.id')
+
             ->select(
                 'poi.id',
                 'poi.created_at',
                 'po.po_number',
                 'v.name as supplier_name',
                 'i.code as item_code',
-                'i.name as item_name',
-                'poi.item_name as po_item_name',
+                'i.name as item_name', // Nama dari Master Barang
+                'poi.item_name as po_item_name', // 🔥 TAMBAHAN: Nama spesifik yang diketik saat PO
                 'poi.qty_received',
                 'poi.unit_price',
                 'poi.subtotal'
@@ -868,7 +879,7 @@ class InventoryController extends Controller
                 $q->where('i.name', 'like', "%{$search}%")
                   ->orWhere('i.code', 'like', "%{$search}%")
                   ->orWhere('po.po_number', 'like', "%{$search}%")
-                  ->orWhere('v.name', 'like', "%{$search}%");
+                  ->orWhere('v.name', 'like', "%{$search}%"); // 🔥 Pencarian berdasarkan nama vendor (v.name)
             });
         }
 
@@ -877,25 +888,31 @@ class InventoryController extends Controller
         return view('inventory.purchase_history', compact('histories', 'startDate', 'endDate', 'search'));
     }
 
-    // =========================================================================
-    // 🔥 SMART RESTOCK 🔥
+
+   // =========================================================================
+    // 🔥 1. HALAMAN SMART RESTOCK (FILTER GUDANG & BUGFIX QTY) 🔥
     // =========================================================================
     public function smartRestock(\Illuminate\Http\Request $request)
     {
+        // Tangkap request filter gudang dari URL
         $warehouseId = $request->input('warehouse_id');
 
         $pendingPrQtys = \Illuminate\Support\Facades\DB::table('purchase_request_items')
             ->join('purchase_requests', 'purchase_request_items.purchase_request_id', '=', 'purchase_requests.id')
             ->leftJoin('statuses', 'purchase_requests.status_id', '=', 'statuses.id')
+
+            // 🔥 UBAH BARIS INI: Tambahkan semua kemungkinan nama slug pembatalan/selesai 🔥
             ->whereNotIn('statuses.slug', [
                 'rejected', 'ditolak',
                 'canceled', 'cancelled', 'batal', 'dibatalkan',
                 'completed', 'selesai'
             ])
+
             ->select('item_id', \Illuminate\Support\Facades\DB::raw('SUM(qty) as total_pending'))
             ->groupBy('item_id')
             ->pluck('total_pending', 'item_id');
 
+        // 🔥 MODIFIKASI: Kueri Kandidat dengan Filter Gudang 🔥
         $candidatesQuery = \App\Models\InventoryStock::with(['item.uom', 'warehouse'])
             ->whereHas('item', function($q) {
                 $q->whereNotIn('item_type_code', ['JSA', 'NST'])->orWhereNull('item_type_code');
@@ -903,6 +920,7 @@ class InventoryController extends Controller
             ->whereNotNull('min_stock')
             ->where('min_stock', '>', 0);
 
+        // Terapkan Filter jika Gudang dipilih
         if (!empty($warehouseId)) {
             $candidatesQuery->where('warehouse_id', $warehouseId);
         }
@@ -911,32 +929,31 @@ class InventoryController extends Controller
         $criticalItems = collect();
 
         foreach ($candidates as $stock) {
-            // 🔥 BACA STOK MURNI DARI MUTASI 🔥
-            $trueQty = \App\Models\StockMutation::where('item_id', $stock->item_id)
-                ->where('warehouse_id', $stock->warehouse_id)
-                ->selectRaw('COALESCE(SUM(CASE WHEN type = "IN" THEN qty ELSE -qty END), 0) as total')
-                ->first()->total ?? 0;
-
+            $currentQty = (float)$stock->stock_qty;
             $minQty = (float)$stock->min_stock;
             $pendingQty = (float)$pendingPrQtys->get($stock->item_id, 0);
-            $virtualStock = $trueQty + $pendingQty;
+            $virtualStock = $currentQty + $pendingQty;
 
             if ($virtualStock <= $minQty) {
-                $stock->stock_qty = $trueQty; // Timpa untuk tampilan layar
                 $stock->pending_qty = $pendingQty;
                 $criticalItems->push($stock);
             }
         }
 
+        // Urutkan, LALU GUNAKAN ->values() UNTUK RESET INDEX KE 0,1,2,3
+        // 🔥 Inilah kunci kenapa Qty sebelumnya tidak berubah! 🔥
         $criticalItems = $criticalItems->sortBy(function($stock) {
             return optional($stock->warehouse)->name . '-' . optional($stock->item)->name;
         })->values();
 
         $companies = \App\Models\Company::orderBy('name')->get();
+
+        // Tarik daftar Gudang untuk Dropdown Filter
         $warehouses = \App\Models\Warehouse::orderBy('name')->get();
 
         return view('inventory.smart_restock', compact('criticalItems', 'companies', 'warehouses', 'warehouseId'));
     }
+
 
 
     // =========================================================================
@@ -967,6 +984,7 @@ class InventoryController extends Controller
                 $qty = (float)$item['qty'];
                 $warehouseName = $item['warehouse_name'] ?? 'Gudang Utama / Default';
 
+                // Kunci Group = ID Barang + Nama Gudang (Agar tidak gabung jika beda gudang)
                 $groupKey = $itemId . '_' . $warehouseName;
 
                 if (!isset($consolidatedItems[$groupKey])) {
@@ -976,6 +994,7 @@ class InventoryController extends Controller
                         'total_qty' => 0,
                     ];
                 }
+
                 $consolidatedItems[$groupKey]['total_qty'] += $qty;
             }
 
@@ -1005,20 +1024,21 @@ class InventoryController extends Controller
                 // Teks alokasi yang PASTI masuk
                 $alokasiTeks = "Rincian Alokasi:\n- " . $data['total_qty'] . " Pcs dialokasikan untuk " . $data['warehouse'];
 
-                // =================================================================
-                // 🔥 CARA BRUTAL: BYPASS LARAVEL, TEMBAK LANGSUNG KE MYSQL 🔥
-                // =================================================================
-                \Illuminate\Support\Facades\DB::table('purchase_request_items')->insert([
-                    'purchase_request_id' => $pr->id,
-                    'item_id'             => $masterItem->id,
-                    'item_name'           => $masterItem->name,
-                    'qty'                 => $data['total_qty'],
-                    'uom_id'              => $masterItem->uom_id ?? null,
-                    'status'              => 'PENDING',
-                    'allocation_notes'    => $alokasiTeks, // MURNI DITEMBAK KE DATABASE!
-                    'created_at'          => now(),
-                    'updated_at'          => now(),
-                ]);
+                // ===================================================================
+                // 🔥 CARA KEKERASAN: BYPASS MASS ASSIGNMENT DENGAN OBJECT SAVE() 🔥
+                // ===================================================================
+                $newPrItem = new \App\Models\PurchaseRequestItem();
+                $newPrItem->purchase_request_id = $pr->id;
+                $newPrItem->item_id             = $masterItem->id;
+                $newPrItem->item_name           = $masterItem->name;
+                $newPrItem->qty                 = $data['total_qty'];
+                
+                // 🔥 PERBAIKAN: Gunakan uom_id (sesuai struktur tabel database) 🔥
+                $newPrItem->uom_id              = $masterItem->uom_id ?? null; 
+                
+                $newPrItem->status              = 'PENDING';
+                $newPrItem->allocation_notes    = $alokasiTeks;
+                $newPrItem->save();
             }
 
             // =========================================================================
@@ -1031,7 +1051,7 @@ class InventoryController extends Controller
                 if ($statusPending) {
                     $pr->update(['status_id' => $statusPending->id]);
                 }
-
+                
                 if (class_exists('\App\Models\PurchaseRequestHistory')) {
                     \App\Models\PurchaseRequestHistory::create([
                         'purchase_request_id' => $pr->id,
@@ -1045,7 +1065,7 @@ class InventoryController extends Controller
                 if ($statusApproved) {
                     $pr->update(['status_id' => $statusApproved->id]);
                 }
-
+                
                 if (class_exists('\App\Models\PurchaseRequestHistory')) {
                     \App\Models\PurchaseRequestHistory::create([
                         'purchase_request_id' => $pr->id,
@@ -1075,11 +1095,17 @@ class InventoryController extends Controller
         }
     }
 
+    // =========================================================================
+    // HELPER: GENERATOR NOMOR PR OTOMATIS
+    // =========================================================================
     private function generatePrNumber($companyId)
     {
         $company = \App\Models\Company::find($companyId);
         $companyCode = $company ? strtoupper($company->code ?? 'PT') : 'PT';
+
+        // 🔥 UBAH DI SINI: Gunakan 'Ymd' (TahunBulanTanggal) agar seragam dengan PR Bawaan
         $dateStr = date('Ymd');
+
         $prefix = "PR-{$companyCode}-{$dateStr}-";
 
         $latestPr = \App\Models\PurchaseRequest::where('pr_number', 'like', $prefix . '%')->orderBy('id', 'desc')->lockForUpdate()->first();
@@ -1093,27 +1119,27 @@ class InventoryController extends Controller
         return $prefix . str_pad($newSequence, 4, '0', STR_PAD_LEFT);
     }
 
+
+
+    // =========================================================================
+    // 🔥 AMBIL DATA LIMIT STOK UNTUK MODAL (AJAX) - VERSI AMAN 🔥
+    // =========================================================================
     public function getStockLimits($itemId)
     {
         $item = \App\Models\Item::findOrFail($itemId);
         $warehouses = \App\Models\Warehouse::orderBy('name')->get();
 
+        // Ambil semua stok untuk item ini (sekali query)
         $existingStocks = \App\Models\InventoryStock::where('item_id', $item->id)->get()->keyBy('warehouse_id');
 
         $stockData = [];
         foreach ($warehouses as $warehouse) {
             $stock = $existingStocks->get($warehouse->id);
 
-            // 🔥 TAMPILKAN STOK MURNI DARI MUTASI 🔥
-            $trueQty = \App\Models\StockMutation::where('item_id', $item->id)
-                ->where('warehouse_id', $warehouse->id)
-                ->selectRaw('COALESCE(SUM(CASE WHEN type = "IN" THEN qty ELSE -qty END), 0) as total')
-                ->first()->total ?? 0;
-
             $stockData[] = [
                 'warehouse_id' => $warehouse->id,
                 'warehouse'    => $warehouse->name,
-                'current_qty'  => $trueQty,
+                'current_qty'  => $stock ? (float)$stock->stock_qty : 0,
                 'min_stock'    => $stock ? (float)$stock->min_stock : 0,
                 'max_stock'    => $stock ? (float)$stock->max_stock : 0,
             ];
@@ -1126,6 +1152,11 @@ class InventoryController extends Controller
         ]);
     }
 
+
+
+    // =========================================================================
+    // 🔥 SIMPAN PERUBAHAN LIMIT STOK MULTI-GUDANG - VERSI AMAN 🔥
+    // =========================================================================
     public function updateStockLimits(\Illuminate\Http\Request $request)
     {
         $request->validate([
@@ -1136,11 +1167,13 @@ class InventoryController extends Controller
             'limits.*.max_stock'    => 'nullable|numeric|min:0',
         ]);
 
+        // Tangkap ID Perusahaan dari user yang sedang login (Fallback ke 1 jika kosong)
         $companyId = auth()->user()->company_id ?? 1;
 
         \Illuminate\Support\Facades\DB::beginTransaction();
         try {
             foreach ($request->limits as $limit) {
+                // Update jika ada, Create jika belum ada!
                 \App\Models\InventoryStock::updateOrCreate(
                     [
                         'item_id'      => $request->item_id,
@@ -1149,7 +1182,7 @@ class InventoryController extends Controller
                     [
                         'min_stock'    => $limit['min_stock'] ?? 0,
                         'max_stock'    => $limit['max_stock'] ?? 0,
-                        'company_id'   => $companyId,
+                        'company_id'   => $companyId, // 🔥 SUNTIKAN WAJIB UNTUK DATABASE KOMANDAN 🔥
                     ]
                 );
             }
@@ -1160,4 +1193,6 @@ class InventoryController extends Controller
             return back()->with('error', 'Gagal memperbarui batas stok: ' . $e->getMessage());
         }
     }
+
+
 }

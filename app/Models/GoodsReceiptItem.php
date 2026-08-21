@@ -10,19 +10,7 @@ class GoodsReceiptItem extends Model
     use HasFactory;
 
     // WAJIB DITAMBAHKAN BAGIAN INI
-    protected $fillable = [
-        'goods_receipt_id',
-        'purchase_order_item_id', // Ini yang tadi diblokir oleh Laravel
-        'item_id',
-        'qty_returned', // <--- TAMBAHKAN BARIS INI
-        'qty_received',
-        'condition_id',
-        'notes',
-        'uom_id',
-        'uom',
-
-    ];
-
+    protected $guarded = ['id'];
 
     // 1. Relasi kembali ke Header Goods Receipt
     public function goodsReceipt()
