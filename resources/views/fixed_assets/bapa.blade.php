@@ -5,6 +5,7 @@
     <title>Berita Acara Pengembalian Aset</title>
     <style>
         body { font-family: 'Helvetica', 'Arial', sans-serif; font-size: 11pt; line-height: 1.5; color: #000; }
+        @page { margin: 40px 50px 70px 50px; }
         .header { text-align: center; border-bottom: 2px solid #000; padding-bottom: 10px; margin-bottom: 20px; }
         .header h2 { margin: 0; font-size: 16pt; text-transform: uppercase; text-decoration: underline; }
         .header p { margin: 5px 0 0 0; font-size: 10pt; }
@@ -15,43 +16,26 @@
         .table-info td:nth-child(2) { width: 3%; }
         .table-asset { width: 100%; border-collapse: collapse; margin-top: 15px; margin-bottom: 20px; }
         .table-asset th, .table-asset td { border: 1px solid #000; padding: 8px; text-align: left; }
-        .table-asset th { background-color: #ffe6e6; } /* Warna merah muda pudar membedakan dengan BAST */
+        .table-asset th { background-color: #ffe6e6; }
         .signature-box { width: 100%; margin-top: 40px; table-layout: fixed; }
-        .signature-box td { text-align: center; vertical-align: bottom; width: 50%; }
+        .signature-box td { text-align: center; vertical-align: bottom; }
         .signature-name { font-weight: bold; text-decoration: underline; margin-top: 70px; }
-
-        /* CSS Footer Abadi */
-        footer {
-            position: fixed;
-            bottom: -40px;
-            left: 0px;
-            right: 0px;
-            height: 30px;
-            border-top: 1px solid #888;
-            text-align: right;
-            font-size: 8.5pt;
-            color: #555;
-            padding-top: 5px;
-            font-style: italic;
-        }
+        footer { position: fixed; bottom: -40px; left: 0px; right: 0px; height: 30px; border-top: 1px solid #888; text-align: right; font-size: 8.5pt; color: #555; padding-top: 5px; font-style: italic; }
         .pagenum:before { content: "Halaman " counter(page); }
     </style>
 </head>
 <body>
 
-    {{-- 🔥 LOGIKA MENGUNCI TANGGAL PERMANEN DARI RIWAYAT PENGEMBALIAN 🔥 --}}
     @php
-        $returnLog = $asset->histories->where('status', 'RETURNED')->first();
+        $returnLog = $asset->histories->where('status', 'Returned')->first();
+        if(!$returnLog) $returnLog = $asset->histories->where('status', 'RETURNED')->first();
         $tanggalPengembalian = $returnLog ? $returnLog->created_at : $asset->updated_at;
     @endphp
 
-    <footer>
-        Dokumen BAPA Aset: {{ $asset->asset_number }} &nbsp; | &nbsp; <span class="pagenum"></span>
-    </footer>
+    <footer>Dokumen BAPA Aset: {{ $asset->asset_number }} &nbsp; | &nbsp; <span class="pagenum"></span></footer>
 
     <div class="header">
         <h2>BERITA ACARA PENGEMBALIAN ASET</h2>
-        {{-- Nomor surat juga dikunci ke tanggal pengembalian --}}
         <p>Nomor: BAPA/{{ \Carbon\Carbon::parse($tanggalPengembalian)->format('Y/m/d') }}/{{ substr($asset->asset_number, -4) }}</p>
     </div>
 
@@ -122,35 +106,34 @@
 
         <p><strong>Keterangan Pengembalian:</strong></p>
         <p style="border: 1px dashed #000; padding: 10px; font-style: italic; background-color: #f9f9f9;">
-            {{ $returnLog ? str_replace('Dikembalikan ke gudang (ID: '.$asset->warehouse_id.') oleh User ID: '.$lastAssignee->id.'. Catatan: ', '', $returnLog->notes) : ($asset->notes ?? 'Dikembalikan ke gudang dalam kondisi baik.') }}
+            {{ $asset->notes ?? 'Dikembalikan ke gudang dalam kondisi baik.' }}
         </p>
 
         <p>Dengan ditandatanganinya Berita Acara Pengembalian Aset ini, maka tanggung jawab <strong>PIHAK PERTAMA</strong> terhadap pemeliharaan aset tersebut dinyatakan telah <strong>selesai/gugur</strong>.</p>
 
+        {{-- 🔥 KOTAK TANDA TANGAN DINAMIS & TERLENGKAP 🔥 --}}
         <table class="signature-box">
             <tr>
-                <td>
-                    <strong>YANG MENGEMBALIKAN,</strong><br>
-                    PIHAK PERTAMA
-                    <br><br><br><br>
-                    <div class="signature-name">{{ optional($lastAssignee)->name }}</div>
-                    <div style="font-size: 9pt;">{{ optional($lastAssignee)->job_title ?? 'Karyawan' }}</div>
+                @foreach($signers as $index => $signer)
+                <td style="width: {{ 100 / count($signers) }}%; padding: 10px;">
+                    <strong>{{ $index == 0 ? 'YANG MENGEMBALIKAN,' : ($index == 1 ? 'YANG MENERIMA,' : 'MENGETAHUI,') }}</strong><br>
+                    <span style="font-size: 9pt;">{{ $index == 0 ? 'PIHAK PERTAMA' : ($index == 1 ? 'PIHAK KEDUA' : 'SAKSI') }}</span>
+                    <br><br><br><br><br>
+                    <div class="signature-name">{{ $signer->name }}</div>
+                    <div style="font-size: 9pt;">
+                        {{ $signer->job_title ?? 'Karyawan' }}
+                        @if(optional($signer->department)->name)
+                            - {{ $signer->department->name }}
+                        @endif
+                    </div>
                 </td>
-                <td>
-                    <strong>YANG MENERIMA,</strong><br>
-                    PIHAK KEDUA
-                    <br><br><br><br>
-                    <div class="signature-name">{{ auth()->user()->name }}</div>
-                    <div style="font-size: 9pt;">{{ auth()->user()->job_title ?? 'GA / IT Dept' }}</div>
-                </td>
+                @endforeach
             </tr>
         </table>
 
-        {{-- 🔥 TIMESTAMP WAKTU CETAK DOKUMEN 🔥 --}}
         <div style="margin-top: 40px; font-size: 8pt; color: #555; text-align: left; font-style: italic;">
             * Dokumen ini dicetak otomatis oleh sistem pada {{ \Carbon\Carbon::now()->translatedFormat('d F Y H:i:s') }} WIB
         </div>
     </div>
-
 </body>
 </html>

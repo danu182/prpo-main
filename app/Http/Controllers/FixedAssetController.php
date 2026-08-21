@@ -433,17 +433,33 @@ class FixedAssetController extends Controller
         }
     }
 
-    public function printBast($id)
+    public function printBast(\Illuminate\Http\Request $request, $id)
     {
         $asset = FixedAsset::with(['item', 'assignee.company', 'status'])->findOrFail($id);
         if (optional($asset->status)->slug !== 'in_use' || !$asset->assigned_to) {
             return back()->with('error', 'Aset ini sedang tidak diserahkan ke siapapun. BAST tidak dapat dicetak.');
         }
-        $pdf = Pdf::loadView('fixed_assets.bast', compact('asset'))->setPaper('A4', 'portrait');
+
+        // Tangkap array tanda tangan dari pop-up (Modal)
+        $signerIds = $request->input('signers', []);
+        if (empty($signerIds)) {
+            // Default 2 orang jika dicetak langsung tanpa Modal
+            $signers = collect([
+                (object)['name' => auth()->user()->name, 'job_title' => 'Pihak Pertama (IT/GA)'],
+                (object)['name' => optional($asset->assignee)->name, 'job_title' => 'Pihak Kedua (Penerima)']
+            ]);
+        } else {
+            // Cari user berdasarkan ID dan pertahankan urutan pilihan
+            $signers = \App\Models\User::whereIn('id', $signerIds)->get()->sortBy(function($model) use ($signerIds) {
+                return array_search($model->id, $signerIds);
+            })->values();
+        }
+
+        $pdf = Pdf::loadView('fixed_assets.bast', compact('asset', 'signers'))->setPaper('A4', 'portrait');
         return $pdf->stream('BAST_Aset_' . str_replace('/', '_', $asset->asset_number) . '.pdf');
     }
 
-    public function printBapa($id)
+    public function printBapa(\Illuminate\Http\Request $request, $id)
     {
         $asset = FixedAsset::with(['item', 'status', 'histories' => function($query) {
             $query->orderBy('created_at', 'desc');
@@ -455,7 +471,21 @@ class FixedAssetController extends Controller
         }
 
         $lastAssignee = User::with('company')->find($lastUsageHistory->assigned_to);
-        $pdf = Pdf::loadView('fixed_assets.bapa', compact('asset', 'lastAssignee'))->setPaper('A4', 'portrait');
+
+        // Tangkap array tanda tangan dari pop-up (Modal)
+        $signerIds = $request->input('signers', []);
+        if (empty($signerIds)) {
+            $signers = collect([
+                (object)['name' => optional($lastAssignee)->name, 'job_title' => 'Pihak Pertama (User)'],
+                (object)['name' => auth()->user()->name, 'job_title' => 'Pihak Kedua (IT/GA)']
+            ]);
+        } else {
+            $signers = \App\Models\User::whereIn('id', $signerIds)->get()->sortBy(function($model) use ($signerIds) {
+                return array_search($model->id, $signerIds);
+            })->values();
+        }
+
+        $pdf = Pdf::loadView('fixed_assets.bapa', compact('asset', 'lastAssignee', 'signers'))->setPaper('A4', 'portrait');
         return $pdf->stream('BAPA_Aset_' . str_replace('/', '_', $asset->asset_number) . '.pdf');
     }
 

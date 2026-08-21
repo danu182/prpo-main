@@ -42,7 +42,7 @@
     .search-btn { border-radius: 0 20px 20px 0 !important; padding-right: 1.5rem; }
 
     /* Select2 Kustomisasi dalam Modal */
-    .select2-container .select2-selection--single { height: 40px !important; border: 1px solid #cbd5e1 !important; border-radius: 8px !important; }
+    .select2-container .select2-selection--single, .select2-container .select2-selection--multiple { min-height: 40px !important; border: 1px solid #cbd5e1 !important; border-radius: 8px !important; }
     .select2-container--default .select2-selection--single .select2-selection__rendered { line-height: 38px !important; color: #334155 !important; }
     .select2-container--default .select2-selection--single .select2-selection__arrow { height: 38px !important; }
 </style>
@@ -192,24 +192,23 @@
                                 <div class="gap-2 d-flex justify-content-end align-items-center">
                                     @if(!$isDisposedOrVoid)
                                         @if(!empty($asset->assigned_to))
-                                            {{-- Jika sedang dipakai: Bisa Retur & Cetak BAST --}}
-                                            <a href="{{ route('fixed-assets.bast', $asset->id) }}" target="_blank" class="shadow-sm btn btn-sm btn-dark fw-bold rounded-pill" title="Cetak BAST">
+                                            {{-- 🔥 TOMBOL CETAK BAST DINAMIS 🔥 --}}
+                                            <button type="button" class="shadow-sm btn btn-sm btn-dark fw-bold rounded-pill" data-bs-toggle="modal" data-bs-target="#printBastModal{{ $asset->id }}" title="Cetak BAST">
                                                 <i class="bi bi-printer"></i>
-                                            </a>
+                                            </button>
                                             <button type="button" class="px-3 shadow-sm btn btn-sm btn-danger fw-bold rounded-pill" data-bs-toggle="modal" data-bs-target="#returnModal{{ $asset->id }}">
                                                 <i class="bi bi-arrow-return-left me-1"></i> Retur Aset
                                             </button>
                                         @else
-                                            {{-- Jika di gudang: Bisa Serahkan & Cetak BAPA --}}
-                                            <a href="{{ route('fixed-assets.bapa', $asset->id) }}" target="_blank" class="shadow-sm btn btn-sm btn-outline-dark fw-bold rounded-pill" title="Cetak BAPA">
+                                            {{-- 🔥 TOMBOL CETAK BAPA DINAMIS 🔥 --}}
+                                            <button type="button" class="shadow-sm btn btn-sm btn-outline-dark fw-bold rounded-pill" data-bs-toggle="modal" data-bs-target="#printBapaModal{{ $asset->id }}" title="Cetak BAPA">
                                                 <i class="bi bi-printer"></i>
-                                            </a>
+                                            </button>
                                             <button type="button" class="px-3 shadow-sm btn btn-sm btn-primary fw-bold rounded-pill" data-bs-toggle="modal" data-bs-target="#handoverModal{{ $asset->id }}">
                                                 <i class="bi bi-person-plus me-1"></i> Serahkan / Update
                                             </button>
                                         @endif
                                     @else
-                                        {{-- Jika Disposed, sembunyikan tombol transaksi --}}
                                         <span class="bg-opacity-25 border badge bg-secondary text-secondary border-secondary-subtle"><i class="bi bi-slash-circle me-1"></i> Aset Nonaktif</span>
                                     @endif
 
@@ -220,6 +219,86 @@
                                 </div>
                             </td>
                         </tr>
+
+                        {{-- ========================================================= --}}
+                        {{-- 🔥 MODAL CETAK BAST DINAMIS 🔥 --}}
+                        {{-- ========================================================= --}}
+                        @if(!empty($asset->assigned_to))
+                        <div class="modal fade" id="printBastModal{{ $asset->id }}" tabindex="-1" aria-hidden="true">
+                            <div class="modal-dialog modal-dialog-centered">
+                                <div class="border-0 shadow-lg modal-content rounded-4">
+                                    <div class="text-white modal-header bg-dark border-bottom-0 rounded-top-4">
+                                        <h6 class="modal-title fw-bold"><i class="bi bi-printer me-2"></i> Cetak BAST (Tanda Tangan)</h6>
+                                        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                                    </div>
+                                    <form action="{{ route('fixed-assets.bast', $asset->id) }}" method="GET" target="_blank">
+                                        <div class="modal-body bg-light">
+                                            <div class="mb-3">
+                                                <label class="form-label fw-bold text-dark small">Pilih Karyawan Yang Tanda Tangan <span class="text-danger">*</span></label>
+                                                <select name="signers[]" class="form-select select2-multiple border-dark-subtle" multiple required style="width: 100%;">
+                                                    @foreach($users as $usr)
+                                                        <option value="{{ $usr->id }}"
+                                                            {{ (auth()->id() == $usr->id || $asset->assigned_to == $usr->id) ? 'selected' : '' }}>
+                                                            {{ $usr->name }} ({{ optional($usr->department)->name ?? '-' }})
+                                                        </option>
+                                                    @endforeach
+                                                </select>
+                                                <div class="form-text small mt-2">
+                                                    <i class="bi bi-info-circle text-primary"></i> <strong>Urutan cetak:</strong> Pihak Pertama, Pihak Kedua, lalu Sisanya sebagai Saksi/Mengetahui.
+                                                </div>
+                                            </div>
+                                        </div>
+                                        <div class="bg-white modal-footer border-top-0 rounded-bottom-4">
+                                            <button type="button" class="px-4 btn btn-light fw-bold rounded-pill" data-bs-dismiss="modal">Batal</button>
+                                            <button type="submit" class="px-4 shadow-sm btn btn-dark fw-bold rounded-pill"><i class="bi bi-printer me-1"></i> Cetak Dokumen</button>
+                                        </div>
+                                    </form>
+                                </div>
+                            </div>
+                        </div>
+                        @endif
+
+                        {{-- ========================================================= --}}
+                        {{-- 🔥 MODAL CETAK BAPA DINAMIS 🔥 --}}
+                        {{-- ========================================================= --}}
+                        @if(empty($asset->assigned_to))
+                        <div class="modal fade" id="printBapaModal{{ $asset->id }}" tabindex="-1" aria-hidden="true">
+                            <div class="modal-dialog modal-dialog-centered">
+                                <div class="border-0 shadow-lg modal-content rounded-4">
+                                    <div class="text-dark modal-header bg-warning border-bottom-0 rounded-top-4">
+                                        <h6 class="modal-title fw-bold"><i class="bi bi-printer me-2"></i> Cetak BAPA (Tanda Tangan)</h6>
+                                        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                                    </div>
+                                    <form action="{{ route('fixed-assets.bapa', $asset->id) }}" method="GET" target="_blank">
+                                        <div class="modal-body bg-light">
+                                            <div class="mb-3">
+                                                <label class="form-label fw-bold text-dark small">Pilih Karyawan Yang Tanda Tangan <span class="text-danger">*</span></label>
+                                                <select name="signers[]" class="form-select select2-multiple border-warning-subtle" multiple required style="width: 100%;">
+                                                    @foreach($users as $usr)
+                                                        @php
+                                                            $lastUsage = $asset->histories->whereNotNull('assigned_to')->first();
+                                                            $lastAssigneeId = $lastUsage ? $lastUsage->assigned_to : null;
+                                                        @endphp
+                                                        <option value="{{ $usr->id }}"
+                                                            {{ (auth()->id() == $usr->id || $lastAssigneeId == $usr->id) ? 'selected' : '' }}>
+                                                            {{ $usr->name }} ({{ optional($usr->department)->name ?? '-' }})
+                                                        </option>
+                                                    @endforeach
+                                                </select>
+                                                <div class="form-text small mt-2">
+                                                    <i class="bi bi-info-circle text-primary"></i> <strong>Urutan cetak:</strong> Pihak Pertama (Penyetor), Pihak Kedua (Gudang), lalu Saksi/Mengetahui.
+                                                </div>
+                                            </div>
+                                        </div>
+                                        <div class="bg-white modal-footer border-top-0 rounded-bottom-4">
+                                            <button type="button" class="px-4 btn btn-light fw-bold rounded-pill" data-bs-dismiss="modal">Batal</button>
+                                            <button type="submit" class="px-4 shadow-sm btn btn-warning text-dark fw-bold rounded-pill"><i class="bi bi-printer me-1"></i> Cetak Dokumen</button>
+                                        </div>
+                                    </form>
+                                </div>
+                            </div>
+                        </div>
+                        @endif
 
                         {{-- MODAL PROSES PENGEMBALIAN ASET (RETUR) --}}
                         @if(!empty($asset->assigned_to))
@@ -382,6 +461,15 @@
                 theme: 'bootstrap-5',
                 dropdownParent: $(this)
             });
+
+            // 🔥 Init Select2 Multiple khusus untuk form cetak PDF 🔥
+            $(this).find('.select2-multiple').select2({
+                theme: 'bootstrap-5',
+                dropdownParent: $(this),
+                placeholder: 'Ketik & Pilih Karyawan...',
+                allowClear: true
+            });
+
             // Jalankan toggle pertama kali agar defaultnya benar
             $(this).find('.status-select-handover').trigger('change');
         });
