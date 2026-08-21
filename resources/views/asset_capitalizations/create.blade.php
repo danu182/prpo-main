@@ -95,8 +95,11 @@
                                         <div class="fw-bold text-primary">{{ $poNumber }}</div>
                                         <div class="small text-muted mt-1"><i class="bi bi-building me-1"></i>{{ $vendorName }}</div>
                                     </td>
+                                    <!-- Cari bagian ini dan ganti menjadi warehouse_name_display -->
                                     <td class="py-3 searchable">
-                                        <span class="border badge bg-secondary-subtle text-secondary px-2 py-1"><i class="bi bi-box-seam me-1"></i>{{ optional($gr->warehouse)->name ?? 'Gudang Utama' }}</span>
+                                        <span class="border badge bg-secondary-subtle text-secondary px-2 py-1">
+                                            <i class="bi bi-box-seam me-1"></i>{{ $gr->warehouse_name_display ?? 'Gudang Utama' }}
+                                        </span>
                                     </td>
                                     <td class="px-4 py-3 text-end">
                                         <button type="button" class="px-4 shadow-sm btn btn-primary btn-sm rounded-pill fw-bold btn-select-gr" data-id="{{ $gr->id }}" data-gr="{{ $gr->gr_number }}" data-wh="{{ optional($gr->warehouse)->name ?? 'Gudang Utama' }}">
@@ -252,7 +255,6 @@
     $(document).on('click', '.btn-select-gr', function() {
         let grId = $(this).data('id');
         let grNum = $(this).data('gr');
-        let whName = $(this).data('wh');
         let btn = $(this);
         let originalText = btn.html();
 
@@ -261,7 +263,9 @@
 
         $('#form_gr_id').val(grId);
         $('#lbl-selected-gr').text(grNum);
-        $('#lbl-selected-wh').text(whName);
+
+        // Pasang indikator loading sementara di label gudang
+        $('#lbl-selected-wh').html('<span class="spinner-border spinner-border-sm text-secondary"></span> Mencari Gudang...');
 
         $.ajax({
             url: `/asset-capitalizations/get-items/${grId}?t=` + new Date().getTime(),
@@ -269,7 +273,10 @@
             cache: false,
             success: function(res) {
                 btn.html(originalText).prop('disabled', false);
+
+                // 🔥 KUNCI PERBAIKAN: TIMPA TEKS GUDANG DENGAN HASIL DARI CONTROLLER 🔥
                 $('#form_warehouse_id').val(res.warehouse_id);
+                $('#lbl-selected-wh').text(res.warehouse_name);
 
                 let tbody = $('#tbody-items');
                 tbody.empty();
@@ -312,6 +319,7 @@
             },
             error: function() {
                 btn.html(originalText).prop('disabled', false);
+                $('#lbl-selected-wh').text('Gagal memuat gudang');
                 Swal.fire('Koneksi Terputus', 'Gagal memuat data item dari server.', 'error');
             }
         });
