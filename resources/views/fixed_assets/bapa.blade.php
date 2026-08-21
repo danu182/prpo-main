@@ -30,6 +30,18 @@
         $returnLog = $asset->histories->where('status', 'Returned')->first();
         if(!$returnLog) $returnLog = $asset->histories->where('status', 'RETURNED')->first();
         $tanggalPengembalian = $returnLog ? $returnLog->created_at : $asset->updated_at;
+
+        // TANGKAP NAMA PIHAK 1 & PIHAK 2 DARI PILIHAN POP-UP
+        $p1 = $signers[0] ?? null;
+        $p2 = $signers[1] ?? null;
+
+        $p1Name = $p1->name ?? '-';
+        $p1Title = $p1->job_title ?? 'Karyawan';
+        $p1Dept = isset($p1->department) ? optional($p1->department)->name : '';
+
+        $p2Name = $p2->name ?? '-';
+        $p2Title = $p2->job_title ?? 'Karyawan';
+        $p2Dept = isset($p2->department) ? optional($p2->department)->name : '';
     @endphp
 
     <footer>Dokumen BAPA Aset: {{ $asset->asset_number }} &nbsp; | &nbsp; <span class="pagenum"></span></footer>
@@ -44,14 +56,14 @@
 
         <table class="table-info">
             <tr>
-                <td>Nama Karyawan (User)</td>
+                <td>Nama Pengembali</td>
                 <td>:</td>
-                <td><strong>{{ optional($lastAssignee)->name }}</strong></td>
+                <td><strong>{{ $p1Name }}</strong></td>
             </tr>
             <tr>
                 <td>Jabatan / Departemen</td>
                 <td>:</td>
-                <td>{{ optional($lastAssignee)->job_title ?? '-' }}</td>
+                <td>{{ $p1Title }}{{ $p1Dept ? ' - ' . $p1Dept : '' }}</td>
             </tr>
             <tr>
                 <td>Entitas / PT</td>
@@ -65,14 +77,14 @@
 
         <table class="table-info">
             <tr>
-                <td>Nama Admin / GA / IT</td>
+                <td>Nama Penerima</td>
                 <td>:</td>
-                <td><strong>{{ auth()->user()->name }}</strong></td>
+                <td><strong>{{ $p2Name }}</strong></td>
             </tr>
             <tr>
                 <td>Jabatan / Departemen</td>
                 <td>:</td>
-                <td>{{ auth()->user()->job_title ?? 'General Affair / IT' }}</td>
+                <td>{{ $p2Title }}{{ $p2Dept ? ' - ' . $p2Dept : '' }}</td>
             </tr>
             <tr>
                 <td colspan="3"><br><i>Selanjutnya disebut sebagai <strong>PIHAK KEDUA (Yang Menerima)</strong>.</i></td>
@@ -111,7 +123,7 @@
 
         <p>Dengan ditandatanganinya Berita Acara Pengembalian Aset ini, maka tanggung jawab <strong>PIHAK PERTAMA</strong> terhadap pemeliharaan aset tersebut dinyatakan telah <strong>selesai/gugur</strong>.</p>
 
-        {{-- 🔥 KOTAK TANDA TANGAN DINAMIS & TERLENGKAP 🔥 --}}
+        {{-- 🔥 KOTAK TANDA TANGAN DINAMIS DARI POP-UP 🔥 --}}
         <table class="signature-box">
             <tr>
                 @foreach($signers as $index => $signer)
@@ -122,7 +134,7 @@
                     <div class="signature-name">{{ $signer->name }}</div>
                     <div style="font-size: 9pt;">
                         {{ $signer->job_title ?? 'Karyawan' }}
-                        @if(optional($signer->department)->name)
+                        @if(isset($signer->department) && optional($signer->department)->name)
                             - {{ $signer->department->name }}
                         @endif
                     </div>

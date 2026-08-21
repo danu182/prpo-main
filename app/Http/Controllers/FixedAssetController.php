@@ -433,6 +433,9 @@ class FixedAssetController extends Controller
         }
     }
 
+    // =========================================================================
+    // 🔥 CETAK BAST DENGAN KUNCI POSISI MUTLAK 🔥
+    // =========================================================================
     public function printBast(\Illuminate\Http\Request $request, $id)
     {
         $asset = FixedAsset::with(['item', 'assignee.company', 'status'])->findOrFail($id);
@@ -440,25 +443,51 @@ class FixedAssetController extends Controller
             return back()->with('error', 'Aset ini sedang tidak diserahkan ke siapapun. BAST tidak dapat dicetak.');
         }
 
-        // Tangkap array tanda tangan dari pop-up (Modal)
         $signerIds = $request->input('signers', []);
+
         if (empty($signerIds)) {
-            // Default 2 orang jika dicetak langsung tanpa Modal
             $signers = collect([
-                (object)['name' => auth()->user()->name, 'job_title' => 'Pihak Pertama (IT/GA)'],
-                (object)['name' => optional($asset->assignee)->name, 'job_title' => 'Pihak Kedua (Penerima)']
+                (object)['name' => auth()->user()->name, 'job_title' => auth()->user()->job_title ?? 'IT / GA', 'department' => auth()->user()->department],
+                (object)['name' => optional($asset->assignee)->name, 'job_title' => optional($asset->assignee)->job_title ?? 'Karyawan', 'department' => optional($asset->assignee)->department]
             ]);
         } else {
-            // Cari user berdasarkan ID dan pertahankan urutan pilihan
-            $signers = \App\Models\User::whereIn('id', $signerIds)->get()->sortBy(function($model) use ($signerIds) {
-                return array_search($model->id, $signerIds);
-            })->values();
+            $selectedUsers = \App\Models\User::with('department')->whereIn('id', $signerIds)->get();
+            $signers = collect();
+
+            $adminId = auth()->id();
+            $assigneeId = $asset->assigned_to;
+
+            // PIHAK 1: PENYERAH (Pasti Admin / User Login dikunci di sini)
+            $pihak1 = $selectedUsers->where('id', $adminId)->first();
+            if (!$pihak1) $pihak1 = $selectedUsers->first(); // Fallback jika admin tidak dipilih
+
+            if ($pihak1) {
+                $signers->push($pihak1);
+                $selectedUsers = $selectedUsers->reject(function($u) use ($pihak1) { return $u->id == $pihak1->id; });
+            }
+
+            // PIHAK 2: PENERIMA (Pasti Karyawan)
+            $pihak2 = $selectedUsers->where('id', $assigneeId)->first();
+            if (!$pihak2) $pihak2 = $selectedUsers->first(); // Fallback
+
+            if ($pihak2) {
+                $signers->push($pihak2);
+                $selectedUsers = $selectedUsers->reject(function($u) use ($pihak2) { return $u->id == $pihak2->id; });
+            }
+
+            // SISANYA: Menjadi Saksi
+            foreach ($selectedUsers as $u) {
+                $signers->push($u);
+            }
         }
 
         $pdf = Pdf::loadView('fixed_assets.bast', compact('asset', 'signers'))->setPaper('A4', 'portrait');
         return $pdf->stream('BAST_Aset_' . str_replace('/', '_', $asset->asset_number) . '.pdf');
     }
 
+    // =========================================================================
+    // 🔥 CETAK BAPA DENGAN KUNCI POSISI MUTLAK 🔥
+    // =========================================================================
     public function printBapa(\Illuminate\Http\Request $request, $id)
     {
         $asset = FixedAsset::with(['item', 'status', 'histories' => function($query) {
@@ -471,18 +500,43 @@ class FixedAssetController extends Controller
         }
 
         $lastAssignee = User::with('company')->find($lastUsageHistory->assigned_to);
-
-        // Tangkap array tanda tangan dari pop-up (Modal)
         $signerIds = $request->input('signers', []);
+
         if (empty($signerIds)) {
             $signers = collect([
-                (object)['name' => optional($lastAssignee)->name, 'job_title' => 'Pihak Pertama (User)'],
-                (object)['name' => auth()->user()->name, 'job_title' => 'Pihak Kedua (IT/GA)']
+                (object)['name' => optional($lastAssignee)->name, 'job_title' => optional($lastAssignee)->job_title ?? 'Karyawan', 'department' => optional($lastAssignee)->department],
+                (object)['name' => auth()->user()->name, 'job_title' => auth()->user()->job_title ?? 'IT / GA', 'department' => auth()->user()->department]
             ]);
         } else {
-            $signers = \App\Models\User::whereIn('id', $signerIds)->get()->sortBy(function($model) use ($signerIds) {
-                return array_search($model->id, $signerIds);
-            })->values();
+            $selectedUsers = \App\Models\User::with('department')->whereIn('id', $signerIds)->get();
+            $signers = collect();
+
+            $adminId = auth()->id();
+            $assigneeId = optional($lastAssignee)->id;
+
+            // PIHAK 1: PENGEMBALI (Pasti Karyawan)
+            $pihak1 = $selectedUsers->where('id', $assigneeId)->first();
+            if (!$pihak1) $pihak1 = $selectedUsers->where('id', '!=', $adminId)->first(); // Cari siapa saja asal bukan admin
+            if (!$pihak1) $pihak1 = $selectedUsers->first(); // Fallback terakhir
+
+            if ($pihak1) {
+                $signers->push($pihak1);
+                $selectedUsers = $selectedUsers->reject(function($u) use ($pihak1) { return $u->id == $pihak1->id; });
+            }
+
+            // PIHAK 2: PENERIMA GUDANG (Pasti Admin / User Login dikunci di sini)
+            $pihak2 = $selectedUsers->where('id', $adminId)->first();
+            if (!$pihak2) $pihak2 = $selectedUsers->first(); // Fallback jika admin tidak dipilih
+
+            if ($pihak2) {
+                $signers->push($pihak2);
+                $selectedUsers = $selectedUsers->reject(function($u) use ($pihak2) { return $u->id == $pihak2->id; });
+            }
+
+            // SISANYA: Menjadi Saksi
+            foreach ($selectedUsers as $u) {
+                $signers->push($u);
+            }
         }
 
         $pdf = Pdf::loadView('fixed_assets.bapa', compact('asset', 'lastAssignee', 'signers'))->setPaper('A4', 'portrait');
