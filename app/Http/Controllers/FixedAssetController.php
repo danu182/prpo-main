@@ -1041,11 +1041,14 @@ class FixedAssetController extends Controller
                     'created_by'       => auth()->id(),
                 ]);
 
-
                 $asset->assigned_to   = null;
                 $asset->department_id = null;
                 $asset->warehouse_id  = $request->warehouse_id;
                 $asset->status_id     = $request->status_id;
+
+                // 🔥 PERBAIKAN: Timpa catatan penyerahan lama dengan catatan retur yang baru 🔥
+                $asset->notes         = $returnReason;
+
                 $asset->save();
 
                 $item = \App\Models\Item::find($asset->item_id);

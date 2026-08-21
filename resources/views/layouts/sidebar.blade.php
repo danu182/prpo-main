@@ -127,7 +127,7 @@
                 <a href="{{ route('fixed-assets.index') }}" class="sidebar-sublink {{ request()->routeIs('fixed-assets.index') ? 'active' : '' }}">Registrasi / Import Aset</a>
                 <a href="{{ route('fixed-assets.import_history') }}" class="sidebar-sublink {{ request()->routeIs('fixed-assets.import_history') ? 'active' : '' }}">Riwayat Import & Label QR</a>
                 <a href="{{ route('fixed-assets.hibah_history') }}" class="sidebar-sublink {{ request()->routeIs('fixed-assets.hibah_history') ? 'active' : '' }}">Riwayat Hibah Aset</a>
-                <a href="{{ route('assets.pending') }}" class="sidebar-sublink {{ request()->routeIs('assets.pending') ? 'active' : '' }}">Aset Menunggu Register</a>
+                {{-- <a href="{{ route('fixed-assets.import_staging') }}" class="sidebar-sublink {{ request()->routeIs('fixed-assets.import_staging') ? 'active' : '' }}">Aset Menunggu Register</a> --}}
             </div>
         </div>
         @endcan

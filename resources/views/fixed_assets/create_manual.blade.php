@@ -119,7 +119,7 @@
                             <div id="photo-inputs-container" class="gap-2 mb-3 d-flex flex-column">
                                 <div class="shadow-sm input-group input-group-sm photo-input-row">
                                     <input type="file" name="photos[]" class="form-control border-primary-subtle single-photo-input" accept="image/*">
-                                    <button type="button" class="btn btn-danger remove-photo-row" title="Hapus baris ini"><i class="bi bi-trash"></i></button>
+                                    <button type="button" class="btn btn-danger remove-photo-row" title="Hapus baris ini" disabled><i class="bi bi-trash"></i></button>
                                 </div>
                             </div>
 
@@ -256,7 +256,8 @@
         });
 
         // 🔥 Smart Toggle Menggunakan SLUG 🔥
-        $('#status_id').on('change', function() {
+        // PERBAIKAN: Menambahkan parameter (e) pada function
+        $('#status_id').on('change', function(e) {
             // Ambil data-slug dari option yang dipilih
             let slug = $(this).find('option:selected').data('slug');
 
@@ -266,7 +267,7 @@
             } else {
                 $('#wrapper-assigned-to').slideUp(); // Sembunyikan Animasi
                 // Jangan kosongkan user langsung jika ini trigger saat Load form error (agar old input tidak hilang)
-                if(e.originalEvent !== undefined) {
+                if(e && e.originalEvent !== undefined) {
                     $('#assigned_to').val('').trigger('change');
                 }
                 $('#assigned_to').prop('required', false); // Batal Wajib
