@@ -19,7 +19,7 @@ class InventoryController extends Controller
 {
 
     // ==========================================
-    // 1. TAMPILKAN SALDO STOK (MESIN MATEMATIKA ISOLASI ASET)
+    // 1. Tampilkan Semua Saldo Stok (DENGAN MESIN AUTO-HEALING)
     // ==========================================
     public function index(Request $request)
     {
@@ -61,24 +61,24 @@ class InventoryController extends Controller
             ->withQueryString();
 
         // =========================================================================
-        // 🔥 MESIN ANTI BENTROK: PISAHKAN PENGURANGAN ASET DARI STOK FISIK 🔥
+        // 🔥 MESIN AUTO-HEALING: KEBAL TERHADAP PENGURANGAN GANDA DARI GI-AST 🔥
         // =========================================================================
         $stocks->getCollection()->transform(function ($item) use ($warehouseId) {
 
-            $mutQuery = \App\Models\StockMutation::where('item_id', $item->id);
-            if (!empty($warehouseId)) $mutQuery->where('warehouse_id', $warehouseId);
+            // 1. Hitung Murni dari Mutasi (ABAIKAN Pemotongan Palsu dari GI-AST)
+            $mutQuery = \App\Models\StockMutation::where('item_id', $item->id)
+                ->where('reference_number', 'not like', 'GI-AST/%'); // 👈 ANTI BUG DOUBLE DEDUCTION
 
-            // 🔥 HANYA HITUNG MASUK DARI GR & SA (Abaikan Aset Kembali / RET)
-            $masuk = (clone $mutQuery)->where('type', 'IN')
-                        ->where('reference_number', 'not like', 'RET%')->sum('qty');
+            if (!empty($warehouseId)) {
+                $mutQuery->where('warehouse_id', $warehouseId);
+            }
 
-            // 🔥 HANYA HITUNG KELUAR DARI KAPITALISASI & USAGE (Abaikan Aset Diserahkan / GI-AST)
-            $keluar = (clone $mutQuery)->where('type', '!=', 'IN')
-                        ->where('reference_number', 'not like', 'GI-AST%')->sum('qty');
+            $masuk = (clone $mutQuery)->where('type', 'IN')->sum('qty');
+            $keluar = (clone $mutQuery)->where('type', '!=', 'IN')->sum('qty');
 
             $trueBulkStock = $masuk - $keluar;
 
-            // Hitung Aset Tersedia (Siap dipakai)
+            // 2. Hitung Aset Tersedia (Belum Dipakai)
             $assetStock = 0;
             if (class_exists(\App\Models\FixedAsset::class)) {
                 $assetQuery = \App\Models\FixedAsset::where('item_id', $item->id)
@@ -91,19 +91,22 @@ class InventoryController extends Controller
                 $assetStock = $assetQuery->count();
             }
 
-            // Silent fix database InventoryStock jika angkanya rusak
+            // 3. SILENT FIX: Perbaiki database InventoryStock jika datanya dirusak oleh Handover
             if (empty($warehouseId)) {
                 $wrongStocks = \App\Models\InventoryStock::where('item_id', $item->id)->get();
                 foreach($wrongStocks as $ws) {
-                    $whIn = \App\Models\StockMutation::where('item_id', $item->id)->where('warehouse_id', $ws->warehouse_id)->where('type', 'IN')->where('reference_number', 'not like', 'RET%')->sum('qty');
-                    $whOut = \App\Models\StockMutation::where('item_id', $item->id)->where('warehouse_id', $ws->warehouse_id)->where('type', '!=', 'IN')->where('reference_number', 'not like', 'GI-AST%')->sum('qty');
-                    $whTrueStock = $whIn - $whOut;
+                    $whTrueIn = \App\Models\StockMutation::where('item_id', $item->id)->where('warehouse_id', $ws->warehouse_id)->where('reference_number', 'not like', 'GI-AST/%')->where('type', 'IN')->sum('qty');
+                    $whTrueOut = \App\Models\StockMutation::where('item_id', $item->id)->where('warehouse_id', $ws->warehouse_id)->where('reference_number', 'not like', 'GI-AST/%')->where('type', '!=', 'IN')->sum('qty');
+                    $whTrueStock = $whTrueIn - $whTrueOut;
 
-                    if ($ws->stock_qty != $whTrueStock) $ws->update(['stock_qty' => $whTrueStock]);
+                    if ($ws->stock_qty != $whTrueStock) {
+                        $ws->update(['stock_qty' => $whTrueStock]);
+                    }
                 }
                 \App\Models\Item::where('id', $item->id)->update(['current_stock' => $trueBulkStock]);
             }
 
+            // 4. Siapkan data untuk tampilan Blade
             $item->total_stock = $trueBulkStock + $assetStock;
             $item->real_bulk_stock = $trueBulkStock;
             $item->real_asset_stock = $assetStock;
@@ -115,7 +118,7 @@ class InventoryController extends Controller
     }
 
     // ==========================================
-    // 2. PEMAKAIAN STOK (USAGE)
+    // 2. Pemakaian Stok (Usage) Spesifik
     // ==========================================
     public function storeUsage(Request $request)
     {
@@ -136,9 +139,9 @@ class InventoryController extends Controller
                             ->lockForUpdate()
                             ->firstOrFail();
 
-                // Validasi Murni Anti GI-AST / RET Bug
-                $trueIn = \App\Models\StockMutation::where('item_id', $request->item_id)->where('warehouse_id', $request->warehouse_id)->where('type', 'IN')->where('reference_number', 'not like', 'RET%')->sum('qty');
-                $trueOut = \App\Models\StockMutation::where('item_id', $request->item_id)->where('warehouse_id', $request->warehouse_id)->where('type', '!=', 'IN')->where('reference_number', 'not like', 'GI-AST%')->sum('qty');
+                // Validasi ulang dengan data mutasi murni
+                $trueIn = \App\Models\StockMutation::where('item_id', $request->item_id)->where('warehouse_id', $request->warehouse_id)->where('reference_number', 'not like', 'GI-AST/%')->where('type', 'IN')->sum('qty');
+                $trueOut = \App\Models\StockMutation::where('item_id', $request->item_id)->where('warehouse_id', $request->warehouse_id)->where('reference_number', 'not like', 'GI-AST/%')->where('type', '!=', 'IN')->sum('qty');
                 $trueQty = $trueIn - $trueOut;
 
                 if ($trueQty < $request->qty) {
@@ -182,30 +185,39 @@ class InventoryController extends Controller
     }
 
     // ==========================================
-    // 3. TAMPILKAN KARTU STOK (RIWAYAT & TRANSLATOR USER)
+    // 3. Tampilkan Kartu Stok (Riwayat)
     // ==========================================
     public function show($id, Request $request)
     {
         $warehouseId = $request->input('warehouse_id');
         $item = \App\Models\Item::with('uom')->where('item_type_code', 'STK')->findOrFail($id);
 
-        $mutQuery = \App\Models\StockMutation::where('item_id', $id);
-        if ($warehouseId) $mutQuery->where('warehouse_id', $warehouseId);
+        // 1. HITUNG SALDO TERKINI - ANTI BUG GI-AST
+        $mutQuery = \App\Models\StockMutation::where('item_id', $id)
+            ->where('reference_number', 'not like', 'GI-AST/%');
 
-        // 🔥 HITUNG SALDO UNTUK KOTAK BIRU (HANYA FISIK) 🔥
-        $masuk = (clone $mutQuery)->where('type', 'IN')->where('reference_number', 'not like', 'RET%')->sum('qty');
-        $keluarFisik = (clone $mutQuery)->where('type', '!=', 'IN')->where('reference_number', 'not like', 'GI-AST%')->sum('qty');
-        $bulkStock = $masuk - $keluarFisik;
+        if ($warehouseId) {
+            $mutQuery->where('warehouse_id', $warehouseId);
+        }
+
+        $masuk = (clone $mutQuery)->where('type', 'IN')->sum('qty');
+        $keluar = (clone $mutQuery)->where('type', '!=', 'IN')->sum('qty');
+        $bulkStock = $masuk - $keluar;
 
         $assetStock = \App\Models\FixedAsset::where('item_id', $id)
-            ->whereHas('status', function($q) { $q->where('slug', 'available'); })
-            ->when($warehouseId, function($q) use ($warehouseId) { $q->where('warehouse_id', $warehouseId); })->count();
+            ->whereHas('status', function($q) {
+                $q->where('slug', 'available');
+            })
+            ->when($warehouseId, function($q) use ($warehouseId) {
+                $q->where('warehouse_id', $warehouseId);
+            })->count();
 
         $currentStock = $bulkStock + $assetStock;
 
-        // Tarik SEMUA riwayat mutasi untuk ditampilkan di tabel
+        // 2. TARIK RIWAYAT MUTASI (SEMBUNYIKAN GI-AST PALSU DARI LAYAR)
         $mutations = \App\Models\StockMutation::with('warehouse')
             ->where('item_id', $id)
+            ->where('reference_number', 'not like', 'GI-AST/%')
             ->when($warehouseId, function($q) use ($warehouseId) {
                 $q->where('warehouse_id', $warehouseId);
             })
@@ -214,64 +226,42 @@ class InventoryController extends Controller
             ->paginate(20)
             ->withQueryString();
 
-        // 🔥 LOGIKA SALDO BERJALAN (TOTAL STOK: FISIK + ASET) 🔥
+        // 3. LOGIKA KARTU STOK DINAMIS
         if ($mutations->count() > 0) {
             $oldestMutationOnPage = $mutations->last();
 
-            // Total IN masa lalu (Termasuk GR, SA, dan Aset Kembali/RET)
             $pastIn = \App\Models\StockMutation::where('item_id', $id)
+                ->where('reference_number', 'not like', 'GI-AST/%')
                 ->when($warehouseId, function($q) use ($warehouseId) { $q->where('warehouse_id', $warehouseId); })
                 ->where(function($q) use ($oldestMutationOnPage) {
                     $q->where('created_at', '<', $oldestMutationOnPage->created_at)
                       ->orWhere(function($q2) use ($oldestMutationOnPage) {
-                          $q2->where('created_at', '=', $oldestMutationOnPage->created_at)->where('id', '<', $oldestMutationOnPage->id);
+                          $q2->where('created_at', '=', $oldestMutationOnPage->created_at)
+                             ->where('id', '<', $oldestMutationOnPage->id);
                       });
                 })->where('type', 'IN')->sum('qty');
 
-            // Total OUT masa lalu (HANYA Usage dan Aset Keluar/GI-AST. Kapitalisasi ABAIKAN karena hanya pindah wadah)
             $pastOut = \App\Models\StockMutation::where('item_id', $id)
+                ->where('reference_number', 'not like', 'GI-AST/%')
                 ->when($warehouseId, function($q) use ($warehouseId) { $q->where('warehouse_id', $warehouseId); })
                 ->where(function($q) use ($oldestMutationOnPage) {
                     $q->where('created_at', '<', $oldestMutationOnPage->created_at)
                       ->orWhere(function($q2) use ($oldestMutationOnPage) {
-                          $q2->where('created_at', '=', $oldestMutationOnPage->created_at)->where('id', '<', $oldestMutationOnPage->id);
+                          $q2->where('created_at', '=', $oldestMutationOnPage->created_at)
+                             ->where('id', '<', $oldestMutationOnPage->id);
                       });
-                })
-                ->where('type', '!=', 'IN')
-                ->where('notes', 'not like', '%[CAPITALIZE]%')
-                ->where('notes', 'not like', '%Kapitalisasi%')
-                ->sum('qty');
+                })->where('type', '!=', 'IN')->sum('qty');
 
             $runningBalance = $pastIn - $pastOut;
 
             $reversed = $mutations->reverse();
             foreach ($reversed as $mut) {
-                $isCapitalize = str_contains($mut->notes, '[CAPITALIZE]') || str_contains(strtolower($mut->notes), 'kapitalisasi');
-
-                if ($isCapitalize) {
-                    // Jika Kapitalisasi, Total Saldo tetap sama, tidak dipotong
-                    $mut->dynamic_balance = $runningBalance;
+                if ($mut->type === 'IN') {
+                    $runningBalance += $mut->qty;
                 } else {
-                    if ($mut->type === 'IN') {
-                        $runningBalance += $mut->qty;
-                    } else {
-                        // Handover & Usage normal memotong saldo
-                        $runningBalance -= $mut->qty;
-                    }
-                    $mut->dynamic_balance = $runningBalance;
+                    $runningBalance -= $mut->qty;
                 }
-
-                // =========================================================
-                // 🔥 TRANSLATOR OTOMATIS: UBAH USER ID MENJADI NAMA USER 🔥
-                // =========================================================
-                if (preg_match('/User ID:\s*(\d+)/i', $mut->notes, $matches)) {
-                    $userId = $matches[1];
-                    $userName = \Illuminate\Support\Facades\DB::table('users')->where('id', $userId)->value('name');
-                    if ($userName) {
-                        // Timpa teks di memori layar (tidak mengubah database)
-                        $mut->notes = preg_replace('/User ID:\s*\d+/i', $userName, $mut->notes);
-                    }
-                }
+                $mut->dynamic_balance = $runningBalance;
             }
         }
 
@@ -312,8 +302,8 @@ class InventoryController extends Controller
                 $balanceAfter  = $balanceBefore + $request->qty;
                 $item->update(['current_stock' => $balanceAfter]);
 
-                $trueIn = \App\Models\StockMutation::where('item_id', $request->item_id)->where('warehouse_id', $request->warehouse_id)->where('type', 'IN')->where('reference_number', 'not like', 'RET%')->sum('qty');
-                $trueOut = \App\Models\StockMutation::where('item_id', $request->item_id)->where('warehouse_id', $request->warehouse_id)->where('type', '!=', 'IN')->where('reference_number', 'not like', 'GI-AST%')->sum('qty');
+                $trueIn = \App\Models\StockMutation::where('item_id', $request->item_id)->where('warehouse_id', $request->warehouse_id)->where('reference_number', 'not like', 'GI-AST/%')->where('type', 'IN')->sum('qty');
+                $trueOut = \App\Models\StockMutation::where('item_id', $request->item_id)->where('warehouse_id', $request->warehouse_id)->where('reference_number', 'not like', 'GI-AST/%')->where('type', '!=', 'IN')->sum('qty');
                 $trueQty = $trueIn - $trueOut;
 
                 StockMutation::create([
@@ -592,20 +582,15 @@ class InventoryController extends Controller
         foreach ($warehouses as $wh) {
             $totalPhysical = \App\Models\StockMutation::where('item_id', $item->id)
                 ->where('warehouse_id', $wh->id)
-                ->where('type', 'IN')
-                ->where('reference_number', 'not like', 'RET%')
-                ->selectRaw('COALESCE(SUM(qty), 0) as total')
+                ->where('reference_number', 'not like', 'GI-AST/%')
+                ->selectRaw('COALESCE(SUM(CASE WHEN type = "IN" THEN qty ELSE -qty END), 0) as total')
                 ->first()->total ?? 0;
 
-            $totalOutPhysical = \App\Models\StockMutation::where('item_id', $item->id)
-                ->where('warehouse_id', $wh->id)
-                ->where('type', '!=', 'IN')
-                ->where('reference_number', 'not like', 'GI-AST%')
-                ->selectRaw('COALESCE(SUM(qty), 0) as total')
-                ->first()->total ?? 0;
+            $totalAsAsset = \App\Models\FixedAsset::where('item_id', $item->id)->where('warehouse_id', $wh->id)
+                ->whereHas('status', function($q) { $q->where('slug', 'available'); })
+                ->count();
 
-            $availableRegular = $totalPhysical - $totalOutPhysical;
-            $wh->available_regular_stock = max(0, $availableRegular);
+            $wh->available_regular_stock = max(0, $totalPhysical - $totalAsAsset);
         }
 
         return view('inventory.capitalize', compact('item', 'warehouses'));
@@ -629,9 +614,15 @@ class InventoryController extends Controller
                 $item = \App\Models\Item::where('code', $slug)->firstOrFail();
                 $qtyToConvert = (int) $request->qty;
 
-                $trueIn = \App\Models\StockMutation::where('item_id', $item->id)->where('warehouse_id', $request->warehouse_id)->where('type', 'IN')->where('reference_number', 'not like', 'RET%')->sum('qty');
-                $trueOut = \App\Models\StockMutation::where('item_id', $item->id)->where('warehouse_id', $request->warehouse_id)->where('type', '!=', 'IN')->where('reference_number', 'not like', 'GI-AST%')->sum('qty');
-                $availableRegular = $trueIn - $trueOut;
+                $totalPhysical = \App\Models\StockMutation::where('item_id', $item->id)
+                    ->where('warehouse_id', $request->warehouse_id)
+                    ->where('reference_number', 'not like', 'GI-AST/%')
+                    ->selectRaw('COALESCE(SUM(CASE WHEN type = "IN" THEN qty ELSE -qty END), 0) as total')
+                    ->first()->total ?? 0;
+
+                $totalAsAsset = \App\Models\FixedAsset::where('item_id', $item->id)->where('warehouse_id', $request->warehouse_id)
+                    ->whereHas('status', function($q) { $q->where('slug', 'available'); })->count();
+                $availableRegular = $totalPhysical - $totalAsAsset;
 
                 if ($qtyToConvert > $availableRegular) {
                     throw new \Exception("Gagal! Kuantitas konversi ({$qtyToConvert}) melebihi sisa stok biasa yang tersedia ({$availableRegular}).");
@@ -762,18 +753,17 @@ class InventoryController extends Controller
         }
 
         foreach ($items as $item) {
-            $mutations = \App\Models\StockMutation::where('item_id', $item->id);
+            $mutations = \App\Models\StockMutation::where('item_id', $item->id)->where('reference_number', 'not like', 'GI-AST/%');
             if ($warehouseId) {
                 $mutations->where('warehouse_id', $warehouseId);
             }
 
-            // Valuation hanya menghitung Stok Laporan Fisik Murni (Abaikan GI-AST & RET)
-            $inBefore = (clone $mutations)->where('type', 'IN')->where('reference_number', 'not like', 'RET%')->where('created_at', '<', $start)->sum('qty');
-            $outBefore = (clone $mutations)->where('type', '!=', 'IN')->where('reference_number', 'not like', 'GI-AST%')->where('created_at', '<', $start)->sum('qty');
+            $inBefore = (clone $mutations)->where('type', 'IN')->where('created_at', '<', $start)->sum('qty');
+            $outBefore = (clone $mutations)->where('type', '!=', 'IN')->where('created_at', '<', $start)->sum('qty');
             $item->saldo_awal = $inBefore - $outBefore;
 
-            $item->mutasi_in = (clone $mutations)->where('type', 'IN')->where('reference_number', 'not like', 'RET%')->whereBetween('created_at', [$start, $end])->sum('qty');
-            $item->mutasi_out = (clone $mutations)->where('type', '!=', 'IN')->where('reference_number', 'not like', 'GI-AST%')->whereBetween('created_at', [$start, $end])->sum('qty');
+            $item->mutasi_in = (clone $mutations)->where('type', 'IN')->whereBetween('created_at', [$start, $end])->sum('qty');
+            $item->mutasi_out = (clone $mutations)->where('type', '!=', 'IN')->whereBetween('created_at', [$start, $end])->sum('qty');
 
             $item->saldo_akhir = $item->saldo_awal + $item->mutasi_in - $item->mutasi_out;
 
@@ -919,8 +909,8 @@ class InventoryController extends Controller
         $criticalItems = collect();
 
         foreach ($candidates as $stock) {
-            $trueIn = \App\Models\StockMutation::where('item_id', $stock->item_id)->where('warehouse_id', $stock->warehouse_id)->where('type', 'IN')->where('reference_number', 'not like', 'RET%')->sum('qty');
-            $trueOut = \App\Models\StockMutation::where('item_id', $stock->item_id)->where('warehouse_id', $stock->warehouse_id)->where('type', '!=', 'IN')->where('reference_number', 'not like', 'GI-AST%')->sum('qty');
+            $trueIn = \App\Models\StockMutation::where('item_id', $stock->item_id)->where('warehouse_id', $stock->warehouse_id)->where('reference_number', 'not like', 'GI-AST/%')->where('type', 'IN')->sum('qty');
+            $trueOut = \App\Models\StockMutation::where('item_id', $stock->item_id)->where('warehouse_id', $stock->warehouse_id)->where('reference_number', 'not like', 'GI-AST/%')->where('type', '!=', 'IN')->sum('qty');
             $trueQty = $trueIn - $trueOut;
 
             $minQty = (float)$stock->min_stock;
@@ -1088,8 +1078,8 @@ class InventoryController extends Controller
         foreach ($warehouses as $warehouse) {
             $stock = $existingStocks->get($warehouse->id);
 
-            $trueIn = \App\Models\StockMutation::where('item_id', $item->id)->where('warehouse_id', $warehouse->id)->where('type', 'IN')->where('reference_number', 'not like', 'RET%')->sum('qty');
-            $trueOut = \App\Models\StockMutation::where('item_id', $item->id)->where('warehouse_id', $warehouse->id)->where('type', '!=', 'IN')->where('reference_number', 'not like', 'GI-AST%')->sum('qty');
+            $trueIn = \App\Models\StockMutation::where('item_id', $item->id)->where('warehouse_id', $warehouse->id)->where('reference_number', 'not like', 'GI-AST/%')->where('type', 'IN')->sum('qty');
+            $trueOut = \App\Models\StockMutation::where('item_id', $item->id)->where('warehouse_id', $warehouse->id)->where('reference_number', 'not like', 'GI-AST/%')->where('type', '!=', 'IN')->sum('qty');
             $trueQty = $trueIn - $trueOut;
 
             $stockData[] = [

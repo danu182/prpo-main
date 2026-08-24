@@ -218,9 +218,9 @@
                                 <div class="gap-1 d-flex flex-column align-items-end">
 
                                     {{-- 1. Tombol Cetak GR --}}
-                                    <a href="{{ route('gr.print', $gr->gr_number) }}" target="_blank" class="px-3 mb-1 shadow-sm btn btn-sm btn-primary fw-bold w-100">
+                                    {{-- <a href="{{ route('gr.print', $gr->gr_number) }}" target="_blank" class="px-3 mb-1 shadow-sm btn btn-sm btn-primary fw-bold w-100">
                                         <i class="bi bi-printer me-1"></i> Cetak GR
-                                    </a>
+                                    </a> --}}
 
                                     {{-- 2. Lampiran File --}}
                                     @if(isset($gr->attachments) && $gr->attachments->count() > 0)
@@ -421,7 +421,7 @@
 @push('scripts')
 <script>
     document.addEventListener("DOMContentLoaded", function() {
-        
+
         // 🔥 TANGKAP URL PRINT DARI CONTROLLER 🔥
         @if(session('print_url'))
             Swal.fire({
@@ -442,7 +442,7 @@
                 }
             });
         @endif
-        
+
     });
 </script>
 @endpush
