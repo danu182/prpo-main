@@ -60,7 +60,6 @@ Route::middleware('auth')->group(function () {
         Route::get('/{id}', [PurchaseRequestController::class, 'show'])->name('show');
         Route::post('/{id}/decide', [PurchaseRequestController::class, 'decide'])->name('decide');
         Route::delete('/{id}', [PurchaseRequestController::class, 'destroy'])->name('destroy');
-        // Route::get('/{id}/print', [PurchaseRequestController::class, 'print'])->name('print');
         Route::get('/{slug}/print', [PurchaseRequestController::class, 'print'])->name('print');
         Route::post('/{slug}/cancel', [PurchaseRequestController::class, 'cancel'])->name('cancel');
         Route::post('/{id}/reject-all', [PurchaseRequestController::class, 'rejectAll'])->name('rejectAll');
@@ -69,11 +68,8 @@ Route::middleware('auth')->group(function () {
         // Tambahkan ini di bawah route print PR yang sudah ada
         Route::get('/{slug}/print-complete', [\App\Http\Controllers\PurchaseRequestController::class, 'printCompleteWithAttachments'])->name('print_complete')->where('slug', '.*');
 
-
-        // Rute untuk AJAX Search (Harus di atas rute pr/{id} jika ada)
+        // Rute untuk AJAX Search
         Route::get('/pr/search-items', [App\Http\Controllers\PurchaseRequestController::class, 'searchItems'])->name('pr.search-items');
-
-
     });
 
 
@@ -83,7 +79,7 @@ Route::middleware('auth')->group(function () {
     Route::prefix('po')->name('po.')->group(function () {
         Route::get('/', [PurchaseOrderController::class, 'index'])->name('index')->middleware('can:view_po');
 
-        // 🔥 HALAMAN BARU: LAPORAN OUTSTANDING PO (LETAKKAN DI SINI, PALING ATAS!) 🔥
+        // 🔥 HALAMAN BARU: LAPORAN OUTSTANDING PO
         Route::get('/outstanding', [\App\Http\Controllers\PurchaseOrderController::class, 'outstanding'])->name('outstanding')->middleware('can:view_po');
 
         // Memproses dari PR
@@ -99,21 +95,13 @@ Route::middleware('auth')->group(function () {
         Route::get('/create-direct', [PurchaseOrderController::class, 'createDirect'])->name('create_direct');
         Route::post('/store-direct', [PurchaseOrderController::class, 'storeDirect'])->name('store_direct');
 
-        // ==========================================================
-        // 🔥 RUTE PRINT (KUMPULAN SEMUA JENIS CETAKAN PDF) 🔥
-        // ==========================================================
+        // RUTE PRINT
         Route::get('/print/{slug}', [PurchaseOrderController::class, 'printPdf'])->name('print')->middleware('can:view_po');
         Route::get('/{slug}/print-complete', [PurchaseOrderController::class, 'printCompletePdf'])->name('print_complete');
-
-        // Cetak BPR Standar (Baru)
         Route::get('/print-bpr/{slug}', [\App\Http\Controllers\PurchaseOrderController::class, 'printBpr'])->name('print_bpr');
-        // Cetak BPR Standar (Global) + Lampiran ---> 🔥 RUTE BARU DITAMBAHKAN DI SINI 🔥
         Route::get('/{slug}/print-bpr-standar-attachments', [\App\Http\Controllers\PurchaseOrderController::class, 'printBprStandarWithAttachments'])->name('print_bpr_standar_attachments')->where('slug', '.*');
-        // Cetak BPR Detail (Ada Rincian Pajak & Diskon)
         Route::get('/print-bpr-detail/{slug}', [\App\Http\Controllers\PurchaseOrderController::class, 'printBprDetail'])->name('print_bpr_detail');
-        // Cetak BPR Detail + Lampiran
         Route::get('/{slug}/print-bpr-attachments', [\App\Http\Controllers\PurchaseOrderController::class, 'printBprWithAttachments'])->name('print_bpr_attachments')->where('slug', '.*');
-        // ==========================================================
 
         // Approval Khusus
         Route::post('/decide/{slug}', [PurchaseOrderController::class, 'decide'])->name('decide');
@@ -122,7 +110,7 @@ Route::middleware('auth')->group(function () {
         Route::get('/delete-attachment/{id}', [PurchaseOrderController::class, 'deleteAttachment'])->name('delete_attachment');
         Route::post('/submit-approval/{slug}', [PurchaseOrderController::class, 'submitApproval'])->name('submit_approval');
 
-        // Aksi Batal & Force Close (Aman ditaruh di bawah)
+        // Aksi Batal & Force Close
         Route::post('/{slug}/cancel', [PurchaseOrderController::class, 'cancel'])->name('cancel')->middleware('can:view_po');
         Route::post('/{slug}/force-close', [\App\Http\Controllers\PurchaseOrderController::class, 'forceClose'])->name('force_close')->middleware('can:view_po');
 
@@ -132,7 +120,6 @@ Route::middleware('auth')->group(function () {
 
         Route::post('/update-billing/{slug}', [App\Http\Controllers\PurchaseOrderController::class, 'updateBillingInfo'])->name('update_billing');
     });
-
 
     // ====================================================
     // 3. MODUL PENERIMAAN BARANG (GR) -> Izin: view_gr
@@ -144,101 +131,58 @@ Route::middleware('auth')->group(function () {
         Route::get('/{id}/print', [GoodsReceiptController::class, 'print'])->name('gr.print');
     });
 
-    // ====================================================
-    // 3. MODUL PENERIMAAN BARANG (GR) -> Izin: view_gr
-    // ====================================================
     Route::prefix('gr')->name('gr.')->middleware(['can:view_gr'])->group(function () {
-
         Route::get('/', [GoodsReceiptController::class, 'index'])->name('index');
-
-        // Form Create GR & Proses Simpan (Berdasarkan Nomor PO / Slug)
         Route::get('/create/{slug}', [GoodsReceiptController::class, 'create'])->name('create');
         Route::post('/store/{slug}', [GoodsReceiptController::class, 'store'])->name('store');
-
-        // Detail, Cetak GR & Label (Berdasarkan Nomor GR / Slug)
         Route::get('/{slug}/show', [GoodsReceiptController::class, 'show'])->name('show');
-        // Route::get('/{slug}/print', [GoodsReceiptController::class, 'print'])->name('print');
         Route::get('/{slug}/print', [GoodsReceiptController::class, 'print'])->name('print')->where('slug', '.*');
         Route::get('/{slug}/print-labels', [GoodsReceiptController::class, 'printLabels'])->name('print_labels');
-
-
         Route::get('/{id}/print-vendor', [GoodsReceiptController::class, 'printVendor'])->name('print_vendor');
         Route::get('/{id}/print-internal', [GoodsReceiptController::class, 'printInternal'])->name('print_internal');
-
     });
-
-
-    // ====================================================
-    // 4. MODUL WAREHOUSE & INVENTORY
-    // ====================================================
 
 
     // =========================================================================
     // ASET TETAP (FIXED ASSETS)
     // =========================================================================
     Route::prefix('fixed-assets')->name('fixed-assets.')->middleware(['can:view_assets'])->group(function () {
-
-        // --- 1. ROUTE STATIS & AJAX (Harus Di Atas Wildcard) ---
         Route::get('/search-items', [FixedAssetController::class, 'searchItems'])->name('search-items');
-
-        // 🔥 FORM BARU (HALAMAN TERSENDIRI TANPA MODAL POP-UP) 🔥
         Route::get('/create-manual', [FixedAssetController::class, 'createManual'])->name('create_manual');
         Route::get('/create-import', [FixedAssetController::class, 'createImport'])->name('create_import');
-
-        // Master List & Export
         Route::get('/master-list', [FixedAssetController::class, 'masterList'])->name('master_list');
         Route::get('/master-list/export', [FixedAssetController::class, 'exportMasterList'])->name('master_list_export');
-
-        // Transaksi & Riwayat
         Route::get('/transactions', [FixedAssetController::class, 'transactions'])->name('transactions');
         Route::get('/hibah-history', [FixedAssetController::class, 'hibahHistory'])->name('hibah_history');
         Route::get('/import-history', [FixedAssetController::class, 'importHistory'])->name('import_history');
-
-        // Export & Template
         Route::get('/template/download', [FixedAssetController::class, 'downloadTemplate'])->name('download_template');
         Route::post('/import/preview', [FixedAssetController::class, 'previewImport'])->name('preview_import');
         Route::post('/import/process', [FixedAssetController::class, 'processImport'])->name('process_import');
 
-
-        // --- 2. ROUTE BATCH / IMPORT WORKFLOW ---
         Route::get('/import-staging/{batch_id}', [FixedAssetController::class, 'importStaging'])->name('import_staging');
         Route::post('/import/submit-approval/{batch_id}', [FixedAssetController::class, 'submitApproval'])->name('submit_approval');
         Route::post('/import/decide/{batch_id}', [FixedAssetController::class, 'decide'])->name('decide');
         Route::delete('/import-staging/{batch_id}/cancel', [FixedAssetController::class, 'cancelImport'])->name('cancel_import');
 
-        // History Detail & Print per Batch
         Route::get('/import-history/{batch_id}', [FixedAssetController::class, 'showImportBatch'])->name('show_import_batch');
         Route::get('/import-history/{batch_id}/print-bast', [FixedAssetController::class, 'printBastByBatch'])->name('print_bast_batch');
         Route::get('/import-history/{batch_id}/print-qr', [FixedAssetController::class, 'printMassQrLabel'])->name('print_mass_qr');
 
-
-        // --- 3. ROUTE UTAMA INDEX & STORE ---
         Route::get('/', [FixedAssetController::class, 'index'])->name('index');
         Route::post('/', [FixedAssetController::class, 'store'])->name('store');
 
-
-        // --- 4. ROUTE WILDCARD ID (Wajib Paling Bawah) ---
         Route::put('/{id}', [FixedAssetController::class, 'update'])->name('update');
         Route::get('/{id}/history', [FixedAssetController::class, 'history'])->name('history');
         Route::post('/{id}/return', [FixedAssetController::class, 'returnAsset'])->name('return');
         Route::post('/{id}/handover', [FixedAssetController::class, 'handoverAsset'])->name('handover');
 
-        // Cetak Dokumen Spesifik Unit
         Route::get('/{id}/bast', [FixedAssetController::class, 'printBast'])->name('bast');
         Route::get('/{id}/bapa', [FixedAssetController::class, 'printBapa'])->name('bapa');
         Route::get('/{id}/bapp', [FixedAssetController::class, 'printBapp'])->name('bapp');
         Route::get('/{id}/print-qr', [FixedAssetController::class, 'printQrLabel'])->name('print_qr');
-
-
-        // --- ROUTE EDIT HALAMAN TERSENDIRI ---
         Route::get('/{id}/edit', [FixedAssetController::class, 'edit'])->name('edit');
-
-        // 🔥 Cukup gunakan nama 'destroy', karena sudah otomatis kena prefix 'fixed-assets.' dari group 🔥
         Route::delete('/{id}', [FixedAssetController::class, 'destroy'])->name('destroy');
-
     });
-
-
 
     Route::prefix('assets')->name('assets.')->middleware(['can:view_assets'])->group(function () {
         Route::get('/', [AssetController::class, 'index'])->name('index');
@@ -251,47 +195,30 @@ Route::middleware('auth')->group(function () {
     });
 
     // =========================================================================
-    // Modul Penyesuaian Stok (Stock Opname)
+    // Modul Penyesuaian Stok (Stock Adjustment)
     // =========================================================================
     Route::prefix('stock-adjustments')->name('stock-adjustments.')->middleware(['can:manage_gi'])->group(function () {
-
-        // 🔥 PERBAIKAN: Gunakan '/' untuk Index agar bisa diakses langsung
         Route::get('/', [StockAdjustmentController::class, 'index'])->name('index');
-
-        // AJAX: Ambil Stok Sistem (WAJIB di atas route dengan parameter ID)
         Route::get('/get-stock', [StockAdjustmentController::class, 'getWarehouseStock'])->name('get-stock');
-
-        // AJAX: Ambil Stok Sistem (WAJIB di atas route dengan parameter ID)
         Route::get('/search-items', [StockAdjustmentController::class, 'searchItems'])->name('search-items');
-
-        // Halaman Form Create
+        Route::get('/search-sns', [\App\Http\Controllers\StockAdjustmentController::class, 'searchSns'])->name('search-sns'); // 🔥 DITAMBAHKAN
         Route::get('/create', [StockAdjustmentController::class, 'create'])->name('create');
-
-        // Proses Simpan (POST ke root prefix)
         Route::post('/', [StockAdjustmentController::class, 'store'])->name('store');
-
-        // 🔥 MISI TAMBAHAN: Jalur untuk halaman Rincian (Show)
         Route::get('/{id}', [StockAdjustmentController::class, 'show'])->name('show');
-
-        // 🔥 TAMBAHKAN BARIS INI: Untuk Cetak PDF
         Route::get('/{id}/print', [StockAdjustmentController::class, 'print'])->name('print');
-
     });
 
-
-   // Modul Pengeluaran Barang (Goods Issue)
+    // Modul Pengeluaran Barang (Goods Issue)
     Route::prefix('goods-issues')->name('goods-issues.')->middleware(['can:manage_gi'])->group(function () {
         Route::get('/', [App\Http\Controllers\GoodsIssueController::class, 'index'])->name('index');
         Route::get('/create', [App\Http\Controllers\GoodsIssueController::class, 'create'])->name('create');
         Route::post('/', [App\Http\Controllers\GoodsIssueController::class, 'store'])->name('store');
 
-        // 🔥 Rute API Pencarian (HARUS DI ATAS RUTE SLUG AGAR TIDAK BENTROK) 🔥
         Route::get('/api/search-items', [App\Http\Controllers\GoodsIssueController::class, 'searchItems'])->name('search-items');
         Route::get('/api/search-assets', [App\Http\Controllers\GoodsIssueController::class, 'searchFixedAssets'])->name('search-assets');
         Route::get('/api/search-batches', [App\Http\Controllers\GoodsIssueController::class, 'searchBatches'])->name('search-batches');
-        Route::get('/api/search-sns', [App\Http\Controllers\GoodsIssueController::class, 'searchSns'])->name('search-sns'); // <--- INI SUDAH BENAR
+        Route::get('/api/search-sns', [App\Http\Controllers\GoodsIssueController::class, 'searchSns'])->name('search-sns');
 
-        // 🔥 SEMUA RUTE SPESIFIK MENGGUNAKAN SLUG SEKARANG 🔥
         Route::get('/{slug}', [App\Http\Controllers\GoodsIssueController::class, 'show'])->name('show');
         Route::get('/{slug}/print', [App\Http\Controllers\GoodsIssueController::class, 'print'])->name('print');
         Route::get('/{slug}/print-labels', [App\Http\Controllers\GoodsIssueController::class, 'printLabels'])->name('print_labels');
@@ -301,7 +228,7 @@ Route::middleware('auth')->group(function () {
 
 
     // =========================================================
-    // 🔙 MODUL 3: GOODS ISSUE RETURNS (RETUR PENGELUARAN)
+    // 🔙 MODUL GOODS ISSUE RETURNS (RETUR PENGELUARAN)
     // =========================================================
     Route::prefix('goods-issue-returns')->name('goods-issue-returns.')->middleware(['can:manage_gi'])->group(function () {
         Route::get('/', [GoodsIssueReturnController::class, 'index'])->name('index');
@@ -309,20 +236,9 @@ Route::middleware('auth')->group(function () {
         Route::post('/{gi_id}', [GoodsIssueReturnController::class, 'store'])->name('store');
         Route::get('/{id}', [GoodsIssueReturnController::class, 'show'])->name('show');
         Route::get('/print/{id}', [GoodsIssueReturnController::class, 'print'])->name('print');
-
     });
 
 
-    // Goods Issue Returns (Retur Pengeluaran)
-    Route::prefix('goods-issue-returns')->name('goods-issue-returns.')->middleware(['can:manage_gi'])->group(function () {
-        Route::get('/', [GoodsIssueReturnController::class, 'index'])->name('index');
-        Route::get('/create/{gi_id}', [GoodsIssueReturnController::class, 'create'])->name('create');
-        Route::post('/{gi_id}', [GoodsIssueReturnController::class, 'store'])->name('store');
-        Route::get('/{id}', [GoodsIssueReturnController::class, 'show'])->name('show');
-    });
-
-
-    // 🔥 PERBAIKAN: Ganti 'auth' menjadi 'can:manage_gi' agar staf biasa tidak bisa akses via URL
     Route::prefix('employee-inventories')->name('employee-inventories.')->middleware(['can:manage_gi'])->group(function () {
         Route::get('/', [\App\Http\Controllers\EmployeeInventoryController::class, 'index'])->name('index');
         Route::get('/history/{employee_name}', [\App\Http\Controllers\EmployeeInventoryController::class, 'history'])->name('history');
@@ -330,159 +246,85 @@ Route::middleware('auth')->group(function () {
     });
 
 
-    // // ====================================================
-    // // 4. MODUL RETURN TO VENDOR (RTV)
-    // // ====================================================
-    // Route::prefix('rtv')->name('rtv.')->group(function () {
-    //     Route::get('/', [\App\Http\Controllers\ReturnToVendorController::class, 'index'])->name('index');
-    //     Route::get('/create/{gr_id}', [\App\Http\Controllers\ReturnToVendorController::class, 'create'])->name('create');
-    //     Route::post('/store/{gr_id}', [\App\Http\Controllers\ReturnToVendorController::class, 'store'])->name('store');
-
-    //     // Wildcard {id} taruh paling bawah!
-    //     Route::get('/{id}/show', [\App\Http\Controllers\ReturnToVendorController::class, 'show'])->name('show');
-    // });
-
-
     // ====================================================
-    // 4. MODUL RETURN TO VENDOR (RTV)
+    // MODUL RETURN TO VENDOR (RTV)
     // ====================================================
     Route::prefix('rtv')->name('rtv.')->middleware(['can:manage_gi'])->group(function ()  {
         Route::get('/', [\App\Http\Controllers\ReturnToVendorController::class, 'index'])->name('index');
-
-        // 🔥 PASTIKAN ADA ->where('slug', '.*') DI BAGIAN AKHIR INI 🔥
         Route::get('/create/{slug}', [\App\Http\Controllers\ReturnToVendorController::class, 'create'])->name('create')->where('slug', '.*');
         Route::post('/store/{slug}', [\App\Http\Controllers\ReturnToVendorController::class, 'store'])->name('store')->where('slug', '.*');
-
         Route::get('/{slug}/show', [\App\Http\Controllers\ReturnToVendorController::class, 'show'])->name('show')->where('slug', '.*');
-
-        // 🔥 TAMBAHKAN RUTE PRINT INI KOMANDAN! 🔥
         Route::get('/{slug}/print', [\App\Http\Controllers\ReturnToVendorController::class, 'print'])->name('print')->where('slug', '.*');
     });
 
 
-
-   // Master Inventory & Items
+    // Master Inventory & Items
     Route::prefix('inventory')->name('inventory.')->middleware(['can:view_inventory'])->group(function () {
         Route::get('/', [InventoryController::class, 'index'])->name('index');
-
         Route::post('/adjustment', [InventoryController::class, 'storeAdjustment'])->name('adjustment');
         Route::post('/usage', [InventoryController::class, 'storeUsage'])->name('usage');
 
-        // 🔥 RUTE SPESIFIK HARUS DI ATAS WILDCARD 🔥
         Route::get('/template', [InventoryController::class, 'downloadTemplate'])->name('download_template');
         Route::post('/import', [InventoryController::class, 'importSaldoAwal'])->name('import_saldo');
-
-        // 🔥 2 Rute Baru untuk Preview & Eksekusi Import Saldo Awal Gudang
         Route::post('/import/preview', [InventoryController::class, 'previewImport'])->name('preview_import');
         Route::post('/import/process', [InventoryController::class, 'processImport'])->name('process_import');
-
-        // 🔥 RUTE BARU UNTUK DOWNLOAD ERROR EXCEL 🔥
         Route::post('/import/errors', [InventoryController::class, 'downloadErrors'])->name('download_errors');
 
-
-       // 1. Laporan Mutasi Stok (Hanya Qty - Untuk Gudang)
         Route::get('/stock-as-of', [\App\Http\Controllers\InventoryController::class, 'stockAsOf'])->name('stock-as-of');
         Route::get('/stock-as-of/print', [\App\Http\Controllers\InventoryController::class, 'printStockAsOf'])->name('stock-as-of.print');
         Route::get('/stock-as-of/export', [\App\Http\Controllers\InventoryController::class, 'exportStockAsOf'])->name('stock-as-of.export');
 
-        // 2. 🔥 Laporan Valuasi Stok (Qty & Uang - Khusus Finance/Manajemen) 🔥
         Route::get('/valuation', [\App\Http\Controllers\InventoryController::class, 'valuation'])->name('valuation');
         Route::get('/valuation/print', [\App\Http\Controllers\InventoryController::class, 'printValuation'])->name('valuation.print');
         Route::get('/valuation/export', [\App\Http\Controllers\InventoryController::class, 'exportValuation'])->name('valuation.export');
 
-
-        // 🔥 Laporan Riwayat Harga Beli (Purchase History)
         Route::get('/purchase-history', [\App\Http\Controllers\InventoryController::class, 'purchaseHistory'])->name('purchase-history');
-
-
-        // 🔥 Laporan Analisis Harga Pembelian (Khusus Tim Procurement/Purchasing)
         Route::get('/price-analysis', [\App\Http\Controllers\InventoryController::class, 'priceAnalysis'])->name('price-analysis');
 
-
-        // 🔥 INI WILDCARD (LUBANG HITAM), WAJIB DI POSISI PALING BAWAH! 🔥
-        // Route::get('/{inventory}', [InventoryController::class, 'show'])->name('show');
-
-
-
-
-        // Fitur Smart Restock (Auto Mass PR)
         Route::get('/smart-restock', [\App\Http\Controllers\InventoryController::class, 'smartRestock'])->name('smart_restock');
         Route::post('/smart-restock/generate-pr', [\App\Http\Controllers\InventoryController::class, 'generateMassPr'])->name('generate_mass_pr');
 
-
-        // 🔥 Pengaturan Min/Max Stok Multi-Gudang
         Route::get('/{item_id}/stock-limits', [\App\Http\Controllers\InventoryController::class, 'getStockLimits'])->name('get_stock_limits');
         Route::post('/update-stock-limits', [\App\Http\Controllers\InventoryController::class, 'updateStockLimits'])->name('update_stock_limits');
-
 
         Route::get('/capitalize/{slug}', [App\Http\Controllers\InventoryController::class, 'capitalizeForm'])->name('capitalize.form');
         Route::post('/capitalize/{slug}', [App\Http\Controllers\InventoryController::class, 'capitalizeStore'])->name('capitalize.store');
 
-
-         // 🔥 INI WILDCARD (LUBANG HITAM), WAJIB DI POSISI PALING BAWAH! 🔥
         Route::get('/{inventory}', [InventoryController::class, 'show'])->name('show');
-
     });
 
     // =========================================================================
     // Modul Mutasi Antar Gudang
     // =========================================================================
     Route::prefix('stock-transfers')->name('stock-transfers.')->middleware(['can:manage_gi'])->group(function () {
-
         Route::get('/search-items', [App\Http\Controllers\StockTransferController::class, 'searchItems'])->name('search-items');
-
         Route::get('/', [App\Http\Controllers\StockTransferController::class, 'index'])->name('index');
         Route::get('/create', [App\Http\Controllers\StockTransferController::class, 'create'])->name('create');
         Route::post('/', [App\Http\Controllers\StockTransferController::class, 'store'])->name('store');
-
-        // 🔥 JALUR UNTUK CETAK PDF 🔥
         Route::get('/{id}/print', [App\Http\Controllers\StockTransferController::class, 'printTransfer'])->name('print');
-
         Route::get('/{id}', [App\Http\Controllers\StockTransferController::class, 'show'])->name('show');
     });
-
-
 
 
     // ====================================================
     // MASTER BARANG & JASA (ITEMS)
     // ====================================================
     Route::prefix('items')->name('items.')->middleware(['can:view_inventory'])->group(function () {
-
         Route::get('/template-excel', [\App\Http\Controllers\ItemController::class, 'downloadTemplate'])->name('download_template');
-
-        // 🔥 Rute khusus Import Baru
         Route::get('/import', [\App\Http\Controllers\ItemController::class, 'import'])->name('import');
-
-        // 2 Rute Baru untuk Preview & Eksekusi Import Master Barang
         Route::post('/import/preview', [\App\Http\Controllers\ItemController::class, 'previewImport'])->name('preview_import');
         Route::post('/import/process', [\App\Http\Controllers\ItemController::class, 'processImport'])->name('process_import');
 
-
         Route::get('/import-staging/{batch_id}', [\App\Http\Controllers\ItemController::class, 'importStaging'])->name('import_staging');
-
-        // 🔥 RUTE BARU UNTUK AKTIF/NONAKTIFKAN BARANG 🔥
         Route::patch('/{item}/toggle-status', [\App\Http\Controllers\ItemController::class, 'toggleStatus'])->name('toggle_status');
-
-        // Halaman Riwayat / Daftar Import
         Route::get('/imports', [\App\Http\Controllers\ItemController::class, 'importIndex'])->name('import_index');
-
-        // Rute untuk mengedit baris Typo di Karantina
         Route::put('/import-staging/detail/{id}', [\App\Http\Controllers\ItemController::class, 'updateStagingDetail'])->name('import_staging.update_detail');
-
-        // Rute untuk membatalkan dan menghapus Draft Karantina
         Route::delete('/import-staging/{batch_id}/cancel', [\App\Http\Controllers\ItemController::class, 'cancelImport'])->name('import_staging.cancel');
 
-        // 🔥 PERBAIKAN: Gembok ->except() DIBUANG agar halaman Create & Edit bisa diakses! 🔥
-        Route::resource('/', \App\Http\Controllers\ItemController::class)->parameters(['' => 'item']);
-
-        // tambahan untuk approval
-        // tambahan untuk approval (Hapus awalan items. karena sudah ada di group)
         Route::post('/import/submit-approval/{batch_id}', [\App\Http\Controllers\ItemController::class, 'submitApproval'])->name('import.submit_approval');
         Route::post('/import/decide/{batch_id}', [\App\Http\Controllers\ItemController::class, 'decide'])->name('import.decide');
 
-
-
+        Route::resource('/', \App\Http\Controllers\ItemController::class)->parameters(['' => 'item']);
     });
 
 
@@ -490,63 +332,36 @@ Route::middleware('auth')->group(function () {
     // 🚀 MODUL VENDOR (MASTER SUPPLIER)
     // =========================================================================
     Route::prefix('vendors')->name('vendors.')->middleware(['can:view_vendors'])->group(function () {
-
-        // 1. Halaman Utama & Pencarian
         Route::get('/', [\App\Http\Controllers\VendorController::class, 'index'])->name('index');
-
-        // 2. Tambah Vendor Baru
         Route::get('/create', [\App\Http\Controllers\VendorController::class, 'create'])->name('create');
         Route::post('/', [\App\Http\Controllers\VendorController::class, 'store'])->name('store');
-
-        // 3. Edit Data Vendor
         Route::get('/{vendor}/edit', [\App\Http\Controllers\VendorController::class, 'edit'])->name('edit');
         Route::put('/{vendor}', [\App\Http\Controllers\VendorController::class, 'update'])->name('update');
-
-        // 4. Fitur Khusus: Aktif/Nonaktifkan Vendor (Toggle)
-        // Karena sudah di dalam grup name('vendors.'), nama route otomatis menjadi 'vendors.toggle_status'
         Route::patch('/{vendor}/toggle-status', [\App\Http\Controllers\VendorController::class, 'toggleStatus'])->name('toggle_status');
-
     });
 
 
     // MODUL perusahaan  (MASTER perusahaan)
     Route::prefix('companies')->name('companies.')->middleware(['can:view_companies'])->group(function () {
-        // 1. Halaman Utama & Pencarian
         Route::get('/', [\App\Http\Controllers\CompanyController::class, 'index'])->name('index');
-
-        // 2. Tambah perusahaan Baru
         Route::get('/create', [\App\Http\Controllers\CompanyController::class, 'create'])->name('create');
         Route::post('/', [\App\Http\Controllers\CompanyController::class, 'store'])->name('store');
-
-        // 3. Detail Perusahaan (SHOW)
         Route::get('/{company}', [\App\Http\Controllers\CompanyController::class, 'show'])->name('show');
-
-        // 4. Edit Data Perusahaan
         Route::get('/{company}/edit', [\App\Http\Controllers\CompanyController::class, 'edit'])->name('edit');
         Route::put('/{company}', [\App\Http\Controllers\CompanyController::class, 'update'])->name('update');
     });
 
 
-   // MODUL master departement  (MASTER departement)
+    // MODUL master departement  (MASTER departement)
     Route::prefix('departments')->name('departments.')->middleware(['can:view_companies'])->group(function () {
-        // 1. Halaman Utama & Pencarian
         Route::get('/', [\App\Http\Controllers\DepartmentController::class, 'index'])->name('index');
-
-        // 2. Tambah Departemen Baru
         Route::get('/create', [\App\Http\Controllers\DepartmentController::class, 'create'])->name('create');
         Route::post('/', [\App\Http\Controllers\DepartmentController::class, 'store'])->name('store');
-
-        // 3. Detail Departemen (SHOW)
         Route::get('/{department}', [\App\Http\Controllers\DepartmentController::class, 'show'])->name('show');
-
-        // 4. Edit Data Departemen
         Route::get('/{department}/edit', [\App\Http\Controllers\DepartmentController::class, 'edit'])->name('edit');
         Route::put('/{department}', [\App\Http\Controllers\DepartmentController::class, 'update'])->name('update');
-
-        // 5. Hapus Data Departemen (🔥 INI YANG SEBELUMNYA KURANG 🔥)
         Route::delete('/{department}', [\App\Http\Controllers\DepartmentController::class, 'destroy'])->name('destroy');
     });
-
 
 
     // ====================================================
@@ -556,13 +371,9 @@ Route::middleware('auth')->group(function () {
         Route::get('/', [\App\Http\Controllers\WarehouseController::class, 'index'])->name('index');
         Route::get('/create', [\App\Http\Controllers\WarehouseController::class, 'create'])->name('create');
         Route::post('/', [\App\Http\Controllers\WarehouseController::class, 'store'])->name('store');
-
-        // 🔥 RUTE EDIT HARUS DI ATAS SHOW
         Route::get('/{warehouse}/edit', [\App\Http\Controllers\WarehouseController::class, 'edit'])->name('edit');
         Route::put('/{warehouse}', [\App\Http\Controllers\WarehouseController::class, 'update'])->name('update');
         Route::patch('/{warehouse}/toggle-status', [\App\Http\Controllers\WarehouseController::class, 'toggleStatus'])->name('toggle_status');
-
-        // 🔥 RUTE SHOW DI PALING BAWAH KARENA DIA LUBANG HITAM (CATCH-ALL)
         Route::get('/{warehouse}', [\App\Http\Controllers\WarehouseController::class, 'show'])->name('show');
     });
 
@@ -573,50 +384,41 @@ Route::middleware('auth')->group(function () {
     Route::prefix('vendor-invoices')->name('vendor-invoices.')->middleware(['can:view_invoices'])->group(function () {
         Route::get('/', [VendorInvoiceController::class, 'index'])->name('index');
 
-        // 🔥 1. RUTE STATIS & SPESIFIK (HARUS DI ATAS AGAR TIDAK TERTELAN)
-        Route::get('/vendor-payments', [VendorInvoiceController::class, 'paymentList'])->name('vendor-payments.list'); // Pindahkan ke sini!
+        Route::get('/vendor-payments', [VendorInvoiceController::class, 'paymentList'])->name('vendor-payments.list'); 
         Route::post('/bulk-from-gr', [VendorInvoiceController::class, 'createBulkFromGr'])->name('createBulkFromGr');
         Route::delete('/attachment/{id}', [VendorInvoiceController::class, 'deleteAttachment'])->name('deleteAttachment');
         Route::delete('/payment/{id}/cancel', [VendorInvoiceController::class, 'cancelPayment'])->name('cancelPayment');
 
-        // 🔥 2. RUTE PRINT
         Route::get('/{slug}/print', [VendorInvoiceController::class, 'print'])->name('print')->where('slug', '.*');
         Route::get('/{id}/Paymentsprint', [\App\Http\Controllers\VendorInvoiceController::class, 'printPayment'])->name('payment.print');
 
-        // 1. Versi Bukti Pengeluaran Kas Saja (PDF)
         Route::get('/vendor-payments/{id}/pdf-voucher', [\App\Http\Controllers\VendorInvoiceController::class, 'pdfVoucher'])
             ->name('vendor-payments.pdf-voucher')
             ->middleware(['can:view_invoices']);
 
-        // 2. Versi Bukti Pengeluaran Kas + Lampiran Gabungan (PDF)
         Route::get('/vendor-payments/{id}/pdf-complete', [\App\Http\Controllers\VendorInvoiceController::class, 'pdfComplete'])
             ->name('vendor-payments.pdf-complete')
             ->middleware(['can:view_invoices']);
 
-        // 🔥 3. RUTE DINAMIS DENGAN AKSI TERTENTU
         Route::post('/from-gr/{slug}', [VendorInvoiceController::class, 'createFromGr'])->name('createFromGr')->where('slug', '.*');
         Route::put('/{slug}', [VendorInvoiceController::class, 'update'])->name('update')->where('slug', '.*');
         Route::post('/{slug}/pay', [VendorInvoiceController::class, 'storePayment'])->name('storePayment')->where('slug', '.*');
         Route::post('/{slug}/upload-attachment', [VendorInvoiceController::class, 'uploadAttachment'])->name('uploadAttachment')->where('slug', '.*');
         Route::delete('/{slug}/cancel-invoice', [VendorInvoiceController::class, 'cancelInvoice'])->name('cancelInvoice')->where('slug', '.*');
 
-        // 🔥 4. RUTE SHOW (WAJIB PALING BAWAH KARENA DIA LUBANG HITAM / CATCH-ALL)
+        Route::get('/final-receipt/{slug}', [\App\Http\Controllers\VendorInvoiceController::class, 'finalReceipt'])->name('final-receipt')->where('slug', '.*'); // <--- PASTIKAN ADA DI DALAM GROUP INI
         Route::get('/{slug}', [VendorInvoiceController::class, 'show'])->name('show')->where('slug', '.*');
-
-
-        // Route::get('/paym{id}/print', [\App\Http\Controllers\VendorInvoiceController::class, 'printPayment'])->name('vendor-payments.print');
     });
 
 
     // ====================================================
-    // 5. MODUL FINANCE (A/P, BILLS, PAYMENTS)
+    // MODUL FINANCE (BILLS)
     // ====================================================
     Route::prefix('bills')->name('bills.')->middleware(['can:view_bills'])->group(function () {
         Route::get('/', [\App\Http\Controllers\BillRequestController::class, 'index'])->name('index');
         Route::get('/create', [\App\Http\Controllers\BillRequestController::class, 'create'])->name('create');
         Route::post('/', [\App\Http\Controllers\BillRequestController::class, 'store'])->name('store');
 
-        // 🔥 PREFIKS AKSI DI DEPAN: Mengamankan URL dari Kerakusan Regex (Mencegah 404) 🔥
         Route::get('/detail/{slug}', [\App\Http\Controllers\BillRequestController::class, 'show'])->name('show')->where('slug', '.*');
         Route::get('/edit/{slug}', [\App\Http\Controllers\BillRequestController::class, 'edit'])->name('edit')->where('slug', '.*');
         Route::put('/update/{slug}', [\App\Http\Controllers\BillRequestController::class, 'update'])->name('update')->where('slug', '.*');
@@ -626,61 +428,32 @@ Route::middleware('auth')->group(function () {
         Route::post('/reject/{slug}', [\App\Http\Controllers\BillRequestController::class, 'reject'])->name('reject')->where('slug', '.*');
         Route::post('/pay/{slug}', [\App\Http\Controllers\BillRequestController::class, 'markAsPaid'])->name('markAsPaid')->where('slug', '.*');
 
-        // 🔥 RUTE BARU: Untuk Membatalkan (Void) Keseluruhan Tagihan 🔥
         Route::post('/void/{slug}', [\App\Http\Controllers\BillRequestController::class, 'voidBill'])->name('void')->where('slug', '.*');
 
         Route::delete('/attachment/{slug}/{mediaId}', [\App\Http\Controllers\BillRequestController::class, 'destroyAttachment'])->name('destroyAttachment')->where('slug', '.*');
         Route::get('/print/{slug}', [\App\Http\Controllers\BillRequestController::class, 'printPdf'])->name('print')->where('slug', '.*');
         Route::get('/prinBpr/{slug}', [\App\Http\Controllers\BillRequestController::class, 'prinBpr'])->name('prinBpr')->where('slug', '.*');
 
-
-        // 🔥 RUTE BARU: Cetak PDF beserta Lampirannya
         Route::get('/print-with-attachments/{slug}', [\App\Http\Controllers\BillRequestController::class, 'printWithAttachments'])->name('print_with_attachments')->where('slug', '.*');
-        // Route::get('/{slug}/print-bpr-attachments', [\App\Http\Controllers\BillRequestController::class, 'printBprWithAttachments'])->name('bills.print_bpr_attachments')->where('slug', '.*');
         Route::get('/{slug}/print-bpr-attachments', [\App\Http\Controllers\BillRequestController::class, 'printBprWithAttachments'])->name('printBprWithAttachments')->where('slug', '.*');
 
-        // 🔥 PERBAIKAN: Masukkan ke sini! (Di atas rute show, di dalam grup vendor-invoices)
-        // Dengan begini, namanya otomatis kembali menjadi vendor-invoices.final-receipt sesuai file Blade Anda
-       Route::get('/final-receipt/{slug}', [\App\Http\Controllers\VendorInvoiceController::class, 'finalReceipt'])->name('final-receipt')->where('slug', '.*');
-
-        // 🔥 PERBAIKAN: Membuang awalan 'bills.' agar tidak terjadi Double Naming 🔥
         Route::post('/{slug}/add-attachment', [\App\Http\Controllers\BillRequestController::class, 'addLateAttachment'])->name('add_attachment')->where('slug', '.*');
         Route::post('/{slug}/void-payment', [\App\Http\Controllers\BillRequestController::class, 'voidPayment'])->name('void_payment')->where('slug', '.*');
-
-        // 🔥 RUTE BARU: Untuk Menghentikan Tagihan Berulang 🔥
         Route::post('/{slug}/stop-recurring', [\App\Http\Controllers\BillRequestController::class, 'stopRecurring'])->name('stop_recurring')->where('slug', '.*');
-
     });
-
-
-    // ==========================================
-    // 🔥 PANDUAN PERBAIKAN: LETAKKAN DI LUAR GRUP BILLS 🔥
-    // ==========================================
-    Route::get('/vendor-invoices/{slug}/final-receipt', [\App\Http\Controllers\VendorInvoiceController::class, 'finalReceipt'])
-         ->name('vendor-invoices.final-receipt')
-         ->middleware(['can:view_invoices']);
 
 
 
     Route::prefix('payments')->name('payments.')->middleware(['can:view_payments'])->group(function () {
         Route::get('/', [BillPaymentController::class, 'index'])->name('index');
-
-        // 🔥 Parameter Slug dipindah ke belakang dan menggunakan regex .* 🔥
         Route::get('/process/{slug}', [BillPaymentController::class, 'process'])->name('process')->where('slug', '.*');
         Route::post('/store/{slug}', [BillPaymentController::class, 'store'])->name('store')->where('slug', '.*');
 
-        // Perhatikan: Untuk Hapus & Cetak Kuitansi, kita pakai payment_slug (Nomor Pembayaran)
         Route::delete('/destroy/{payment_slug}', [BillPaymentController::class, 'destroy'])->name('destroy')->where('payment_slug', '.*');
         Route::get('/receipt/print/{payment_slug}', [BillPaymentController::class, 'printReceipt'])->name('receipt.print')->where('payment_slug', '.*');
-
-        // 🔥 RUTE BARU: Cetak Kuitansi Pembayaran + Lampiran Bukti Transfer 🔥
         Route::get('/receipt/print-with-attachments/{payment_slug}', [BillPaymentController::class, 'printReceiptWithAttachments'])->name('receipt.print_with_attachments')->where('payment_slug', '.*');
-
-        // Cetak Rekap (Statement) pakai slug Tagihan
         Route::get('/statement/print/{slug}', [BillPaymentController::class, 'printStatement'])->name('statement.print')->where('slug', '.*');
 
-
-        // 🔥 RUTE CETAK BPR UNTUK OPEX 🔥
         Route::get('/print-bpr/{slug}', [BillPaymentController::class, 'printBpr'])->name('print_bpr')->where('slug', '.*');
         Route::get('/print-bpr-detail/{slug}', [BillPaymentController::class, 'printBprDetail'])->name('print_bpr_detail')->where('slug', '.*');
         Route::get('/print-bpr-attachments/{slug}', [BillPaymentController::class, 'printBprWithAttachments'])->name('print_bpr_attachments')->where('slug', '.*');
@@ -689,7 +462,7 @@ Route::middleware('auth')->group(function () {
 
 
     // ====================================================
-    // 6. MODUL LAPORAN (REPORT CENTER) - SEKARANG AMAN! 🔒
+    // 6. MODUL LAPORAN (REPORT CENTER)
     // ====================================================
     Route::prefix('reports')->name('reports.')->middleware(['can:view_reports'])->group(function () {
         Route::get('/', [ReportController::class, 'index'])->name('index');
@@ -699,12 +472,7 @@ Route::middleware('auth')->group(function () {
         Route::get('/finance/pdf', [FinanceReportController::class, 'exportPdf'])->name('finance.pdf');
         Route::get('/finance/excel', [FinanceReportController::class, 'exportExcel'])->name('finance.excel');
 
-
-
-
-        // Route untuk Laporan 3-Way Matching
         Route::get('/three-way-matching', [\App\Http\Controllers\ReportController::class, 'threeWayMatching'])->name('3way');
-
     });
 
     // ====================================================
@@ -712,17 +480,13 @@ Route::middleware('auth')->group(function () {
     // ====================================================
     Route::resource('roles', RoleController::class)->middleware('can:manage_roles');
 
-    // 🔥 Rute Halaman Khusus Import & Export (WAJIB DI ATAS RESOURCE)
     Route::prefix('users')->name('users.')->middleware('can:manage_roles')->group(function () {
         Route::get('/import-export', [\App\Http\Controllers\UserController::class, 'importForm'])->name('import_form');
         Route::get('/template', [\App\Http\Controllers\UserController::class, 'downloadTemplate'])->name('template');
         Route::get('/export', [\App\Http\Controllers\UserController::class, 'export'])->name('export');
-
-        // 2 Rute baru untuk sistem Preview
         Route::post('/import/preview', [\App\Http\Controllers\UserController::class, 'previewImport'])->name('preview_import');
         Route::post('/import/process', [\App\Http\Controllers\UserController::class, 'processImport'])->name('process_import');
     });
-
     Route::resource('users', UserController::class)->middleware('can:manage_roles');
 
 
@@ -730,29 +494,17 @@ Route::middleware('auth')->group(function () {
     // X. MODUL MASTER SATUAN (UOM)
     // ====================================================
     Route::prefix('uoms')->name('uoms.')->middleware(['can:view_inventory'])->group(function () {
-
-        // Membuat 4 rute sekaligus: uoms.index, uoms.store, uoms.update, uoms.destroy
         Route::resource('/', \App\Http\Controllers\UomController::class)->except(['create', 'show', 'edit']);
-
     });
 
     Route::prefix('asset-capitalizations')->name('asset-capitalizations.')->middleware(['can:view_assets'])->group(function () {
-
-            // Menampilkan daftar aset (Index)
-            Route::get('/', [App\Http\Controllers\AssetCapitalizationController::class, 'index'])->name('index');
-
-            // Modul Kapitalisasi / Pengakuan Aset (Create & Store)
-            Route::get('/create', [App\Http\Controllers\AssetCapitalizationController::class, 'create'])->name('create');
-            Route::post('/asset-capitalizations', [App\Http\Controllers\AssetCapitalizationController::class, 'store'])->name('store');
-            Route::get('/get-items/{gr_id}', [App\Http\Controllers\AssetCapitalizationController::class, 'getGrItems'])->name('get-items');
-
-            // Menampilkan detail aset (Show)
-            Route::get('/{id}', [App\Http\Controllers\AssetCapitalizationController::class, 'show'])->name('show');
-
-            // Void / Pembatalan Aset
-            Route::post('/{id}/void', [App\Http\Controllers\AssetCapitalizationController::class, 'voidAsset'])->name('void');
-
-        });
+        Route::get('/', [App\Http\Controllers\AssetCapitalizationController::class, 'index'])->name('index');
+        Route::get('/create', [App\Http\Controllers\AssetCapitalizationController::class, 'create'])->name('create');
+        Route::post('/asset-capitalizations', [App\Http\Controllers\AssetCapitalizationController::class, 'store'])->name('store');
+        Route::get('/get-items/{gr_id}', [App\Http\Controllers\AssetCapitalizationController::class, 'getGrItems'])->name('get-items');
+        Route::get('/{id}', [App\Http\Controllers\AssetCapitalizationController::class, 'show'])->name('show');
+        Route::post('/{id}/void', [App\Http\Controllers\AssetCapitalizationController::class, 'voidAsset'])->name('void');
+    });
 
 
     // ====================================================
@@ -768,64 +520,35 @@ Route::middleware('auth')->group(function () {
     // MODUL STOCK OPNAME (AUDIT PERSEDIAAN)
     // ====================================================
     Route::prefix('stock-opnames')->name('stock-opnames.')->middleware(['can:manage_gi'])->group(function () {
-        Route::get('/', [App\Http\Controllers\StockOpnameController::class, 'index'])->name('index');
-        Route::get('/create', [App\Http\Controllers\StockOpnameController::class, 'create'])->name('create');
-        Route::post('/', [App\Http\Controllers\StockOpnameController::class, 'store'])->name('store');
+        Route::get('/', [\App\Http\Controllers\StockOpnameController::class, 'index'])->name('index');
+        Route::get('/create', [\App\Http\Controllers\StockOpnameController::class, 'create'])->name('create');
+        Route::post('/', [\App\Http\Controllers\StockOpnameController::class, 'store'])->name('store');
+        Route::get('/{id}', [\App\Http\Controllers\StockOpnameController::class, 'show'])->name('show');
+        Route::get('/{id}/edit', [\App\Http\Controllers\StockOpnameController::class, 'edit'])->name('edit');
+        Route::put('/{id}', [\App\Http\Controllers\StockOpnameController::class, 'update'])->name('update');
+        Route::delete('/{id}', [\App\Http\Controllers\StockOpnameController::class, 'destroy'])->name('destroy');
 
-        Route::get('/{id}/edit', [App\Http\Controllers\StockOpnameController::class, 'edit'])->name('edit');
-        Route::put('/{id}', [App\Http\Controllers\StockOpnameController::class, 'update'])->name('update');
+        Route::get('/{id}/print', [\App\Http\Controllers\StockOpnameController::class, 'print'])->name('print');
+        Route::get('/{id}/cetak-hasil', [\App\Http\Controllers\StockOpnameController::class, 'cetakHasil'])->name('cetakHasil');
 
-        Route::get('/{id}', [App\Http\Controllers\StockOpnameController::class, 'show'])->name('show');
-
-
-        // Route::get('/{id}', [App\Http\Controllers\StockOpnameController::class, 'show'])->name('show');
-        Route::get('/{id}/print', [App\Http\Controllers\StockOpnameController::class, 'print'])->name('print'); // <-- TAMBAHKAN INI
-        // Nanti kita tambahkan route untuk Cetak Blind Count & Submit Approval di sini
-
-        Route::delete('/{id}', [App\Http\Controllers\StockOpnameController::class, 'destroy'])->name('destroy');
-
-
-        // 🔥 TAMBAHKAN BARIS INI
-        Route::post('/{id}/submit-approval', [App\Http\Controllers\StockOpnameController::class, 'submitApproval'])->name('submit-approval');
-
-        // MENJADI SEPERTI INI (Hapus awalan 'stock-opnames.' di dalam name):
+        Route::post('/{id}/submit-approval', [\App\Http\Controllers\StockOpnameController::class, 'submitApproval'])->name('submit-approval');
         Route::post('/{id}/approve', [\App\Http\Controllers\StockOpnameController::class, 'approve'])->name('approve');
         Route::post('/{id}/reject', [\App\Http\Controllers\StockOpnameController::class, 'reject'])->name('reject');
-
-
-        Route::get('/{id}/cetakHasil', [\App\Http\Controllers\StockOpnameController::class, 'cetakHasil'])->name('cetakHasil');
-
     });
-
 
     /// ====================================================
     // MASTER KATEGORI ASET
     // ====================================================
     Route::prefix('asset-categories')->name('asset-categories.')->middleware(['can:view_assets'])->group(function () {
-
-        // Halaman Daftar Kategori
         Route::get('/', [\App\Http\Controllers\AssetCategoryController::class, 'index'])->name('index');
-
-        // Proses Simpan Data Baru (Modal Tambah)
         Route::post('/', [\App\Http\Controllers\AssetCategoryController::class, 'store'])->name('store');
-
-        // Proses Simpan Perubahan (Modal Edit)
         Route::put('/{assetCategory}', [\App\Http\Controllers\AssetCategoryController::class, 'update'])->name('update');
-
-        // Proses Hapus Data
         Route::delete('/{assetCategory}', [\App\Http\Controllers\AssetCategoryController::class, 'destroy'])->name('destroy');
-
     });
-
-    // MASTER KATEGORI ASET
-    // Route::resource('asset-categories', \App\Http\Controllers\AssetCategoryController::class)->except(['create', 'edit', 'show']);
-
 
     // Route Laporan Valuasi Persediaan
     Route::get('/reports/inventory-valuation', [\App\Http\Controllers\InventoryValuationController::class, 'index'])->name('reports.inventory-valuation');
     Route::get('/reports/inventory-valuation/print', [\App\Http\Controllers\InventoryValuationController::class, 'print'])->name('reports.inventory-valuation.print');
-
-
 
 
 }); // <--- PENUTUP GEMBOK UTAMA (AUTH)

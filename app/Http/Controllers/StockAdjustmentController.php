@@ -54,7 +54,9 @@ class StockAdjustmentController extends Controller
             'items'                => 'required|array|min:1',
             'items.*.item_id'      => 'required|exists:items,id',
             'items.*.real_stock'   => 'required|numeric|min:0',
-            'items.*.unit_price'   => 'nullable|numeric|min:0', // 🔥 Validasi untuk input HPP
+            'items.*.unit_price'   => 'nullable|numeric|min:0', // Validasi untuk input HPP
+            'items.*.new_sns'      => 'nullable|array',         // Array SN Baru (Surplus)
+            'items.*.lost_sns'     => 'nullable|array',         // Array SN Hilang (Defisit)
         ]);
 
         // 🔥 2. GEMBOK PEMBEKUAN GUDANG (WAREHOUSE FREEZE VALIDATION) 🔥
@@ -81,7 +83,7 @@ class StockAdjustmentController extends Controller
                 $month = date('m', strtotime($request->adjustment_date));
                 $lastAdj = \App\Models\StockAdjustment::whereYear('created_at', $year)
                                             ->whereMonth('created_at', $month)
-                                            ->orderBy('id', 'desc')->first();
+                                            ->orderBy('id', 'desc')->lockForUpdate()->first();
 
                 $nextId = $lastAdj ? ((int) substr($lastAdj->adjustment_number, -4)) + 1 : 1;
                 $adjNumber = 'ADJ/' . $year . '/' . $month . '/' . str_pad($nextId, 4, '0', STR_PAD_LEFT);
@@ -104,7 +106,7 @@ class StockAdjustmentController extends Controller
                     $newStockFisik = (float) $data['real_stock'];
                     $unitPrice = (float) ($data['unit_price'] ?? 0); // Tangkap harga dari form
 
-                    // 🔥 LOGIKA CERDAS: Jika form HPP dikosongkan/0, tarik paksa dari Master Barang
+                    // Jika form HPP dikosongkan/0, tarik paksa dari Master Barang
                     if ($unitPrice <= 0) {
                         $unitPrice = $item->purchase_price ?? $item->unit_price ?? 0;
                     }
@@ -121,9 +123,9 @@ class StockAdjustmentController extends Controller
 
                     $adaPerubahan = true;
                     $absDiff = abs($difference);
+                    $isTrackable = isset($item->is_trackable) && $item->is_trackable;
 
                     // A. SIMPAN KE TABEL DETAIL (StockAdjustmentItem)
-                    // (Pastikan tabel database stock_adjustment_items memiliki kolom 'unit_price' jika ingin menyimpan histori harganya di sini)
                     \App\Models\StockAdjustmentItem::create([
                         'stock_adjustment_id' => $adjustment->id,
                         'item_id'             => $item->id,
@@ -133,31 +135,93 @@ class StockAdjustmentController extends Controller
                         'unit_price'          => $unitPrice, // Simpan harga perolehan
                     ]);
 
-                    // B. LOGIKA UPDATE FISIK (INVENTORY STOCK)
+                    // B. LOGIKA UPDATE FISIK & SERIAL NUMBER
                     if ($difference > 0) {
-                        // KOREKSI PLUS (+): Tambah tumpukan stok di gudang ini beserta HPP-nya
+                        // ====================================================
+                        // KOREKSI PLUS (+): BARANG BERTAMBAH (SURPLUS)
+                        // ====================================================
+
+                        // 1. Eksekusi SN Jika Barang Dilacak (Trackable)
+                        if ($isTrackable) {
+                            if (empty($data['new_sns']) || count($data['new_sns']) != $absDiff) {
+                                throw new \Exception("Jumlah Serial Number baru untuk barang {$item->name} harus diisi tepat {$absDiff} unit.");
+                            }
+
+                            // 🔥 PERLINDUNGAN 1: Bersihkan spasi dan cek jika inputan user ada yang kembar 🔥
+                            $newSns = array_map('trim', $data['new_sns']);
+                            if (count($newSns) !== count(array_unique($newSns))) {
+                                throw new \Exception("GAGAL! Terdapat Serial Number yang Anda ketik dobel/kembar di form untuk barang {$item->name}.");
+                            }
+
+                            // 🔥 PERLINDUNGAN 2: Cek ke Database apakah SN tersebut sudah pernah terdaftar 🔥
+                            $existingSns = \DB::table('item_serials')
+                                            ->where('item_id', $item->id)
+                                            ->whereIn('serial_number', $newSns)
+                                            ->pluck('serial_number')
+                                            ->toArray();
+
+                            if (!empty($existingSns)) {
+                                $conflictSns = implode(', ', $existingSns);
+                                throw new \Exception("GAGAL! Serial Number berikut sudah ada di database untuk {$item->name}: [{$conflictSns}]. Silakan periksa kembali fisik barang!");
+                            }
+
+                            // 🔥 Jika lolos semua sensor, baru masukkan ke database 🔥
+                            foreach ($newSns as $newSn) {
+                                \DB::table('item_serials')->insert([
+                                    'item_id'          => $item->id,
+                                    'warehouse_id'     => $warehouse->id,
+                                    'goods_receipt_id' => null, // Karena masuk via Adjustment
+                                    'serial_number'    => $newSn,
+                                    'status'           => 'AVAILABLE', // Langsung siap dipakai
+                                    'created_at'       => now(),
+                                    'updated_at'       => now(),
+                                ]);
+                            }
+                        }
+
+                        // 2. Tambah tumpukan stok di gudang ini beserta HPP-nya
                         \App\Models\InventoryStock::create([
                             'company_id'       => auth()->user()->company_id ?? 1,
                             'warehouse_id'     => $warehouse->id,
                             'item_id'          => $item->id,
                             'stock_qty'        => $absDiff,
-                            'unit_price'       => $unitPrice, // 🔥 Menyimpan harga perolehan baru
+                            'unit_price'       => $unitPrice, // Menyimpan harga perolehan baru
                             'reference_number' => $adjNumber,
                         ]);
 
-                        // Update stok global di Master Item
+                        // 3. Update stok global di Master Item
                         $item->increment('current_stock', $absDiff);
 
-                        // 🔥 CERDAS: Jika harga di Master Barang masih Rp 0, otomatis update pakai harga temuan saat ini
+                        // CERDAS: Jika harga di Master Barang masih Rp 0, otomatis update pakai harga temuan saat ini
                         if (($item->purchase_price == 0 || is_null($item->purchase_price)) && $unitPrice > 0) {
                             $item->update(['purchase_price' => $unitPrice]);
                         }
-                    }
+                    } 
                     else {
-                        // KOREKSI MINUS (-): Potong stok yang ada menggunakan FIFO (Harga tidak ikut diubah karena memotong stok lama)
+                        // ====================================================
+                        // KOREKSI MINUS (-): BARANG BERKURANG / HILANG (DEFISIT)
+                        // ====================================================
+
+                        // 1. Eksekusi SN Jika Barang Dilacak (Trackable)
+                        if ($isTrackable) {
+                            if (empty($data['lost_sns']) || count($data['lost_sns']) != $absDiff) {
+                                throw new \Exception("Pilih tepat {$absDiff} Serial Number yang hilang/rusak untuk barang {$item->name}.");
+                            }
+
+                            // Tandai SN yang dipilih menjadi 'LOST'
+                            \DB::table('item_serials')
+                                ->whereIn('serial_number', $data['lost_sns'])
+                                ->where('item_id', $item->id)
+                                ->update([
+                                    'status' => 'LOST', 
+                                    'updated_at' => now()
+                                ]);
+                        }
+
+                        // 2. Potong stok fisik gudang menggunakan algoritma FIFO
                         $this->reduceStockFifo($warehouse->id, $item->id, $absDiff);
 
-                        // Update stok global di Master Item
+                        // 3. Update stok global di Master Item
                         $item->decrement('current_stock', $absDiff);
                     }
 
@@ -179,7 +243,7 @@ class StockAdjustmentController extends Controller
                     throw new \Exception("Gagal! Tidak ada perbedaan antara stok sistem dan stok fisik pada barang yang Anda masukkan.");
                 }
 
-                return redirect()->route('stock-adjustments.index')->with('success', "Dokumen Penyesuaian Stok {$adjNumber} berhasil disimpan!");
+                return redirect()->route('stock-adjustments.index')->with('success', "Dokumen Penyesuaian Stok {$adjNumber} berhasil dieksekusi secara otomatis!");
             });
 
         } catch (\Exception $e) {
@@ -249,6 +313,7 @@ class StockAdjustmentController extends Controller
                 return [
                     'id' => $item->id,
                     'text' => $item->code . ' - ' . $item->name,
+                    'is_trackable' => (bool) $item->is_trackable, // 🔥 SANGAT PENTING
                 ];
             });
 
@@ -273,6 +338,32 @@ class StockAdjustmentController extends Controller
         $fileName = 'Berita_Acara_Opname_' . str_replace('/', '_', $adjustment->adjustment_number) . '.pdf';
 
         return $pdf->stream($fileName);
+    }
+
+
+    // Tambahkan fungsi baru ini di bagian bawah controller
+    public function searchSns(Request $request)
+    {
+        $itemId = $request->item_id;
+        $warehouseId = $request->warehouse_id;
+
+        // Cari SN yang masih berstatus AVAILABLE di gudang tersebut
+        $sns = \DB::table('item_serials')
+                    ->where('item_id', $itemId)
+                    ->where('warehouse_id', $warehouseId)
+                    ->where('status', 'AVAILABLE')
+                    ->limit(100)
+                    ->get();
+
+        $results = [];
+        foreach ($sns as $sn) {
+            $results[] = [
+                'id'   => $sn->serial_number,
+                'text' => $sn->serial_number
+            ];
+        }
+
+        return response()->json($results);
     }
 
 

@@ -6,15 +6,16 @@
 <style>
     .select2-container--bootstrap-5 .select2-selection { border-radius: 8px; border-color: #dee2e6; min-height: 38px; }
     .diff-box { transition: all 0.3s ease; }
+    /* 🔥 SEMUA TRIK CSS YANG MERUSAK SENSOR MOUSE TELAH DIBUANG 🔥 */
 </style>
 @endpush
 
 @section('content')
-<div class="container-fluid pb-5 text-dark">
+<div class="pb-5 container-fluid text-dark">
 
     <div class="mb-4">
-        <a href="{{ route('inventory.index') }}" class="mb-2 text-decoration-none text-muted small fw-bold d-inline-block">
-            <i class="bi bi-arrow-left me-1"></i> Kembali ke Master Stok
+        <a href="{{ route('stock-adjustments.index') }}" class="mb-2 text-decoration-none text-muted small fw-bold d-inline-block">
+            <i class="bi bi-arrow-left me-1"></i> Kembali ke Riwayat Opname
         </a>
         <h4 class="mb-0 fw-bold text-dark">
             <i class="bi bi-sliders text-warning me-2"></i> Penyesuaian Stok (Stock Adjustment)
@@ -108,10 +109,12 @@
         let tbody = $('#item-tbody');
         let warehouseSelect = $('#warehouse_id');
         let rowCount = 0;
+        
+        let activeAjaxRequests = {};
 
         // Reset tabel jika gudang diganti
         warehouseSelect.on('change', function() {
-            if (tbody.find('tr').length > 0) {
+            if (tbody.find('tr.item-row').length > 0) {
                 tbody.find('.item-select-ajax').select2('destroy');
                 tbody.empty();
                 rowCount = 0;
@@ -129,7 +132,7 @@
 
         function addRow() {
             let tr = `
-                <tr class="border-bottom item-row">
+                <tr class="border-bottom item-row" data-row-id="${rowCount}" data-item-id="" data-trackable="false">
                     <td class="py-3 ps-4">
                         <select name="items[${rowCount}][item_id]" class="form-select item-select-ajax" required></select>
                     </td>
@@ -157,11 +160,16 @@
                         <button type="button" class="btn btn-sm btn-outline-danger btn-remove rounded-circle" title="Hapus"><i class="bi bi-trash"></i></button>
                     </td>
                 </tr>
+                <tr class="sn-row" id="sn-row-${rowCount}" style="display: none; background-color: #f8f9fa;">
+                    <td colspan="6" class="px-4 py-3 border-bottom">
+                        <div class="p-3 bg-white border rounded shadow-sm sn-container border-warning" id="sn-container-${rowCount}">
+                        </div>
+                    </td>
+                </tr>
             `;
             let $tr = $(tr);
             tbody.append($tr);
 
-            // Select2 dengan pencegahan duplikasi barang
             $tr.find('.item-select-ajax').select2({
                 theme: 'bootstrap-5',
                 placeholder: '-- Cari & Ketik Barang --',
@@ -196,23 +204,32 @@
 
         // Hapus Baris
         tbody.on('click', '.btn-remove', function() {
-            if (tbody.find('tr').length > 1) {
-                $(this).closest('tr').find('.item-select-ajax').select2('destroy');
-                $(this).closest('tr').remove();
+            if (tbody.find('tr.item-row').length > 1) {
+                let row = $(this).closest('tr.item-row');
+                let rowId = row.data('row-id');
+                
+                if (activeAjaxRequests[rowId]) activeAjaxRequests[rowId].abort();
+
+                row.find('.item-select-ajax').select2('destroy');
+                row.remove();
+                $(`#sn-row-${rowId}`).remove();
             } else {
                 Swal.fire('Ups!', 'Minimal harus ada 1 barang.', 'info');
             }
         });
 
-        // Saat Barang Dipilih -> Tembak AJAX untuk cek stok & harga bawaan
+        // Saat Barang Dipilih
         tbody.on('select2:select', '.item-select-ajax', function (e) {
             let data = e.params.data;
             let currentSelect = $(this);
-            let tr = currentSelect.closest('tr');
+            let tr = currentSelect.closest('tr.item-row');
+            
+            tr.data('item-id', data.id);
+            tr.data('trackable', data.is_trackable); 
+
             let sysInput = tr.find('.sys-stock');
             let priceInput = tr.find('.unit-price');
 
-            // Cek Duplikasi
             let isDuplicate = false;
             $('.item-select-ajax').not(currentSelect).each(function() {
                 if ($(this).val() == data.id) isDuplicate = true;
@@ -232,7 +249,7 @@
                 data: { item_id: data.id, warehouse_id: warehouseSelect.val() },
                 success: function(res) {
                     sysInput.val(res.stock);
-                    priceInput.val(res.unit_price || 0); // Isikan harga bawaan master item
+                    priceInput.val(res.unit_price || 0); 
                     tr.find('.real-stock').val('').trigger('input');
                 },
                 error: function() {
@@ -242,9 +259,13 @@
             });
         });
 
-        // Kalkulasi Otomatis (Real Time)
+        // KALKULASI & MUNCULKAN INPUT SN
         tbody.on('input', '.real-stock, .unit-price', function() {
-            let tr = $(this).closest('tr');
+            let tr = $(this).closest('tr.item-row');
+            let rowId = tr.data('row-id');
+            let itemId = tr.data('item-id');
+            let isTrackable = tr.data('trackable'); 
+
             let sys = parseFloat(tr.find('.sys-stock').val()) || 0;
             let real = parseFloat(tr.find('.real-stock').val());
             let price = parseFloat(tr.find('.unit-price').val()) || 0;
@@ -252,10 +273,19 @@
             let diffBox = tr.find('.diff-box');
             let diffIcon = tr.find('.diff-icon');
             let diffText = tr.find('.diff-text');
+            
+            let snRow = $(`#sn-row-${rowId}`);
+            let snContainer = $(`#sn-container-${rowId}`);
+
+            if (activeAjaxRequests[rowId]) {
+                activeAjaxRequests[rowId].abort();
+            }
 
             if (isNaN(real)) {
                 diffBox.attr('class', 'p-2 text-center border rounded diff-box bg-light text-muted small fw-bold');
                 diffIcon.html('='); diffText.text('0 (Sama)');
+                snRow.hide();
+                snContainer.empty();
                 return;
             }
 
@@ -275,6 +305,63 @@
                 diffBox.attr('class', 'p-2 text-center border rounded diff-box bg-light text-muted small fw-bold');
                 diffIcon.html('='); diffText.text('0 (Sama)');
             }
+
+            if (isTrackable && diff !== 0) {
+                snRow.show();
+                snContainer.empty();
+                
+                let absDiff = Math.abs(diff);
+
+                if (diff > 0) {
+                    snContainer.append(`<div class="mb-2 text-success fw-bold"><i class="bi bi-plus-circle-fill me-1"></i> Masukkan ${absDiff} Serial Number (SN) baru yang ditemukan:</div>`);
+                    let inputHtml = '<div class="row g-2">';
+                    for(let i=0; i < absDiff; i++) {
+                        inputHtml += `
+                            <div class="col-md-4">
+                                <input type="text" name="items[${rowId}][new_sns][]" class="form-control form-control-sm border-success fw-bold text-dark" placeholder="Ketik SN #${i+1}..." required>
+                            </div>
+                        `;
+                    }
+                    inputHtml += '</div>';
+                    snContainer.append(inputHtml);
+
+                } else if (diff < 0) {
+                    snContainer.append(`<div class="mb-2 text-danger fw-bold" id="loading-sn-${rowId}"><span class="spinner-border spinner-border-sm me-2"></span> Mencari data SN di gudang...</div>`);
+                    
+                    activeAjaxRequests[rowId] = $.get("{{ route('stock-adjustments.search-sns') }}", { item_id: itemId, warehouse_id: warehouseSelect.val() }, function(data) {
+                        
+                        snContainer.find(`#loading-sn-${rowId}`).remove();
+                        snContainer.append(`<div class="mb-2 text-danger fw-bold"><i class="bi bi-dash-circle-fill me-1"></i> Pilih ${absDiff} Serial Number (SN) yang hilang/rusak:</div>`);
+
+                        let options = data.map(sn => `<option value="${sn.id}">${sn.text}</option>`).join('');
+                        
+                        let selectHtml = `
+                            <select name="items[${rowId}][lost_sns][]" class="form-select border-danger select2-lost-sn" multiple="multiple" required style="width: 100%;">
+                                ${options}
+                            </select>
+                            <small class="mt-1 text-muted d-block">Sistem membatasi maksimal pilihan sejumlah ${absDiff} unit sesuai selisih.</small>
+                        `;
+                        snContainer.append(selectHtml);
+                        
+                        // 🔥 KUNCI UX STABIL: Menggunakan format murni Select2 (Pill Style) tanpa Hack CSS 🔥
+                        snContainer.find('.select2-lost-sn').select2({
+                            theme: 'bootstrap-5',
+                            placeholder: "-- Pilih SN yang Hilang --",
+                            maximumSelectionLength: absDiff
+                            // closeOnSelect dihapus agar dropdown menutup setelah klik, mencegah mouse tabrakan
+                        });
+                    }).fail(function(jqXHR) {
+                        if(jqXHR.statusText !== 'abort') {
+                            snContainer.find(`#loading-sn-${rowId}`).html('<span class="text-danger small"><i class="bi bi-x-circle me-1"></i> Gagal memuat daftar Serial Number.</span>');
+                        }
+                    }).always(function() {
+                        delete activeAjaxRequests[rowId];
+                    });
+                }
+            } else {
+                snRow.hide();
+                snContainer.empty();
+            }
         });
 
         // Submit Form
@@ -284,7 +371,7 @@
 
             Swal.fire({
                 title: 'Kunci & Simpan Opname?',
-                text: "Pastikan angka fisik dan harga perolehan sudah sesuai. Data ini akan memperbarui Kartu Stok & Valuasi Persediaan.",
+                text: "Pastikan angka fisik dan identitas Serial Number sudah sesuai. Data ini akan memperbarui Kartu Stok & Valuasi Persediaan.",
                 icon: 'warning',
                 showCancelButton: true,
                 confirmButtonColor: '#ffc107',
