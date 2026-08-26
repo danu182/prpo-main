@@ -91,9 +91,6 @@
                 $masterName = optional($item->item)->name ?? '-';
                 $specificName = $item->item_name ?? optional($item->goodsIssueItem)->item_name ?? $masterName;
 
-                $isAsset = optional($item->item)->is_asset || optional($item->item)->item_type_code === 'AST';
-                $isTrackable = optional($item->item)->is_trackable;
-
                 // 🔥 SIHIR PEMISAH SATUAN DARI CATATAN 🔥
                 $uomName = 'PCS'; // Default
                 $cleanNotes = [];
@@ -112,7 +109,7 @@
                 // =========================================================================
                 // 🔥 TRIK INTELIJEN: TARIK SN/ASET LANGSUNG DARI BUKU SEJARAH DATABASE 🔥
                 // =========================================================================
-                
+
                 // 1. Tarik Data Aset Tetap
                 $returnedAssets = \Illuminate\Support\Facades\DB::table('fixed_asset_histories')
                     ->join('fixed_assets', 'fixed_asset_histories.fixed_asset_id', '=', 'fixed_assets.id')
@@ -120,17 +117,20 @@
                     ->where('fixed_assets.item_id', $item->item_id)
                     ->pluck('fixed_assets.asset_number')
                     ->toArray();
-                
-                if (count($returnedAssets) > 0) {
+
+                // 🔥 KUNCI PERBAIKAN: JIKA ADA NO ASET, BARU DIA SAH JADI ASET TETAP 🔥
+                $isAsset = count($returnedAssets) > 0;
+
+                if ($isAsset) {
                     $cleanNotes[] = "No. Aset: " . implode(', ', $returnedAssets);
                 }
 
-                // 2. Tarik Data Serial Number (Minor)
+                // 2. Tarik Data Serial Number (Minor / Stok Biasa)
                 $snHistory = \Illuminate\Support\Facades\DB::table('employee_inventory_histories')
                     ->where('reference_number', $return->return_number)
                     ->where('item_id', $item->item_id)
                     ->first();
-                    
+
                 if ($snHistory && preg_match('/SN:\s*(.*)$/', $snHistory->notes, $matches)) {
                     $cleanNotes[] = "SN: " . trim($matches[1]);
                 }
@@ -145,6 +145,7 @@
                         <span style="font-size: 7.5pt; color: #555;">(Master: {{ $masterName }})</span><br>
                     @endif
 
+                    {{-- TAMPILKAN LABEL HANYA JIKA BENAR-BENAR ASET --}}
                     @if($isAsset)
                         <span style="font-size: 7.5pt; font-weight: bold; color: #000;">[ASET TETAP]</span>
                     @endif

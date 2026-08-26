@@ -132,6 +132,9 @@ class StockOpnameController extends Controller
                 'notes' => $request->notes,
             ]);
 
+            // 🔥 GEMBOK GUDANGNYA SEKARANG 🔥
+            Warehouse::where('id', $request->warehouse_id)->update(['is_frozen' => true]);
+
             // Ambil seluruh stok dari gudang yang dipilih dan simpan ke Opname Items
             $stocks = InventoryStock::with('item.uom')->where('warehouse_id', $request->warehouse_id)
                                     ->where('stock_qty', '>', 0)
@@ -226,6 +229,11 @@ class StockOpnameController extends Controller
             // Hapus paksa (hard delete) agar bersih dari database
             StockOpnameItem::where('stock_opname_id', $id)->delete();
             $opname->forceDelete();
+
+            $warehouseId = $opname->warehouse_id; // Simpan ID sebelum dihapus
+
+            // 🔥 LEPAS GEMBOK KARENA DIBATALKAN 🔥
+            Warehouse::where('id', $warehouseId)->update(['is_frozen' => false]);
 
             DB::commit();
             return redirect()->route('stock-opnames.index')->with('success', 'Sesi Stock Opname berhasil dibatalkan dan dihapus.');
@@ -445,6 +453,9 @@ class StockOpnameController extends Controller
 
                     // Update total qty saat ini di Master Barang
                     $masterItem->update(['current_stock' => $newStockBalance]);
+
+                    // 🔥 LEPAS GEMBOK GUDANG KARENA OPNAME SELESAI 🔥
+                    Warehouse::where('id', $opname->warehouse_id)->update(['is_frozen' => false]);
                 }
             }
 
@@ -500,6 +511,9 @@ class StockOpnameController extends Controller
             ]);
 
             $opname->approvals()->where('status', 'pending')->update(['status' => 'cancelled']);
+
+            // 🔥 LEPAS GEMBOK KARENA DITOLAK 🔥
+            Warehouse::where('id', $opname->warehouse_id)->update(['is_frozen' => false]);
 
             DB::commit();
             return redirect()->back()->with('success', 'Dokumen ditolak. Proses dihentikan.');

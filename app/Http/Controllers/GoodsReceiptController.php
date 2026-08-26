@@ -212,6 +212,11 @@ class GoodsReceiptController extends Controller
             'items.*.warehouse_id' => 'nullable|exists:warehouses,id',
         ]);
 
+        $warehouse = \App\Models\Warehouse::find($request->warehouse_id);
+        if ($warehouse && $warehouse->is_frozen) {
+            return back()->withInput()->with('error', "GAGAL: Gudang {$warehouse->name} sedang dalam status DIBEKUKAN (Stock Opname). Anda tidak dapat mengeluarkan barang dari gudang ini sampai proses audit selesai!");
+        }
+
         try {
             $newGrNumber = DB::transaction(function () use ($request, $slug, $settingService) {
                 $po = \App\Models\PurchaseOrder::with('items')->where('po_number', $slug)->firstOrFail();

@@ -109,9 +109,9 @@
                         <span style="font-size: 7.5pt; color: #555;">(Master: {{ $masterName }})</span><br>
                     @endif
 
-                    @if($isAsset)
+                    {{-- @if($isAsset)
                         <span style="font-size: 7.5pt; font-weight: bold; color: #000;">[ASET TETAP]</span>
-                    @endif
+                    @endif --}}
                 </td>
                 <td class="center" style="vertical-align: middle;">
                     <strong style="font-size: 11pt; color: #d9534f;">{{ (float) $item->qty_returned }}</strong> <br>

@@ -63,6 +63,11 @@ class GoodsIssueController extends Controller
             'items.*.item_name' => 'nullable|string|max:255', // Validasi Nama Spesifik
         ]);
 
+        $warehouse = \App\Models\Warehouse::find($request->warehouse_id);
+        if ($warehouse && $warehouse->is_frozen) {
+            return back()->withInput()->with('error', "GAGAL: Gudang {$warehouse->name} sedang dalam status DIBEKUKAN (Stock Opname). Anda tidak dapat mengeluarkan barang dari gudang ini sampai proses audit selesai!");
+        }
+
         $allSelectedAssets = [];
         foreach ($request->items as $data) {
             if (!empty($data['asset_ids'])) {
@@ -306,7 +311,7 @@ class GoodsIssueController extends Controller
                         \App\Models\EmployeeInventoryHistory::create([
                             'employee_name'    => $request->requester_name,
                             'item_id'          => $item->id,
-                            'type'             => 'OUT',
+                            'type'             => 'IN', // 🔥 UBAH DARI 'OUT' MENJADI 'IN' (Karyawan Menerima Barang)
                             'qty'              => $qtyRequested,
                             'reference_number' => $giNumber,
                             'notes'            => "Diserahkan ke karyawan via GI: {$giNumber}. Unit: " . $invStringForNote,
