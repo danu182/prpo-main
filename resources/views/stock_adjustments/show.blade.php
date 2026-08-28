@@ -21,10 +21,8 @@
         $totalQtyKeluar = 0;
 
         foreach($adjustment->items as $item) {
-            // LAPIS 1: Coba ambil dari tabel detail penyesuaian
             $unitPrice = (float) ($item->unit_price ?? 0);
 
-            // LAPIS 2 (RADAR CERDAS): Jika 0, intip langsung ke tumpukan fisik gudang (InventoryStock) yang baru masuk
             if ($unitPrice <= 0 && $item->difference > 0) {
                 $invStock = \App\Models\InventoryStock::where('reference_number', $adjustment->adjustment_number)
                                 ->where('item_id', $item->item_id)
@@ -34,7 +32,6 @@
                 }
             }
 
-            // LAPIS 3: Jika masih 0 juga, baru ambil harga bawaan dari Master Barang
             if ($unitPrice <= 0) {
                 $unitPrice = (float) (optional($item->item)->purchase_price ?? optional($item->item)->unit_price ?? 0);
             }
@@ -49,13 +46,13 @@
     {{-- ========================================================================= --}}
     {{-- 2. HEADER HALAMAN & TOMBOL AKSI --}}
     {{-- ========================================================================= --}}
-    <div class="pb-3 mb-4 row align-items-center border-bottom gy-3">
+    <div class="row align-items-center pb-3 mb-4 border-bottom gy-3">
         <div class="col-xl-7 col-lg-6">
             <h4 class="mb-1 fw-bold text-dark d-flex align-items-center">
                 <i class="bi bi-sliders text-primary me-2 fs-3"></i> Detail Penyesuaian Stok
             </h4>
-            <div class="flex-wrap gap-3 mt-2 d-flex align-items-center">
-                <span class="px-3 py-2 border shadow-sm badge rounded-pill bg-success-subtle text-success border-success-subtle">
+            <div class="d-flex align-items-center gap-3 mt-2 flex-wrap">
+                <span class="badge border px-3 py-2 rounded-pill bg-success-subtle text-success border-success-subtle shadow-sm">
                     <i class="bi bi-check-circle-fill me-1" style="font-size: 0.6rem;"></i> DIEKSEKUSI
                 </span>
                 <span class="text-muted small fw-medium">
@@ -65,8 +62,8 @@
         </div>
 
         <div class="col-xl-5 col-lg-6 text-lg-end">
-            <div class="flex-wrap gap-2 d-flex justify-content-lg-end align-items-center">
-                <a href="{{ route('stock-adjustments.index') }}" class="border btn btn-light btn-action-rounded">
+            <div class="d-flex gap-2 justify-content-lg-end flex-wrap align-items-center">
+                <a href="{{ route('stock-adjustments.index') }}" class="btn btn-light border btn-action-rounded">
                     <i class="bi bi-arrow-left me-1"></i> Kembali ke Riwayat
                 </a>
                 <a href="{{ route('stock-adjustments.print', $adjustment->id) }}" target="_blank" class="btn btn-dark btn-action-rounded">
@@ -79,10 +76,10 @@
     {{-- ========================================================================= --}}
     {{-- 3. KARTU INFORMASI & RINGKASAN VALUASI --}}
     {{-- ========================================================================= --}}
-    <div class="mb-4 row g-4">
+    <div class="row g-4 mb-4">
         {{-- INFORMASI DOKUMEN --}}
         <div class="col-lg-7">
-            <div class="bg-white border-0 shadow-sm card rounded-4 h-100">
+            <div class="border-0 shadow-sm card rounded-4 h-100 bg-white">
                 <div class="p-4 card-body d-flex flex-column justify-content-center">
                     <h6 class="mb-3 fw-bold text-muted text-uppercase small"><i class="bi bi-info-circle me-1"></i> Informasi Penyesuaian</h6>
                     <div class="row g-4 text-start">
@@ -105,9 +102,9 @@
                             </h6>
                         </div>
                     </div>
-                    <div class="pt-3 mt-4 border-top">
+                    <div class="mt-4 pt-3 border-top">
                         <label class="mb-1 text-muted small fw-semibold d-block">Alasan / Keterangan</label>
-                        <p class="p-2 mb-0 border small text-secondary bg-light rounded-3 fst-italic lh-sm">{{ $adjustment->reason }}</p>
+                        <p class="mb-0 small text-secondary bg-light p-2 rounded-3 border fst-italic lh-sm">{{ $adjustment->reason }}</p>
                     </div>
                 </div>
             </div>
@@ -119,21 +116,21 @@
                 <div class="p-4 card-body d-flex flex-column justify-content-between">
                     <div>
                         <div class="mb-1 d-flex justify-content-between align-items-center">
-                            <h6 class="mb-0 text-primary fw-bold text-uppercase small"><i class="bi bi-wallet2 me-1"></i> Total Valuasi Mutasi</h6>
-                            <div class="p-2 bg-white shadow-sm text-primary rounded-circle"><i class="bi bi-cash-stack"></i></div>
+                            <h6 class="text-primary fw-bold text-uppercase small mb-0"><i class="bi bi-wallet2 me-1"></i> Total Valuasi Mutasi</h6>
+                            <div class="p-2 bg-white text-primary rounded-circle shadow-sm"><i class="bi bi-cash-stack"></i></div>
                         </div>
-                        <h2 class="mb-0 fw-bolder text-primary display-6">Rp {{ number_format($totalValuasiMutasi, 0, ',', '.') }}</h2>
+                        <h2 class="fw-bolder text-primary mb-0 display-6">Rp {{ number_format($totalValuasiMutasi, 0, ',', '.') }}</h2>
                         <span class="small text-muted fw-medium">*Total nilai absolut seluruh perubahan stok</span>
                     </div>
 
-                    <div class="pt-3 mt-3 border-top border-primary-subtle d-flex justify-content-between align-items-center">
+                    <div class="mt-3 pt-3 border-top border-primary-subtle d-flex justify-content-between align-items-center">
                         <div>
                             <span class="text-muted small d-block">Total Item</span>
                             <strong class="text-dark fs-5">{{ $adjustment->items->count() }} Jenis</strong>
                         </div>
                         <div class="text-end">
-                            <span class="px-2 py-1 mb-1 border badge bg-success-subtle text-success border-success-subtle rounded-pill d-block"><i class="bi bi-arrow-down-left"></i> {{ $totalQtyMasuk }} Masuk</span>
-                            <span class="px-2 py-1 border badge bg-danger-subtle text-danger border-danger-subtle rounded-pill d-block"><i class="bi bi-arrow-up-right"></i> {{ $totalQtyKeluar }} Keluar</span>
+                            <span class="badge bg-success-subtle text-success border border-success-subtle rounded-pill px-2 py-1 mb-1 d-block"><i class="bi bi-arrow-down-left"></i> {{ $totalQtyMasuk }} Masuk</span>
+                            <span class="badge bg-danger-subtle text-danger border border-danger-subtle rounded-pill px-2 py-1 d-block"><i class="bi bi-arrow-up-right"></i> {{ $totalQtyKeluar }} Keluar</span>
                         </div>
                     </div>
                 </div>
@@ -144,7 +141,7 @@
     {{-- ========================================================================= --}}
     {{-- 4. TABEL RINCIAN BARANG & SERIAL NUMBER --}}
     {{-- ========================================================================= --}}
-    <div class="overflow-hidden border-0 border-4 shadow-sm card rounded-4 border-top border-primary">
+    <div class="overflow-hidden border-0 shadow-sm card rounded-4 border-top border-4 border-primary">
         <div class="py-3 bg-white card-header border-bottom d-flex justify-content-between align-items-center">
             <h6 class="mb-0 fw-bold text-dark"><i class="bi bi-list-check me-2 text-primary"></i>Daftar Rincian Mutasi Barang</h6>
         </div>
@@ -165,7 +162,6 @@
                     <tbody>
                         @foreach($adjustment->items as $index => $item)
                         @php
-                            // RADAR CERDAS UNTUK TIAP BARIS (HARGA)
                             $unitPrice = (float) ($item->unit_price ?? 0);
 
                             if ($unitPrice <= 0 && $item->difference > 0) {
@@ -183,36 +179,28 @@
                             $rowClass = $item->difference < 0 ? 'table-danger-subtle' : ($item->difference > 0 ? 'table-info-subtle' : '');
 
                             // =========================================================
-                            // 🔥 TRIK INTELIJEN: MENGINTIP SN YANG TERLIBAT TRANSAKSI INI 🔥
+                            // 🔥 MEMBACA SN LANGSUNG DARI ID DOKUMEN (SANGAT VALID) 🔥
                             // =========================================================
                             $snList = [];
                             if (optional($item->item)->is_trackable) {
-                                // Kita cari SN yang statusnya berubah pada DETIK yang sama dengan dokumen ini dibuat
-                                $timeMatch = \Carbon\Carbon::parse($adjustment->created_at);
-                                $timeStart = $timeMatch->copy()->subSeconds(5);
-                                $timeEnd = $timeMatch->copy()->addSeconds(5);
-
                                 if ($item->difference > 0) {
-                                    // SN Surplus (Baru Ditemukan) -> Cari yang created_at nya cocok
                                     $snList = \DB::table('item_serials')
+                                        ->where('stock_adjustment_id', $adjustment->id)
                                         ->where('item_id', $item->item_id)
-                                        ->where('warehouse_id', $adjustment->warehouse_id)
-                                        ->whereBetween('created_at', [$timeStart, $timeEnd])
                                         ->pluck('serial_number')
                                         ->toArray();
                                 } elseif ($item->difference < 0) {
-                                    // SN Defisit (Hilang) -> Cari yang statusnya diubah jadi LOST pada waktu tersebut
                                     $snList = \DB::table('item_serials')
+                                        ->where('stock_adjustment_id', $adjustment->id)
                                         ->where('item_id', $item->item_id)
                                         ->where('status', 'LOST')
-                                        ->whereBetween('updated_at', [$timeStart, $timeEnd])
                                         ->pluck('serial_number')
                                         ->toArray();
                                 }
                             }
                         @endphp
                         <tr class="{{ $rowClass }}">
-                            <td class="py-3 align-top ps-4 text-muted fw-bold">{{ $index + 1 }}</td>
+                            <td class="py-3 ps-4 text-muted fw-bold align-top">{{ $index + 1 }}</td>
                             <td class="py-3">
                                 <div class="fw-bold text-dark">{{ optional($item->item)->name ?? 'Item Tidak Ditemukan' }}</div>
                                 <div class="small text-muted font-monospace"><i class="bi bi-upc-scan me-1"></i>{{ optional($item->item)->code ?? '-' }}</div>
@@ -221,10 +209,10 @@
                                 @if(count($snList) > 0)
                                     <div class="mt-2 p-2 bg-white rounded shadow-sm border {{ $item->difference > 0 ? 'border-success-subtle' : 'border-danger-subtle' }}">
                                         <span class="d-block small fw-bold mb-1 {{ $item->difference > 0 ? 'text-success' : 'text-danger' }}">
-                                            <i class="bi {{ $item->difference > 0 ? 'bi-plus-circle-fill' : 'bi-dash-circle-fill' }} me-1"></i> 
+                                            <i class="bi {{ $item->difference > 0 ? 'bi-plus-circle-fill' : 'bi-dash-circle-fill' }} me-1"></i>
                                             SN {{ $item->difference > 0 ? 'Ditemukan' : 'Hilang' }} ({{ count($snList) }} unit):
                                         </span>
-                                        <div class="flex-wrap gap-1 d-flex">
+                                        <div class="d-flex flex-wrap gap-1">
                                             @foreach($snList as $sn)
                                                 <span class="badge border fw-medium {{ $item->difference > 0 ? 'bg-success-subtle text-success border-success-subtle' : 'bg-danger-subtle text-danger border-danger-subtle' }}" style="font-size: 0.65rem;">
                                                     {{ $sn }}
@@ -234,31 +222,31 @@
                                     </div>
                                 @endif
                             </td>
-                            <td class="py-3 align-top text-end fw-semibold text-secondary">
+                            <td class="py-3 text-end fw-semibold text-secondary align-top">
                                 Rp {{ number_format($unitPrice, 0, ',', '.') }}
                             </td>
-                            <td class="py-3 text-center align-top fw-bold text-muted">
+                            <td class="py-3 text-center fw-bold text-muted align-top">
                                 {{ (float)$item->previous_stock }} <span class="small fw-normal">{{ optional($item->item)->unit }}</span>
                             </td>
-                            <td class="py-3 text-center align-top fw-bolder text-primary fs-6">
+                            <td class="py-3 text-center fw-bolder text-primary fs-6 align-top">
                                 {{ (float)$item->new_stock }} <span class="small fw-normal">{{ optional($item->item)->unit }}</span>
                             </td>
                             <td class="py-3 text-center align-top">
                                 @if($item->difference > 0)
-                                    <span class="px-3 py-2 border shadow-sm badge bg-success-subtle text-success border-success-subtle rounded-pill">
+                                    <span class="badge bg-success-subtle text-success border border-success-subtle rounded-pill px-3 py-2 shadow-sm">
                                         <i class="bi bi-arrow-down-left me-1"></i> +{{ (float)$item->difference }}
                                     </span>
                                 @elseif($item->difference < 0)
-                                    <span class="px-3 py-2 border shadow-sm badge bg-danger-subtle text-danger border-danger-subtle rounded-pill">
+                                    <span class="badge bg-danger-subtle text-danger border border-danger-subtle rounded-pill px-3 py-2 shadow-sm">
                                         <i class="bi bi-arrow-up-right me-1"></i> {{ (float)$item->difference }}
                                     </span>
                                 @else
-                                    <span class="px-3 py-2 border shadow-sm badge bg-light text-muted rounded-pill">
+                                    <span class="badge bg-light text-muted border rounded-pill px-3 py-2 shadow-sm">
                                         = 0 (Tetap)
                                     </span>
                                 @endif
                             </td>
-                            <td class="py-3 align-top text-end pe-4 fw-bold">
+                            <td class="py-3 text-end pe-4 fw-bold align-top">
                                 @if($item->difference > 0)
                                     <span class="text-success">+ Rp {{ number_format($totalVal, 0, ',', '.') }}</span>
                                 @elseif($item->difference < 0)

@@ -157,28 +157,36 @@
                 <tbody>
                     @forelse($stocks as $item)
                         @php
-                            // =========================================================================
-                            // 🔥 LOGIKA RADAR GUDANG (FAILSAFE ANTI-BOHONG) 🔥
-                            // Hitung murni dari tabel transaksi berdasarkan filter Gudang yang dipilih
-                            // =========================================================================
-                            $qBulk = \App\Models\InventoryStock::where('item_id', $item->id);
-                            if (!empty($warehouseId)) {
-                                $qBulk->where('warehouse_id', $warehouseId);
-                            }
-                            $realBulk = (float) $qBulk->sum('stock_qty');
+                                // =====================================================================
+                                // 🔥 OTAK SINKRONISASI MUTLAK (SINGLE SOURCE OF TRUTH) 🔥
+                                // Disamakan persis dengan kalkulasi di Kartu Mutasi Stok
+                                // =====================================================================
 
-                            $realAsset = 0;
-                            if (class_exists('\App\Models\FixedAsset')) {
-                                $qAsset = \App\Models\FixedAsset::where('item_id', $item->id)
-                                    ->whereHas('status', function($q) { $q->where('slug', 'available'); });
-                                if (!empty($warehouseId)) {
-                                    $qAsset->where('warehouse_id', $warehouseId);
+                                // 1. Hitung murni dari riwayat mutasi (IN - OUT)
+                                $inQuery = \App\Models\StockMutation::where('item_id', $item->id)->where('type', 'IN')->where('notes', 'not like', '%[DE-CAPITALIZE]%');
+                                if (!empty($warehouseId)) $inQuery->where('warehouse_id', $warehouseId);
+                                $totalIn = (float) $inQuery->sum('qty');
+
+                                $outQuery = \App\Models\StockMutation::where('item_id', $item->id)->where('type', 'OUT')->where('notes', 'not like', '%[CAPITALIZE]%');
+                                if (!empty($warehouseId)) $outQuery->where('warehouse_id', $warehouseId);
+                                $totalOut = (float) $outQuery->sum('qty');
+
+                                $realTotalStock = $totalIn - $totalOut;
+
+                                // 2. Hitung Aset Terdaftar (Available)
+                                $realAsset = 0;
+                                if (class_exists('\App\Models\FixedAsset')) {
+                                    $qAsset = \App\Models\FixedAsset::where('item_id', $item->id)
+                                        ->whereHas('status', function($q) { $q->where('slug', 'available'); });
+                                    if (!empty($warehouseId)) {
+                                        $qAsset->where('warehouse_id', $warehouseId);
+                                    }
+                                    $realAsset = (float) $qAsset->count();
                                 }
-                                $realAsset = (float) $qAsset->count();
-                            }
 
-                            $realTotalStock = $realBulk + $realAsset;
-                        @endphp
+                                // 3. Stok Fisik Biasa (Total Mutasi dikurangi Aset)
+                                $realBulk = max(0, $realTotalStock - $realAsset);
+                            @endphp
 
                         <tr>
                             <td class="py-3 ps-4">

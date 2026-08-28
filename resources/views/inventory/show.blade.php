@@ -27,7 +27,6 @@
         // 🔥 OTAK SINKRONISASI MUTLAK (SINGLE SOURCE OF TRUTH) 🔥
         // =====================================================================
 
-        // 1. Hitung murni dari sejarah mutasi (Tabel adalah kebenaran mutlak)
         $inQuery = \App\Models\StockMutation::where('item_id', $item->id)->where('type', 'IN')->where('notes', 'not like', '%[DE-CAPITALIZE]%');
         if ($warehouseId) $inQuery->where('warehouse_id', $warehouseId);
         $totalIn = (float) $inQuery->sum('qty');
@@ -36,20 +35,16 @@
         if ($warehouseId) $outQuery->where('warehouse_id', $warehouseId);
         $totalOut = (float) $outQuery->sum('qty');
 
-        // Saldo Gabungan Terkini Pasti Akurat Sesuai Tabel Bawah
         $realCurrentStock = $totalIn - $totalOut;
 
-        // 2. Hitung Aset Terdaftar (Available)
         $assetQuery = \App\Models\FixedAsset::where('item_id', $item->id)
                         ->whereHas('status', function($q) { $q->where('slug', 'available'); });
         if ($warehouseId) $assetQuery->where('warehouse_id', $warehouseId);
         $availableAssets = $assetQuery->get();
         $assetStock = (float) $availableAssets->count();
 
-        // 3. Paksa Stok Fisik Biasa menyesuaikan agar mengabaikan Bug Double Entry di Database
         $bulkStock = max(0, $realCurrentStock - $assetStock);
 
-        // 4. Kalkulator Maju untuk Tabel Saldo
         if (isset($mutations) && $mutations->count() > 0) {
             $oldestMut = $mutations->last();
 
@@ -215,7 +210,7 @@
                                 $mainText = preg_replace('/^Masuk:/', '<strong class="text-success"><i class="bi bi-box-arrow-in-right me-1"></i>Masuk:</strong>', $mainText);
 
                                 // =========================================================================
-                                // 🔥 KECERDASAN BUATAN UNTUK MEMBEDAKAN ASET TETAP & SN BIASA 🔥
+                                // 🔥 KECERDASAN BUATAN UNTUK MELACAK SN DI SEMUA TRANSAKSI 🔥
                                 // =========================================================================
                                 $realSns = [];
 
@@ -233,7 +228,6 @@
                                         $accNo = $ad->accounting_asset_number ? '<div class="text-success fw-bold" style="font-size:0.7rem; margin-top:2px;">[FA: ' . $ad->accounting_asset_number . ']</div>' : '';
                                         $snInfo = $ad->serial_number ? '<div class="text-muted" style="font-size:0.7rem;">SN: ' . $ad->serial_number . '</div>' : '';
 
-                                        // 🔥 FORMAT BARU: SUSUN KE BAWAH 🔥
                                         $htmlBlock = '
                                         <div class="p-2 mb-2 bg-white border rounded shadow-sm border-secondary-subtle ms-3 position-relative">
                                             <div class="top-0 position-absolute start-0 translate-middle">
@@ -257,9 +251,28 @@
                                         if ($rtvDoc) {
                                             $realSns = \DB::table('item_serials')->where('return_to_vendor_id', $rtvDoc->id)->where('item_id', $mut->item_id)->where('warehouse_id', $mut->warehouse_id)->pluck('serial_number')->toArray();
                                         }
+                                    } elseif (str_starts_with($mut->reference_number, 'ADJ/')) {
+                                        // 🔥 PELACAK SN MUTLAK UNTUK STOCK ADJUSTMENT 🔥
+                                        $adjDoc = \DB::table('stock_adjustments')->where('adjustment_number', $mut->reference_number)->first();
+                                        if ($adjDoc) {
+                                            $realSns = \DB::table('item_serials')
+                                                ->where('stock_adjustment_id', $adjDoc->id)
+                                                ->where('item_id', $mut->item_id)
+                                                ->pluck('serial_number')
+                                                ->toArray();
+                                        }
+                                    } elseif (str_starts_with($mut->reference_number, 'SO-')) {
+                                        // 🔥 PELACAK SN MUTLAK UNTUK STOCK OPNAME 🔥
+                                        $soDoc = \DB::table('stock_opnames')->where('document_number', $mut->reference_number)->first();
+                                        if ($soDoc) {
+                                            $realSns = \DB::table('item_serials')
+                                                ->where('stock_opname_id', $soDoc->id)
+                                                ->where('item_id', $mut->item_id)
+                                                ->pluck('serial_number')
+                                                ->toArray();
+                                        }
                                     } elseif (str_starts_with($mut->reference_number, 'GI-') || str_starts_with($mut->reference_number, 'RET-GI')) {
-                                        // 🔥 TAMBAHAN LOGIKA UNTUK RET-GI & GI 🔥
-                                        $baseRefNumber = str_replace('RET-', '', $mut->reference_number); // Jika Retur, kita cari dokumen aslinya
+                                        $baseRefNumber = str_replace('RET-', '', $mut->reference_number);
                                         $giDoc = \DB::table('goods_issues')->where('gi_number', $baseRefNumber)->orWhere('gi_number', $mut->reference_number)->first();
 
                                         if ($giDoc) {
@@ -341,10 +354,8 @@
                                                 @foreach($snArray as $sn)
                                                     <div class="col" style="word-break: break-word; line-height: 1.5;">
                                                         @if(str_contains($sn, '<div'))
-                                                            {{-- Jika bentuknya Aset Block (Html buatan kita di atas) --}}
                                                             {!! $sn !!}
                                                         @else
-                                                            {{-- Jika SN biasa --}}
                                                             <span class="text-success fw-bold me-1">✓</span> <strong class="text-dark">{{ $sn }}</strong>
                                                         @endif
                                                     </div>

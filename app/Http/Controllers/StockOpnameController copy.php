@@ -250,77 +250,49 @@ class StockOpnameController extends Controller
 
         $totalSystemValue = 0;
         $totalActualValue = 0;
-        $totalVarianceValue = 0;
+        $totalVarianceValue = 0; // Total Nilai Absolut Selisih untuk Workflow
 
         try {
             DB::beginTransaction();
 
             foreach ($request->items as $itemId => $data) {
                 $soItem = StockOpnameItem::findOrFail($itemId);
+
                 $actualQty = (float) ($data['actual_qty'] ?? 0);
 
+                // 🔥 RADAR HARGA CERDAS: Jika harga di SO masih Rp 0, paksa cari ke Master Barang!
                 $unitPrice = (float) $soItem->unit_price;
                 if ($unitPrice <= 0) {
                     $masterItem = \App\Models\Item::find($soItem->item_id);
-                    if ($masterItem) $unitPrice = (float) ($masterItem->purchase_price ?? $masterItem->unit_price ?? 0);
+                    if ($masterItem) {
+                        $unitPrice = (float) ($masterItem->purchase_price ?? $masterItem->unit_price ?? 0);
+                    }
                 }
 
                 $varianceQty = $actualQty - $soItem->system_qty;
 
-                // Validasi Anti-Hack untuk Serial Number
-                $masterItem = \App\Models\Item::find($soItem->item_id);
-                $newSns = [];
-                $lostSns = [];
-
-                if ($masterItem && $masterItem->is_trackable && $varianceQty != 0) {
-                    $absDiff = abs($varianceQty);
-
-                    if ($varianceQty > 0) {
-                        $newSns = $data['new_sns'] ?? [];
-                        if (count($newSns) != $absDiff) {
-                            throw new \Exception("Jumlah Serial Number baru untuk barang {$masterItem->name} harus diisi tepat {$absDiff} unit.");
-                        }
-                        // Bersihkan spasi & Cek duplikat
-                        $newSns = array_map('trim', $newSns);
-                        if (count($newSns) !== count(array_unique($newSns))) {
-                            throw new \Exception("Terdapat Serial Number kembar di form untuk {$masterItem->name}.");
-                        }
-                    } else {
-                        $lostSns = $data['lost_sns'] ?? [];
-                        if (count($lostSns) != $absDiff) {
-                            throw new \Exception("Pilih tepat {$absDiff} Serial Number yang hilang untuk {$masterItem->name}.");
-                        }
-                    }
-                }
-
+                // Kalkulasi ulang seluruh komponen valuasi dengan harga terbaru
                 $systemValue = $soItem->system_qty * $unitPrice;
                 $actualValue = $actualQty * $unitPrice;
                 $varianceValue = $varianceQty * $unitPrice;
 
-                // 🔥 TRIK INTELIJEN: Kita simpan array SN ke dalam kolom JSON (buatkan migrasi atau pakai notes) 🔥
-                // Karena kita belum bikin kolom khusus, kita akan "menyelundupkan" array ini ke dalam kolom 'notes' (dibungkus format JSON) agar nanti bisa ditarik oleh fungsi approve().
-                $payloadData = [
-                    'user_note' => $data['notes'] ?? null,
-                    'new_sns'   => $newSns,
-                    'lost_sns'  => $lostSns
-                ];
-
                 $soItem->update([
                     'actual_qty' => $actualQty,
                     'variance_qty' => $varianceQty,
-                    'unit_price' => $unitPrice,
-                    'system_value' => $systemValue,
+                    'unit_price' => $unitPrice, // Kunci harga baru ke tabel Opname
+                    'system_value' => $systemValue, // Revisi nilai sistem
                     'actual_value' => $actualValue,
                     'variance_value' => $varianceValue,
-                    'notes' => json_encode($payloadData), // Kita bungkus pakai JSON
+                    'notes' => $data['notes'] ?? null,
                 ]);
 
                 $totalSystemValue += $systemValue;
                 $totalActualValue += $actualValue;
+                // Hitung absolute (selisih plus/minus tetap dianggap nominal variance)
                 $totalVarianceValue += abs($varianceValue);
             }
 
-            // Simpan Dokumen Upload Bukti Fisik... (SAMA SEPERTI KODE SEBELUMNYA)
+            // Simpan Dokumen Upload Bukti Fisik
             if ($request->hasFile('attachments')) {
                 $basePath = \App\Models\SystemSetting::where('setting_key', 'path_stock_opnames')->value('setting_value') ?? 'attachments/stock_opname';
                 $path = $basePath . '/' . str_replace(['/', '\\'], '-', $opname->document_number);
@@ -337,6 +309,7 @@ class StockOpnameController extends Controller
                 }
             }
 
+            // Revisi Total Valuasi di Header Dokumen
             $opname->update([
                 'total_system_value' => $totalSystemValue,
                 'total_actual_value' => $totalActualValue,
@@ -344,7 +317,8 @@ class StockOpnameController extends Controller
             ]);
 
             DB::commit();
-            return redirect()->route('stock-opnames.show', $opname->id)->with('success', 'Luar Biasa! Hasil fisik dan Identitas SN disimpan. Siap diajukan!');
+
+            return redirect()->route('stock-opnames.show', $opname->id)->with('success', 'Luar Biasa! Hasil fisik disimpan dan Valuasi Harga telah direvisi otomatis!');
 
         } catch (\Exception $e) {
             DB::rollBack();
@@ -374,7 +348,7 @@ class StockOpnameController extends Controller
 
 
 
-   // ====================================================
+    // ====================================================
     // 10. PROSES APPROVE (SETUJUI) & POTONG STOK OTOMATIS
     // ====================================================
     public function approve(Request $request, $id)
@@ -396,7 +370,7 @@ class StockOpnameController extends Controller
 
             // 2. CEK OTORISASI (Jabatan sesuai matriks ATAU hak istimewa Super Admin)
             $user = auth()->user();
-            $roleName = strtolower(optional($user->role)->name ?? '');
+            $roleName = strtolower(optional($user->role)->name ?? ''); // Tarik nama role dari database
 
             // Super admin bisa dideteksi dari ID 1, nama, ATAU nama rolenya
             $isSuperAdmin = ($user->role_id == 1 || strtolower($user->name) == 'super administrator' || $roleName == 'super admin');
@@ -407,90 +381,70 @@ class StockOpnameController extends Controller
 
             // 3. Update status antrean saat ini menjadi Approved
             $approval->update([
-                'status'      => 'approved',
-                'approved_by' => $user->id,
-                'note'        => $request->notes ?? 'Disetujui',
+                'status' => 'approved',
+                'approved_by' => $user->id, // 🔥 UBAH 'user_id' MENJADI 'approver_id' DI SINI
+                'note' => $request->notes ?? 'Disetujui', // 🔥 PASTIKAN SEBELAH KIRI HANYA 'note' (TANPA S)
                 'approved_at' => now(),
             ]);
 
             // 4. Cek apakah masih ada sisa antrean persetujuan lain setelah ini
+            // 🔥 PERBAIKAN: Gunakan whereIn agar aman dari huruf besar/kecil di DB
             $remainingApprovals = $opname->approvals()
                 ->whereIn('status', ['pending', 'PENDING'])
                 ->count();
 
-            // 5. JIKA SEMUA LEVEL SUDAH SETUJU -> EKSEKUSI FINALISASI STOK & SERIAL NUMBER
+            // 5. JIKA SEMUA LEVEL SUDAH SETUJU -> EKSEKUSI FINALISASI STOK
             if ($remainingApprovals === 0) {
 
-                $statusApproved = \App\Models\Status::where('type', 'SO')->where('slug', 'approved')->first();
-                $opname->update(['status_id' => $statusApproved ? $statusApproved->id : $opname->status_id]);
+                // 🔥 PERBAIKAN UTAMA: Cari slug 'approved' (bukan 'completed')
+                $statusApproved = \App\Models\Status::where('type', 'SO')
+                                    ->where('slug', 'approved')
+                                    ->first();
+
+                // Ubah status utama dokumen SO menjadi Disetujui (Approved)
+                $opname->update([
+                    'status_id' => $statusApproved ? $statusApproved->id : $opname->status_id,
+                ]);
 
                 // Eksekusi Pemotongan / Penambahan Stok Riil
                 foreach ($opname->items as $item) {
-                    if ($item->variance_qty == 0) continue;
+                    if ($item->variance_qty == 0) continue; // Jika cocok, lewati
 
                     $masterItem = \App\Models\Item::find($item->item_id);
-                    if (!$masterItem) continue;
+                    if (!$masterItem) continue; // Keamanan tambahan jika item tidak ditemukan
 
                     $newStockBalance = $masterItem->current_stock + $item->variance_qty;
-                    $isTrackable = isset($masterItem->is_trackable) && $masterItem->is_trackable;
 
-                    // Bongkar kembali JSON dari kolom notes
-                    $payloadData = json_decode($item->notes, true);
-                    $newSns = $payloadData['new_sns'] ?? [];
-                    $lostSns = $payloadData['lost_sns'] ?? [];
-
-                    if ($item->variance_qty > 0) { // SURPLUS (MASUK)
-
-                        // 1. Eksekusi SN Jika ada
-                        if ($isTrackable && !empty($newSns)) {
-                            foreach ($newSns as $sn) {
-                                \DB::table('item_serials')->insert([
-                                    'item_id'          => $item->item_id,
-                                    'warehouse_id'     => $opname->warehouse_id,
-                                    'goods_receipt_id' => null,
-                                    'serial_number'    => trim($sn),
-                                    'status'           => 'AVAILABLE',
-                                    'created_at'       => now(),
-                                    'updated_at'       => now(),
-                                ]);
-                            }
-                        }
-
-                        // 2. Tumpuk Stok Gudang
+                    if ($item->variance_qty > 0) {
+                        // KASUS A: SURPLUS (BARANG LEBIH) -> Masukkan stok baru ke gudang
                         \App\Models\InventoryStock::create([
-                            'company_id'       => $opname->company_id,
-                            'warehouse_id'     => $opname->warehouse_id,
-                            'item_id'          => $item->item_id,
-                            'stock_qty'        => $item->variance_qty,
-                            'unit_price'       => $item->unit_price,
+                            'company_id' => $opname->company_id,
+                            'warehouse_id' => $opname->warehouse_id,
+                            'item_id' => $item->item_id,
+                            'stock_qty' => $item->variance_qty,
+                            'unit_price' => $item->unit_price,
                             'reference_number' => $opname->document_number,
-                            'notes'            => 'Surplus Stock Opname',
+                            'notes' => 'Surplus Stock Opname',
                         ]);
-
-                    } else { // DEFISIT (KELUAR)
-
-                        // 1. Eksekusi SN Jika ada
-                        if ($isTrackable && !empty($lostSns)) {
-                            \DB::table('item_serials')
-                                ->whereIn('serial_number', $lostSns)
-                                ->where('item_id', $item->item_id)
-                                ->update(['status' => 'LOST', 'updated_at' => now()]);
-                        }
-
-                        // 2. Potong Stok Gudang (FIFO)
+                    } else {
+                        // KASUS B: DEFICIT (BARANG HILANG/MINUS) -> Potong stok pakai metode FIFO
                         $qtyToDeduct = abs($item->variance_qty);
+
                         $availableStocks = \App\Models\InventoryStock::where('warehouse_id', $opname->warehouse_id)
                                             ->where('item_id', $item->item_id)
                                             ->where('stock_qty', '>', 0)
-                                            ->orderBy('id', 'asc')
+                                            ->orderBy('id', 'asc') // FIFO: Tumpukan terlama
                                             ->get();
 
                         foreach ($availableStocks as $stock) {
                             if ($qtyToDeduct <= 0) break;
+
                             if ($stock->stock_qty <= $qtyToDeduct) {
+                                // Habiskan tumpukan ini
                                 $qtyToDeduct -= $stock->stock_qty;
                                 $stock->update(['stock_qty' => 0]);
                             } else {
+                                // Potong sebagian tumpukan ini
                                 $stock->update(['stock_qty' => $stock->stock_qty - $qtyToDeduct]);
                                 $qtyToDeduct = 0;
                             }
@@ -500,33 +454,24 @@ class StockOpnameController extends Controller
                     // Update total qty saat ini di Master Barang
                     $masterItem->update(['current_stock' => $newStockBalance]);
 
-                    // CATAT MUTASI KE KARTU STOK (StockMutation) AGAR SINKRON DENGAN HISTORI
-                    \App\Models\StockMutation::create([
-                        'item_id'          => $item->item_id,
-                        'warehouse_id'     => $opname->warehouse_id,
-                        'type'             => $item->variance_qty > 0 ? 'IN' : 'OUT',
-                        'qty'              => abs($item->variance_qty),
-                        'balance_before'   => $masterItem->current_stock - $item->variance_qty,
-                        'balance_after'    => $newStockBalance,
-                        'reference_number' => $opname->document_number,
-                        'notes'            => 'Penyesuaian via Stock Opname',
-                        'created_by'       => auth()->id(),
-                    ]);
+                    // 🔥 LEPAS GEMBOK GUDANG KARENA OPNAME SELESAI 🔥
+                    Warehouse::where('id', $opname->warehouse_id)->update(['is_frozen' => false]);
                 }
-
-                // LEPAS GEMBOK GUDANG
-                Warehouse::where('id', $opname->warehouse_id)->update(['is_frozen' => false]);
             }
 
             DB::commit();
-            return redirect()->back()->with('success', 'Berhasil disetujui! ' . ($remainingApprovals === 0 ? 'Stok gudang dan Serial Number telah direvisi secara otomatis.' : 'Menunggu persetujuan level selanjutnya.'));
+            return redirect()->back()->with('success', 'Berhasil disetujui! ' . ($remainingApprovals === 0 ? 'Stok gudang telah direvisi secara otomatis.' : 'Menunggu persetujuan level selanjutnya.'));
+
+            // DB::commit();
+            // return redirect()->back()->with('success', 'Berhasil disetujui! ' . ($remainingApprovals === 0 ? 'Stok gudang telah direvisi secara otomatis.' : 'Menunggu persetujuan level selanjutnya.'));
 
         } catch (\Exception $e) {
             DB::rollBack();
-            \Illuminate\Support\Facades\Log::error('Error Approve Stock Opname: ' . $e->getMessage());
+            Log::error('Error Approve Stock Opname: ' . $e->getMessage());
             return back()->with('error', 'Terjadi kesalahan sistem: ' . $e->getMessage());
         }
     }
+
     // ====================================================
     // 11. PROSES REJECT (TOLAK)
     // ====================================================
