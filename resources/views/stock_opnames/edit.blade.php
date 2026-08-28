@@ -5,7 +5,10 @@
 <link href="https://cdn.jsdelivr.net/npm/select2-bootstrap-5-theme@1.3.0/dist/select2-bootstrap-5-theme.min.css" rel="stylesheet" />
 <style>
     .select2-container--bootstrap-5 .select2-selection { border-radius: 8px; border-color: #dee2e6; min-height: 38px; }
-    /* 🔥 KASUS KEMARIN: SEMUA TRIK CSS (hide-selected-sn) TELAH DIBUANG AGAR TIDAK ERROR 🔥 */
+    /* CSS UX Anti-Hantu untuk SN yang sudah dipilih */
+    .hide-selected-sn .select2-results__option[aria-selected="true"] {
+        display: none !important;
+    }
 </style>
 @endpush
 
@@ -20,11 +23,18 @@
         <div class="alert alert-danger border-0 shadow-sm rounded-3 fw-bold"><i class="bi bi-exclamation-triangle me-2"></i>{{ session('error') }}</div>
     @endif
 
-    <div class="alert alert-info border-0 shadow-sm rounded-4 fw-bold p-3 mb-4 d-flex align-items-center border-start border-4 border-info">
-        <i class="bi bi-shield-lock-fill fs-4 me-3 text-info"></i>
-        <div>
-            <span class="d-block text-dark">Mode Blind Count Aktif</span>
-            <small class="fw-normal text-muted">Stok sistem disembunyikan. Pindahkan angka persis seperti yang tertulis di Lembar Kerja oleh staf gudang.</small>
+    {{-- 🔥 PETUNJUK PENGISIAN YANG DIPERBARUI & LEBIH JELAS 🔥 --}}
+    <div class="alert alert-info border-0 shadow-sm rounded-4 p-4 mb-4 border-start border-4 border-info bg-info bg-opacity-10">
+        <div class="d-flex align-items-start">
+            <i class="bi bi-shield-lock-fill fs-2 me-3 text-info mt-1"></i>
+            <div>
+                <h5 class="fw-bolder text-dark mb-2">Mode Blind Count Aktif & Petunjuk Pengisian</h5>
+                <ul class="mb-0 small text-dark fw-medium ps-3" style="line-height: 1.7;">
+                    <li><strong>Wajib Diisi Semua:</strong> Seluruh kotak <span class="text-danger fw-bold">Qty Hitung Fisik (*)</span> wajib diisi dengan angka sesuai kertas kerja lapangan. Tidak boleh ada baris yang dibiarkan kosong.</li>
+                    <li><strong>Barang Kosong / Habis:</strong> Jika saat audit fisik barang tersebut benar-benar habis (tidak ditemukan), silakan ketik angka <strong>0</strong>.</li>
+                    <li><strong>Barang Ber-Serial Number (SN):</strong> Jika sistem mendeteksi adanya selisih pada barang ber-SN, maka akan muncul kotak tambahan untuk menginput SN baru atau memilih SN yang hilang.</li>
+                </ul>
+            </div>
         </div>
     </div>
 
@@ -67,7 +77,7 @@
 
                                         {{-- VALUE DIKOSONGKAN AGAR USER WAJIB NGETIK MANUAL --}}
                                         <input type="number" name="items[{{ $item->id }}][actual_qty]" class="form-control fw-bold border-warning text-dark bg-warning-subtle text-center real-stock"
-                                               value="{{ $item->actual_qty > 0 ? (float) $item->actual_qty : '' }}"
+                                               value="{{ $item->actual_qty > 0 || $item->actual_qty === '0' ? (float) $item->actual_qty : '' }}"
                                                placeholder="Ketik angka..." min="0" step="any" required>
                                         <span class="input-group-text bg-light fw-bold text-muted">{{ $item->base_uom }}</span>
                                     </div>
@@ -133,6 +143,7 @@
 <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
 <script>
     document.addEventListener('DOMContentLoaded', function() {
+        // Logika Dinamis Upload File
         document.getElementById('btn-add-file').addEventListener('click', function() {
             let container = document.getElementById('file-upload-container');
             let row = document.createElement('div');
@@ -222,7 +233,7 @@
                     url: "{{ route('stock-adjustments.search-sns') }}",
                     type: "GET",
                     data: { item_id: itemId, warehouse_id: warehouseId },
-                    cache: false, // 🔥 MEMBUNUH CACHE BROWSER SECARA PAKSA 🔥
+                    cache: false,
                     success: function(data) {
                         snContainer.find(`#loading-sn-${rowId}`).remove();
                         snContainer.append(`
@@ -243,7 +254,6 @@
                         `;
                         snContainer.append(selectHtml);
 
-                        // 🔥 SESUAI KASUS KEMARIN: Hapus hide-selected-sn dan hapus closeOnSelect 🔥
                         snContainer.find('.select2-lost-sn').select2({
                             theme: 'bootstrap-5',
                             placeholder: "-- Pilih SN yang Hilang/Tidak Ada --",
@@ -262,13 +272,14 @@
             }
         });
 
+        // Submit Form (Kunci & Validasi)
         $('#form-opname-edit').on('submit', function(e) {
             e.preventDefault();
             let form = this;
 
             Swal.fire({
                 title: 'Simpan Hasil Opname?',
-                text: "Pastikan semua angka fisik (dan identitas Serial Number jika ada selisih) sudah dimasukkan dengan benar.",
+                text: "Pastikan semua angka fisik (dan identitas Serial Number jika ada selisih) sudah dimasukkan dengan benar. Data ini akan dikirim untuk Approval.",
                 icon: 'question',
                 showCancelButton: true,
                 confirmButtonColor: '#198754',
