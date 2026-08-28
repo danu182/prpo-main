@@ -5,10 +5,7 @@
 <link href="https://cdn.jsdelivr.net/npm/select2-bootstrap-5-theme@1.3.0/dist/select2-bootstrap-5-theme.min.css" rel="stylesheet" />
 <style>
     .select2-container--bootstrap-5 .select2-selection { border-radius: 8px; border-color: #dee2e6; min-height: 38px; }
-    /* CSS UX Anti-Hantu untuk SN yang sudah dipilih */
-    .hide-selected-sn .select2-results__option[aria-selected="true"] {
-        display: none !important;
-    }
+    /* 🔥 KASUS KEMARIN: SEMUA TRIK CSS (hide-selected-sn) TELAH DIBUANG AGAR TIDAK ERROR 🔥 */
 </style>
 @endpush
 
@@ -34,7 +31,7 @@
     <form action="{{ route('stock-opnames.update', $opname->id) }}" method="POST" enctype="multipart/form-data" id="form-opname-edit">
         @csrf
         @method('PUT')
-        
+
         {{-- Sembunyikan ID Gudang agar bisa diakses oleh Ajax --}}
         <input type="hidden" id="global_warehouse_id" value="{{ $opname->warehouse_id }}">
 
@@ -67,7 +64,7 @@
                                     <div class="input-group shadow-sm">
                                         {{-- 🔥 WADAH RAHASIA UNTUK STOK SISTEM 🔥 --}}
                                         <input type="hidden" class="sys-stock" value="{{ (float) $item->system_qty }}">
-                                        
+
                                         {{-- VALUE DIKOSONGKAN AGAR USER WAJIB NGETIK MANUAL --}}
                                         <input type="number" name="items[{{ $item->id }}][actual_qty]" class="form-control fw-bold border-warning text-dark bg-warning-subtle text-center real-stock"
                                                value="{{ $item->actual_qty > 0 ? (float) $item->actual_qty : '' }}"
@@ -136,7 +133,6 @@
 <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
 <script>
     document.addEventListener('DOMContentLoaded', function() {
-        // Logika Dinamis Upload File
         document.getElementById('btn-add-file').addEventListener('click', function() {
             let container = document.getElementById('file-upload-container');
             let row = document.createElement('div');
@@ -146,7 +142,7 @@
             iconSpan.innerHTML = '<i class="bi bi-file-earmark-pdf text-danger"></i>';
             let input = document.createElement('input');
             input.type = 'file';
-            input.name = 'attachments[]'; 
+            input.name = 'attachments[]';
             input.className = 'form-control form-control-lg bg-light';
             input.accept = '.pdf,.jpg,.jpeg,.png';
             let btnRemove = document.createElement('button');
@@ -161,23 +157,24 @@
         });
 
         // =====================================================================
-        // 🔥 RADAR INTELIJEN: DETEKSI SERIAL NUMBER (SAMA SEPERTI ADJUSTMENT) 🔥
+        // 🔥 RADAR INTELIJEN: DETEKSI SERIAL NUMBER DENGAN PEMBUNUH CACHE 🔥
         // =====================================================================
         let activeAjaxRequests = {};
         let warehouseId = $('#global_warehouse_id').val();
 
         $('.real-stock').on('input', function() {
             let tr = $(this).closest('tr.item-row');
-            let rowId = tr.data('row-id'); // Ini adalah ID StockOpnameItem
-            let itemId = tr.data('item-id'); // Ini adalah ID Master Item
-            let isTrackable = tr.data('trackable') === true; // Pastikan jadi boolean
+            let rowId = tr.data('row-id');
+            let itemId = tr.data('item-id');
+            let isTrackable = tr.data('trackable') === true;
 
-            // Jika bukan trackable, abaikan saja
             if (!isTrackable) return;
 
-            let sys = parseFloat(tr.find('.sys-stock').val()) || 0;
-            let real = parseFloat($(this).val());
-            
+            let sysStr = tr.find('.sys-stock').val();
+            let sys = (sysStr === "" || isNaN(parseFloat(sysStr))) ? 0 : parseFloat(sysStr);
+            let realStr = $(this).val();
+            let real = parseFloat(realStr);
+
             let snRow = $(`#sn-row-${rowId}`);
             let snContainer = $(`#sn-container-${rowId}`);
 
@@ -185,8 +182,7 @@
                 activeAjaxRequests[rowId].abort();
             }
 
-            // Jika input kosong atau selisih 0, sembunyikan baris SN
-            if (isNaN(real) || real === sys) {
+            if (isNaN(real) || real === sys || realStr === "") {
                 snRow.hide();
                 snContainer.empty();
                 return;
@@ -195,13 +191,18 @@
             let diff = real - sys;
             let absDiff = Math.abs(diff);
 
-            // Buka baris SN
             snRow.show();
             snContainer.empty();
 
             if (diff > 0) {
-                // SURPLUS: Minta SN Baru
-                snContainer.append(`<div class="mb-2 text-success fw-bold"><i class="bi bi-plus-circle-fill me-1"></i> Mode Blind Count: Masukkan ${absDiff} Serial Number (SN) baru yang ditemukan di gudang:</div>`);
+                // SURPLUS: Minta SN Baru (Teks Hijau)
+                snContainer.append(`
+                    <div class="mb-2 text-success fw-bold">
+                        <i class="bi bi-plus-circle-fill me-1"></i>
+                        Mode Blind Count: Anda mencatat <span class="text-dark bg-warning-subtle px-1 rounded">${real} unit</span>, sedangkan sistem mencatat <span class="text-dark bg-warning-subtle px-1 rounded">${sys} unit</span>.<br>
+                        Terdapat selisih SURPLUS (+). Masukkan <strong>${absDiff} Serial Number (SN) baru</strong> yang Anda temukan di gudang:
+                    </div>
+                `);
                 let inputHtml = '<div class="row g-2">';
                 for(let i=0; i < absDiff; i++) {
                     inputHtml += `
@@ -214,49 +215,60 @@
                 snContainer.append(inputHtml);
 
             } else if (diff < 0) {
-                // DEFISIT: Pilih SN yang Hilang
+                // DEFISIT: Pilih SN yang Hilang (Teks Merah)
                 snContainer.append(`<div class="mb-2 text-danger fw-bold" id="loading-sn-${rowId}"><span class="spinner-border spinner-border-sm me-2"></span> Mencari data SN di gudang...</div>`);
-                
-                activeAjaxRequests[rowId] = $.get("{{ route('stock-adjustments.search-sns') }}", { item_id: itemId, warehouse_id: warehouseId }, function(data) {
-                    
-                    snContainer.find(`#loading-sn-${rowId}`).remove();
-                    snContainer.append(`<div class="mb-2 text-danger fw-bold"><i class="bi bi-dash-circle-fill me-1"></i> Mode Blind Count: Pilih ${absDiff} Serial Number (SN) yang tidak Anda temukan di gudang:</div>`);
 
-                    let options = data.map(sn => `<option value="${sn.id}">${sn.text}</option>`).join('');
-                    
-                    let selectHtml = `
-                        <select name="items[${rowId}][lost_sns][]" class="form-select border-danger select2-lost-sn" multiple="multiple" required style="width: 100%;">
-                            ${options}
-                        </select>
-                        <small class="mt-1 text-muted d-block">Sistem membatasi maksimal pilihan sejumlah ${absDiff} unit sesuai selisih fisik vs sistem.</small>
-                    `;
-                    snContainer.append(selectHtml);
-                    
-                    snContainer.find('.select2-lost-sn').select2({
-                        theme: 'bootstrap-5',
-                        dropdownCssClass: 'hide-selected-sn',
-                        placeholder: "-- Pilih SN yang Hilang/Tidak Ada --",
-                        maximumSelectionLength: absDiff,
-                        closeOnSelect: false 
-                    });
-                }).fail(function(jqXHR) {
-                    if(jqXHR.statusText !== 'abort') {
-                        snContainer.find(`#loading-sn-${rowId}`).html('<span class="text-danger small"><i class="bi bi-x-circle me-1"></i> Gagal memuat daftar Serial Number.</span>');
+                activeAjaxRequests[rowId] = $.ajax({
+                    url: "{{ route('stock-adjustments.search-sns') }}",
+                    type: "GET",
+                    data: { item_id: itemId, warehouse_id: warehouseId },
+                    cache: false, // 🔥 MEMBUNUH CACHE BROWSER SECARA PAKSA 🔥
+                    success: function(data) {
+                        snContainer.find(`#loading-sn-${rowId}`).remove();
+                        snContainer.append(`
+                            <div class="mb-2 text-danger fw-bold">
+                                <i class="bi bi-dash-circle-fill me-1"></i>
+                                Mode Blind Count: Anda mencatat <span class="text-dark bg-warning-subtle px-1 rounded">${real} unit</span>, sedangkan sistem mencatat <span class="text-dark bg-warning-subtle px-1 rounded">${sys} unit</span>.<br>
+                                Terdapat selisih DEFISIT (-). Pilih <strong>${absDiff} Serial Number (SN) yang HILANG/TIDAK ADA</strong> di gudang:
+                            </div>
+                        `);
+
+                        let options = data.map(sn => `<option value="${sn.id}">${sn.text}</option>`).join('');
+
+                        let selectHtml = `
+                            <select name="items[${rowId}][lost_sns][]" class="form-select border-danger select2-lost-sn" multiple="multiple" required style="width: 100%;">
+                                ${options}
+                            </select>
+                            <small class="mt-1 text-muted d-block">Sistem membatasi maksimal pilihan sejumlah ${absDiff} unit sesuai selisih fisik vs sistem.</small>
+                        `;
+                        snContainer.append(selectHtml);
+
+                        // 🔥 SESUAI KASUS KEMARIN: Hapus hide-selected-sn dan hapus closeOnSelect 🔥
+                        snContainer.find('.select2-lost-sn').select2({
+                            theme: 'bootstrap-5',
+                            placeholder: "-- Pilih SN yang Hilang/Tidak Ada --",
+                            maximumSelectionLength: absDiff
+                        });
+                    },
+                    error: function(jqXHR) {
+                        if(jqXHR.statusText !== 'abort') {
+                            snContainer.find(`#loading-sn-${rowId}`).html('<span class="text-danger small"><i class="bi bi-x-circle me-1"></i> Gagal memuat daftar Serial Number.</span>');
+                        }
+                    },
+                    complete: function() {
+                        delete activeAjaxRequests[rowId];
                     }
-                }).always(function() {
-                    delete activeAjaxRequests[rowId];
                 });
             }
         });
 
-        // Submit Form (Kunci & Validasi)
         $('#form-opname-edit').on('submit', function(e) {
             e.preventDefault();
             let form = this;
 
             Swal.fire({
                 title: 'Simpan Hasil Opname?',
-                text: "Pastikan semua angka fisik (dan identitas Serial Number jika ada selisih) sudah dimasukkan dengan benar. Data ini akan dikirim untuk Approval.",
+                text: "Pastikan semua angka fisik (dan identitas Serial Number jika ada selisih) sudah dimasukkan dengan benar.",
                 icon: 'question',
                 showCancelButton: true,
                 confirmButtonColor: '#198754',

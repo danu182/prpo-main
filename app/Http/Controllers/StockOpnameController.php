@@ -27,7 +27,6 @@ class StockOpnameController extends Controller
         return $prefix . str_pad($nextSeq, 4, '0', STR_PAD_LEFT);
     }
 
-
     // 9. Ajukan Hasil Opname ke Matriks Approval
     public function submitApproval($id)
     {
@@ -36,7 +35,6 @@ class StockOpnameController extends Controller
         try {
             DB::beginTransaction();
 
-            // 1. Cari rule matriks yang aktif untuk Stock Opname
             $workflow = \App\Models\ApprovalWorkflow::where('document_type', 'App\Models\StockOpname')
                             ->where('is_active', true)
                             ->first();
@@ -45,10 +43,8 @@ class StockOpnameController extends Controller
                 return back()->with('error', 'Gagal: Matriks Persetujuan untuk Stock Opname belum diatur oleh Administrator!');
             }
 
-            // 2. Ambil nilai selisih untuk trigger level approval (Gunakan nilai absolute)
             $totalVariance = abs($opname->total_variance_value);
 
-            // 3. Tarik langkah-langkah approval-nya
             $steps = \App\Models\ApprovalWorkflowStep::where('approval_workflow_id', $workflow->id)
                         ->orderBy('step_order', 'asc')
                         ->get();
@@ -56,7 +52,6 @@ class StockOpnameController extends Controller
             $approvalCreated = false;
 
             foreach ($steps as $step) {
-                // Hanya buat antrean jika selisihnya memenuhi batas min_amount matriks
                 if ($totalVariance >= $step->min_amount) {
                     $opname->approvals()->create([
                         'role_id' => $step->role_id,
@@ -71,7 +66,6 @@ class StockOpnameController extends Controller
                 return back()->with('error', 'Gagal: Nilai selisih tidak memenuhi batas minimum untuk diajukan pada matriks manapun.');
             }
 
-            // 4. Update status dokumen menjadi Pending Approval
             $statusPending = Status::where('type', 'SO')->where('slug', 'pending_approval')->first();
             $opname->update([
                 'status_id' => $statusPending ? $statusPending->id : $opname->status_id,
@@ -119,7 +113,6 @@ class StockOpnameController extends Controller
         try {
             DB::beginTransaction();
 
-            // Status 1 = DRAFT / COUNTING (Sedang Menghitung)
             $statusDraft = Status::where('type', 'SO')->where('slug', 'draft')->first();
 
             $so = StockOpname::create([
@@ -132,14 +125,12 @@ class StockOpnameController extends Controller
                 'notes' => $request->notes,
             ]);
 
-            // 🔥 GEMBOK GUDANGNYA SEKARANG 🔥
             Warehouse::where('id', $request->warehouse_id)->update(['is_frozen' => true]);
 
-            // Ambil seluruh stok dari gudang yang dipilih dan simpan ke Opname Items
             $stocks = InventoryStock::with('item.uom')->where('warehouse_id', $request->warehouse_id)
                                     ->where('stock_qty', '>', 0)
                                     ->get()
-                                    ->groupBy('item_id'); // Gabungkan lot/batch yang item_id-nya sama
+                                    ->groupBy('item_id');
 
             $totalSystemValue = 0;
 
@@ -147,16 +138,12 @@ class StockOpnameController extends Controller
                 $totalQty = $itemStocks->sum('stock_qty');
                 $masterItem = $itemStocks->first()->item;
 
-                // 🔥 LOGIKA BARU: Hitung Valuasi Langsung Dari Tumpukan GR Aktual 🔥
-                // Mengalikan Qty * Harga Beli masing-masing tumpukan stok
                 $actualStockValue = $itemStocks->sum(function($stock) {
                     return $stock->stock_qty * ($stock->unit_price ?? 0);
                 });
 
-                // Hitung Harga Rata-Rata Tertimbang (Weighted Average Cost)
                 $unitPrice = $totalQty > 0 ? ($actualStockValue / $totalQty) : 0;
 
-                // Fallback: Jika di tumpukan gudang harganya 0, baru intip ke Master Item
                 if ($unitPrice == 0) {
                     $unitPrice = $masterItem->unit_price ?? $masterItem->purchase_price ?? 0;
                 }
@@ -168,7 +155,7 @@ class StockOpnameController extends Controller
                     'item_id' => $itemId,
                     'base_uom' => optional($masterItem->uom)->name ?? 'PCS',
                     'system_qty' => $totalQty,
-                    'actual_qty' => 0, // Belum diinput
+                    'actual_qty' => 0,
                     'unit_price' => $unitPrice,
                     'system_value' => $systemValue,
                 ]);
@@ -176,7 +163,6 @@ class StockOpnameController extends Controller
                 $totalSystemValue += $systemValue;
             }
 
-            // Update Total Valuasi Sistem ke Header
             $so->update(['total_system_value' => $totalSystemValue]);
 
             DB::commit();
@@ -196,7 +182,6 @@ class StockOpnameController extends Controller
     {
         $opname = StockOpname::with(['items.item.itemUoms', 'warehouse'])->findOrFail($id);
 
-        // 🔥 FIX BUG: Izinkan edit jika statusnya 'draft' ATAU kosong (null)
         $statusSlug = optional($opname->status)->slug;
         if ($statusSlug !== 'draft' && $statusSlug !== null && $statusSlug !== '') {
             return redirect()->route('stock-opnames.show', $id)->with('error', 'Dokumen ini sudah tidak bisa diedit karena sedang diajukan atau selesai.');
@@ -218,7 +203,6 @@ class StockOpnameController extends Controller
         try {
             DB::beginTransaction();
 
-            // Hapus file bukti fisik jika sudah terlanjur di-upload
             $attachments = StockOpnameAttachment::where('stock_opname_id', $id)->get();
             foreach ($attachments as $att) {
                 if (\Illuminate\Support\Facades\Storage::disk('public')->exists($att->file_path)) {
@@ -226,13 +210,11 @@ class StockOpnameController extends Controller
                 }
             }
 
-            // Hapus paksa (hard delete) agar bersih dari database
             StockOpnameItem::where('stock_opname_id', $id)->delete();
             $opname->forceDelete();
 
-            $warehouseId = $opname->warehouse_id; // Simpan ID sebelum dihapus
+            $warehouseId = $opname->warehouse_id;
 
-            // 🔥 LEPAS GEMBOK KARENA DIBATALKAN 🔥
             Warehouse::where('id', $warehouseId)->update(['is_frozen' => false]);
 
             DB::commit();
@@ -267,7 +249,6 @@ class StockOpnameController extends Controller
 
                 $varianceQty = $actualQty - $soItem->system_qty;
 
-                // Validasi Anti-Hack untuk Serial Number
                 $masterItem = \App\Models\Item::find($soItem->item_id);
                 $newSns = [];
                 $lostSns = [];
@@ -280,7 +261,6 @@ class StockOpnameController extends Controller
                         if (count($newSns) != $absDiff) {
                             throw new \Exception("Jumlah Serial Number baru untuk barang {$masterItem->name} harus diisi tepat {$absDiff} unit.");
                         }
-                        // Bersihkan spasi & Cek duplikat
                         $newSns = array_map('trim', $newSns);
                         if (count($newSns) !== count(array_unique($newSns))) {
                             throw new \Exception("Terdapat Serial Number kembar di form untuk {$masterItem->name}.");
@@ -297,8 +277,6 @@ class StockOpnameController extends Controller
                 $actualValue = $actualQty * $unitPrice;
                 $varianceValue = $varianceQty * $unitPrice;
 
-                // 🔥 TRIK INTELIJEN: Kita simpan array SN ke dalam kolom JSON (buatkan migrasi atau pakai notes) 🔥
-                // Karena kita belum bikin kolom khusus, kita akan "menyelundupkan" array ini ke dalam kolom 'notes' (dibungkus format JSON) agar nanti bisa ditarik oleh fungsi approve().
                 $payloadData = [
                     'user_note' => $data['notes'] ?? null,
                     'new_sns'   => $newSns,
@@ -312,7 +290,7 @@ class StockOpnameController extends Controller
                     'system_value' => $systemValue,
                     'actual_value' => $actualValue,
                     'variance_value' => $varianceValue,
-                    'notes' => json_encode($payloadData), // Kita bungkus pakai JSON
+                    'notes' => json_encode($payloadData),
                 ]);
 
                 $totalSystemValue += $systemValue;
@@ -320,7 +298,6 @@ class StockOpnameController extends Controller
                 $totalVarianceValue += abs($varianceValue);
             }
 
-            // Simpan Dokumen Upload Bukti Fisik... (SAMA SEPERTI KODE SEBELUMNYA)
             if ($request->hasFile('attachments')) {
                 $basePath = \App\Models\SystemSetting::where('setting_key', 'path_stock_opnames')->value('setting_value') ?? 'attachments/stock_opname';
                 $path = $basePath . '/' . str_replace(['/', '\\'], '-', $opname->document_number);
@@ -359,7 +336,6 @@ class StockOpnameController extends Controller
         return view('stock_opnames.show', compact('opname'));
     }
 
-
     // 7. Cetak Lembar Kerja Opname (Blind Count Sheet) - Format PDF
     public function print($id)
     {
@@ -371,10 +347,7 @@ class StockOpnameController extends Controller
         return $pdf->stream('Stock_Opname_' . str_replace('/', '_', $opname->document_number) . '.pdf');
     }
 
-
-
-
-   // ====================================================
+    // ====================================================
     // 10. PROSES APPROVE (SETUJUI) & POTONG STOK OTOMATIS
     // ====================================================
     public function approve(Request $request, $id)
@@ -384,7 +357,6 @@ class StockOpnameController extends Controller
         try {
             DB::beginTransaction();
 
-            // 1. Cari antrean pertama yang statusnya masih 'pending' berdasarkan urutan (Level terendah)
             $approval = $opname->approvals()
                 ->where('status', 'pending')
                 ->orderBy('step_order', 'asc')
@@ -394,18 +366,15 @@ class StockOpnameController extends Controller
                 return back()->with('error', 'Tidak ada antrean persetujuan untuk dokumen ini.');
             }
 
-            // 2. CEK OTORISASI (Jabatan sesuai matriks ATAU hak istimewa Super Admin)
             $user = auth()->user();
             $roleName = strtolower(optional($user->role)->name ?? '');
 
-            // Super admin bisa dideteksi dari ID 1, nama, ATAU nama rolenya
             $isSuperAdmin = ($user->role_id == 1 || strtolower($user->name) == 'super administrator' || $roleName == 'super admin');
 
             if ($approval->role_id != $user->role_id && !$isSuperAdmin) {
                 return back()->with('error', 'Gagal: Saat ini adalah giliran jabatan lain (Level ' . $approval->step_order . ') untuk menyetujui.');
             }
 
-            // 3. Update status antrean saat ini menjadi Approved
             $approval->update([
                 'status'      => 'approved',
                 'approved_by' => $user->id,
@@ -413,18 +382,16 @@ class StockOpnameController extends Controller
                 'approved_at' => now(),
             ]);
 
-            // 4. Cek apakah masih ada sisa antrean persetujuan lain setelah ini
             $remainingApprovals = $opname->approvals()
                 ->whereIn('status', ['pending', 'PENDING'])
                 ->count();
 
-            // 5. JIKA SEMUA LEVEL SUDAH SETUJU -> EKSEKUSI FINALISASI STOK & SERIAL NUMBER
+            // 5. JIKA SEMUA LEVEL SUDAH SETUJU -> EKSEKUSI FINALISASI STOK
             if ($remainingApprovals === 0) {
 
                 $statusApproved = \App\Models\Status::where('type', 'SO')->where('slug', 'approved')->first();
                 $opname->update(['status_id' => $statusApproved ? $statusApproved->id : $opname->status_id]);
 
-                // Eksekusi Pemotongan / Penambahan Stok Riil
                 foreach ($opname->items as $item) {
                     if ($item->variance_qty == 0) continue;
 
@@ -434,20 +401,20 @@ class StockOpnameController extends Controller
                     $newStockBalance = $masterItem->current_stock + $item->variance_qty;
                     $isTrackable = isset($masterItem->is_trackable) && $masterItem->is_trackable;
 
-                    // Bongkar kembali JSON dari kolom notes
                     $payloadData = json_decode($item->notes, true);
                     $newSns = $payloadData['new_sns'] ?? [];
                     $lostSns = $payloadData['lost_sns'] ?? [];
 
                     if ($item->variance_qty > 0) { // SURPLUS (MASUK)
 
-                        // 1. Eksekusi SN Jika ada
+                        // 1. Eksekusi SN Jika ada (🔥 PERBAIKAN: Suntikkan stock_opname_id)
                         if ($isTrackable && !empty($newSns)) {
                             foreach ($newSns as $sn) {
                                 \DB::table('item_serials')->insert([
                                     'item_id'          => $item->item_id,
                                     'warehouse_id'     => $opname->warehouse_id,
                                     'goods_receipt_id' => null,
+                                    'stock_opname_id'  => $opname->id, // 🔥 INI KUNCI UTAMANYA!
                                     'serial_number'    => trim($sn),
                                     'status'           => 'AVAILABLE',
                                     'created_at'       => now(),
@@ -469,12 +436,16 @@ class StockOpnameController extends Controller
 
                     } else { // DEFISIT (KELUAR)
 
-                        // 1. Eksekusi SN Jika ada
+                        // 1. Eksekusi SN Jika ada (🔥 PERBAIKAN: Suntikkan stock_opname_id)
                         if ($isTrackable && !empty($lostSns)) {
                             \DB::table('item_serials')
                                 ->whereIn('serial_number', $lostSns)
                                 ->where('item_id', $item->item_id)
-                                ->update(['status' => 'LOST', 'updated_at' => now()]);
+                                ->update([
+                                    'status'          => 'LOST',
+                                    'stock_opname_id' => $opname->id, // 🔥 INI KUNCI UTAMANYA!
+                                    'updated_at'      => now()
+                                ]);
                         }
 
                         // 2. Potong Stok Gudang (FIFO)
@@ -497,10 +468,10 @@ class StockOpnameController extends Controller
                         }
                     }
 
-                    // Update total qty saat ini di Master Barang
+                    // Update Master Barang
                     $masterItem->update(['current_stock' => $newStockBalance]);
 
-                    // CATAT MUTASI KE KARTU STOK (StockMutation) AGAR SINKRON DENGAN HISTORI
+                    // 🔥 PERBAIKAN: CATAT MUTASI AGAR MUNCUL DI KARTU STOK 🔥
                     \App\Models\StockMutation::create([
                         'item_id'          => $item->item_id,
                         'warehouse_id'     => $opname->warehouse_id,
@@ -523,10 +494,11 @@ class StockOpnameController extends Controller
 
         } catch (\Exception $e) {
             DB::rollBack();
-            \Illuminate\Support\Facades\Log::error('Error Approve Stock Opname: ' . $e->getMessage());
+            Log::error('Error Approve Stock Opname: ' . $e->getMessage());
             return back()->with('error', 'Terjadi kesalahan sistem: ' . $e->getMessage());
         }
     }
+
     // ====================================================
     // 11. PROSES REJECT (TOLAK)
     // ====================================================
@@ -554,9 +526,9 @@ class StockOpnameController extends Controller
             }
 
             $approval->update([
-                'status' => 'rejected',
-                'approved_by' => $user->id, // 🔥 UBAH 'user_id' MENJADI 'approver_id' DI SINI
-                'note' => $request->notes ?? 'Disetujui', // 🔥 PASTIKAN SEBELAH KIRI HANYA 'note' (TANPA S)
+                'status'      => 'rejected',
+                'approved_by' => $user->id,
+                'note'        => $request->notes ?? 'Disetujui',
                 'approved_at' => now(),
             ]);
 
@@ -567,7 +539,6 @@ class StockOpnameController extends Controller
 
             $opname->approvals()->where('status', 'pending')->update(['status' => 'cancelled']);
 
-            // 🔥 LEPAS GEMBOK KARENA DITOLAK 🔥
             Warehouse::where('id', $opname->warehouse_id)->update(['is_frozen' => false]);
 
             DB::commit();
@@ -580,14 +551,11 @@ class StockOpnameController extends Controller
         }
     }
 
-
-
     // ====================================================
     // 7. CETAK LAPORAN HASIL AUDIT STOK (PDF)
     // ====================================================
     public function cetakHasil($id)
     {
-        // Tarik data beserta seluruh relasi yang dibutuhkan oleh PDF
         $opname = StockOpname::with([
             'items.item',
             'warehouse',
@@ -598,16 +566,10 @@ class StockOpnameController extends Controller
             'approvals.approver'
         ])->findOrFail($id);
 
-        // Render tampilan blade 'print' menjadi PDF ukuran A4 Portrait
         $pdf = \Barryvdh\DomPDF\Facade\Pdf::loadView('stock_opnames.cetak_hasil', compact('opname'))
                   ->setPaper('A4', 'portrait');
 
-        // Buka PDF langsung di tab baru (stream)
         $namaFile = 'Hasil_Audit_Stok_' . str_replace('/', '_', $opname->document_number) . '.pdf';
         return $pdf->stream($namaFile);
     }
-
-
-
-
 }
