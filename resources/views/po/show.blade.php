@@ -63,9 +63,9 @@
                     <button type="button" class="btn btn-dark dropdown-toggle dropdown-toggle-split rounded-end-pill px-3" data-bs-toggle="dropdown" aria-expanded="false">
                         <span class="visually-hidden">Toggle Dropdown</span>
                     </button>
-                    
+
                     <ul class="mt-2 border-0 shadow-lg dropdown-menu dropdown-menu-end" style="width: 450px; max-height: 80vh; overflow-y: auto;">
-                        
+
                         {{-- ================= OPSI 1: DIGITAL (FULL STEMPEL & TTD) ================= --}}
                         <li><h6 class="dropdown-header text-primary fw-bold fs-6 bg-primary-subtle py-2"><i class="bi bi-laptop me-1"></i> VERSI DIGITAL (TTD/Stempel Otomatis)</h6></li>
                         <li><a class="py-2 dropdown-item fw-medium" href="{{ route('po.print', ['slug' => $po->po_number, 'type' => 'digital']) }}" target="_blank"><i class="bi bi-file-earmark text-primary me-2"></i> Cetak PO Standar</a></li>
@@ -74,7 +74,7 @@
                         <li><a class="py-2 dropdown-item fw-medium" href="{{ route('po.print_bpr_standar_attachments', ['slug' => $po->po_number, 'type' => 'digital']) }}" target="_blank"><i class="bi bi-grid-1x2-fill text-success me-2"></i> Cetak BPR Standar (Global) + Lampiran</a></li>
                         <li><a class="py-2 dropdown-item fw-medium" href="{{ route('po.print_bpr_detail', ['slug' => $po->po_number, 'type' => 'digital']) }}" target="_blank"><i class="bi bi-list-columns-reverse text-warning-emphasis me-2"></i> Cetak BPR Detail (Pajak/Diskon)</a></li>
                         <li><a class="py-2 dropdown-item fw-medium" href="{{ route('po.print_bpr_attachments', ['slug' => $po->po_number, 'type' => 'digital']) }}" target="_blank"><i class="bi bi-collection text-warning-emphasis me-2"></i> Cetak BPR Detail + Lampiran</a></li>
-                        
+
                         {{-- ================= OPSI 2: MANUAL (KOSONG TOTAL) ================= --}}
                         <li><h6 class="dropdown-header text-danger fw-bold fs-6 bg-danger-subtle py-2 mt-2"><i class="bi bi-pen me-1"></i> VERSI MANUAL (TTD Basah Penuh)</h6></li>
                         <li><a class="py-2 dropdown-item fw-medium" href="{{ route('po.print', ['slug' => $po->po_number, 'type' => 'manual']) }}" target="_blank"><i class="bi bi-file-earmark text-danger me-2"></i> Cetak PO Standar</a></li>
@@ -394,20 +394,49 @@
                                 $calcTotalDiscount += $diskon;
                                 $calcTotalTax += $pajak;
 
-                                // --- LOGIKA UOM DARI DATABASE MASTER ---
+                                // =========================================================
+                                // 🔥 LOGIKA UOM SUPER CERDAS (MENGABAIKAN TABRAKAN ID) 🔥
+                                // =========================================================
                                 $masterItem = $item->item;
                                 $baseUomName = optional(optional($masterItem)->uom)->name ?? 'UNIT';
+                                $tampilanSatuanLengkap = strtoupper($baseUomName);
 
-                                $uomStr = $item->uom ?? $baseUomName;
-                                if (is_string($uomStr) && str_starts_with(trim($uomStr), '{')) {
-                                    $uomObj = json_decode($uomStr);
-                                    $uomStr = $uomObj->code ?? $uomObj->name ?? $baseUomName;
-                                } elseif (is_object($uomStr) || is_array($uomStr)) {
-                                    $uomStr = is_object($uomStr) ? ($uomStr->code ?? $uomStr->name ?? $baseUomName) : ($uomStr['code'] ?? $uomStr['name'] ?? $baseUomName);
+                                // KITA BACA DARI STRING 'UOM' YANG DISIMPAN (Paling Akurat & Tidak Bisa Bohong)
+                                $uomStr = $item->uom;
+                                if (!empty($uomStr)) {
+                                    if (is_string($uomStr) && str_starts_with(trim($uomStr), '{')) {
+                                        $uomObj = json_decode($uomStr);
+                                        $uomStr = $uomObj->code ?? $uomObj->name ?? $uomStr;
+                                    } elseif (is_object($uomStr) || is_array($uomStr)) {
+                                        $uomStr = is_object($uomStr) ? ($uomStr->code ?? $uomStr->name) : ($uomStr['code'] ?? $uomStr['name']);
+                                    }
+
+                                    $uomStr = trim($uomStr);
+
+                                    // Deteksi pola "(Isi: 10)" dari string yang disimpan form
+                                    if (preg_match('/\(Isi:\s*([0-9.]+)/i', $uomStr, $matches)) {
+                                        $convRate = (float) $matches[1];
+                                        $cleanName = trim(preg_replace('/ \(Isi:.*\)/i', '', $uomStr));
+                                        $cleanName = preg_replace('/ \[PR\]/i', '', $cleanName); // Hapus tag [PR] jika ada
+                                        $tampilanSatuanLengkap = strtoupper($cleanName) . ' (ISI: ' . $convRate . ' ' . strtoupper($baseUomName) . ')';
+                                    } else {
+                                        // Coba cocokkan nama dengan tabel alternatif
+                                        $matchedAlt = optional($masterItem)->itemUoms ? collect($masterItem->itemUoms)->where('uom_name', $uomStr)->first() : null;
+                                        if ($matchedAlt) {
+                                            $tampilanSatuanLengkap = strtoupper($matchedAlt->uom_name) . ' (ISI: ' . (float)$matchedAlt->conversion_qty . ' ' . strtoupper($baseUomName) . ')';
+                                        } else {
+                                            $tampilanSatuanLengkap = strtoupper(preg_replace('/ \[PR\]/i', '', $uomStr));
+                                        }
+                                    }
                                 }
-
-                                $tampilanSatuanLengkap = strtoupper(trim($uomStr));
-                                if (empty($tampilanSatuanLengkap)) $tampilanSatuanLengkap = strtoupper($baseUomName);
+                                // Fallback ke ID jika string benar-benar kosong
+                                else if (!empty($item->uom_id) && optional($masterItem)->itemUoms) {
+                                    $altUom = collect($masterItem->itemUoms)->where('id', $item->uom_id)->first()
+                                           ?? collect($masterItem->itemUoms)->where('uom_id', $item->uom_id)->first();
+                                    if ($altUom && (float)$altUom->conversion_qty > 1) {
+                                        $tampilanSatuanLengkap = strtoupper($altUom->uom_name) . ' (ISI: ' . (float)$altUom->conversion_qty . ' ' . strtoupper($baseUomName) . ')';
+                                    }
+                                }
                             @endphp
 
                             <tr>
@@ -436,26 +465,33 @@
                                     @endif
                                 </td>
 
-                                {{-- KOLOM QTY PESAN --}}
+                                {{-- 🔥 KOLOM QTY PESAN (DENGAN NAMA ISI LENGKAP) 🔥 --}}
                                 <td class="text-center bg-white border-start">
                                     <div class="fw-bolder text-dark fs-6">{{ $qtyPesan }}</div>
-                                    <div class="mt-1 badge bg-primary-subtle text-primary text-wrap lh-sm" style="font-size: 0.70rem;">
+                                    <div class="mt-1 badge bg-primary-subtle text-primary text-wrap lh-sm" style="font-size: 0.70rem; min-width: 80px;">
                                         {{ $tampilanSatuanLengkap }}
                                     </div>
                                 </td>
 
-                                {{-- KOLOM SUDAH DITERIMA (GR) --}}
+                                {{-- 🔥 KOLOM SUDAH DITERIMA (GR) 🔥 --}}
                                 <td class="text-center bg-success-subtle text-success">
                                     <div class="fw-bolder fs-5">{{ $qtyTerima }}</div>
+                                    <div class="mt-1 small fw-bold text-wrap lh-sm" style="font-size: 0.65rem;">
+                                        {{ $tampilanSatuanLengkap }}
+                                    </div>
                                 </td>
 
-                                {{-- KOLOM SISA GANTUNG --}}
+                                {{-- 🔥 KOLOM SISA GANTUNG 🔥 --}}
                                 <td class="text-center bg-danger-subtle text-danger border-end border-danger">
                                     <div class="fw-bolder fs-5">{{ $qtySisa }}</div>
                                     @if($qtySisa > 0)
-                                        <div class="small fw-bold" style="font-size: 0.65rem;">Pending</div>
+                                        <div class="mt-1 small fw-bold text-wrap lh-sm" style="font-size: 0.65rem;">
+                                            {{ $tampilanSatuanLengkap }}<br>Pending
+                                        </div>
                                     @else
-                                        <div class="text-success small fw-bold" style="font-size: 0.65rem;"><i class="bi bi-check2-all"></i> Genap</div>
+                                        <div class="mt-1 text-success small fw-bold" style="font-size: 0.65rem;">
+                                            <i class="bi bi-check2-all"></i> Genap
+                                        </div>
                                     @endif
                                 </td>
 
@@ -573,7 +609,6 @@
                 $creatorRole = $creator ? $creator->roles->first() : null;
                 $creatorDept = '';
 
-                // Ambil nama departemen pembuat secara langsung dari database agar aman
                 if ($creator && $creator->department_id) {
                     $creatorDept = \Illuminate\Support\Facades\DB::table('departments')->where('id', $creator->department_id)->value('name');
                 }
@@ -603,9 +638,7 @@
                         $roleName = optional($approval->role)->name ?? 'Atasan';
                         $deptName = '';
 
-                        // Tentukan nama departemen
                         if (in_array($approval->status, ['APPROVED', 'REJECTED'])) {
-                            // Jika sudah direspon, ambil dari data user yang klik setuju
                             if ($approval->approved_by) {
                                 $apprUser = \App\Models\User::find($approval->approved_by);
                                 if ($apprUser && $apprUser->department_id) {
@@ -613,7 +646,6 @@
                                 }
                             }
                         } else {
-                            // Jika belum direspon (PENDING), baca dari aturan matriks
                             if ($approval->target_department_id === 'all' || $approval->target_department_id == 0) {
                                 $deptName = 'Semua Departemen';
                             } elseif (!empty($approval->target_department_id)) {

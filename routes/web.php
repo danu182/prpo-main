@@ -384,7 +384,7 @@ Route::middleware('auth')->group(function () {
     Route::prefix('vendor-invoices')->name('vendor-invoices.')->middleware(['can:view_invoices'])->group(function () {
         Route::get('/', [VendorInvoiceController::class, 'index'])->name('index');
 
-        Route::get('/vendor-payments', [VendorInvoiceController::class, 'paymentList'])->name('vendor-payments.list'); 
+        Route::get('/vendor-payments', [VendorInvoiceController::class, 'paymentList'])->name('vendor-payments.list');
         Route::post('/bulk-from-gr', [VendorInvoiceController::class, 'createBulkFromGr'])->name('createBulkFromGr');
         Route::delete('/attachment/{id}', [VendorInvoiceController::class, 'deleteAttachment'])->name('deleteAttachment');
         Route::delete('/payment/{id}/cancel', [VendorInvoiceController::class, 'cancelPayment'])->name('cancelPayment');
@@ -457,7 +457,7 @@ Route::middleware('auth')->group(function () {
         Route::get('/print-bpr/{slug}', [BillPaymentController::class, 'printBpr'])->name('print_bpr')->where('slug', '.*');
         Route::get('/print-bpr-detail/{slug}', [BillPaymentController::class, 'printBprDetail'])->name('print_bpr_detail')->where('slug', '.*');
         Route::get('/print-bpr-attachments/{slug}', [BillPaymentController::class, 'printBprWithAttachments'])->name('print_bpr_attachments')->where('slug', '.*');
-        
+
     });
 
 
@@ -549,6 +549,18 @@ Route::middleware('auth')->group(function () {
     // Route Laporan Valuasi Persediaan
     Route::get('/reports/inventory-valuation', [\App\Http\Controllers\InventoryValuationController::class, 'index'])->name('reports.inventory-valuation');
     Route::get('/reports/inventory-valuation/print', [\App\Http\Controllers\InventoryValuationController::class, 'print'])->name('reports.inventory-valuation.print');
+
+
+
+    // 🔥 ROUTE SAPU JAGAT: RESET MINUS QTY RECEIVED DI PO 🔥
+    Route::get('/fix-minus', function() {
+        $items = \App\Models\PurchaseOrderItem::where('qty_received', '<', 0)->get();
+        foreach($items as $i) {
+            $i->qty_received = 0; // Kembalikan ke 0 jika minus
+            $i->save();
+        }
+        return "Selesai Komandan! Sisa 6.5 Pack sudah kembali normal menjadi 1 Pack utuh.";
+    });
 
 
 }); // <--- PENUTUP GEMBOK UTAMA (AUTH)

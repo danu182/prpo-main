@@ -5,42 +5,27 @@
 <link href="https://cdn.jsdelivr.net/npm/select2-bootstrap-5-theme@1.3.0/dist/select2-bootstrap-5-theme.min.css" rel="stylesheet" />
 
 <style>
-    /* Styling Select2 */
     .select2-container--bootstrap-5 .select2-selection { border-radius: 8px; min-height: 40px; font-size: 0.85rem; border-color: #dee2e6; }
     .select2-container--bootstrap-5.select2-container--focus .select2-selection { border-color: #0d6efd; box-shadow: 0 0 0 0.25rem rgba(13, 110, 253, 0.15); }
-
-    /* Modern Input Styling */
     .form-input-custom { border: 1px solid #dee2e6; border-radius: 8px; font-size: 0.85rem; min-height: 40px; transition: all 0.2s; }
     .form-input-custom:focus { border-color: #0d6efd; box-shadow: 0 0 0 0.25rem rgba(13, 110, 253, 0.15); background-color: #fff; }
-
-    /* Input Group Modern */
     .input-group-modern { border-radius: 8px; overflow: hidden; border: 1px solid #dee2e6; display: flex; }
     .input-group-modern:focus-within { border-color: #0d6efd; box-shadow: 0 0 0 0.25rem rgba(13, 110, 253, 0.15); }
     .input-group-modern input, .input-group-modern select, .input-group-modern .input-group-text { border: none !important; background: transparent; }
     .input-group-modern .input-group-text { background-color: #f8f9fa; color: #6c757d; font-weight: 600; border-right: 1px solid #dee2e6 !important; }
-
-    /* Fixed Sidebar Summary */
     .summary-card { position: sticky; top: 20px; border-radius: 16px; border: 1px solid #e9ecef; }
-
-    /* CSS VALIDASI ERROR */
     .is-invalid { border-color: #dc3545 !important; background-color: #fff8f8 !important; }
     .input-group-modern:has(.is-invalid) { border-color: #dc3545 !important; box-shadow: 0 0 0 0.25rem rgba(220, 53, 69, 0.25) !important; }
-
-    /* STYLING CKEDITOR & ACCORDION */
     .ck-editor__editable_inline { min-height: 120px; font-size: 0.85rem; }
     .accordion-button:not(.collapsed) { background-color: #f8f9fa; color: #0d6efd; box-shadow: none; }
-
-    input[type=number]::-webkit-inner-spin-button,
-    input[type=number]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
+    input[type=number]::-webkit-inner-spin-button, input[type=number]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
 </style>
 @endpush
 
 @section('content')
-
 <form action="{{ route('po.store_from_pr', $pr->pr_number) }}" method="POST" id="poForm" enctype="multipart/form-data" novalidate>
     @csrf
 
-    {{-- HEADER --}}
     <div class="pb-3 mb-4 d-flex justify-content-between align-items-center border-bottom">
         <div>
             <h4 class="mb-1 fw-bolder text-dark"><i class="bi bi-cart-plus me-2 text-primary"></i> Terbitkan Purchase Order</h4>
@@ -62,16 +47,12 @@
     @endif
 
     <div class="row g-4">
-        {{-- ================= AREA KIRI (FORM UTAMA) ================= --}}
         <div class="col-xl-8 col-lg-7">
 
-            {{-- 📜 TRACK RECORD: PO YANG SUDAH TERBIT DARI PR INI 📜 --}}
             @if(isset($existingPos) && $existingPos->count() > 0)
             <div class="mb-4 border-0 border-4 shadow-sm card rounded-4 border-start border-info bg-info bg-opacity-10">
                 <div class="p-4 card-body">
-                    <h6 class="mb-3 fw-bold text-dark">
-                        <i class="bi bi-clock-history me-2 text-info"></i>Riwayat PO dari PR Ini
-                    </h6>
+                    <h6 class="mb-3 fw-bold text-dark"><i class="bi bi-clock-history me-2 text-info"></i>Riwayat PO dari PR Ini</h6>
                     <div class="bg-white border table-responsive rounded-3">
                         <table class="table mb-0 align-middle table-sm table-hover">
                             <thead class="bg-light text-muted small text-uppercase">
@@ -110,7 +91,6 @@
             </div>
             @endif
 
-            {{-- 1. INFORMASI PENAGIHAN & PENGIRIMAN --}}
             <div class="mb-4 border-0 border-4 shadow-sm card rounded-4 border-start border-primary">
                 <div class="p-4 card-body">
                     <h6 class="mb-3 fw-bold text-dark"><i class="bi bi-info-circle-fill me-2 text-primary"></i>Informasi Pengiriman & Pembayaran</h6>
@@ -132,8 +112,6 @@
                                 @endforeach
                             </select>
                         </div>
-
-                        {{-- 🔥 KOLOM BARU: INVOICE & REKENING 🔥 --}}
                         <div class="col-md-6">
                             <label class="form-label small fw-bold text-dark">No. Invoice (Opsional)</label>
                             <input type="text" name="invoice_number" class="form-control form-input-custom fw-bold text-primary" placeholder="Bisa dikosongkan & diisi menyusul...">
@@ -142,7 +120,6 @@
                             <label class="form-label small fw-bold text-dark">No. Rekening (Account No)</label>
                             <input type="text" name="account_number" class="form-control form-input-custom fw-bold text-success" placeholder="Bisa dikosongkan & diisi menyusul...">
                         </div>
-
                         <div class="col-12">
                             <div class="mb-2 d-flex justify-content-between align-items-end">
                                 <label class="mb-0 form-label small fw-bold text-dark">Lokasi Pengiriman (Ship To) <span class="text-danger">*</span></label>
@@ -154,7 +131,6 @@
                 </div>
             </div>
 
-            {{-- 2. DETAIL PESANAN BARANG (CARD-GRID) --}}
             <div class="mt-5 mb-3 d-flex justify-content-between align-items-center">
                 <h5 class="mb-0 fw-bolder text-dark"><i class="bi bi-box-seam me-2 text-primary"></i>Daftar Barang Pesanan</h5>
                 <div class="form-check form-switch">
@@ -166,17 +142,20 @@
             <div id="itemsContainer">
                 @foreach($pr->items as $index => $item)
                     @php
-                        // 🔥 1. CARI BASE UOM (ECERAN DASAR) 🔥
+                        $baseUomId = optional($item->item)->uom_id;
                         $baseUomName = optional(optional($item->item)->uom)->name ?? 'PCS';
 
-                        // 🔥 2. TENTUKAN UOM ASLI DARI PR MENGGUNAKAN ID 🔥
                         $prConvRate = 1;
                         $cleanPrUom = $baseUomName;
                         $safePrUom = $baseUomName;
-                        $prUomId = $item->uom_id ?? '';
+                        $prUomId = $item->uom_id ?? $baseUomId;
 
-                        if (!empty($item->uom_id) && optional($item->item)->itemUoms) {
-                            $altUom = collect($item->item->itemUoms)->where('id', $item->uom_id)->first();
+                        if ($prUomId == $baseUomId) {
+                            $prConvRate = 1;
+                            $cleanPrUom = $baseUomName;
+                            $safePrUom = $baseUomName;
+                        } elseif (!empty($prUomId) && optional($item->item)->itemUoms) {
+                            $altUom = collect($item->item->itemUoms)->where('id', $prUomId)->first() ?? collect($item->item->itemUoms)->where('uom_id', $prUomId)->first();
                             if ($altUom) {
                                 $prConvRate = (float) $altUom->conversion_qty;
                                 $cleanPrUom = $altUom->uom_name;
@@ -189,25 +168,16 @@
                                 $safePrUom = $rawUom;
                                 if (preg_match('/\(Isi:\s*([0-9.]+)/i', $rawUom, $matches)) {
                                     $prConvRate = (float) $matches[1];
-                                } else {
-                                    $altMatch = collect(optional($item->item)->itemUoms)->where('uom_name', $cleanPrUom)->first();
-                                    if ($altMatch) {
-                                        $prConvRate = (float) $altMatch->conversion_qty;
-                                        $safePrUom = $cleanPrUom . ' (Isi: ' . $prConvRate . ' ' . $baseUomName . ')';
-                                        $prUomId = $altMatch->id;
-                                    }
                                 }
                             }
                         }
 
-                        // 🔥 3. KALKULASI SISA DALAM SATUAN DASAR (ECERAN) 🔥
                         $targetBaseQty = $item->qty * $prConvRate;
                         $orderedBaseQty = (float)($item->ordered_qty ?? 0) * $prConvRate;
                         $sisaBaseQty = max(0, $targetBaseQty - $orderedBaseQty);
                         $remainingNominal = $prConvRate > 0 ? ($sisaBaseQty / $prConvRate) : 0;
                         $remainingNominal = round($remainingNominal, 2);
 
-                        // 4. FILTER PENAMPILAN
                         $itemStatus = strtoupper(trim($item->status ?? ''));
                         if($sisaBaseQty <= 0 || !in_array($itemStatus, ['APPROVED', 'PARTIAL', 'PARTIAL_PO'])) { continue; }
 
@@ -217,7 +187,6 @@
                     @endphp
 
                     <div class="mb-4 border-0 shadow-sm card item-card item-row" data-original-idx="{{ $index }}">
-                        {{-- HEADER CARD BARANG --}}
                         <div class="px-4 py-3 card-header bg-light border-bottom d-flex justify-content-between align-items-center" style="border-radius: 12px 12px 0 0;">
                             <div class="gap-3 d-flex align-items-center w-75">
                                 <input type="checkbox" name="po_items[{{ $index }}][is_selected]" class="m-0 form-check-input row-checkbox" checked onchange="toggleRow(this)" style="transform: scale(1.4); cursor: pointer;">
@@ -235,10 +204,7 @@
                             </div>
                         </div>
 
-                        {{-- BODY CARD BARANG --}}
                         <div class="p-4 card-body">
-
-                            {{-- BARIS 1: Vendor Aktual, Catatan & Data Referensi PR --}}
                             <div class="pb-4 mb-4 row g-3 border-bottom">
                                 <div class="col-md-5">
                                     <label class="form-label small fw-bold text-dark">Vendor Aktual <span class="text-danger">*</span></label>
@@ -248,38 +214,27 @@
                                             <option value="{{ $v->id }}" {{ ($quote && $quote->vendor_id == $v->id) ? 'selected' : '' }}>{{ $v->name }}</option>
                                         @endforeach
                                     </select>
-
-                                    {{-- Tombol Aksi Item --}}
                                     <div class="gap-2 mt-3 d-flex">
-                                        <button type="button" class="btn btn-sm btn-outline-info rounded-pill fw-bold btn-pecah" onclick="splitItem(this)">
-                                            <i class="bi bi-diagram-2-fill"></i> Pecah Vendor
-                                        </button>
+                                        <button type="button" class="btn btn-sm btn-outline-info rounded-pill fw-bold btn-pecah" onclick="splitItem(this)"><i class="bi bi-diagram-2-fill"></i> Pecah Vendor</button>
                                     </div>
                                 </div>
 
                                 <div class="col-md-7">
                                     <div class="row">
                                         <div class="col-md-7">
-
-                                            {{-- 🔥 KOTAK NAMA SPESIFIK (SHORT TEXT) 🔥 --}}
                                             <div class="mb-3">
                                                 <label class="form-label small fw-bold text-dark">Nama Barang di PO (Bisa disesuaikan)</label>
                                                 <input type="text" name="po_items[{{ $index }}][item_name_override]" class="form-control form-input-custom fw-bold text-primary" value="{{ $item->item_name ?? optional($item->item)->name }}" placeholder="Ketik nama spesifik barang...">
-                                                <div class="mt-1 form-text text-muted" style="font-size: 0.65rem;">*Nama ini yang akan tercetak di PDF PO.</div>
                                             </div>
-
                                             <label class="form-label small fw-bold text-dark">Spesifikasi Detail (Bisa diedit)</label>
                                             <textarea name="po_items[{{ $index }}][notes]" id="spec_{{ $index }}" class="form-control form-input-custom ckeditor-spec" placeholder="Ketik spesifikasi detail di sini...">{!! $item->specification ?? $item->notes !!}</textarea>
                                         </div>
                                         <div class="col-md-5">
                                             <label class="form-label small fw-bold text-dark"><i class="bi bi-paperclip text-primary"></i> Dokumen Pendukung Item</label>
                                             <div class="p-3 border rounded shadow-sm bg-light border-secondary-subtle">
-
                                                 <div class="mb-2"><span class="small fw-bold text-muted">File Lampiran PO:</span></div>
-
                                                 <div id="fileListContainer_{{ $index }}" class="gap-1 mb-2 d-flex flex-column"></div>
                                                 <div id="hiddenFileInputs_{{ $index }}" style="display: none;"></div>
-
                                                 <button type="button" class="py-2 mb-3 bg-white btn btn-sm btn-outline-primary w-100 fw-bold" style="border-style: dashed; border-width: 2px;" onclick="triggerFilePicker('{{ $index }}')">
                                                     <i class="bi bi-plus-lg me-1"></i> Tambah File
                                                 </button>
@@ -287,12 +242,12 @@
                                                 {{-- 🔥 FASILITAS VENDOR QUOTES / INTIP PENAWARAN ASLI DARI PR 🔥 --}}
                                                 @if($item->vendorQuotes && $item->vendorQuotes->count() > 0)
                                                 <div class="pt-2 border-top">
-                                                    <button class="bg-white shadow-sm btn btn-outline-secondary btn-sm w-100 rounded-3 fw-bold d-flex justify-content-between align-items-center" type="button" data-bs-toggle="collapse" data-bs-target="#vendorData{{ $index }}" aria-expanded="false">
-                                                        <span class="text-primary"><i class="bi bi-search me-1"></i> Intip Penawaran</span>
+                                                    <button class="bg-white shadow-sm btn btn-outline-secondary btn-sm w-100 rounded-3 fw-bold d-flex justify-content-between align-items-center vendor-pr-header" type="button" data-bs-toggle="collapse" data-bs-target="#vendorData{{ $index }}" aria-expanded="false">
+                                                        <span class="text-primary"><i class="bi bi-search me-1"></i> Intip Penawaran PR</span>
                                                         <span class="shadow-sm badge bg-primary rounded-pill">{{ $item->vendorQuotes->count() }} Vendor</span>
                                                     </button>
 
-                                                    <div class="mt-2 collapse" id="vendorData{{ $index }}">
+                                                    <div class="mt-2 collapse vendor-pr-body" id="vendorData{{ $index }}">
                                                         <div class="gap-2 d-flex flex-column">
                                                             @foreach($item->vendorQuotes as $vq)
                                                                 @php
@@ -302,7 +257,6 @@
                                                                         if($currObj) $vqCurr = $currObj->code;
                                                                     }
                                                                 @endphp
-
                                                                 <div class="p-2 bg-white border border-opacity-50 shadow-sm border-info rounded-3">
                                                                     <div class="pb-2 mb-1 border-bottom border-info-subtle">
                                                                         <div class="mb-1 fw-bold text-dark" style="font-size: 0.8rem; word-break: break-word; line-height: 1.2;">
@@ -318,7 +272,6 @@
                                                                         @endif
                                                                         <span class="mb-1 text-muted fst-italic d-block">{{ $vq->notes ?? 'Tidak ada catatan.' }}</span>
 
-                                                                        {{-- 🔥 TAMBAHAN: MUNCULKAN FILE LAMPIRAN PENAWARAN VENDOR DARI PR 🔥 --}}
                                                                         @if(isset($vq->attachments) && count($vq->attachments) > 0)
                                                                             <div class="flex-wrap gap-1 mt-1 d-flex">
                                                                                 @foreach($vq->attachments as $vFile)
@@ -328,7 +281,6 @@
                                                                                 @endforeach
                                                                             </div>
                                                                         @elseif(!empty($vq->file_path))
-                                                                            {{-- Fallback jika lampiran disave langsung di kolom file_path tabel vendor_quotes --}}
                                                                             <div class="mt-1">
                                                                                 <a href="{{ asset('storage/' . $vq->file_path) }}" target="_blank" onclick="event.stopPropagation();" class="border badge bg-secondary-subtle text-secondary text-decoration-none border-secondary-subtle">
                                                                                     <i class="bi bi-paperclip"></i> Lihat Lampiran
@@ -342,16 +294,13 @@
                                                     </div>
                                                 </div>
                                                 @endif
-
                                             </div>
                                         </div>
                                     </div>
                                 </div>
                             </div>
 
-                            {{-- BARIS 2: QTY, Harga, Diskon, Pajak --}}
                             <div class="row g-3">
-                                {{-- QTY & SATUAN --}}
                                 <div class="col-md-3">
                                     <label class="form-label small fw-bold text-dark">Kuantitas & Satuan <span class="text-danger">*</span></label>
                                     <div class="mb-1 shadow-sm input-group-modern">
@@ -361,28 +310,29 @@
                                     <select name="po_items[{{ $index }}][uom_id]" class="shadow-sm form-select border-primary text-primary fw-bold uom-selector" data-current-conv="{{ $prConvRate }}" onchange="updateRowUom(this, {{ $index }})">
                                         <option value="{{ $prUomId }}" data-name="{{ $safePrUom }}" data-conv="{{ $prConvRate }}">{{ $cleanPrUom }} @if($prConvRate>1) (Isi: {{(float)$prConvRate}}) @endif [PR]</option>
 
-                                        @if(strtolower($baseUomName) !== strtolower($cleanPrUom))
-                                            <option value="" data-name="{{ $baseUomName }}" data-conv="1">{{ $baseUomName }} (Dasar)</option>
+                                        @if($prConvRate != 1)
+                                            <option value="{{ $baseUomId }} " data-name="{{ $baseUomName }}" data-conv="1">{{ $baseUomName }} (Dasar)</option>
                                         @endif
 
                                         @if(optional($item->item)->itemUoms)
                                             @foreach($item->item->itemUoms as $altUom)
-                                                @if((float)$altUom->conversion_qty != $prConvRate)
-                                                    <option value="{{ $altUom->id }}" data-name="{{ $altUom->uom_name }} (Isi: {{ (float)$altUom->conversion_qty }} {{ $baseUomName }})" data-conv="{{ (float)$altUom->conversion_qty }}">
-                                                        {{ $altUom->uom_name }} (Isi: {{ (float)$altUom->conversion_qty }})
+                                                @php
+                                                    $altVal = $altUom->uom_id ?? $altUom->id;
+                                                    $altConv = (float)$altUom->conversion_qty;
+                                                    $safeAltVal = $altVal . str_repeat(' ', $loop->iteration + 1);
+                                                @endphp
+                                                @if($altConv != 1 && $altConv != $prConvRate)
+                                                    <option value="{{ $safeAltVal }}" data-name="{{ $altUom->uom_name }} (Isi: {{ $altConv }} {{ $baseUomName }})" data-conv="{{ $altConv }}">
+                                                        {{ $altUom->uom_name }} (Isi: {{ $altConv }})
                                                     </option>
                                                 @endif
                                             @endforeach
                                         @endif
                                     </select>
                                     <input type="hidden" name="po_items[{{ $index }}][uom]" id="uom-name-{{ $index }}" value="{{ $safePrUom }}">
-
-                                    <div class="mt-1 text-muted" style="font-size: 0.7rem;" id="max-help-{{ $index }}">
-                                        Sisa Jatah PR: <strong class="text-danger" id="max-val-{{ $index }}">{{ $remainingNominal }}</strong>
-                                    </div>
+                                    <div class="mt-1 text-muted" style="font-size: 0.7rem;" id="max-help-{{ $index }}">Sisa Jatah PR: <strong class="text-danger" id="max-val-{{ $index }}">{{ $remainingNominal }}</strong></div>
                                 </div>
 
-                                {{-- HARGA --}}
                                 <div class="col-md-3">
                                     <label class="form-label small fw-bold text-dark">Harga Satuan <span class="text-danger">*</span></label>
                                     <div class="shadow-sm input-group-modern">
@@ -391,7 +341,6 @@
                                     </div>
                                 </div>
 
-                                {{-- DISKON --}}
                                 <div class="col-md-3">
                                     <label class="form-label small fw-bold text-dark">Diskon per Item</label>
                                     <div class="shadow-sm input-group-modern">
@@ -404,7 +353,6 @@
                                     <input type="hidden" name="po_items[{{ $index }}][discount_amount]" class="disc-amt-hidden" value="0">
                                 </div>
 
-                                {{-- PAJAK ITEM (HYBRID MASTER DATA & NOMINAL) --}}
                                 <div class="col-md-3">
                                     <label class="form-label small fw-bold text-dark">Pajak (VAT/PPN)</label>
                                     <div class="shadow-sm input-group-modern">
@@ -412,7 +360,6 @@
                                             <option value="PERCENT">%</option>
                                             <option value="FIXED" class="dynamic-currency-text">IDR</option>
                                         </select>
-
                                         <select name="po_items[{{ $index }}][tax_id]" class="form-select text-end fw-bold text-info tax-master-select" onchange="applyMasterTax(this); calculateRow(this)">
                                             <option value="" data-rate="0">- Tanpa Pajak -</option>
                                             <option value="MANUAL_PERCENT" data-rate="0">Manual (%)</option>
@@ -420,12 +367,10 @@
                                                 <option value="{{ $tax->id }}" data-rate="{{ (float)$tax->percent }}">{{ $tax->name }} ({{ (float)$tax->percent }}%)</option>
                                             @endforeach
                                         </select>
-
                                         <input type="number" name="po_items[{{ $index }}][tax_value]" class="form-control text-end fw-bold text-info tax-val-input d-none" value="0" min="0" step="any" oninput="calculateRow(this)">
                                     </div>
                                     <input type="hidden" name="po_items[{{ $index }}][tax_amount]" class="tax-amt-hidden" value="0">
                                 </div>
-
                             </div>
 
                         </div>
@@ -433,7 +378,6 @@
                 @endforeach
             </div>
 
-            {{-- 3. BIAYA LAIN & POTONGAN LAIN --}}
             <div class="mt-2 mb-4 row g-4">
                 <div class="col-md-6">
                     <div class="border-0 shadow-sm card rounded-4 h-100">
@@ -463,26 +407,22 @@
                 </div>
             </div>
 
-            {{-- Catatan Global PO & Lampiran Header --}}
             <div class="mb-4 border-0 shadow-sm card rounded-4">
                 <div class="p-4 card-body">
                     <div class="row">
                         <div class="col-md-6">
                             <label class="form-label fw-bold text-dark"><i class="bi bi-file-text me-2 text-primary"></i>Catatan Internal / Pesan Utama PO</label>
-                            <textarea name="notes" class="form-control form-input-custom bg-light" rows="3" placeholder="Tulis instruksi pengiriman umum, referensi, dll di sini...">{{ $pr->description ?? '' }}</textarea>
+                            <textarea name="notes" class="form-control form-input-custom bg-light" rows="3">{{ $pr->description ?? '' }}</textarea>
                         </div>
                         <div class="pl-4 col-md-6 border-start">
                             <label class="form-label fw-bold text-dark"><i class="bi bi-cloud-upload me-1 text-primary"></i>Upload Dokumen Header PO</label>
-                            <div class="mt-1 mb-2 form-text text-muted" style="font-size: 0.75rem;">
-                                Opsional: Lampirkan dokumen global seperti Kontrak Kerja (MoU), NPWP Vendor, atau Syarat & Ketentuan Umum.
-                            </div>
+                            <div class="mt-1 mb-2 form-text text-muted" style="font-size: 0.75rem;">Opsional: Lampirkan dokumen global seperti Kontrak Kerja, dll.</div>
                             <input type="file" name="header_attachments[]" class="form-control form-control-sm border-secondary-subtle" multiple accept=".pdf,.jpg,.jpeg,.png,.xls,.xlsx,.doc,.docx">
                         </div>
                     </div>
                 </div>
             </div>
 
-            {{-- 🔥 4. PENGATURAN PERSETUJUAN (WORKFLOW) 🔥 --}}
             <div class="mb-4 border-0 shadow-sm card rounded-4 border-start border-warning">
                 <div class="py-3 bg-white card-header border-bottom d-flex align-items-center">
                     <div class="p-2 bg-warning bg-opacity-10 text-warning rounded-circle me-3 d-flex align-items-center justify-content-center" style="width: 35px; height: 35px;">
@@ -499,15 +439,10 @@
                             @endforeach
                         @endif
                     </select>
-                    <div class="mt-2 form-text text-muted" style="font-size: 0.75rem;">
-                        <i class="bi bi-info-circle me-1"></i> Biarkan kosong jika ingin menggunakan rute persetujuan otomatis (berdasarkan departemen dan nominal). Pilih rute manual jika PO ini bersifat khusus/darurat.
-                    </div>
                 </div>
             </div>
-
         </div>
 
-        {{-- ================= AREA KANAN (RINGKASAN & JADWAL) ================= --}}
         <div class="col-xl-4 col-lg-5">
             <div class="overflow-hidden bg-white shadow-lg card summary-card">
                 <div class="p-4 text-center text-white bg-primary">
@@ -519,17 +454,13 @@
                 </div>
 
                 <div class="p-4 card-body">
-
-                    {{-- Set Diskon Massal --}}
                     <div class="p-3 mb-4 border bg-light rounded-3 border-warning-subtle">
-                        <label class="mb-2 form-label small fw-bold text-dark">
-                            <i class="bi bi-tags-fill me-1 text-danger"></i> Diskon Global (Header PO)
-                        </label>
+                        <label class="mb-2 form-label small fw-bold text-dark"><i class="bi bi-tags-fill me-1 text-danger"></i> Diskon Global (Header PO)</label>
                         <div id="globalDiscContainer">
                             <div class="pb-2 mb-2 border-white global-disc-row border-bottom position-relative">
                                 <div class="mb-1 overflow-hidden border shadow-sm input-group input-group-sm rounded-2 input-group-modern">
                                     <select name="global_discounts[0][vendor_id]" class="bg-white border-0 form-select text-dark small fw-bold dynamic-vendor-select" style="max-width: 120px;">
-                                        <option value="ALL">- Semua Vendor Terpilih -</option>
+                                        <option value="ALL">- Semua Vendor -</option>
                                     </select>
                                     <select name="global_discounts[0][type]" class="px-1 text-center border-0 form-select bg-light fw-bold" style="flex: 0 0 75px;">
                                         <option value="PERCENT">%</option>
@@ -542,16 +473,13 @@
                         <button type="button" class="p-0 btn btn-sm btn-link text-decoration-none small" onclick="addGlobalDiscRow()"><i class="bi bi-plus-circle"></i> Tambah Diskon Vendor Lain</button>
                     </div>
 
-                    {{-- 🔥 PAJAK GLOBAL HYBRID 🔥 --}}
                     <div class="p-3 mb-4 border bg-light rounded-3 border-primary-subtle">
-                        <label class="mb-2 form-label small fw-bold text-dark">
-                            <i class="bi bi-bank me-1 text-primary"></i> Pajak Global (Header PO)
-                        </label>
+                        <label class="mb-2 form-label small fw-bold text-dark"><i class="bi bi-bank me-1 text-primary"></i> Pajak Global (Header PO)</label>
                         <div id="globalTaxContainer">
                             <div class="pb-2 mb-2 border-white global-tax-row border-bottom position-relative">
                                 <div class="mb-1 overflow-hidden border shadow-sm input-group input-group-sm rounded-2 input-group-modern">
                                     <select name="global_taxes[0][vendor_id]" class="bg-white border-0 form-select text-dark small fw-bold dynamic-vendor-select" style="max-width: 120px;">
-                                        <option value="ALL">- Semua Vendor Terpilih -</option>
+                                        <option value="ALL">- Semua Vendor -</option>
                                     </select>
                                     <select name="global_taxes[0][type]" class="px-1 text-center bg-white border-0 form-select fw-bold text-secondary tax-type-select" style="flex: 0 0 75px;" onchange="toggleTaxUI(this); calculateGrandTotal()">
                                         <option value="PERCENT">%</option>
@@ -571,9 +499,7 @@
                         <button type="button" class="p-0 btn btn-sm btn-link text-decoration-none small" onclick="addGlobalTaxRow()"><i class="bi bi-plus-circle"></i> Tambah Pajak Vendor Lain</button>
                     </div>
 
-                    {{-- Rincian Hitungan --}}
                     <h6 class="pb-2 mb-3 fw-bold text-dark border-bottom">Rincian Kalkulasi</h6>
-
                     <div class="mb-2 d-flex justify-content-between small text-muted"><span>Total Bruto (Item)</span><span class="fw-bold text-dark" id="lblSubtotal">0</span></div>
                     <div class="mb-2 d-flex justify-content-between small text-danger"><span>Total Diskon Item (-)</span><span class="fw-bold" id="lblTotalItemDisc">0</span></div>
                     <div class="mb-2 d-flex justify-content-between small text-primary fw-bolder"><span>DPP (Dasar Pajak)</span><span id="lblDpp">0</span></div>
@@ -582,9 +508,7 @@
                     <div class="mb-2 d-flex justify-content-between small text-success"><span>Biaya Tambahan (+)</span><span class="fw-bold" id="lblCharges">0</span></div>
                     <div class="pb-3 mb-4 d-flex justify-content-between small text-danger border-bottom"><span>Potongan Voucher (-)</span><span class="fw-bold" id="lblExtraDisc">0</span></div>
 
-                    {{-- TANGGAL & TERMIN --}}
                     <h6 class="pt-3 pb-2 mb-3 fw-bold text-dark border-bottom">Jadwal & Pembayaran</h6>
-
                     <div class="mb-3">
                         <label class="form-label small fw-bold text-muted">Tanggal PO <span class="text-danger">*</span></label>
                         <input type="date" name="po_date" id="poDateInput" class="form-control form-input-custom fw-bold" value="{{ date('Y-m-d') }}" required onchange="calculateDueDate()">
@@ -606,58 +530,30 @@
                         <label class="form-label small fw-bold text-danger">Jatuh Tempo Bayar</label>
                         <input type="date" name="due_date" id="dueDateInput" class="form-control form-input-custom bg-danger-subtle text-danger fw-bolder border-danger-subtle" readonly>
                     </div>
-
                 </div>
             </div>
         </div>
     </div>
 </form>
 
-{{-- DATALIST BIAYA & DISKON --}}
-<datalist id="chargeTypeList">
-    @foreach($chargeTypes as $type) <option value="{{ $type->name }}"></option> @endforeach
-</datalist>
-<datalist id="discountTypeList">
-    @foreach($discountTypes as $type) <option value="{{ $type->name }}"></option> @endforeach
-</datalist>
+<datalist id="chargeTypeList">@foreach($chargeTypes as $type) <option value="{{ $type->name }}"></option> @endforeach</datalist>
+<datalist id="discountTypeList">@foreach($discountTypes as $type) <option value="{{ $type->name }}"></option> @endforeach</datalist>
 
-{{-- TEMPLATE BIAYA TAMBAHAN --}}
 <template id="chargeRowTemplate">
     <tr class="charge-row border-bottom">
-        <td width="35%" class="p-1 pb-2">
-            <input type="text" name="charges[INDEX][charge_type_id]" class="form-control form-input-custom" list="chargeTypeList" placeholder="Ketik Biaya..." required>
-        </td>
-        <td width="30%" class="p-1 pb-2">
-            <select name="charges[INDEX][vendor_id]" class="form-select form-input-custom text-secondary dynamic-vendor-select" style="font-size: 0.75rem;" required>
-                <option value="ALL">- Semua Vendor Terpilih -</option>
-            </select>
-        </td>
-        <td width="25%" class="p-1 pb-2">
-            <input type="number" name="charges[INDEX][amount]" class="form-control form-input-custom text-end fw-bold text-success charge-input" placeholder="0" min="0" step="any" oninput="calculateGrandTotal()" required>
-        </td>
-        <td width="10%" class="p-1 pb-2 text-center">
-            <button type="button" class="p-0 mt-1 btn text-danger" onclick="removeRow(this)"><i class="bi bi-trash-fill fs-5"></i></button>
-        </td>
+        <td width="35%" class="p-1 pb-2"><input type="text" name="charges[INDEX][charge_type_id]" class="form-control form-input-custom" list="chargeTypeList" placeholder="Ketik Biaya..." required></td>
+        <td width="30%" class="p-1 pb-2"><select name="charges[INDEX][vendor_id]" class="form-select form-input-custom text-secondary dynamic-vendor-select" style="font-size: 0.75rem;" required><option value="ALL">- Semua Vendor -</option></select></td>
+        <td width="25%" class="p-1 pb-2"><input type="number" name="charges[INDEX][amount]" class="form-control form-input-custom text-end fw-bold text-success charge-input" placeholder="0" min="0" step="any" oninput="calculateGrandTotal()" required></td>
+        <td width="10%" class="p-1 pb-2 text-center"><button type="button" class="p-0 mt-1 btn text-danger" onclick="removeRow(this)"><i class="bi bi-trash-fill fs-5"></i></button></td>
     </tr>
 </template>
 
-{{-- TEMPLATE POTONGAN TAMBAHAN --}}
 <template id="extraDiscRowTemplate">
     <tr class="extradisc-row border-bottom">
-        <td width="35%" class="p-1 pb-2">
-            <input type="text" name="extra_discounts[INDEX][discount_type_id]" class="form-control form-input-custom" list="discountTypeList" placeholder="Ketik Voucher..." required>
-        </td>
-        <td width="30%" class="p-1 pb-2">
-            <select name="extra_discounts[INDEX][vendor_id]" class="form-select form-input-custom text-secondary dynamic-vendor-select" style="font-size: 0.75rem;" required>
-                <option value="ALL">- Semua Vendor Terpilih -</option>
-            </select>
-        </td>
-        <td width="25%" class="p-1 pb-2">
-            <input type="number" name="extra_discounts[INDEX][amount]" class="form-control form-input-custom text-end fw-bold text-danger extradisc-input" placeholder="0" min="0" step="any" oninput="calculateGrandTotal()" required>
-        </td>
-        <td width="10%" class="p-1 pb-2 text-center">
-            <button type="button" class="p-0 mt-1 btn text-danger" onclick="removeRow(this)"><i class="bi bi-trash-fill fs-5"></i></button>
-        </td>
+        <td width="35%" class="p-1 pb-2"><input type="text" name="extra_discounts[INDEX][discount_type_id]" class="form-control form-input-custom" list="discountTypeList" placeholder="Ketik Voucher..." required></td>
+        <td width="30%" class="p-1 pb-2"><select name="extra_discounts[INDEX][vendor_id]" class="form-select form-input-custom text-secondary dynamic-vendor-select" style="font-size: 0.75rem;" required><option value="ALL">- Semua Vendor -</option></select></td>
+        <td width="25%" class="p-1 pb-2"><input type="number" name="extra_discounts[INDEX][amount]" class="form-control form-input-custom text-end fw-bold text-danger extradisc-input" placeholder="0" min="0" step="any" oninput="calculateGrandTotal()" required></td>
+        <td width="10%" class="p-1 pb-2 text-center"><button type="button" class="p-0 mt-1 btn text-danger" onclick="removeRow(this)"><i class="bi bi-trash-fill fs-5"></i></button></td>
     </tr>
 </template>
 
@@ -670,12 +566,7 @@
 <script src="https://cdn.ckeditor.com/ckeditor5/39.0.1/classic/ckeditor.js"></script>
 
 <script>
-    let chargeIdx = 100;
-    let discIdx = 100;
-    let splitIdx = 5000;
-    let gDiscIdx = 0;
-    let gTaxIdx = 0;
-    let myEditors = {};
+    let chargeIdx = 100; let discIdx = 100; let splitIdx = 5000; let gDiscIdx = 0; let gTaxIdx = 0; let myEditors = {};
 
     function initSelect2() { $('.select2-init').select2({ theme: 'bootstrap-5', width: '100%' }); }
 
@@ -696,9 +587,6 @@
         document.querySelectorAll('.dynamic-currency-text').forEach(opt => { opt.innerText = currency; });
     }
 
-    // =========================================================================
-    // 🔥 JAVASCRIPT RADAR VENDOR (SENSOR PINTAR) 🔥
-    // =========================================================================
     function syncVendorDropdowns() {
         let selectedVendors = new Map();
         document.querySelectorAll('.item-row').forEach(row => {
@@ -744,9 +632,7 @@
         var select = document.getElementById('billToSelect');
         var textarea = document.getElementById('shippingAddressInput');
         var address = select.options[select.selectedIndex].getAttribute('data-address');
-        if (address && (forceReset || textarea.value.trim() === '')) {
-            textarea.value = address;
-        }
+        if (address && (forceReset || textarea.value.trim() === '')) textarea.value = address;
     }
 
     function calculateDueDate() {
@@ -776,7 +662,6 @@
         gDiscIdx++;
         let vendorsHtml = document.querySelector('.dynamic-vendor-select').innerHTML;
         let currentCurrency = document.getElementById('currencySelect').value || 'IDR';
-
         let template = `
             <div class="pb-2 mb-2 border-white global-disc-row border-bottom position-relative">
                 <div class="mb-1 overflow-hidden border shadow-sm input-group input-group-sm rounded-2 input-group-modern">
@@ -795,19 +680,11 @@
         document.getElementById('globalDiscContainer').insertAdjacentHTML('beforeend', template);
     }
 
-    // 🔥 PAJAK GLOBAL HYBRID 🔥
     function addGlobalTaxRow() {
         gTaxIdx++;
         let vendorsHtml = document.querySelector('.dynamic-vendor-select').innerHTML;
         let currentCurrency = document.getElementById('currencySelect').value || 'IDR';
-
-        let taxesOptions = `
-            <option value="" data-rate="0">- Tanpa Pajak -</option>
-            <option value="MANUAL_PERCENT" data-rate="0">Manual (%)</option>
-            @foreach($taxes as $tax)
-                <option value="{{ $tax->id }}" data-rate="{{ (float)$tax->percent }}">{{ $tax->name }} ({{ (float)$tax->percent }}%)</option>
-            @endforeach
-        `;
+        let taxesOptions = `<option value="" data-rate="0">- Tanpa Pajak -</option><option value="MANUAL_PERCENT" data-rate="0">Manual (%)</option>@foreach($taxes as $tax)<option value="{{ $tax->id }}" data-rate="{{ (float)$tax->percent }}">{{ $tax->name }} ({{ (float)$tax->percent }}%)</option>@endforeach`;
 
         let template = `
             <div class="pb-2 mb-2 border-white global-tax-row border-bottom position-relative">
@@ -837,22 +714,17 @@
     function updateRowUom(selectEl, index) {
         let selectedOption = selectEl.options[selectEl.selectedIndex];
         let newConvRate = parseFloat(selectedOption.getAttribute('data-conv')) || 1;
-        let oldConvRate = parseFloat(selectEl.getAttribute('data-current-conv')) || 1;
         let newUomName = selectedOption.getAttribute('data-name') || '';
 
         let uomNameInput = document.getElementById(`uom-name-${index}`);
         if(uomNameInput) uomNameInput.value = newUomName;
 
         let qtyInput = document.getElementById(`qty-input-${index}`);
-        let currentQty = parseFloat(qtyInput.value) || 0;
         let sisaBaseQty = parseFloat(qtyInput.getAttribute('data-base-remaining')) || 0;
 
-        let newQty = (currentQty * oldConvRate) / newConvRate;
         let newMaxVal = sisaBaseQty / newConvRate;
-
         qtyInput.max = newMaxVal;
-        qtyInput.value = parseFloat(newQty.toFixed(2));
-        if(parseFloat(qtyInput.value) > newMaxVal) qtyInput.value = newMaxVal;
+        qtyInput.value = parseFloat(newMaxVal.toFixed(2));
 
         selectEl.setAttribute('data-current-conv', newConvRate);
 
@@ -865,12 +737,10 @@
     function splitItem(btn) {
         let originalCard = $(btn).closest('.item-card');
         let originalIdx = originalCard.attr('data-original-idx');
-
         originalCard.find('.select2-init').select2('destroy');
 
         let clonedCard = originalCard.clone();
         splitIdx++;
-
         clonedCard.attr('data-parent-idx', originalIdx);
         clonedCard.find('.ck-editor').remove();
         let clonedTextarea = clonedCard.find('.ckeditor-spec');
@@ -927,8 +797,6 @@
         calculateRow(origQtyInput[0]);
         calculateRow(clonedCard.find('.qty-input')[0]);
         syncVendorDropdowns();
-
-        // Triger UI Pajak pada item clone
         toggleTaxUI(clonedCard.find('.tax-type-select')[0], true);
     }
 
@@ -992,12 +860,8 @@
                     let pillHTML = `
                         <div id="${pillId}" class="p-1 mt-1 bg-white border shadow-sm file-pill d-flex align-items-center justify-content-between rounded-3">
                             <div class="overflow-hidden d-flex align-items-center">
-                                <div class="bg-primary bg-opacity-10 text-primary rounded-circle d-flex justify-content-center align-items-center me-2" style="width: 25px; height: 25px; font-size: 0.7rem;">
-                                    <i class="bi bi-file-earmark-text-fill"></i>
-                                </div>
-                                <div class="text-truncate">
-                                    <div class="fw-bold text-dark text-truncate" style="max-width: 100px; font-size: 0.65rem;" title="${file.name}">${file.name}</div>
-                                </div>
+                                <div class="bg-primary bg-opacity-10 text-primary rounded-circle d-flex justify-content-center align-items-center me-2" style="width: 25px; height: 25px; font-size: 0.7rem;"><i class="bi bi-file-earmark-text-fill"></i></div>
+                                <div class="text-truncate"><div class="fw-bold text-dark text-truncate" style="max-width: 100px; font-size: 0.65rem;" title="${file.name}">${file.name}</div></div>
                             </div>
                             <button type="button" class="p-0 btn btn-link text-danger ms-1" onclick="removeSpecificFile('${inputId}', ${fileIndex}, '${pillId}')" title="Hapus File"><i class="bi bi-x-circle-fill"></i></button>
                         </div>
@@ -1025,7 +889,6 @@
         setTimeout(() => pill.remove(), 200);
     }
 
-    // 🔥 LOGIKA PERHITUNGAN BARIS ITEM 🔥
     function calculateRow(el) {
         let row = el.closest('.item-row');
         if(row.querySelector('.row-checkbox') && !row.querySelector('.row-checkbox').checked) return;
@@ -1041,7 +904,6 @@
 
         let dpp = gross - discAmt;
 
-        // Pajak Item Manual / Master Data
         let taxType = row.querySelector('.tax-type-select').value;
         let taxVal = parseFloat(row.querySelector('.tax-val-input').value) || 0;
         let taxAmt = (taxType === 'PERCENT') ? (dpp * taxVal / 100) : taxVal;
@@ -1054,7 +916,6 @@
         calculateGrandTotal();
     }
 
-    // 🔥 LOGIKA PERHITUNGAN GRAND TOTAL 🔥
     function calculateGrandTotal() {
         let totalGross = 0; let totalItemDisc = 0; let totalTaxItem = 0; let vendorDpp = {};
 
@@ -1094,13 +955,11 @@
 
         let dppAfterGlobalDisc = totalDpp - globalDiscAmt;
 
-        // Pajak Global Manual / Master Data
         let globalTaxAmt = 0;
         document.querySelectorAll('.global-tax-row').forEach(row => {
             let vId = row.querySelector('select[name$="[vendor_id]"]').value;
             let type = row.querySelector('.tax-type-select').value;
             let val = parseFloat(row.querySelector('.global-tax-val').value) || 0;
-
             let targetDpp = (vId === 'ALL') ? dppAfterGlobalDisc : ((vendorDpp[vId] || 0) * (1 - (globalDiscAmt/totalDpp || 0)));
             globalTaxAmt += (type === 'PERCENT') ? (targetDpp * val / 100) : val;
         });
@@ -1119,7 +978,6 @@
 
     function formatCurrency(amount) { return new Intl.NumberFormat('id-ID', { minimumFractionDigits: 0, maximumFractionDigits: 2 }).format(amount); }
 
-    // 🔥 FUNGSI UI PAJAK HYBRID (ANTI BOCOR) 🔥
     function toggleTaxUI(typeSelect, isInit = false) {
         let container = typeSelect.closest('.input-group-modern');
         if(!container) return;
@@ -1160,13 +1018,11 @@
         }
     }
 
-    // ================== INIT ==================
     $(document).ready(function() {
         initSelect2();
         document.querySelectorAll('.ckeditor-spec').forEach(function(textarea) { initCKEditor(textarea.id); });
         $('#checkAllItems').change(function() { $('.row-checkbox').prop('checked', this.checked).trigger('change'); });
 
-        // Triger Initial UI Sync
         updateCurrencySymbol();
         document.querySelectorAll('.tax-type-select').forEach(el => toggleTaxUI(el, true));
         document.querySelectorAll('.item-row').forEach(row => calculateRow(row.querySelector('.qty-input')));
@@ -1174,7 +1030,6 @@
         syncVendorDropdowns();
     });
 
-    // ================== FORM SUBMIT VALIDATION ==================
     document.getElementById('poForm').addEventListener('submit', function(e) {
         e.preventDefault();
 

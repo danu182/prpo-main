@@ -129,7 +129,7 @@ class PurchaseOrderController extends Controller
                 PurchaseOrderItem::create([
                     'purchase_order_id'        => $po->id,
                     'item_id'                  => $itemData['item_id'],
-                    'item_name'                => $itemData['item_name_override'] ?? null,
+                    'item_name'                => $itemData['item_name_override'] ?? null, // 🔥 SIMPAN NAMA PENDEK
                     'purchase_request_item_id' => $itemData['pr_item_id'] ?? null,
                     'qty_ordered'              => $qty,
                     'unit_price'               => $price,
@@ -202,14 +202,15 @@ class PurchaseOrderController extends Controller
             'payment_term_id'    => 'required|exists:payment_terms,id',
             'po_items'           => 'required|array',
             'delivery_date'      => 'required|date',
-            'invoice_number'     => 'nullable|string',
-            'account_number'     => 'nullable|string',
+            'invoice_number'     => 'nullable|string', // INI YANG BENAR
+            'account_number'     => 'nullable|string', // INI YANG BENAR
         ]);
 
         try {
             \Illuminate\Support\Facades\DB::transaction(function () use ($request, $slug, $settingService) {
                 $prRecord = \App\Models\PurchaseRequest::with('items')->where('pr_number', $slug)->firstOrFail();
 
+                // 1. FILTER DAN KELOMPOKKAN VENDOR SECARA MANUAL
                 $itemsByVendor = [];
                 foreach ($request->po_items as $originalIndex => $itemData) {
                     if (isset($itemData['is_selected']) && trim($itemData['vendor_id'] ?? '') !== '' && (float)($itemData['qty'] ?? 0) > 0) {
@@ -224,12 +225,15 @@ class PurchaseOrderController extends Controller
                 $paymentTermName = \App\Models\PaymentTerm::find($request->payment_term_id)->name ?? null;
                 $prItemIdsToHeal = [];
 
+                // 2. LOOPING PEMBUATAN PO PER VENDOR
                 foreach ($itemsByVendor as $vendorId => $items) {
+                    // A. Setup Nomor PO & Storage
                     $newPoNumber = $this->generatePoNumber($request->billing_company_id);
                     $storagePath = (\Illuminate\Support\Facades\DB::table('system_settings')->where('setting_key', 'path_po_attachment')->value('setting_value') ?: 'attachments/purchase_orders') . '/' . str_replace(['/', '\\'], '-', $newPoNumber);
 
                     $poSubtotalGross = 0; $poTotalItemDiscount = 0; $poTotalTaxItem = 0; $processedLineItems = [];
 
+                    // B. HITUNG RINCIAN PER ITEM
                     foreach ($items as $originalIndex => $itemData) {
                         $qty = (float) ($itemData['qty'] ?? 0);
                         $price = (float) ($itemData['unit_price'] ?? 0);
@@ -258,6 +262,7 @@ class PurchaseOrderController extends Controller
                         ];
                     }
 
+                    // C. HITUNG DISKON GLOBAL KHUSUS VENDOR INI
                     $globalDiscType = 'FIXED'; $globalDiscVal = 0; $poGlobalDiscount = 0;
                     if ($request->has('global_discounts')) {
                         foreach ($request->global_discounts as $gDisc) {
@@ -270,6 +275,7 @@ class PurchaseOrderController extends Controller
                     }
                     $dppAfterGlobalDisc = ($poSubtotalGross - $poTotalItemDiscount) - $poGlobalDiscount;
 
+                    // D. HITUNG PAJAK GLOBAL MANUAL KHUSUS VENDOR INI
                     $globalTaxType = 'FIXED'; $globalTaxVal = 0; $poGlobalTax = 0;
                     if ($request->has('global_taxes')) {
                         foreach ($request->global_taxes as $gTax) {
@@ -281,6 +287,7 @@ class PurchaseOrderController extends Controller
                         }
                     }
 
+                    // E. HITUNG BIAYA TAMBAHAN
                     $poChargeTotal = 0; $appliedCharges = [];
                     if ($request->has('charges')) {
                         foreach ($request->charges as $charge) {
@@ -291,6 +298,7 @@ class PurchaseOrderController extends Controller
                         }
                     }
 
+                    // F. HITUNG POTONGAN VOUCHER
                     $poExtraDiscountTotal = 0; $appliedExtraDiscs = [];
                     if ($request->has('extra_discounts')) {
                         foreach ($request->extra_discounts as $disc) {
@@ -301,10 +309,12 @@ class PurchaseOrderController extends Controller
                         }
                     }
 
+                    // G. REKAP GRAND TOTAL
                     $totalAllDiscounts = $poTotalItemDiscount + $poGlobalDiscount;
                     $totalAllTaxes = $poTotalTaxItem + $poGlobalTax;
                     $poGrandTotal = $dppAfterGlobalDisc + $totalAllTaxes + $poChargeTotal - $poExtraDiscountTotal;
 
+                    // H. SIMPAN HEADER PO
                     $po = \App\Models\PurchaseOrder::create([
                         'po_number'             => $newPoNumber,
                         'purchase_request_id'   => $prRecord->id,
@@ -327,10 +337,13 @@ class PurchaseOrderController extends Controller
                         'tax_total'             => $totalAllTaxes,
                         'charge_total'          => $poChargeTotal,
                         'grand_total'           => $poGrandTotal,
+
+                        // 🔥 TAMBAHKAN 2 BARIS INI DI SINI 🔥
                         'invoice_number'        => $request->invoice_number,
                         'account_number'        => $request->account_number,
                     ]);
 
+                    // I. SIMPAN RINCIAN EXTRA
                     foreach ($appliedCharges as $charge) {
                         \Illuminate\Support\Facades\DB::table('purchase_order_charges')->insert([
                             'purchase_order_id' => $po->id, 'name' => $charge['charge_type_id'], 'amount' => $charge['amount'], 'created_at' => now(), 'updated_at' => now()
@@ -342,6 +355,7 @@ class PurchaseOrderController extends Controller
                         ]);
                     }
 
+                    // J. SIMPAN LAMPIRAN HEADER
                     if ($request->hasFile('header_attachments')) {
                         foreach ($request->file('header_attachments') as $file) {
                             if ($file instanceof \Illuminate\Http\UploadedFile) {
@@ -356,6 +370,7 @@ class PurchaseOrderController extends Controller
                         }
                     }
 
+                    // K. SIMPAN BARIS ITEM
                     foreach ($processedLineItems as $line) {
                         $itemData = $line['itemData'];
                         $prItem = \App\Models\PurchaseRequestItem::find($itemData['pr_item_id']);
@@ -396,36 +411,43 @@ class PurchaseOrderController extends Controller
                         }
                     }
 
+                    // ====================================================================
+                    // 🔥 L. JALANKAN WORKFLOW (APPROVAL) UNTUK MASING-MASING PO 🔥
+                    // ====================================================================
                     $customWorkflowId = $request->input('custom_workflow_id');
                     $needsApproval = false;
 
                     if ($customWorkflowId) {
+                        // A. Jalur Khusus (Dari Dropdown)
                         $workflow = \App\Models\ApprovalWorkflow::with('steps')->find($customWorkflowId);
 
                         if ($workflow && $workflow->steps->count() > 0) {
                             foreach ($workflow->steps as $step) {
+                                // Ambil ID departemen target, entah itu tersimpan di kolom department_id atau target_department_id pada tabel master MATRIKS (approval_workflow_steps)
                                 $targetDept = $step->target_department_id ?? $step->department_id ?? null;
-                                \Illuminate\Support\Facades\DB::table('document_approvals')->insert([
+
+                                \App\Models\DocumentApproval::create([
                                     'document_id'          => $po->id,
                                     'document_type'        => get_class($po),
                                     'role_id'              => $step->role_id,
+                                    // 🔥 PERBAIKAN: HAPUS 'department_id', HANYA GUNAKAN 'target_department_id' 🔥
                                     'target_department_id' => $targetDept,
                                     'step_order'           => $step->step_order,
-                                    'status'               => 'PENDING',
-                                    'created_at'           => now(),
-                                    'updated_at'           => now()
+                                    'status'               => 'PENDING'
                                 ]);
                             }
                             $needsApproval = true;
                             $this->logHistory($po->id, 'SYSTEM', "Menggunakan Rute Persetujuan Khusus: " . $workflow->name);
                         }
                     } else {
+                        // B. Jalur Standar / Otomatis
                         $needsApproval = \App\Services\ApprovalService::generateWorkflow($po);
                         if ($needsApproval) {
                             $this->logHistory($po->id, 'SYSTEM', 'PO diterbitkan dari PR dan masuk antrean persetujuan (Workflow Standar).');
                         }
                     }
 
+                    // M. UPDATE STATUS BERDASARKAN HASIL WORKFLOW
                     if ($needsApproval) {
                         $pendingStatusId = \App\Models\Status::where('type', 'PO')->whereIn('slug', ['pending_approval', 'pending'])->first()->id ?? 1;
                         $po->update(['status_id' => $pendingStatusId]);
@@ -436,6 +458,7 @@ class PurchaseOrderController extends Controller
                     }
                 }
 
+                // 4. EKSEKUSI SELF-HEALING PR
                 if (!empty($prItemIdsToHeal)) {
                     foreach(array_unique($prItemIdsToHeal) as $pid) {
                         $this->recalculatePrItemFulfillment($pid);
@@ -461,8 +484,8 @@ class PurchaseOrderController extends Controller
             'payment_term_id'    => 'required|exists:payment_terms,id',
             'po_items'           => 'required|array',
             'delivery_date'      => 'required|date',
-            'invoice_number'     => 'nullable|string',
-            'account_number'     => 'nullable|string',
+            'invoice_number'     => 'nullable|string', // INI YANG BENAR
+            'account_number'     => 'nullable|string', // INI YANG BENAR
         ]);
 
         try {
@@ -479,6 +502,7 @@ class PurchaseOrderController extends Controller
                 $safePoNumber = str_replace(['/', '\\'], '-', $po->po_number);
                 $storagePath = (\Illuminate\Support\Facades\DB::table('system_settings')->where('setting_key', 'path_po_attachment')->value('setting_value') ?: 'attachments/purchase_orders') . '/' . $safePoNumber;
 
+                // 1. UPDATE DETAIL PER ITEM
                 foreach ($request->po_items as $itemId => $itemData) {
                     if (!$poItem = \App\Models\PurchaseOrderItem::find($itemId)) continue;
 
@@ -496,6 +520,7 @@ class PurchaseOrderController extends Controller
                     $taxType = strtoupper($itemData['tax_type'] ?? 'FIXED');
                     $taxAmt = ($taxType === 'PERCENT') ? ($dpp * ($taxVal / 100)) : $taxVal;
 
+                    // UPLOAD LAMPIRAN ITEM
                     $files = $request->file("po_items.{$itemId}.attachments");
                     if (!empty($files)) {
                         foreach (is_array($files) ? $files : [$files] as $file) {
@@ -532,6 +557,7 @@ class PurchaseOrderController extends Controller
                     ]);
                 }
 
+                // 2. UPLOAD LAMPIRAN HEADER (KODE NYASAR SUDAH DIBERSIHKAN DARI SINI)
                 if ($request->hasFile('header_attachments')) {
                     foreach ($request->file('header_attachments') as $file) {
                         if ($file instanceof \Illuminate\Http\UploadedFile) {
@@ -546,6 +572,7 @@ class PurchaseOrderController extends Controller
                     }
                 }
 
+                // 3. KALKULASI DISKON & PAJAK GLOBAL
                 $globalDiscType = strtoupper($request->global_discount_type ?? 'FIXED');
                 $globalDiscVal = (float) ($request->global_discount_value ?? 0);
                 $poGlobalDiscount = ($globalDiscType === 'PERCENT') ? (($poSubtotalGross - $poTotalItemDiscount) * ($globalDiscVal / 100)) : $globalDiscVal;
@@ -597,8 +624,6 @@ class PurchaseOrderController extends Controller
                     'tax_total'             => $poTotalTax + $poGlobalTax,
                     'charge_total'          => $poChargeTotal,
                     'grand_total'           => $dppAfterGlobalDisc + $poTotalTax + $poGlobalTax + $poChargeTotal - $poExtraDiscountTotal,
-                    'invoice_number'        => $request->invoice_number,
-                    'account_number'        => $request->account_number,
                 ]);
 
                 $prItemIds = $po->items->pluck('purchase_request_item_id')->filter()->unique()->toArray();
@@ -609,14 +634,19 @@ class PurchaseOrderController extends Controller
                     $this->checkAndUpdatePrStatus($po->purchase_request_id);
                 }
 
+                // ====================================================================
+                // 🔥 4. LOGIKA OVERRIDE WORKFLOW (UPDATE MATRIKS PERSINJIAN HINGGA TUNTAS) 🔥
+                // ====================================================================
                 $customWorkflowId = $request->input('custom_workflow_id');
                 $needsApproval = false;
 
+                // Wajib! Hapus matriks/persetujuan lama sebelum memasang matriks baru hasil revisi
                 \App\Models\DocumentApproval::where('document_id', $po->id)
                     ->whereIn('document_type', [get_class($po), 'App\Models\PurchaseOrder', 'PO', 'PurchaseOrder'])
                     ->delete();
 
                 if ($customWorkflowId) {
+                    // A. Jalur Khusus Dilihat Dari Pilihan Dropdown Form
                     $workflow = \App\Models\ApprovalWorkflow::with('steps')->find($customWorkflowId);
 
                     if ($workflow && $workflow->steps->count() > 0) {
@@ -636,12 +666,14 @@ class PurchaseOrderController extends Controller
                         $this->logHistory($po->id, 'SYSTEM', "Menggunakan Rute Persetujuan Khusus (Update): " . $workflow->name);
                     }
                 } else {
+                    // B. Jalur Standar
                     $needsApproval = \App\Services\ApprovalService::generateWorkflow($po);
                     if ($needsApproval) {
                         $this->logHistory($po->id, 'SYSTEM', 'Rute persetujuan (Workflow) PO telah di-reset menyesuaikan data revisi (Standar Departemen).');
                     }
                 }
 
+                // UPDATE STATUS PO BERDASARKAN HASIL MATRIKS
                 if ($needsApproval) {
                     $pendingStatus = \App\Models\Status::whereIn('slug', ['pending_approval', 'pending'])->first()->id ?? 1;
                     $po->update(['status_id' => $pendingStatus]);
@@ -689,6 +721,9 @@ class PurchaseOrderController extends Controller
             $item->raw_attachments = $itemAttachments->where('purchase_order_item_id',$item->id)->values();
         }
 
+        // =========================================================================
+        // 🔥 1. TARIK HANYA MATRIKS PO (SANGAT KETAT) 🔥
+        // =========================================================================
         $customWorkflows = [];
         $selectedWorkflowId = null;
 
@@ -698,6 +733,11 @@ class PurchaseOrderController extends Controller
                 ->whereIn('document_type', ['PO', 'App\Models\PurchaseOrder', 'PurchaseOrder'])
                 ->get();
 
+            // =========================================================================
+            // 🔥 2. LOGIKA DETEKTIF UNTUK PO (Baca dari Tabel History PO/Umum) 🔥
+            // =========================================================================
+
+            // Cek di tabel History Umum dulu (kalau ada)
             $historyLog = \App\Models\History::where('record_id', $po->id)
                 ->whereIn('record_type', [get_class($po), 'App\Models\PurchaseOrder', 'PO', 'PurchaseOrder'])
                 ->where('action', 'SYSTEM')
@@ -708,6 +748,7 @@ class PurchaseOrderController extends Controller
                 ->orderBy('id', 'desc')
                 ->first();
 
+            // Jika tidak ketemu di tabel umum, cek di tabel PurchaseOrderHistory
             if (!$historyLog && class_exists('\App\Models\PurchaseOrderHistory')) {
                 $historyLog = \App\Models\PurchaseOrderHistory::where('purchase_order_id', $po->id)
                     ->where('action', 'SYSTEM')
@@ -720,13 +761,17 @@ class PurchaseOrderController extends Controller
             }
 
             if ($historyLog) {
+                // Ekstrak nama matriks dari teks
                 $workflowName = trim(str_replace(['Menggunakan Rute Persetujuan Khusus:', 'Menggunakan Rute Persetujuan Khusus (Update):'], '', $historyLog->note));
+
+                // Cari ID-nya berdasarkan nama tersebut
                 $matchedWorkflow = $customWorkflows->where('name', $workflowName)->first();
                 if ($matchedWorkflow) {
                     $selectedWorkflowId = $matchedWorkflow->id;
                 }
             }
 
+            // Fallback: Jika di history benar-benar tidak ada, cocokkan jumlah step/jabatannya
             if (!$selectedWorkflowId) {
                 $currentApprovals = \App\Models\DocumentApproval::where('document_id', $po->id)
                     ->whereIn('document_type', [get_class($po), 'App\Models\PurchaseOrder', 'PO', 'PurchaseOrder'])
@@ -758,6 +803,333 @@ class PurchaseOrderController extends Controller
             'customWorkflows', 'selectedWorkflowId'
         ));
     }
+
+    // =========================================================================
+    // 5. CANCEL (BATALKAN PO)
+    // =========================================================================
+    public function cancel(Request $request, $slug)
+    {
+        DB::beginTransaction();
+        try {
+            $cancelReason = $request->input('cancel_reason', 'Dibatalkan tanpa alasan spesifik');
+            $po = \App\Models\PurchaseOrder::with('items')->where('po_number', $slug)->firstOrFail();
+
+            if(in_array(strtolower(optional($po->status)->slug), ['completed', 'fully_received', 'closed'])) {
+                throw new \Exception('Gagal: PO yang sudah selesai/diterima gudang tidak bisa dibatalkan.');
+            }
+
+            $statusPoCanceled = \App\Models\Status::where('type', 'PO')->whereIn('slug', ['canceled', 'cancelled'])->first();
+            $po->update(['status_id' => $statusPoCanceled->id]);
+
+            // 🔥 JALANKAN SELF-HEALING PR OTOMATIS 🔥
+            $prItemIds = $po->items->pluck('purchase_request_item_id')->filter()->unique()->toArray();
+            if (!empty($prItemIds)) {
+                foreach($prItemIds as $pid) {
+                    $this->recalculatePrItemFulfillment($pid);
+                }
+                $this->checkAndUpdatePrStatus($po->purchase_request_id);
+            }
+
+            \App\Models\DocumentApproval::where('document_id', $po->id)
+                ->where('document_type', get_class($po))
+                ->update(['status' => 'REJECTED', 'note' => 'Batal Otomatis (PO di-Cancel). Alasan: ' . $cancelReason]);
+
+            $this->logHistory($po->id, 'PO Dibatalkan', 'Dokumen PO telah dibatalkan. Alasan: **' . $cancelReason . '**');
+
+            DB::commit();
+            return redirect()->route('po.index')->with('success', 'PO Berhasil dibatalkan! Kuantitas PR telah kembali normal.');
+
+        } catch (\Exception $e) {
+            DB::rollBack();
+            return back()->with('error', 'Gagal membatalkan PO: ' . $e->getMessage());
+        }
+    }
+
+    // =========================================================================
+    // HELPER 1: HITUNG ULANG QTY PR SECARA ABSOLUT (ANTI-TABRAKAN ID)
+    // =========================================================================
+    private function recalculatePrItemFulfillment($prItemId)
+    {
+        $prItem = \App\Models\PurchaseRequestItem::with('item')->find($prItemId);
+        if (!$prItem) return;
+
+        // 🔥 KUNCI: Ambil ID Satuan Dasar dari Master Barang
+        $baseUomId = optional($prItem->item)->uom_id;
+
+        $activePoIds = \App\Models\PurchaseOrder::whereHas('status', function($q) {
+            $q->whereNotIn('slug', ['canceled', 'cancelled', 'rejected']);
+        })->pluck('id');
+
+        $poItems = \App\Models\PurchaseOrderItem::where('purchase_request_item_id', $prItemId)
+            ->whereIn('purchase_order_id', $activePoIds)
+            ->get();
+
+        $totalOrderedInPrUom = 0;
+
+        // ==========================================
+        // 1. CARI FAKTOR KONVERSI MILIK PR
+        // ==========================================
+        $prUomFactor = 1;
+        if ($prItem->uom_id == $baseUomId) {
+            $prUomFactor = 1; // Jika sama dengan satuan dasar, konversi pasti 1
+        } elseif (!empty($prItem->uom_id)) {
+            // Cari spesifik berdasarkan ID dan Item ID agar tidak tertukar dengan barang lain
+            $uomDb = \App\Models\ItemUom::where('id', $prItem->uom_id)->where('item_id', $prItem->item_id)->first();
+            if ($uomDb) {
+                $prUomFactor = (float) $uomDb->conversion_qty;
+            } else {
+                $prUomFactor = $this->extractConversionFromString($prItem->uom) ?: 1;
+            }
+        } else {
+            $prUomFactor = $this->extractConversionFromString($prItem->uom) ?: 1;
+        }
+        if ($prUomFactor <= 0) $prUomFactor = 1;
+
+        // ==========================================
+        // 2. HITUNG & KONVERSI DARI SEMUA PO AKTIF
+        // ==========================================
+        foreach ($poItems as $poItem) {
+            $poUomFactor = 1;
+
+            if ($poItem->uom_id == $baseUomId) {
+                $poUomFactor = 1; // Mencegah Pieces dianggap Pack!
+            } elseif (!empty($poItem->uom_id)) {
+                $uomDb = \App\Models\ItemUom::where('id', $poItem->uom_id)->where('item_id', $poItem->item_id)->first();
+                if ($uomDb) {
+                    $poUomFactor = (float) $uomDb->conversion_qty;
+                } else {
+                    $poUomFactor = $this->extractConversionFromString($poItem->uom) ?: 1;
+                }
+            } else {
+                $poUomFactor = $this->extractConversionFromString($poItem->uom) ?: 1;
+            }
+            if ($poUomFactor <= 0) $poUomFactor = 1;
+
+            // MATEMATIKA ABSOLUT:
+            // 1. Konversi Qty PO menjadi Eceran (Base Qty)
+            $qtyInBase = (float)$poItem->qty_ordered * $poUomFactor;
+
+            // 2. Konversi Eceran tersebut ke dalam Satuan PR
+            $qtyInPrUnit = $qtyInBase / $prUomFactor;
+
+            $totalOrderedInPrUom += $qtyInPrUnit;
+        }
+
+        $prItem->ordered_qty = $totalOrderedInPrUom;
+        $prItem->save();
+    }
+
+    // 🔥 HELPER KECIL: Penyelamat jika ID Database gagal (Baca dari Teks)
+    private function extractConversionFromString($uomString) {
+        if (preg_match('/\(Isi:\s*([0-9.]+)/i', $uomString, $matches)) {
+            return (float) $matches[1];
+        }
+        return null;
+    }
+    // =========================================================================
+    // HELPER: PERBAIKI STATUS PR OTOMATIS (MENDUKUNG PARSIAL QTY & PARSIAL ITEM)
+    // =========================================================================
+    private function checkAndUpdatePrStatus($prId)
+    {
+        $prRecord = \App\Models\PurchaseRequest::with('items')->find($prId);
+        if (!$prRecord) return;
+
+        // 🔥 PERBAIKAN FATAL: Hapus 'completed' dan 'closed' dari daftar blokir.
+        // Biarkan PR yang sudah "Selesai/PO Issued" bisa HIDUP KEMBALI jika PO dibatalkan.
+        $currentSlug = strtolower(optional($prRecord->status)->slug);
+        if (in_array($currentSlug, ['cancelled', 'canceled', 'rejected'])) {
+            return;
+        }
+
+        $anyItemProcessed = false;
+        $allItemFulfilled = true;
+        $validItemsCount  = 0;
+
+        foreach ($prRecord->items as $item) {
+            // Abaikan item jika status itemnya ditolak/dibatalkan oleh manajemen
+            $itemStatus = strtoupper($item->status ?? '');
+            if (in_array($itemStatus, ['REJECTED', 'CANCELED', 'CANCELLED'])) {
+                continue;
+            }
+
+            $validItemsCount++;
+            $targetQty = (float) $item->qty;
+            $currentOrdered = (float) ($item->ordered_qty ?? 0);
+
+            // Jika ada minimal 1 qty yang sudah di-PO-kan
+            if (round($currentOrdered, 4) > 0) {
+                $anyItemProcessed = true;
+            }
+
+            // Jika ada barang yang jumlah PO-nya masih kurang dari jumlah PR
+            if (round($currentOrdered, 4) < round($targetQty, 4)) {
+                $allItemFulfilled = false;
+            }
+        }
+
+        // Jika semua item di dalam PR ditolak, biarkan saja (jangan diubah)
+        if ($validItemsCount === 0) return;
+
+        // =====================================================================
+        // 🔥 LOGIKA PENENTUAN STATUS AKHIR PR 🔥
+        // =====================================================================
+        $statusApproved = \App\Models\Status::where('type', 'PR')->whereIn('slug', ['approved', 'disetujui'])->first();
+        $statusPartial  = \App\Models\Status::where('type', 'PR')->whereIn('slug', ['partial_po', 'parsial'])->first();
+        $statusPoIssued = \App\Models\Status::where('type', 'PR')->whereIn('slug', ['po_issued', 'completed', 'selesai'])->first();
+
+        if (!$anyItemProcessed) {
+            // Skenario 1: Belum ada yang dipesan / PO DIBATALKAN TOTAL -> HIDUP KEMBALI
+            if ($statusApproved) $prRecord->update(['status_id' => $statusApproved->id]);
+
+        } elseif (!$allItemFulfilled) {
+            // Skenario 2: Dipesan sebagian (Parsial Item atau Parsial Qty)
+            if ($statusPartial) $prRecord->update(['status_id' => $statusPartial->id]);
+
+        } else {
+            // Skenario 3: Semua barang dan kuantitas sudah lunas dibuatkan PO
+            if ($statusPoIssued) $prRecord->update(['status_id' => $statusPoIssued->id]);
+        }
+    }
+
+    // =========================================================================
+    // HELPER 3: BACA FAKTOR KONVERSI UOM
+    // =========================================================================
+    private function getUomFactor($itemId, $uomString)
+    {
+        if (empty($uomString)) return 1;
+
+        if (is_numeric($uomString)) {
+            $altUom = \App\Models\ItemUom::find($uomString);
+            if ($altUom) return (float) $altUom->conversion_qty;
+        }
+
+        if (preg_match('/(?:Isi|Qty|Konversi)\s*[:=]?\s*([0-9.]+)/i', $uomString, $matches)) {
+            return (float) $matches[1];
+        }
+
+        $cleanUom = trim(preg_replace('/[\[\(\{].*?[\]\)\}]/', '', $uomString));
+        if (!empty($cleanUom)) {
+            $altUom = \App\Models\ItemUom::where('item_id', $itemId)
+                        ->whereRaw('LOWER(uom_name) = ?', [strtolower($cleanUom)])
+                        ->first();
+            if ($altUom) return (float) $altUom->conversion_qty;
+        }
+
+        return 1;
+    }
+
+    // =========================================================================
+    // HELPER 4: GENERATOR NOMOR PO OTOMATIS
+    // =========================================================================
+    private function generatePoNumber($companyId)
+    {
+        $company = \App\Models\Company::find($companyId);
+        $companyCode = $company ? strtoupper($company->code ?? 'PT') : 'PT';
+
+        $year = date('Y');
+        $month = date('m');
+        $dateStr = date('Ymd');
+
+        $prefix = "PO-{$companyCode}-{$dateStr}-";
+
+        $latestPo = \App\Models\PurchaseOrder::where('po_number', 'like', $prefix . '%')->orderBy('id', 'desc')->lockForUpdate()->first();
+        $newSequence = 1;
+        if ($latestPo && $latestPo->po_number) {
+            $parts = explode('-', $latestPo->po_number);
+            $newSequence = ((int) end($parts)) + 1;
+        }
+
+        return $prefix . str_pad($newSequence, 4, '0', STR_PAD_LEFT);
+    }
+
+    // =========================================================================
+    // 6. EDIT PO PAGE
+    // =========================================================================
+    // public function edit($slug)
+    // {
+    //     $po = \App\Models\PurchaseOrder::with(['items.item.itemUoms', 'vendor', 'status', 'attachments'])->where('po_number',$slug)->firstOrFail();
+
+    //     if (!in_array(strtolower(optional($po->status)->slug ?? ''), ['draft', 'pending_approval', 'pending', 'rejected', ''])) {
+    //         return redirect()->route('po.index')->with('error', 'Gagal: PO ini sudah tidak dapat diedit karena statusnya ' . optional($po->status)->name);
+    //     }
+
+    //     $vendors = \App\Models\Vendor::all();
+    //     $companies = \App\Models\Company::all();
+    //     $paymentTerms = \App\Models\PaymentTerm::all();
+    //     $taxes = \App\Models\Tax::all();
+    //     $chargeTypes = \App\Models\ChargeType::where('is_active', 1)->get();
+    //     $currencies = \App\Models\Currency::all();
+    //     $discountTypes = \App\Models\DiscountType::where('is_active', 1)->get();
+    //     $charges = \Illuminate\Support\Facades\DB::table('purchase_order_charges')->where('purchase_order_id',$po->id)->get();
+    //     $extraDiscounts = \Illuminate\Support\Facades\DB::table('purchase_order_discounts')->where('purchase_order_id',$po->id)->get();
+
+    //     $poItemIds =$po->items->pluck('id')->toArray();
+    //     $itemAttachments = \Illuminate\Support\Facades\DB::table('purchase_order_item_attachments')->whereIn('purchase_order_item_id',$poItemIds)->get();
+    //     foreach ($po->items as $item) {
+    //         $item->raw_attachments = $itemAttachments->where('purchase_order_item_id',$item->id)->values();
+    //     }
+
+    //     // =========================================================================
+    //     // 🔥 1. TARIK HANYA MATRIKS PO (SANGAT KETAT) 🔥
+    //     // =========================================================================
+    //     $customWorkflows = [];
+    //     $selectedWorkflowId = null;
+
+    //     if (class_exists('\App\Models\ApprovalWorkflow')) {
+    //         $customWorkflows = \App\Models\ApprovalWorkflow::with('steps')
+    //             ->where('is_active', true)
+    //             ->whereIn('document_type', ['PO', 'App\Models\PurchaseOrder', 'PurchaseOrder'])
+    //             ->get();
+
+    //         // =========================================================================
+    //         // 🔥 2. LOGIKA DETEKTIF UNTUK PO (Baca dari Tabel History PO) 🔥
+    //         // =========================================================================
+    //         $historyLog = \App\Models\PurchaseOrderHistory::where('purchase_order_id', $po->id)
+    //             ->where('action', 'SYSTEM')
+    //             ->where('note', 'like', 'Menggunakan Rute Persetujuan Khusus:%')
+    //             ->orderBy('id', 'desc')
+    //             ->first();
+
+    //         if ($historyLog) {
+    //             $workflowName = trim(str_replace('Menggunakan Rute Persetujuan Khusus:', '', $historyLog->note));
+    //             $matchedWorkflow = $customWorkflows->where('name', $workflowName)->first();
+    //             if ($matchedWorkflow) {
+    //                 $selectedWorkflowId = $matchedWorkflow->id;
+    //             }
+    //         }
+
+    //         // Fallback: Jika di history tidak ada, cocokkan jumlah step/jabatannya
+    //         if (!$selectedWorkflowId) {
+    //             $currentApprovals = \App\Models\DocumentApproval::where('document_id', $po->id)
+    //                 ->whereIn('document_type', [get_class($po), 'App\Models\PurchaseOrder', 'PO', 'PurchaseOrder'])
+    //                 ->orderBy('step_order', 'asc')
+    //                 ->get();
+
+    //             if ($currentApprovals->count() > 0 && $customWorkflows->count() > 0) {
+    //                 foreach ($customWorkflows as $cw) {
+    //                     $cwSteps = $cw->steps->sortBy('step_order')->values();
+    //                     if ($cwSteps->count() === $currentApprovals->count() && $cwSteps->count() > 0) {
+    //                         $isMatch = true;
+    //                         foreach ($cwSteps as $index => $step) {
+    //                             if ($step->role_id != $currentApprovals[$index]->role_id) {
+    //                                 $isMatch = false; break;
+    //                             }
+    //                         }
+    //                         if ($isMatch) {
+    //                             $selectedWorkflowId = $cw->id; break;
+    //                         }
+    //                     }
+    //                 }
+    //             }
+    //         }
+    //     }
+
+    //     return view('po.edit', compact(
+    //         'po', 'vendors', 'companies', 'paymentTerms', 'taxes', 'chargeTypes',
+    //         'currencies', 'charges', 'discountTypes', 'extraDiscounts',
+    //         'customWorkflows', 'selectedWorkflowId'
+    //     ));
+    // }
 
     // =========================================================================
     // 7. SHOW PO DETAIL
@@ -792,6 +1164,7 @@ class PurchaseOrderController extends Controller
         $user = auth()->user();
         $userRoleIds = $user->roles->pluck('id')->toArray();
 
+        // --- TARIK ANTREAN PR (PR BEBAS DILIHAT OLEH YANG PUNYA AKSES KE HALAMAN INI) ---
         $statusApproved = \App\Models\Status::where('type', 'PR')->where('slug', 'approved')->first();
         $statusPartial  = \App\Models\Status::where('type', 'PR')->where('slug', 'partial_po')->first();
 
@@ -808,8 +1181,10 @@ class PurchaseOrderController extends Controller
                 });
             });
 
+        // 🔥 PERBAIKAN FATAL: Gembok PR Dilepas Total. Siapapun yang bisa buka menu PO, boleh melihat antrean PR untuk diproses. 🔥
         $readyPrs = $prQuery->orderBy('created_at', 'desc')->paginate(10, ['*'], 'pr_page');
 
+        // --- TARIK DAFTAR PO ---
         $poQuery = \App\Models\PurchaseOrder::with(['vendor', 'company', 'purchaseRequest.company', 'status', 'approvals.role'])
             ->when($search, function ($query) use ($search) {
                 $query->where(function ($q) use ($search) {
@@ -823,18 +1198,28 @@ class PurchaseOrderController extends Controller
                 });
             });
 
+        // =========================================================================
+        // 🔥 LOGIKA VISIBILITAS PO (ANTI INTIP TETAP AKTIF KHUSUS UNTUK PO) 🔥
+        // =========================================================================
         if (!$user->hasAnyRole(['Super Admin', 'super-admin', 'Super Administrator'])) {
             $poQuery->where(function ($q) use ($user, $userRoleIds) {
+
+                // 1. MUTLAK: Hanya boleh lihat jika DIA YANG MEMBUAT PO
                 $q->where('created_by', $user->id)
+
+                  // 2. MUTLAK: Boleh lihat jika sedang ANTRI DI MEJANYA (DITUJUKAN KEPADANYA)
                   ->orWhereHas('approvals', function ($qApprovals) use ($user, $userRoleIds) {
                       $qApprovals->where('status', 'PENDING')
                                  ->whereIn('role_id', $userRoleIds)
                                  ->where(function($qDept) use ($user) {
+                                     // Hanya jika departemennya cocok dengan yang diminta matriks
                                      $qDept->where('target_department_id', $user->department_id)
                                            ->orWhere('target_department_id', 'all')
                                            ->orWhereNull('target_department_id');
                                  });
                   })
+
+                  // 3. MUTLAK: Boleh lihat jika DIA SUDAH PERNAH MENYETUJUI dokumen tersebut (Sebagai Jejak Audit historis)
                   ->orWhereHas('approvals', function ($qApprovals) use ($user) {
                       $qApprovals->where('approved_by', $user->id);
                   });
@@ -856,6 +1241,7 @@ class PurchaseOrderController extends Controller
         $pr = \App\Models\PurchaseRequest::with(['items.item.uom', 'items.item.itemUoms', 'items.vendorQuotes.vendor', 'user', 'company'])->where('pr_number', $slug)->firstOrFail();
         $prStatusSlug = strtolower(optional($pr->status)->slug ?? '');
 
+        // 🔥 PERBAIKAN: Hanya izinkan slug yang ada di database Komandan 🔥
         if (!in_array($prStatusSlug, ['approved', 'partial_po'])) {
             $prStatusText = strtoupper(trim(optional($pr->status)->name ?? $pr->status ?? ''));
             $isAllowed = false;
@@ -870,6 +1256,9 @@ class PurchaseOrderController extends Controller
             }
         }
 
+        // =========================================================================
+        // 🔥 KODE YANG HILANG: Tarik riwayat PO Parsial dari PR ini 🔥
+        // =========================================================================
         $existingPos = \App\Models\PurchaseOrder::with(['vendor', 'status', 'items.item'])
             ->where('purchase_request_id', $pr->id)
             ->whereHas('status', function($q) {
@@ -907,6 +1296,7 @@ class PurchaseOrderController extends Controller
         $currencies = \App\Models\Currency::where('is_active', true)->get();
         $discountTypes = \App\Models\DiscountType::where('is_active', true)->get();
 
+        // 🔥 TARIK DATA MATRIKS KHUSUS PO 🔥
         $customWorkflows = [];
         if (class_exists('\App\Models\ApprovalWorkflow')) {
             $customWorkflows = \App\Models\ApprovalWorkflow::with('steps')
@@ -919,6 +1309,7 @@ class PurchaseOrderController extends Controller
                 ->get();
         }
 
+        // 🔥 PASTIKAN $customWorkflows DIKIRIM KE COMPACT 🔥
         return view('po.process_pr', compact('pr', 'existingPos', 'vendors', 'companies', 'paymentTerms', 'taxes', 'chargeTypes', 'currencies', 'discountTypes', 'selectedVendor', 'defaultCurrency', 'defaultShippingAddress', 'customWorkflows'));
     }
 
@@ -936,8 +1327,10 @@ class PurchaseOrderController extends Controller
 
             \App\Models\DocumentApproval::where('document_id', $po->id)->where('document_type', get_class($po))->delete();
 
+            // 🔥 LOGIKA DETEKTIF: CARI TAHU MATRIKS APA YANG DIPILIH SAAT CREATE/EDIT 🔥
             $workflow = null;
 
+            // 1. Cek riwayat untuk melihat apakah user memilih jalur khusus
             $historyLog = \App\Models\PurchaseOrderHistory::where('purchase_order_id', $po->id)
                 ->where('action', 'SYSTEM')
                 ->where(function($q) {
@@ -948,10 +1341,12 @@ class PurchaseOrderController extends Controller
                 ->first();
 
             if ($historyLog) {
+                // Ekstrak nama matriks dari teks History
                 $workflowName = trim(str_replace(['Menggunakan Rute Persetujuan Khusus:', 'Menggunakan Rute Persetujuan Khusus (Update):'], '', $historyLog->note));
                 $workflow = \DB::table('approval_workflows')->where('name', $workflowName)->where('is_active', 1)->first();
             }
 
+            // 2. Jika tidak ketemu di history (artinya User memilih Default saat create)
             if (!$workflow) {
                 $workflow = \DB::table('approval_workflows')
                     ->whereIn('document_type', [get_class($po), 'PO', 'PurchaseOrder'])
@@ -975,11 +1370,13 @@ class PurchaseOrderController extends Controller
             $firstStepTargetDept = null;
 
             foreach ($steps as $index => $step) {
+                // Simpan data langkah pertama untuk tembak notifikasi
                 if ($index === 0) {
                     $firstStepRoleId = $step->role_id;
                     $firstStepTargetDept = $step->target_department_id ?? $step->department_id ?? null;
                 }
 
+                // 🔥 TEMBUS PAKSA FILLABLE LARAVEL MENGGUNAKAN DB::table 🔥
                 $targetDept = $step->target_department_id ?? $step->department_id ?? null;
                 \Illuminate\Support\Facades\DB::table('document_approvals')->insert([
                     'document_id'          => $po->id,
@@ -993,14 +1390,20 @@ class PurchaseOrderController extends Controller
                 ]);
             }
 
+            // ====================================================================
+            // 🔥 FITUR BARU: TEMBAK NOTIFIKASI KE MANAGER SAAT PO DIAJUKAN 🔥
+            // ====================================================================
             if ($firstStepRoleId) {
+                // Cari User yang memiliki Role sesuai $firstStep->role_id
                 $targetManagers = \App\Models\User::whereHas('roles', function ($q) use ($firstStepRoleId) {
                     $q->where('id', $firstStepRoleId);
                 })->get();
 
+                // Filter berdasarkan target departemen
                 if (!empty($firstStepTargetDept) && $firstStepTargetDept !== 'all') {
                     $targetManagers = $targetManagers->where('department_id', $firstStepTargetDept);
                 } elseif (empty($firstStepTargetDept)) {
+                    // Atasan Langsung
                     $pembuatPo = \App\Models\User::find($po->created_by);
                     if ($pembuatPo) {
                         $targetManagers = $targetManagers->where('department_id', $pembuatPo->department_id);
@@ -1113,14 +1516,20 @@ class PurchaseOrderController extends Controller
                 $catatan .= "Persetujuan Matriks telah SELESAI.\n";
                 $successMsg = "Hore! Dokumen PO telah disetujui secara FINAL!";
 
+                // ====================================================================
+                // 🔥 FITUR BARU: TEMBAK NOTIFIKASI KE PEMBUAT PO SAAT FINAL 🔥
+                // ====================================================================
                 $pembuatPo = \App\Models\User::find($po->created_by);
                 if ($pembuatPo) {
+                    // Pastikan URL menggunakan PO NUMBER, bukan ID
                     $urlPo = route('po.show', $po->po_number);
                     $pesanNotif = "Hore! PO Nomor {$po->po_number} telah DISETUJUI SECARA FINAL dan siap diproses ke Vendor.";
 
+                    // Jika Komandan punya class DocumentApprovalNotification
                     if (class_exists('\App\Notifications\DocumentApprovalNotification')) {
                         $pembuatPo->notify(new \App\Notifications\DocumentApprovalNotification('PO APPROVED', $pesanNotif, $urlPo));
                     } else {
+                        // Jalur tembak langsung ke database bawaan Laravel (Fallback)
                         \Illuminate\Support\Facades\DB::table('notifications')->insert([
                             'id'              => \Illuminate\Support\Str::uuid(),
                             'type'            => 'App\Notifications\DocumentApprovalNotification',
@@ -1211,6 +1620,8 @@ class PurchaseOrderController extends Controller
         return back()->with('success', 'File Lampiran Item berhasil dihapus.');
     }
 
+
+
     // =========================================================================
     // 🔥 1. HALAMAN LAPORAN OUTSTANDING PO (FIXED STATUS_ID) 🔥
     // =========================================================================
@@ -1228,12 +1639,15 @@ class PurchaseOrderController extends Controller
         $companies = \App\Models\Company::orderBy('name')->get();
         $vendors = \App\Models\Vendor::orderBy('name')->get();
 
+        // 🔥 PERBAIKAN: Ambil ID dari tabel 'statuses' untuk status PO yang masih menggantung
+        // Mengacu pada gambar, slug yang menggantung adalah: issued, partial_received, partial_receipt
         $outstandingStatusIds = \Illuminate\Support\Facades\DB::table('statuses')
             ->where('type', 'PO')
             ->whereIn('slug', ['issued', 'partial_received', 'partial_receipt'])
             ->pluck('id')
             ->toArray();
 
+        // 🔥 PERBAIKAN: Gunakan whereIn('status_id', ...) bukan whereIn('status', ...)
         $query = \App\Models\PurchaseOrder::with(['items.item', 'vendor', 'company'])
                     ->whereIn('status_id', $outstandingStatusIds)
                     ->whereBetween('created_at', [$start, $end]);
@@ -1270,6 +1684,8 @@ class PurchaseOrderController extends Controller
         return view('po.outstanding', compact('outstandingPos', 'startDate', 'endDate', 'companyId', 'vendorId', 'search', 'companies', 'vendors'));
     }
 
+
+
     // =========================================================================
     // 🔥 2. FUNGSI EKSEKUSI FORCE CLOSE (DENGAN LOG RIWAYAT/HISTORY) 🔥
     // =========================================================================
@@ -1277,6 +1693,7 @@ class PurchaseOrderController extends Controller
     {
         $po = \App\Models\PurchaseOrder::where('po_number', $slug)->firstOrFail();
 
+        // Cek apakah PO sudah memiliki status final
         $finalStatusIds = \Illuminate\Support\Facades\DB::table('statuses')
             ->where('type', 'PO')
             ->whereIn('slug', ['completed', 'rejected', 'cancelled', 'canceled', 'fully_received', 'closed_short'])
@@ -1287,27 +1704,33 @@ class PurchaseOrderController extends Controller
             return redirect()->back()->with('error', 'Gagal! Purchase Order ini sudah memiliki status Final.');
         }
 
+        // Cari ID status khusus 'closed_short'
         $closedShortStatus = \Illuminate\Support\Facades\DB::table('statuses')
             ->where('type', 'PO')
             ->where('slug', 'closed_short')
             ->first();
 
+        // Update status_id ke ID Closed Short (Jika belum buat di DB, fallback ke completed)
         if ($closedShortStatus) {
             $po->status_id = $closedShortStatus->id;
         } else {
+            // Fallback darurat jika Komandan belum sempat input di database
             $fallbackStatus = \Illuminate\Support\Facades\DB::table('statuses')->where('type', 'PO')->where('slug', 'completed')->first();
             if ($fallbackStatus) $po->status_id = $fallbackStatus->id;
         }
 
         $alasan = $request->input('reason', 'Ditutup paksa tanpa alasan.');
 
+        // 1. Menambahkan log ke teks Catatan PO
         $catatan = "\n\n=== FORCE CLOSED PADA " . now()->translatedFormat('d M Y H:i') . " ===\n";
         $catatan .= "Oleh: " . (auth()->user()->name ?? 'Sistem') . "\n";
         $catatan .= "Alasan: " . $alasan;
         $po->notes = $po->notes . $catatan;
 
+        // Simpan perubahan ke tabel PO
         $po->save();
 
+        // 🔥 2. TAMBAHAN BARU: MENYUNTIKKAN LOG KE TABEL RIWAYAT (TIMELINE) 🔥
         if (method_exists($po, 'histories')) {
             $po->histories()->create([
                 'user_id' => auth()->id(),
@@ -1318,6 +1741,8 @@ class PurchaseOrderController extends Controller
 
         return redirect()->back()->with('success', "Purchase Order {$po->po_number} berhasil ditutup paksa (Closed Short)!");
     }
+
+
 
 
     // =========================================================================
@@ -1333,11 +1758,13 @@ class PurchaseOrderController extends Controller
         $currencies = \App\Models\Currency::where('is_active', true)->get();
         $discountTypes = \App\Models\DiscountType::where('is_active', true)->get();
 
+        // Tarik Master Item beserta konversi UOM-nya
         $masterItems = \App\Models\Item::with('itemUoms')->orderBy('name')->get();
 
         $headOffice = \App\Models\Company::where('is_head_office', true)->first();
         $defaultShippingAddress = $headOffice ? $headOffice->address : '';
 
+        // Tarik Matriks Khusus PO
         $customWorkflows = [];
         if (class_exists('\App\Models\ApprovalWorkflow')) {
             $customWorkflows = \App\Models\ApprovalWorkflow::with('steps')
@@ -1364,8 +1791,8 @@ class PurchaseOrderController extends Controller
             'po_date'            => 'required|date',
             'delivery_date'      => 'required|date',
             'po_items'           => 'required|array|min:1',
-            'invoice_number'     => 'nullable|string',
-            'account_number'     => 'nullable|string',
+            'invoice_number'     => 'nullable|string', // INI YANG BENAR
+            'account_number'     => 'nullable|string', // INI YANG BENAR
         ]);
 
         try {
@@ -1378,6 +1805,7 @@ class PurchaseOrderController extends Controller
                 $poSubtotalGross = 0; $poTotalItemDiscount = 0; $poTotalTaxItem = 0;
                 $processedLineItems = [];
 
+                // 1. HITUNG BARIS ITEM
                 foreach ($request->po_items as $index => $itemData) {
                     $qty = (float) ($itemData['qty'] ?? 0);
                     $price = (float) ($itemData['unit_price'] ?? 0);
@@ -1406,6 +1834,7 @@ class PurchaseOrderController extends Controller
 
                 if (empty($processedLineItems)) throw new \Exception('Minimal harus ada 1 barang yang valid (Kuantitas > 0).');
 
+                // 2. HITUNG GLOBAL DISKON, PAJAK & BIAYA TAMBAHAN
                 $globalDiscType = strtoupper($request->global_discount_type ?? 'FIXED');
                 $globalDiscVal = (float) ($request->global_discount_value ?? 0);
                 $poGlobalDiscount = ($globalDiscType === 'PERCENT') ? (($poSubtotalGross - $poTotalItemDiscount) * ($globalDiscVal / 100)) : $globalDiscVal;
@@ -1416,6 +1845,7 @@ class PurchaseOrderController extends Controller
                 $globalTaxVal = (float) ($request->global_tax_value ?? 0);
                 $poGlobalTax = ($globalTaxType === 'PERCENT') ? ($dppAfterGlobalDisc * ($globalTaxVal / 100)) : $globalTaxVal;
 
+                // 🔥 PERBAIKAN: LOGIKA CHARGES YANG TERTINDIH SUDAH DIKEMBALIKAN 🔥
                 $poChargeTotal = 0; $appliedCharges = [];
                 if ($request->has('charges')) {
                     foreach ($request->charges as $charge) {
@@ -1440,9 +1870,10 @@ class PurchaseOrderController extends Controller
                 $totalAllTaxes = $poTotalTaxItem + $poGlobalTax;
                 $poGrandTotal = $dppAfterGlobalDisc + $totalAllTaxes + $poChargeTotal - $poExtraDiscountTotal;
 
+                // 3. SIMPAN HEADER PO
                 $po = \App\Models\PurchaseOrder::create([
                     'po_number'             => $newPoNumber,
-                    'purchase_request_id'   => null,
+                    'purchase_request_id'   => null, // Murni Direct PO
                     'vendor_id'             => $request->vendor_id,
                     'bill_to_company_id'    => $request->billing_company_id,
                     'status_id'             => 1,
@@ -1464,6 +1895,7 @@ class PurchaseOrderController extends Controller
                     'grand_total'           => $poGrandTotal,
                 ]);
 
+                // 4. SIMPAN BIAYA & DISKON EXTRA
                 foreach ($appliedCharges as $charge) {
                     \Illuminate\Support\Facades\DB::table('purchase_order_charges')->insert([
                         'purchase_order_id' => $po->id, 'name' => $charge['charge_type_id'], 'amount' => $charge['amount'], 'created_at' => now(), 'updated_at' => now()
@@ -1475,6 +1907,7 @@ class PurchaseOrderController extends Controller
                     ]);
                 }
 
+                // 5. SIMPAN LAMPIRAN HEADER
                 if ($request->hasFile('header_attachments')) {
                     foreach ($request->file('header_attachments') as $file) {
                         if ($file instanceof \Illuminate\Http\UploadedFile) {
@@ -1486,6 +1919,7 @@ class PurchaseOrderController extends Controller
                     }
                 }
 
+                // 6. SIMPAN BARIS ITEM
                 foreach ($processedLineItems as $line) {
                     $itemData = $line['itemData'];
                     $masterItem = \App\Models\Item::find($itemData['item_id']);
@@ -1525,6 +1959,7 @@ class PurchaseOrderController extends Controller
 
                 $this->logHistory($po->id, 'CREATED', "Direct PO (Tanpa PR) berhasil dibuat.");
 
+                // 7. JALANKAN MATRIKS APPROVAL
                 $customWorkflowId = $request->input('custom_workflow_id');
                 $needsApproval = false;
 
@@ -1532,6 +1967,7 @@ class PurchaseOrderController extends Controller
                     $workflow = \App\Models\ApprovalWorkflow::with('steps')->find($customWorkflowId);
                     if ($workflow && $workflow->steps->count() > 0) {
                         foreach ($workflow->steps as $step) {
+                            // 🔥 TEMBUS PAKSA FILLABLE LARAVEL MENGGUNAKAN DB::table 🔥
                             $targetDept = $step->target_department_id ?? $step->department_id ?? null;
                             \Illuminate\Support\Facades\DB::table('document_approvals')->insert([
                                 'document_id'          => $po->id,
@@ -1581,11 +2017,13 @@ class PurchaseOrderController extends Controller
         try {
             $po = \App\Models\PurchaseOrder::where('po_number', $slug)->firstOrFail();
 
+            // Simpan data
             $po->update([
                 'invoice_number' => $request->input('invoice_number'),
                 'account_number' => $request->input('account_number'),
             ]);
 
+            // Catat di riwayat agar transparan
             $this->logHistory($po->id, 'Info Tagihan Diupdate', 'Nomor Invoice atau Rekening Vendor telah diperbarui untuk keperluan pembayaran.');
 
             return back()->with('success', 'Informasi Invoice & Rekening berhasil disimpan!');
@@ -1600,7 +2038,7 @@ class PurchaseOrderController extends Controller
     // =========================================================================
     public function printPdf(\Illuminate\Http\Request $request, $slug)
     {
-        $type = $request->query('type', 'digital');
+        $type = $request->query('type', 'digital'); // Ambil parameter manual/digital
 
         $po = \App\Models\PurchaseOrder::with([
             'items.item.itemUoms', 'vendor', 'company', 'billToCompany', 'status', 'user',
@@ -1611,6 +2049,7 @@ class PurchaseOrderController extends Controller
         $extraDiscounts = \DB::table('purchase_order_discounts')->where('purchase_order_id', $po->id)->get();
         $hasBeenApproved = $po->approvals->where('status', 'APPROVED')->isNotEmpty();
 
+        // 🔥 Lempar variabel $type ke Blade 🔥
         $pdf = \Barryvdh\DomPDF\Facade\Pdf::loadView('po.print_pdf', compact('po', 'charges', 'extraDiscounts', 'hasBeenApproved', 'type'))
                   ->setPaper('A4', 'portrait');
 
@@ -1724,6 +2163,7 @@ class PurchaseOrderController extends Controller
         $tempFilesToDelete = [$tempMainPdfPath];
         $totalLampiran = 0;
 
+        // Kumpulkan semua lampiran (Header & Item)
         $allAttachments = [];
         if ($po->attachments) {
             foreach ($po->attachments as $att) { $allAttachments[] = $att; }
@@ -1865,6 +2305,7 @@ class PurchaseOrderController extends Controller
         $tempFilesToDelete = [$tempMainPdfPath];
         $totalLampiran = 0;
 
+        // Kumpulkan semua lampiran (Header & Item)
         $allAttachments = [];
         if ($po->attachments) {
             foreach ($po->attachments as $att) { $allAttachments[] = $att; }
@@ -1962,135 +2403,6 @@ class PurchaseOrderController extends Controller
         return response($finalPdfOutput)->header('Content-Type', 'application/pdf')->header('Content-Disposition', 'inline; filename="BPR_Standar_Lengkap_' . $prefix . str_replace('/', '_', $po->po_number) . '.pdf"');
     }
 
-    // =========================================================================
-    // HELPER: PERBAIKI STATUS PR OTOMATIS (MENDUKUNG PARSIAL QTY & PARSIAL ITEM)
-    // =========================================================================
-    private function checkAndUpdatePrStatus($prId)
-    {
-        $prRecord = \App\Models\PurchaseRequest::with('items')->find($prId);
-        if (!$prRecord) return;
 
-        $currentSlug = strtolower(optional($prRecord->status)->slug);
-        if (in_array($currentSlug, ['cancelled', 'canceled', 'rejected'])) {
-            return;
-        }
 
-        $anyItemProcessed = false;
-        $allItemFulfilled = true;
-        $validItemsCount  = 0;
-
-        foreach ($prRecord->items as $item) {
-            $itemStatus = strtoupper($item->status ?? '');
-            if (in_array($itemStatus, ['REJECTED', 'CANCELED', 'CANCELLED'])) {
-                continue;
-            }
-
-            $validItemsCount++;
-            $targetQty = (float) $item->qty;
-            $currentOrdered = (float) ($item->ordered_qty ?? 0);
-
-            if (round($currentOrdered, 2) > 0) {
-                $anyItemProcessed = true;
-            }
-
-            // 🔥 PERBAIKAN: Gunakan round(, 2) dengan toleransi agar tidak error karena float precision 🔥
-            if (round($currentOrdered, 2) < round($targetQty, 2)) {
-                $allItemFulfilled = false;
-            }
-        }
-
-        if ($validItemsCount === 0) return;
-
-        $statusApproved = \App\Models\Status::where('type', 'PR')->whereIn('slug', ['approved', 'disetujui'])->first();
-        $statusPartial  = \App\Models\Status::where('type', 'PR')->whereIn('slug', ['partial_po', 'parsial'])->first();
-        $statusPoIssued = \App\Models\Status::where('type', 'PR')->whereIn('slug', ['po_issued', 'completed', 'selesai'])->first();
-
-        if (!$anyItemProcessed) {
-            if ($statusApproved) $prRecord->update(['status_id' => $statusApproved->id]);
-        } elseif (!$allItemFulfilled) {
-            if ($statusPartial) $prRecord->update(['status_id' => $statusPartial->id]);
-        } else {
-            if ($statusPoIssued) $prRecord->update(['status_id' => $statusPoIssued->id]);
-        }
-    }
-
-    // =========================================================================
-    // HELPER 1: HITUNG ULANG QTY PR SECARA ABSOLUT (ANTI-TABRAKAN ID)
-    // =========================================================================
-    private function recalculatePrItemFulfillment($prItemId)
-    {
-        $prItem = \App\Models\PurchaseRequestItem::with('item')->find($prItemId);
-        if (!$prItem) return;
-
-        $baseUomId = optional($prItem->item)->uom_id;
-
-        $activePoIds = \App\Models\PurchaseOrder::whereHas('status', function($q) {
-            $q->whereNotIn('slug', ['canceled', 'cancelled', 'rejected']);
-        })->pluck('id');
-
-        $poItems = \App\Models\PurchaseOrderItem::where('purchase_request_item_id', $prItemId)
-            ->whereIn('purchase_order_id', $activePoIds)
-            ->get();
-
-        $totalOrderedInPrUom = 0;
-
-        // 1. CARI FAKTOR KONVERSI PR (SANGAT AKURAT DARI STRING UOM)
-        $prUomFactor = 1;
-        if (preg_match('/\(Isi:\s*([0-9.]+)/i', $prItem->uom, $matches)) {
-            $prUomFactor = (float) $matches[1];
-        } elseif (!empty($prItem->uom_id) && $prItem->uom_id != $baseUomId) {
-            // 🔥 PERBAIKAN: Pastikan uom_id milik item_id yang benar 🔥
-            $uomDb = \App\Models\ItemUom::where('id', $prItem->uom_id)->where('item_id', $prItem->item_id)->first();
-            if ($uomDb) $prUomFactor = (float) $uomDb->conversion_qty;
-        }
-
-        if ($prUomFactor <= 0) $prUomFactor = 1;
-
-        // 2. HITUNG KONVERSI DARI SEMUA PO AKTIF BERDASARKAN STRING UOM
-        foreach ($poItems as $poItem) {
-            $poUomFactor = 1;
-
-            if (preg_match('/\(Isi:\s*([0-9.]+)/i', $poItem->uom, $matches)) {
-                $poUomFactor = (float) $matches[1];
-            } elseif (!empty($poItem->uom_id) && $poItem->uom_id != optional($poItem->item)->uom_id) {
-                // 🔥 PERBAIKAN: Pastikan uom_id milik item_id yang benar 🔥
-                $uomDb = \App\Models\ItemUom::where('id', $poItem->uom_id)->where('item_id', $poItem->item_id)->first();
-                if ($uomDb) $poUomFactor = (float) $uomDb->conversion_qty;
-            }
-
-            if ($poUomFactor <= 0) $poUomFactor = 1;
-
-            $qtyInBase = (float)$poItem->qty_ordered * $poUomFactor;
-            $qtyInPrUnit = $qtyInBase / $prUomFactor;
-
-            $totalOrderedInPrUom += $qtyInPrUnit;
-        }
-
-        $prItem->ordered_qty = round($totalOrderedInPrUom, 4); // 🔥 PERBAIKAN: Batasi presisi float 🔥
-        $prItem->save();
-    }
-
-    // =========================================================================
-    // HELPER 4: GENERATOR NOMOR PO OTOMATIS
-    // =========================================================================
-    private function generatePoNumber($companyId)
-    {
-        $company = \App\Models\Company::find($companyId);
-        $companyCode = $company ? strtoupper($company->code ?? 'PT') : 'PT';
-
-        $year = date('Y');
-        $month = date('m');
-        $dateStr = date('Ymd');
-
-        $prefix = "PO-{$companyCode}-{$dateStr}-";
-
-        $latestPo = \App\Models\PurchaseOrder::where('po_number', 'like', $prefix . '%')->orderBy('id', 'desc')->lockForUpdate()->first();
-        $newSequence = 1;
-        if ($latestPo && $latestPo->po_number) {
-            $parts = explode('-', $latestPo->po_number);
-            $newSequence = ((int) end($parts)) + 1;
-        }
-
-        return $prefix . str_pad($newSequence, 4, '0', STR_PAD_LEFT);
-    }
 }

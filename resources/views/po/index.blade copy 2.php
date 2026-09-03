@@ -227,12 +227,11 @@
                     <table class="table align-middle po-custom-table w-100">
                         <thead>
                             <tr>
-                                <th class="ps-4" width="20%">No. Dokumen PR</th>
-                                <th width="20%">PT Penanggung / Dept</th>
-                                <th width="15%" class="text-center">Status PR</th>
+                                <th class="ps-4" width="22%">No. Dokumen PR</th>
+                                <th width="23%">PT Penanggung / Dept</th>
                                 <th width="15%">Disetujui Pada</th>
-                                <th width="15%">Target Selesai</th>
-                                <th class="text-center pe-4" width="15%">Aksi</th>
+                                <th width="20%">Target Selesai</th>
+                                <th class="text-center pe-4" width="20%">Aksi</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -240,7 +239,6 @@
                                 @php
                                     $needDate = \Carbon\Carbon::parse($pr->need_date);
                                     $isUrgent = $needDate->isPast() || $needDate->diffInDays(now()) <= 3;
-                                    $prStatusSlug = strtolower(optional($pr->status)->slug);
                                 @endphp
                                 <tr class="{{ $isUrgent ? 'border-start border-4 border-danger' : 'border-start border-4 border-primary' }}">
                                     <td class="py-3 ps-4">
@@ -255,20 +253,6 @@
                                             <i class="bi bi-diagram-2 me-1"></i>{{ optional($pr->department)->name ?? 'Umum' }}
                                         </div>
                                     </td>
-
-                                    {{-- 🔥 FITUR BARU: INDIKATOR STATUS PR PARSIAL 🔥 --}}
-                                    <td class="py-3 text-center">
-                                        @if(in_array($prStatusSlug, ['partial_po', 'parsial']))
-                                            <span class="badge bg-warning-subtle text-warning border border-warning-subtle rounded-pill px-3 py-2 fw-bolder shadow-sm" style="font-size: 0.7rem;">
-                                                <i class="bi bi-pie-chart-fill me-1"></i> PARSIAL (Sisa)
-                                            </span>
-                                        @else
-                                            <span class="badge bg-success-subtle text-success border border-success-subtle rounded-pill px-3 py-2 fw-bolder shadow-sm" style="font-size: 0.7rem;">
-                                                <i class="bi bi-check-circle-fill me-1"></i> SIAP PO (Full)
-                                            </span>
-                                        @endif
-                                    </td>
-
                                     <td class="py-3 small text-muted fw-medium">
                                         <div class="d-flex align-items-center">
                                             <div class="bg-success rounded-circle me-2" style="width: 8px; height: 8px;"></div>
@@ -339,11 +323,9 @@
                                 @php
                                     $borderColor = 'border-secondary';
                                     $statusSlug = strtolower(optional($po->status)->slug);
-
-                                    // 🔥 PENYEMPURNAAN WARNA STATUS PO 🔥
-                                    if(in_array($statusSlug, ['issued', 'approved', 'completed', 'closed_short'])) $borderColor = 'border-success';
-                                    if(in_array($statusSlug, ['draft', 'pending_approval', 'pending'])) $borderColor = 'border-warning';
-                                    if(in_array($statusSlug, ['rejected', 'canceled', 'cancelled'])) $borderColor = 'border-danger';
+                                    if(in_array($statusSlug, ['issued', 'approved'])) $borderColor = 'border-success';
+                                    if(in_array($statusSlug, ['draft', 'pending_approval'])) $borderColor = 'border-warning';
+                                    if(in_array($statusSlug, ['rejected', 'canceled'])) $borderColor = 'border-danger';
                                 @endphp
                                 <tr class="border-start border-4 {{ $borderColor }}">
                                     <td class="py-3 ps-4">

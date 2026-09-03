@@ -196,7 +196,7 @@ class GoodsReceiptController extends Controller
     }
 
     // ========================================================
-    // STORE GR (TANPA ERROR KOLOM & MUTASI STOK AKURAT)
+    // STORE GR (DENGAN LOGIKA UOM ANTI-TABRAKAN & PARTIAL)
     // ========================================================
     public function store(Request $request, $slug, \App\Services\SystemSettingService $settingService)
     {
@@ -210,6 +210,7 @@ class GoodsReceiptController extends Controller
             'items.*.condition_id' => 'required|exists:item_conditions,id',
             'items.*.sn'           => 'nullable|array',
             'items.*.warehouse_id' => 'nullable|exists:warehouses,id',
+            'items.*.uom'          => 'nullable|string', // Kunci pembacaan teks dari Frontend
         ]);
 
         $warehouse = \App\Models\Warehouse::find($request->warehouse_id);
@@ -256,52 +257,60 @@ class GoodsReceiptController extends Controller
                 // 3. Looping Rincian Barang
                 foreach ($request->items as $itemId => $data) {
                     $inputQty = (float) $data['qty_received'];
-
-                    // 🔥 TANGKAP ID GUDANG DARI LAYAR 🔥
                     $targetWarehouseId = !empty($data['warehouse_id']) ? $data['warehouse_id'] : 1;
 
                     if ($inputQty > 0) {
                         $poItem = \App\Models\PurchaseOrderItem::findOrFail($itemId);
                         $masterItem = \App\Models\Item::with('uom', 'itemUoms')->findOrFail($data['item_id']);
-                        $baseUomName = optional($masterItem->uom)->name ?? 'Unit';
+                        $baseUomName = strtoupper(optional($masterItem->uom)->name ?? 'PCS');
 
+                        // ========================================================
+                        // 🔥 A. DETEKSI KONVERSI PO ASLI (SUMBER KEBENARAN) 🔥
+                        // ========================================================
                         $poConvFactor = 1;
-                        if (!empty($poItem->uom_id)) {
-                            $uomDb = collect($masterItem->itemUoms)->where('id', $poItem->uom_id)->first();
+                        $rawPoUom = $poItem->uom ?? $baseUomName;
+                        if (preg_match('/\(Isi:\s*([0-9.]+)/i', $rawPoUom, $matches)) {
+                            $poConvFactor = (float) $matches[1];
+                        } elseif (!empty($poItem->uom_id) && $poItem->uom_id != $masterItem->uom_id) {
+                            $uomDb = \App\Models\ItemUom::where('id', $poItem->uom_id)->where('item_id', $masterItem->id)->first();
                             if ($uomDb) $poConvFactor = (float) $uomDb->conversion_qty;
-                        } else {
-                            $rawPoUom = $poItem->uom ?? $baseUomName;
-                            if (preg_match('/Isi\s*[:=]\s*([0-9.]+)/i', $rawPoUom, $matches)) {
-                                $poConvFactor = (float) $matches[1];
-                            }
+                        }
+                        $poConvFactorSafe = $poConvFactor > 0 ? $poConvFactor : 1;
+
+                        // ========================================================
+                        // 🔥 B. DETEKSI KONVERSI INPUT GR DARI USER (ANTI-TABRAKAN) 🔥
+                        // ========================================================
+                        $inputConvFactor = 1;
+                        $inputUomStr = $data['uom'] ?? $baseUomName; // Membaca teks uom yang disuplai JS Frontend
+
+                        if (preg_match('/\(Isi:\s*([0-9.]+)/i', $inputUomStr, $matches)) {
+                            $inputConvFactor = (float) $matches[1];
+                        } elseif (!empty($data['uom_id']) && $data['uom_id'] != $masterItem->uom_id) {
+                            $uomDb = \App\Models\ItemUom::where('id', $data['uom_id'])->where('item_id', $masterItem->id)->first();
+                            if ($uomDb) $inputConvFactor = (float) $uomDb->conversion_qty;
                         }
 
+                        // Bersihkan embel-embel [PO] agar rapi di Database
+                        $finalUomString = trim(preg_replace('/ \[PO\]/i', '', $inputUomStr));
+
+                        // ========================================================
+                        // 🔥 C. MATEMATIKA KONVERSI MUTLAK (PERBAIKAN UTAMA) 🔥
+                        // ========================================================
+                        // 1. Konversi angka yang diketik user menjadi Eceran Mutlak
+                        $baseQtyReceived = $inputQty * $inputConvFactor;
+
+                        // 2. Berapa potongannya jika dikonversi kembali ke dalam satuan PO?
+                        $qtyYangMemotongPO = $baseQtyReceived / $poConvFactorSafe;
+
+                        // 3. Simpan ke database PO
+                        $poItem->qty_received = (float)($poItem->qty_received ?? 0) + $qtyYangMemotongPO;
+                        $poItem->save();
+
+
+                        // --- HITUNGAN HARGA & STOK ---
                         $hargaDariPO = (float) ($poItem->unit_price ?? 0);
-                        $poConvFactorSafe = $poConvFactor > 0 ? $poConvFactor : 1;
                         $hargaDasarPerPiece = $hargaDariPO / $poConvFactorSafe;
 
-                        $inputConvFactor = 1;
-                        $selectedUomId = null;
-                        $finalUomString = $baseUomName;
-
-                        if (!empty($data['uom_id'])) {
-                            $uomDb = collect($masterItem->itemUoms)->where('id', $data['uom_id'])->first();
-                            if ($uomDb) {
-                                $selectedUomId = $uomDb->id;
-                                $inputConvFactor = (float) $uomDb->conversion_qty;
-                                $finalUomString = $uomDb->uom_name;
-                                if ($inputConvFactor > 1) {
-                                    $finalUomString .= ' (Isi ' . $inputConvFactor . ' ' . $baseUomName . ')';
-                                }
-                            }
-                        }
-
-                        $cleanUomCheck = trim(preg_replace('/ \(Isi:?.*\)/i', '', $finalUomString));
-                        if (strtoupper($cleanUomCheck) === 'PCS' && strtoupper($baseUomName) !== 'PCS') {
-                            $finalUomString = $baseUomName;
-                        }
-
-                        $baseQtyReceived = $inputQty * $inputConvFactor;
                         $qtyInt = (int) $baseQtyReceived;
                         $rawSnList = $data['sn'] ?? [];
 
@@ -341,22 +350,19 @@ class GoodsReceiptController extends Controller
 
                         $catatanAsli = $data['notes'] ?? null;
 
-                        // 4. 🔥 SIMPAN DETAIL GR TANPA WAREHOUSE_ID AGAR TIDAK ERROR SQL 🔥
+                        // 4. SIMPAN DETAIL GR
                         \App\Models\GoodsReceiptItem::create([
                             'goods_receipt_id'       => $gr->id,
                             'purchase_order_item_id' => $poItem->id,
                             'item_id'                => $data['item_id'],
                             'qty_received'           => $inputQty,
-                            'uom_id'                 => $selectedUomId,
+                            'uom_id'                 => $data['uom_id'] ?? null,
                             'uom'                    => $finalUomString,
                             'condition_id'           => $data['condition_id'],
                             'notes'                  => $catatanAsli,
                         ]);
 
-                        $poItem->qty_received = ($poItem->qty_received ?? 0) + ($baseQtyReceived / $poConvFactor);
-                        $poItem->save();
-
-                        // 5. UPDATE STOK & MUTASI (INI SUMBER KEBENARAN GUDANG KITA)
+                        // 5. UPDATE STOK & MUTASI
                         if ($masterItem->is_stockable ?? true) {
                             $globalBalanceBefore = (float) $masterItem->current_stock;
                             $namaSpesifik = strip_tags($poItem->description ?? $masterItem->name);
@@ -367,8 +373,8 @@ class GoodsReceiptController extends Controller
                             }
 
                             $invStock = \App\Models\InventoryStock::where('item_id', $masterItem->id)
-                                            ->where('warehouse_id', $targetWarehouseId)
-                                            ->first();
+                                                                    ->where('warehouse_id', $targetWarehouseId)
+                                                                    ->first();
 
                             if (!$invStock) {
                                 $invStock = \App\Models\InventoryStock::create([
@@ -396,7 +402,7 @@ class GoodsReceiptController extends Controller
                                 ]);
                             } catch (\Exception $e) {}
 
-                            // 🔥 CATAT KE STOCK MUTATIONS JUGA SEBAGAI TRACKER 🔥
+                            // CATAT KE STOCK MUTATIONS JUGA SEBAGAI TRACKER
                             \App\Models\StockMutation::create([
                                 'item_id'          => $masterItem->id,
                                 'warehouse_id'     => $targetWarehouseId,

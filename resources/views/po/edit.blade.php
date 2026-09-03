@@ -120,18 +120,44 @@
             <div id="itemsContainer">
                 @foreach($po->items as $item)
                     @php
+                        // ===================================================================
+                        // 🔥 RADAR INTELIJEN JATAH PR (DIPERBARUI UNTUK MODE EDIT PO) 🔥
+                        // ===================================================================
+
                         $masterItem = $item->item;
+                        $baseUomId = optional($masterItem)->uom_id;
                         $baseUomName = optional(optional($masterItem)->uom)->name ?? 'PCS';
 
-                        $currentConvRate = 1;
-                        $savedUomId = $item->uom_id ?? $item->item_uom_id ?? null;
+                        // 1. CARI PR ITEM (Sumber Jatah Utama)
+                        $prItem = $item->purchaseRequestItem ?? \App\Models\PurchaseRequestItem::find($item->purchase_request_item_id);
+                        $prItemConvRate = 1;
+                        $prUomId = optional($prItem)->uom_id ?? $baseUomId;
 
-                        if (!empty($savedUomId) && optional($masterItem)->itemUoms) {
-                            $poUomDb = collect(optional($masterItem)->itemUoms)->where('id', $savedUomId)->first();
-                            if ($poUomDb) {
-                                $currentConvRate = (float) $poUomDb->conversion_qty;
-                            }
+                        if ($prUomId != $baseUomId && optional($masterItem)->itemUoms) {
+                            $altUom = collect($masterItem->itemUoms)->where('id', $prUomId)->first()
+                                   ?? collect($masterItem->itemUoms)->where('uom_id', $prUomId)->first();
+                            if ($altUom) $prItemConvRate = (float) $altUom->conversion_qty;
                         }
+
+                        $prTargetBaseQty = (float)(optional($prItem)->qty ?? 0) * $prItemConvRate;
+                        $prOrderedBaseQty = (float)(optional($prItem)->ordered_qty ?? 0) * $prItemConvRate;
+
+                        // 2. CARI KONVERSI PO ITEM SAAT INI
+                        $currentConvRate = 1;
+                        $savedUomId = $item->uom_id ?? $item->item_uom_id ?? $baseUomId;
+
+                        if ($savedUomId != $baseUomId && optional($masterItem)->itemUoms) {
+                            $poUomDb = collect($masterItem->itemUoms)->where('id', $savedUomId)->first()
+                                    ?? collect($masterItem->itemUoms)->where('uom_id', $savedUomId)->first();
+                            if ($poUomDb) $currentConvRate = (float) $poUomDb->conversion_qty;
+                        }
+
+                        // 3. KALKULASI SISA JATAH (Jatah Saat Ini + Kuantitas PO Ini Yang Sedang Diedit)
+                        $currentPoItemBaseQty = (float)($item->qty ?? $item->qty_ordered ?? 0) * $currentConvRate;
+                        $sisaBaseQty = max(0, $prTargetBaseQty - $prOrderedBaseQty + $currentPoItemBaseQty);
+
+                        $remainingNominal = $currentConvRate > 0 ? ($sisaBaseQty / $currentConvRate) : 0;
+                        $remainingNominal = round($remainingNominal, 2);
                     @endphp
 
                     <div class="mb-4 border-0 shadow-sm card item-row" style="border-radius: 12px; overflow: hidden;">
@@ -197,29 +223,46 @@
 
                             {{-- BARIS 2: QTY, Satuan, Harga, Diskon, Pajak --}}
                             <div class="row g-3">
-                                {{-- QTY & SATUAN --}}
+                                {{-- QTY & SATUAN (DIJAGA RADAR LIMIT PR) --}}
                                 <div class="col-md-3">
                                     <label class="form-label small fw-bold text-dark">Qty & Satuan <span class="text-danger">*</span></label>
                                     <div class="mb-1 shadow-sm input-group-modern">
-                                        <input type="number" name="po_items[{{ $item->id }}][qty]" id="qty-input-{{ $item->id }}" class="text-center form-control fw-bolder qty-input text-primary" value="{{ (float)$item->qty_ordered }}" min="0.01" step="0.01" oninput="calculateRow(this)" required>
+                                        <input type="number" name="po_items[{{ $item->id }}][qty]" id="qty-input-{{ $item->id }}" class="text-center form-control fw-bolder qty-input text-primary" value="{{ (float)($item->qty ?? $item->qty_ordered) }}" max="{{ $remainingNominal }}" min="0.01" step="0.01" data-base-remaining="{{ $sisaBaseQty }}" oninput="calculateRow(this)" required>
                                     </div>
 
-                                    <select name="po_items[{{ $item->id }}][uom_id]" class="shadow-sm form-select border-primary text-primary fw-bold uom-selector" data-current-conv="{{ $currentConvRate }}" onchange="updateRowUom(this, {{ $item->id }})">
-                                        <option value="" data-name="{{ $baseUomName }}" data-conv="1" {{ empty($savedUomId) ? 'selected' : '' }}>
+                                    <select name="po_items[{{ $item->id }}][uom_id]" class="shadow-sm form-select border-primary text-primary fw-bold uom-selector select2-init" data-current-conv="{{ $currentConvRate }}" onchange="updateRowUom(this, {{ $item->id }})">
+                                        {{-- Tampilkan Satuan Dasar --}}
+                                        <option value="{{ $baseUomId }} " data-name="{{ $baseUomName }}" data-conv="1" {{ ($currentConvRate == 1) ? 'selected' : '' }}>
                                             {{ $baseUomName }} (Dasar)
                                         </option>
+
+                                        {{-- Tampilkan Satuan Alternatif --}}
                                         @if(optional($masterItem)->itemUoms)
                                             @foreach($masterItem->itemUoms as $altUom)
-                                                <option value="{{ $altUom->id }}"
-                                                        data-name="{{ $altUom->uom_name }} (Isi: {{ (float)$altUom->conversion_qty }} {{ $baseUomName }})"
-                                                        data-conv="{{ (float)$altUom->conversion_qty }}"
-                                                        {{ $savedUomId == $altUom->id ? 'selected' : '' }}>
-                                                    {{ $altUom->uom_name }} (Isi: {{ (float)$altUom->conversion_qty }})
-                                                </option>
+                                                @php
+                                                    $altVal = $altUom->uom_id ?? $altUom->id;
+                                                    $altConv = (float)$altUom->conversion_qty;
+                                                    // Trik Kamuflase Tabrakan Select2
+                                                    $safeAltVal = $altVal . str_repeat(' ', $loop->iteration + 1);
+
+                                                    // 🔥 PERBAIKAN: Cocokkan berdasarkan conversion_qty agar kebal tabrakan ID 🔥
+                                                    $isSelected = ($currentConvRate == $altConv && $altConv != 1);
+                                                @endphp
+                                                @if($altConv != 1)
+                                                    <option value="{{ $safeAltVal }}" data-name="{{ $altUom->uom_name }} (Isi: {{ $altConv }} {{ $baseUomName }})" data-conv="{{ $altConv }}" {{ $isSelected ? 'selected' : '' }}>
+                                                        {{ $altUom->uom_name }} (Isi: {{ $altConv }})
+                                                    </option>
+                                                @endif
                                             @endforeach
                                         @endif
                                     </select>
+
                                     <input type="hidden" name="po_items[{{ $item->id }}][uom]" id="uom-name-{{ $item->id }}" value="{{ $item->uom }}">
+
+                                    {{-- Teks Bantuan Sisa PR --}}
+                                    <div class="mt-1 text-muted" style="font-size: 0.7rem;" id="max-help-{{ $item->id }}">
+                                        Sisa Jatah PR: <strong class="text-danger" id="max-val-{{ $item->id }}">{{ $remainingNominal }}</strong>
+                                    </div>
                                 </div>
 
                                 {{-- HARGA --}}
@@ -365,34 +408,33 @@
 
                             <label class="mt-3 form-label fw-bold text-dark"><i class="bi bi-cloud-upload me-1 text-primary"></i>Upload Tambahan Header PO</label>
                             <input type="file" name="header_attachments[]" class="form-control form-control-sm border-secondary-subtle" multiple accept=".pdf,.jpg,.jpeg,.png,.xls,.xlsx,.doc,.docx">
-
-
                         </div>
                     </div>
                 </div>
             </div>
+
             {{-- 🔥 PENGATURAN PERSETUJUAN (WORKFLOW) 🔥 --}}
-                            <div class="mb-4 border-0 shadow-sm card rounded-4 border-start border-warning">
-                                <div class="py-3 bg-white card-header border-bottom d-flex align-items-center">
-                                    <div class="p-2 bg-warning bg-opacity-10 text-warning rounded-circle me-3 d-flex align-items-center justify-content-center" style="width: 35px; height: 35px;">
-                                        <i class="bi bi-diagram-3-fill"></i>
-                                    </div>
-                                    <h6 class="mb-0 fw-bold">Jalur Persetujuan Khusus (Opsional)</h6>
-                                </div>
-                                <div class="p-4 card-body bg-light rounded-bottom-4">
-                                    <select name="custom_workflow_id" class="form-select select2-init border-warning-subtle fw-bold text-dark">
-                                        <option value="">-- Ikuti Standar Departemen (Default) --</option>
-                                        @if(isset($customWorkflows) && count($customWorkflows) > 0)
-                                            @foreach($customWorkflows as $cw)
-                                                <option value="{{ $cw->id }}" {{ (isset($selectedWorkflowId) && $selectedWorkflowId == $cw->id) ? 'selected' : '' }}>{{ $cw->name }}</option>
-                                            @endforeach
-                                        @endif
-                                    </select>
-                                    <div class="mt-2 form-text text-muted" style="font-size: 0.75rem;">
-                                        <i class="bi bi-info-circle me-1"></i> Biarkan kosong jika ingin menggunakan rute standar departemen. <strong class="text-danger">Perhatian: Mengubah rute di sini saat Edit akan me-reset persetujuan atasan dari awal!</strong>
-                                    </div>
-                                </div>
-                            </div>
+            <div class="mb-4 border-0 shadow-sm card rounded-4 border-start border-warning">
+                <div class="py-3 bg-white card-header border-bottom d-flex align-items-center">
+                    <div class="p-2 bg-warning bg-opacity-10 text-warning rounded-circle me-3 d-flex align-items-center justify-content-center" style="width: 35px; height: 35px;">
+                        <i class="bi bi-diagram-3-fill"></i>
+                    </div>
+                    <h6 class="mb-0 fw-bold">Jalur Persetujuan Khusus (Opsional)</h6>
+                </div>
+                <div class="p-4 card-body bg-light rounded-bottom-4">
+                    <select name="custom_workflow_id" class="form-select select2-init border-warning-subtle fw-bold text-dark">
+                        <option value="">-- Ikuti Standar Departemen (Default) --</option>
+                        @if(isset($customWorkflows) && count($customWorkflows) > 0)
+                            @foreach($customWorkflows as $cw)
+                                <option value="{{ $cw->id }}" {{ (isset($selectedWorkflowId) && $selectedWorkflowId == $cw->id) ? 'selected' : '' }}>{{ $cw->name }}</option>
+                            @endforeach
+                        @endif
+                    </select>
+                    <div class="mt-2 form-text text-muted" style="font-size: 0.75rem;">
+                        <i class="bi bi-info-circle me-1"></i> Biarkan kosong jika ingin menggunakan rute standar departemen. <strong class="text-danger">Perhatian: Mengubah rute di sini saat Edit akan me-reset persetujuan atasan dari awal!</strong>
+                    </div>
+                </div>
+            </div>
 
         </div>
 
@@ -568,21 +610,32 @@
 
     function removeRow(btn) { btn.closest('tr').remove(); calculateGrandTotal(); }
 
+    // 🔥 LOGIKA RESET MAKSIMAL SAAT GANTI SATUAN (UX FIX) 🔥
     function updateRowUom(selectEl, index) {
         let selectedOption = selectEl.options[selectEl.selectedIndex];
         let newConvRate = parseFloat(selectedOption.getAttribute('data-conv')) || 1;
-        let oldConvRate = parseFloat(selectEl.getAttribute('data-current-conv')) || 1;
         let newUomName = selectedOption.getAttribute('data-name') || '';
 
         let uomNameInput = document.getElementById(`uom-name-${index}`);
         if(uomNameInput) uomNameInput.value = newUomName;
 
         let qtyInput = document.getElementById(`qty-input-${index}`);
-        let currentQty = parseFloat(qtyInput.value) || 0;
+        let sisaBaseQty = parseFloat(qtyInput.getAttribute('data-base-remaining')) || 0;
 
-        let newQty = (currentQty * oldConvRate) / newConvRate;
-        qtyInput.value = parseFloat(newQty.toFixed(2));
+        // Hitung Jatah Maksimal di Satuan Baru
+        let newMaxVal = sisaBaseQty / newConvRate;
+
+        // Terapkan batas maksimal HTML
+        qtyInput.max = newMaxVal;
+
+        // Reset angka di kotak ke jatah maksimal agar tidak ada desimal aneh
+        qtyInput.value = parseFloat(newMaxVal.toFixed(2));
+
         selectEl.setAttribute('data-current-conv', newConvRate);
+
+        let helpText = document.getElementById(`max-val-${index}`);
+        if(helpText) helpText.innerText = newMaxVal.toFixed(2);
+
         calculateRow(qtyInput);
     }
 
@@ -790,7 +843,7 @@
 
         document.querySelectorAll('.ckeditor-spec').forEach(ta => initCKEditor(ta.id));
 
-        // 1. Tembak UI Mata Uang secara Paksa! (Untuk mengatasi glitch di gambar)
+        // 1. Tembak UI Mata Uang secara Paksa!
         updateCurrencySymbol();
 
         // 2. Tembak UI Pajak
@@ -832,6 +885,54 @@
             }
             return;
         }
+
+        // =========================================================================
+        // 🔥 RADAR SISA JATAH PR (ANTI-BOCOR) 🔥
+        // =========================================================================
+        let prItemTotals = {};
+        let isValidSisa = true;
+        let errorMessage = '';
+
+        document.querySelectorAll('.item-row').forEach(row => {
+            let prItemIdInput = row.querySelector('input[name$="[pr_item_id]"]');
+            if (prItemIdInput) {
+                let prItemId = prItemIdInput.value;
+                let itemName = row.querySelector('.fw-bolder.text-dark').innerText;
+                let qtyInput = row.querySelector('.qty-input');
+                let uomSelect = row.querySelector('.uom-selector');
+
+                let qty = parseFloat(qtyInput.value) || 0;
+                let convRate = parseFloat(uomSelect.getAttribute('data-current-conv')) || 1;
+                let baseRemaining = parseFloat(qtyInput.getAttribute('data-base-remaining')) || 0;
+
+                let baseQtyOrdered = qty * convRate;
+
+                if(!prItemTotals[prItemId]) {
+                    prItemTotals[prItemId] = { total: 0, max: baseRemaining, name: itemName };
+                }
+                prItemTotals[prItemId].total += baseQtyOrdered;
+            }
+        });
+
+        for (const [prItemId, data] of Object.entries(prItemTotals)) {
+            if (parseFloat(data.total.toFixed(4)) > parseFloat(data.max.toFixed(4))) {
+                isValidSisa = false;
+                errorMessage += `Barang <b>${data.name}</b> melebihi sisa jatah PR!<br><small>Total Input Anda: ${data.total} (Eceran) <br>Jatah Tersedia: Hanya ${data.max} (Eceran)</small><br><br>`;
+            }
+        }
+
+        if(!isValidSisa) {
+            $('input[type="file"]').prop('disabled', false);
+            Swal.fire({
+                title: 'Kuantitas Melebihi PR!',
+                html: errorMessage + '<span class="text-danger fw-bold" style="font-size:0.85rem;">Silakan kurangi angka pada item tersebut.</span>',
+                icon: 'error',
+                confirmButtonColor: '#dc3545',
+                confirmButtonText: 'Oke, Saya Revisi'
+            });
+            return;
+        }
+        // =========================================================================
 
         $('input[type="file"]').each(function() {
             if ($(this).val() === '') $(this).prop('disabled', true);

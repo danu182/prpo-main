@@ -143,10 +143,30 @@
                         <label class="mb-2 small text-dark fw-bold">Kemasan / Satuan <span class="text-danger">*</span></label>
                         <select name="items[{{ $iIdx }}][uom_id]" class="form-select select-uom fw-bold border-secondary-subtle bg-light" required>
                             @if($item->item)
-                                @php $baseUom = optional($item->item->uom)->name ?? 'Unit'; @endphp
-                                <option value="{{ $item->item->uom_id }}" {{ $item->uom_id == $item->item->uom_id ? 'selected' : '' }}>{{ $baseUom }}</option>
+                                @php
+                                    $baseUomId = $item->item->uom_id;
+                                    $baseUomName = optional($item->item->uom)->name ?? 'Unit';
+                                    $selectedUomId = $item->uom_id ?? $baseUomId;
+
+                                    // 🔥 KUNCI 1: Tandai secara eksklusif jika yang terpilih adalah Satuan Dasar (Pieces)
+                                    $isBaseSelected = ($selectedUomId == $baseUomId);
+                                @endphp
+
+                                <option value="{{ $baseUomId }}" {{ $isBaseSelected ? 'selected' : '' }}>
+                                    {{ $baseUomName }}
+                                </option>
+
                                 @foreach($item->item->itemUoms as $alt)
-                                    <option value="{{ $alt->id }}" {{ $item->uom_id == $alt->id ? 'selected' : '' }}>{{ $alt->uom_name }} (Isi: {{ $alt->conversion_qty }} {{ $baseUom }})</option>
+                                    @php
+                                        // Gunakan uom_id yang benar jika ada, fallback ke id tabel pivot
+                                        $altValue = $alt->uom_id ?? $alt->id;
+
+                                        // 🔥 KUNCI 2: Cegah "Pack" mencuri status selected jika ID-nya kebetulan sama-sama '1'
+                                        $isSelected = ($selectedUomId == $altValue) && !($isBaseSelected && $altValue == $baseUomId);
+                                    @endphp
+                                    <option value="{{ $altValue }}" {{ $isSelected ? 'selected' : '' }}>
+                                        {{ $alt->uom_name ?? 'Pack' }} (Isi: {{ $alt->conversion_qty }} {{ $baseUomName }})
+                                    </option>
                                 @endforeach
                             @else
                                 <option value="{{ $item->uom_id }}" selected>{{ is_string($item->uom) ? $item->uom : 'Unit' }}</option>

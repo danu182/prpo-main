@@ -274,8 +274,28 @@
                                                 @endif
                                             </td>
 
-                                            {{-- KOLOM 3 & 4: APPROVAL ATAU STATUS --}}
+
                                             @if($canApprove)
+                                            {{-- KOLOM 3 & 4: APPROVAL ATAU STATUS --}}
+                                                @php
+                                                    // 🔥 LOGIKA ANTI-TABRAKAN ID UNTUK HALAMAN SHOW 🔥
+                                                    $baseUomId = optional($item->item)->uom_id;
+                                                    $baseUomName = optional(optional($item->item)->uom)->name ?? 'Unit';
+
+                                                    // Default tampilan ke Satuan Dasar (Pieces)
+                                                    $tampilanSatuanLengkap = strtoupper($baseUomName);
+
+                                                    // Jika ID dari PR BUKAN Satuan Dasar, baru cari di tabel alternatif (Pack, Box, dll)
+                                                    if ($item->uom_id != $baseUomId && optional($item->item)->itemUoms) {
+                                                        // Coba cari berdasarkan id pivot atau uom_id
+                                                        $altUom = $item->item->itemUoms->firstWhere('id', $item->uom_id)
+                                                                ?? $item->item->itemUoms->firstWhere('uom_id', $item->uom_id);
+
+                                                        if ($altUom) {
+                                                            $tampilanSatuanLengkap = strtoupper($altUom->uom_name) . ' (Isi: ' . (float)$altUom->conversion_qty . ' ' . $baseUomName . ')';
+                                                        }
+                                                    }
+                                                @endphp
                                                 <td class="py-4 text-center approval-column">
                                                     <div class="mx-auto shadow-sm input-group input-group-sm" style="max-width: 120px;">
                                                         <input type="number" name="items[{{ $item->id }}][qty]" class="text-center form-control fw-bold text-success border-success" value="{{ (float)$item->qty }}" max="{{ (float)$item->qty }}" min="0" step="0.01">
