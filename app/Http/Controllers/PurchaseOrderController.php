@@ -2093,4 +2093,67 @@ class PurchaseOrderController extends Controller
 
         return $prefix . str_pad($newSequence, 4, '0', STR_PAD_LEFT);
     }
+
+
+    // =========================================================================
+    // FUNGSI CANCEL / BATALKAN PO DENGAN REFUND PR OTOMATIS
+    // =========================================================================
+    public function cancel(Request $request, $slug)
+    {
+        $request->validate([
+            'cancel_reason' => 'required|string|max:255'
+        ]);
+
+        DB::beginTransaction();
+        try {
+            $po = \App\Models\PurchaseOrder::with('items')->where('po_number', $slug)->firstOrFail();
+
+            $currentStatusSlug = strtolower(optional($po->status)->slug);
+            $unallowableStatuses = ['completed', 'fully_received', 'closed', 'canceled', 'cancelled', 'rejected'];
+
+            if (in_array($currentStatusSlug, $unallowableStatuses)) {
+                throw new \Exception('Gagal: PO yang sudah selesai, diretur, atau dibatalkan tidak bisa dibatalkan ulang.');
+            }
+
+            $statusPoCanceled = \App\Models\Status::where('type', 'PO')->whereIn('slug', ['canceled', 'cancelled'])->first();
+            if (!$statusPoCanceled) {
+                // Fallback jika belum ada slug canceled
+                $statusPoCanceled = \App\Models\Status::where('type', 'PO')->where('slug', 'rejected')->first();
+            }
+
+            if ($statusPoCanceled) {
+                $po->update(['status_id' => $statusPoCanceled->id]);
+            }
+
+            // Batalkan matriks persetujuan yang masih gantung
+            \App\Models\DocumentApproval::where('document_id', $po->id)
+                ->whereIn('document_type', [get_class($po), 'PO', 'PurchaseOrder'])
+                ->where('status', 'PENDING')
+                ->update(['status' => 'REJECTED', 'note' => 'Batal Otomatis (PO di-Cancel). Alasan: ' . $request->cancel_reason]);
+
+            // Catat history
+            $this->logHistory($po->id, 'PO Dibatalkan', 'Dokumen PO telah dibatalkan. Alasan: **' . $request->cancel_reason . '**');
+
+            // 🔥 JALANKAN SELF-HEALING PR OTOMATIS 🔥
+            // Ini yang akan mengembalikan sisa jatah PR saat PO dibatalkan!
+            $prItemIds = $po->items->pluck('purchase_request_item_id')->filter()->unique()->toArray();
+            if (!empty($prItemIds)) {
+                foreach($prItemIds as $pid) {
+                    $this->recalculatePrItemFulfillment($pid);
+                }
+                $this->checkAndUpdatePrStatus($po->purchase_request_id);
+            }
+
+            DB::commit();
+            return redirect()->route('po.index')->with('success', 'PO Berhasil dibatalkan! Kuantitas PR telah kembali normal.');
+
+        } catch (\Exception $e) {
+            DB::rollBack();
+            return back()->with('error', 'Gagal membatalkan PO: ' . $e->getMessage());
+        }
+    }
+
+
+
+
 }

@@ -60,7 +60,7 @@ class GoodsIssueController extends Controller
             'requester_name' => 'required|string|max:255',
             'items'          => 'required|array|min:1',
             'items.*.item_id' => 'required|exists:items,id',
-            'items.*.item_name' => 'nullable|string|max:255', // Validasi Nama Spesifik
+            'items.*.item_name' => 'nullable|string|max:255',
         ]);
 
         $warehouse = \App\Models\Warehouse::find($request->warehouse_id);
@@ -113,7 +113,6 @@ class GoodsIssueController extends Controller
                     $item = \App\Models\Item::with(['uom'])->findOrFail($data['item_id']);
                     $satuanDasar = optional($item->uom)->name ?? 'Pieces';
 
-                    // 🔥 TANGKAP NAMA SPESIFIK (JIKA ADA) 🔥
                     $namaSpesifik = $data['item_name'] ?? $item->name;
 
                     $isModeAsset = !empty($data['asset_ids']);
@@ -122,6 +121,11 @@ class GoodsIssueController extends Controller
 
                     $daftarInventarisBaru = [];
                     $snStringForNote = '';
+
+                    // 🔥 DETEKSI HAK VETO MANUAL DARI USER 🔥
+                    $itemNote = $data['notes'] ?? '';
+                    // Jika user sudah ngetik "Ref GR:", "Ref PO:", dsb, Auto-FIFO akan dinonaktifkan untuk baris ini
+                    $isManualRefOverride = preg_match('/Ref (GR|PO|RTV|GI|SA)/i', $itemNote);
 
                     if ($isModeAsset) {
                         $assetIds = $data['asset_ids'];
@@ -155,8 +159,8 @@ class GoodsIssueController extends Controller
                             ]);
                         }
 
-                        $itemNote = "Dikeluarkan Aset:\n" . implode("\n", $assetInfoArr);
-                        if (!empty($data['notes'])) $itemNote .= "\nCatatan: " . $data['notes'];
+                        $itemNotePrefix = "Dikeluarkan Aset:\n" . implode("\n", $assetInfoArr);
+                        $itemNote = $itemNote ? $itemNotePrefix . "\nCatatan: " . $itemNote : $itemNotePrefix;
 
                         $balanceBefore = (float) $item->current_stock;
                         $balanceAfter = $balanceBefore - $qtyRequested;
@@ -222,13 +226,10 @@ class GoodsIssueController extends Controller
                             }
                         }
 
-                        $itemNote = $data['notes'] ?? '';
                         if ($snStringForNote) {
                             $itemNote .= ($itemNote ? " | " : "") . "SN: " . $snStringForNote;
                         }
-                        $itemNote = trim($itemNote . " | Dikeluarkan fisik: {$qtyInput} {$finalUomString}", ' |');
 
-                        // PEMOTONGAN INVENTORY STOCK
                         $issueMethod = $item->issue_method ?? 'FIFO';
                         $sortDirection = ($issueMethod === 'LIFO') ? 'desc' : 'asc';
 
@@ -251,6 +252,24 @@ class GoodsIssueController extends Controller
                         $qtySisa = $qtyRequested;
                         $saldoTotalSaatIni = (float) $item->current_stock;
 
+                        // =========================================================================
+                        // 🔥 MESIN KECERDASAN BUATAN AUTO-FIFO (HANYA AKTIF JIKA TIDAK ADA VETO) 🔥
+                        // =========================================================================
+                        $trueOutBefore = \App\Models\StockMutation::where('item_id', $item->id)
+                            ->where('warehouse_id', $request->warehouse_id)
+                            ->where('type', '!=', 'IN')
+                            ->where('reference_number', 'not like', 'GI-AST%')
+                            ->sum('qty');
+
+                        $inMutations = \App\Models\StockMutation::where('item_id', $item->id)
+                            ->where('warehouse_id', $request->warehouse_id)
+                            ->where('type', 'IN')
+                            ->orderBy('created_at', 'asc')
+                            ->orderBy('id', 'asc')
+                            ->get();
+
+                        $allFifoRefsItem = [];
+
                         foreach ($availableStocks as $stockRow) {
                             if ($qtySisa <= 0) break;
                             $potong = min($stockRow->stock_qty, $qtySisa);
@@ -261,10 +280,59 @@ class GoodsIssueController extends Controller
                             $stockRow->decrement('stock_qty', $potong);
                             $qtySisa -= $potong;
 
+                            $fifoRefs = [];
+
+                            // JALANKAN LOGIKA PELACAKAN HANYA JIKA TIDAK ADA INPUT MANUAL
+                            if (!$isManualRefOverride) {
+                                $qtyToFind = $potong;
+                                $skipped = 0;
+                                $tempTrueOut = $trueOutBefore;
+
+                                foreach($inMutations as $inMut) {
+                                    if ($skipped + $inMut->qty <= $tempTrueOut) {
+                                        $skipped += $inMut->qty;
+                                        continue;
+                                    }
+
+                                    $availableInThisMut = $inMut->qty - max(0, $tempTrueOut - $skipped);
+                                    if ($availableInThisMut <= 0) {
+                                        $skipped += $inMut->qty;
+                                        continue;
+                                    }
+
+                                    $take = min($availableInThisMut, $qtyToFind);
+                                    $qtyToFind -= $take;
+
+                                    $ref = $inMut->reference_number;
+                                    if ($ref && !in_array($ref, $fifoRefs)) {
+                                        if (str_starts_with($ref, 'GR')) $fifoRefs[] = "Ref GR: $ref";
+                                        elseif (str_starts_with($ref, 'SA')) $fifoRefs[] = "Ref GR: $ref (Saldo Awal)";
+                                        else $fifoRefs[] = "Ref GR: $ref";
+                                    }
+
+                                    $tempTrueOut += $take;
+                                    if ($qtyToFind <= 0) break;
+                                }
+                                $trueOutBefore += $potong;
+                            }
+
+                            $fifoString = !empty($fifoRefs) ? implode(', ', $fifoRefs) : '';
+                            if (!empty($fifoRefs)) {
+                                $allFifoRefsItem = array_merge($allFifoRefsItem, $fifoRefs);
+                            }
+
                             $mutasiNoteExt = "";
                             if (!empty($snStringForNote)) {
-                                $mutasiNoteExt = " [SN: {$snStringForNote}]";
+                                $mutasiNoteExt .= " [SN: {$snStringForNote}]";
                             }
+
+                            // JIKA ADA HASIL PELACAKAN (SISTEM YANG NYARI SENDIRI), TAMBAHKAN CAP AUTO-FIFO
+                            if (!empty($fifoString)) {
+                                $mutasiNoteExt .= "<br><small class='text-muted'>(Auto-FIFO: {$fifoString})</small>";
+                            }
+
+                            // JIKA USER NGETIK MANUAL, KITA HARGAI KETIKANNYA (Jangan ditiban)
+                            $catatanUser = $itemNote ? " - " . $itemNote : "";
 
                             \App\Models\StockMutation::create([
                                 'item_id'          => $item->id,
@@ -274,19 +342,25 @@ class GoodsIssueController extends Controller
                                 'balance_before'   => $balanceBefore,
                                 'balance_after'    => $balanceAfter,
                                 'reference_number' => $giNumber,
-                                'notes'            => "Keluar ke {$request->requester_name}. Barang: {$namaSpesifik}.{$mutasiNoteExt}",
+                                'notes'            => "Keluar ke {$request->requester_name}. Barang: {$namaSpesifik}{$catatanUser}{$mutasiNoteExt}",
                                 'created_by'       => auth()->id(),
                             ]);
                         }
 
                         $item->update(['current_stock' => $saldoTotalSaatIni]);
+
+                        // TERAPKAN CAP AUTO FIFO DI LEVEL ITEM GI UNTUK PDF SURAT JALAN KELUAR
+                        $finalFifoText = implode(', ', array_unique($allFifoRefsItem));
+                        if (!$isManualRefOverride && !empty($finalFifoText)) {
+                            $itemNote = trim($itemNote . " | Auto-Trace: {$finalFifoText}", ' |');
+                        }
                     }
 
                     // Simpan Detail Pengeluaran (Goods Issue Item)
                     \App\Models\GoodsIssueItem::create([
                         'goods_issue_id' => $gi->id,
                         'item_id'        => $item->id,
-                        'item_name'      => $namaSpesifik, // 🔥 SIMPAN NAMA SPESIFIK 🔥
+                        'item_name'      => $namaSpesifik,
                         'qty_issued'     => $qtyInput,
                         'uom_id'         => $uomId ?: null,
                         'uom'            => $finalUomString,
@@ -311,7 +385,7 @@ class GoodsIssueController extends Controller
                         \App\Models\EmployeeInventoryHistory::create([
                             'employee_name'    => $request->requester_name,
                             'item_id'          => $item->id,
-                            'type'             => 'IN', // 🔥 UBAH DARI 'OUT' MENJADI 'IN' (Karyawan Menerima Barang)
+                            'type'             => 'IN',
                             'qty'              => $qtyRequested,
                             'reference_number' => $giNumber,
                             'notes'            => "Diserahkan ke karyawan via GI: {$giNumber}. Unit: " . $invStringForNote,
@@ -321,7 +395,7 @@ class GoodsIssueController extends Controller
             });
 
             return redirect()->route('goods-issues.show', $gi->gi_number)
-                             ->with(['success' => 'Pengeluaran Berhasil! Inventaris telah diregistrasi otomatis ke nama Karyawan.', 'print_gi_slug' => $gi->gi_number]);
+                             ->with(['success' => 'Pengeluaran Berhasil! Stok fisik telah terpotong dan jejak referensi terekam sempurna.', 'print_gi_slug' => $gi->gi_number]);
 
         } catch (\Exception $e) {
             \Log::error('Error Simpan GI: ' . $e->getMessage() . ' - L: ' . $e->getLine());
@@ -421,7 +495,6 @@ class GoodsIssueController extends Controller
                 throw new \Exception("GAGAL VOID: Laporan bulan {$txMonthYear} sudah ditutup! Gunakan fitur Retur atau Adjustment.");
             }
 
-            // PROSES KEMBALIKAN STOK ATAU ASET
             foreach ($gi->items as $giItem) {
                 $masterItem = \App\Models\Item::lockForUpdate()->find($giItem->item_id);
                 if (!$masterItem) continue;
@@ -590,14 +663,12 @@ class GoodsIssueController extends Controller
 
             if ($totalStockDisplay <= 0) continue;
 
-            // 🔥 CARI NAMA SPESIFIK DARI RIWAYAT PO 🔥
             $historicalNames = \App\Models\PurchaseOrderItem::where('item_id', $item->id)
                                 ->whereNotNull('item_name')
                                 ->distinct()
                                 ->pluck('item_name')
                                 ->toArray();
 
-            // Selalu masukkan nama master barang sebagai default / opsi utama
             if (!in_array($item->name, $historicalNames)) {
                 array_unshift($historicalNames, $item->name);
             }
@@ -611,7 +682,7 @@ class GoodsIssueController extends Controller
                 'id' => $item->id,
                 'text' => $text,
                 'raw_name' => $item->name,
-                'historical_names' => $historicalNames, // 🔥 LEMPAR DAFTAR NAMA KE BLADE
+                'historical_names' => $historicalNames,
                 'is_asset' => $item->is_asset,
                 'is_trackable' => $item->is_trackable,
                 'stock' => $totalStockDisplay,
@@ -736,13 +807,12 @@ class GoodsIssueController extends Controller
     {
         $search = $request->search;
         $itemId = $request->item_id;
-        $warehouseId = $request->warehouse_id; // 🔥 TANGKAP ID GUDANG DARI FORM AJAX 🔥
+        $warehouseId = $request->warehouse_id;
 
         $query = \DB::table('item_serials')
                     ->where('item_id', $itemId)
                     ->where('status', 'AVAILABLE');
 
-        // 🔥 KUNCI UTAMA: FILTER BERDASARKAN GUDANG 🔥
         if ($warehouseId) {
             $query->where('warehouse_id', $warehouseId);
         }

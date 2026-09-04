@@ -10,7 +10,7 @@
     .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: #a8a8a8; }
 </style>
 
-<div class="container-fluid pb-5 text-dark">
+<div class="pb-5 container-fluid text-dark">
     {{-- HEADER --}}
     <div class="gap-3 mb-4 d-flex flex-column flex-md-row justify-content-between align-items-md-center">
         <div>
@@ -205,9 +205,26 @@
                                     $snText = trim(str_replace(']', '', $parts[1] ?? ''));
                                 }
 
-                                $mainText = preg_replace('/\(Ref PO:\s*(.*?)\)/i', '<div class="mt-2 mb-1"><span class="px-2 py-1 border badge bg-primary-subtle text-primary border-primary-subtle"><i class="bi bi-file-earmark-text me-1"></i>Ref PO: $1</span></div>', $mainText);
+                                // =========================================================================
+                                // 🔥 SULAP REFERENSI MENJADI BADGE (REGEX CERDAS ANTI-GAGAL) 🔥
+                                // =========================================================================
+
+                                // 1. Ref PO
+                                $mainText = preg_replace('/\(?Ref PO:\s*([^),.]+)\)?/i', '<div class="mt-2 mb-1"><span class="px-2 py-1 border badge bg-primary-subtle text-primary border-primary-subtle"><i class="bi bi-receipt me-1"></i>Ref PO: $1</span></div>', $mainText);
+
+                                // 2. Ref GR (Penerimaan)
+                                $mainText = preg_replace('/\(?Ref GR:\s*([^),.]+)\)?/i', '<div class="mt-2 mb-1"><span class="px-2 py-1 border badge bg-success-subtle text-success border-success-subtle"><i class="bi bi-box-seam me-1"></i>Ref GR: $1</span></div>', $mainText);
+
+                                // 3. Ref RTV (Retur)
+                                $mainText = preg_replace('/\(?Ref RTV:\s*([^),.]+)\)?/i', '<div class="mt-2 mb-1"><span class="px-2 py-1 border badge bg-danger-subtle text-danger border-danger-subtle"><i class="bi bi-arrow-return-left me-1"></i>Ref RTV: $1</span></div>', $mainText);
+
+                                // 4. Ref GI (Pemakaian / Hibah)
+                                $mainText = preg_replace('/\(?Ref GI:\s*([^),.]+)\)?/i', '<div class="mt-2 mb-1"><span class="px-2 py-1 border badge bg-warning-subtle text-warning-emphasis border-warning-subtle"><i class="bi bi-box-arrow-right me-1"></i>Ref GI: $1</span></div>', $mainText);
+
+                                // Pemolesan awalan
                                 $mainText = str_replace('Retur ke Vendor.', '<strong class="text-danger"><i class="bi bi-arrow-return-left me-1"></i>Retur ke Vendor.</strong><br>', $mainText);
-                                $mainText = preg_replace('/^Masuk:/', '<strong class="text-success"><i class="bi bi-box-arrow-in-right me-1"></i>Masuk:</strong>', $mainText);
+                                $mainText = preg_replace('/^Masuk:/i', '<strong class="text-success"><i class="bi bi-box-arrow-in-right me-1"></i>Masuk:</strong>', $mainText);
+                                $mainText = preg_replace('/^Keluar:/i', '<strong class="text-danger"><i class="bi bi-box-arrow-right me-1"></i>Keluar:</strong>', $mainText);
 
                                 // =========================================================================
                                 // 🔥 KECERDASAN BUATAN UNTUK MELACAK SN DI SEMUA TRANSAKSI 🔥
@@ -252,7 +269,6 @@
                                             $realSns = \DB::table('item_serials')->where('return_to_vendor_id', $rtvDoc->id)->where('item_id', $mut->item_id)->where('warehouse_id', $mut->warehouse_id)->pluck('serial_number')->toArray();
                                         }
                                     } elseif (str_starts_with($mut->reference_number, 'ADJ/')) {
-                                        // 🔥 PELACAK SN MUTLAK UNTUK STOCK ADJUSTMENT 🔥
                                         $adjDoc = \DB::table('stock_adjustments')->where('adjustment_number', $mut->reference_number)->first();
                                         if ($adjDoc) {
                                             $realSns = \DB::table('item_serials')
@@ -262,7 +278,6 @@
                                                 ->toArray();
                                         }
                                     } elseif (str_starts_with($mut->reference_number, 'SO-')) {
-                                        // 🔥 PELACAK SN MUTLAK UNTUK STOCK OPNAME 🔥
                                         $soDoc = \DB::table('stock_opnames')->where('document_number', $mut->reference_number)->first();
                                         if ($soDoc) {
                                             $realSns = \DB::table('item_serials')
