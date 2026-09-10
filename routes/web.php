@@ -208,22 +208,32 @@ Route::middleware('auth')->group(function () {
         Route::get('/{id}/print', [StockAdjustmentController::class, 'print'])->name('print');
     });
 
-    // Modul Pengeluaran Barang (Goods Issue)
+   // Modul Pengeluaran Barang (Goods Issue)
     Route::prefix('goods-issues')->name('goods-issues.')->middleware(['can:manage_gi'])->group(function () {
-        Route::get('/', [App\Http\Controllers\GoodsIssueController::class, 'index'])->name('index');
-        Route::get('/create', [App\Http\Controllers\GoodsIssueController::class, 'create'])->name('create');
-        Route::post('/', [App\Http\Controllers\GoodsIssueController::class, 'store'])->name('store');
+        
+        // =========================================================
+        // 1. ROUTE KHUSUS AJAX LIVE SEARCH (HARUS DI ATAS {slug})
+        // =========================================================
+        Route::get('/api/search-items', [\App\Http\Controllers\GoodsIssueController::class, 'searchItems'])->name('search_items');
+        Route::get('/api/search-batches', [\App\Http\Controllers\GoodsIssueController::class, 'searchBatches'])->name('search_batches');
+        Route::get('/api/search-assets', [\App\Http\Controllers\GoodsIssueController::class, 'searchFixedAssets'])->name('search_assets');
+        Route::get('/api/search-sns', [\App\Http\Controllers\GoodsIssueController::class, 'searchSns'])->name('search_sns');
 
-        Route::get('/api/search-items', [App\Http\Controllers\GoodsIssueController::class, 'searchItems'])->name('search-items');
-        Route::get('/api/search-assets', [App\Http\Controllers\GoodsIssueController::class, 'searchFixedAssets'])->name('search-assets');
-        Route::get('/api/search-batches', [App\Http\Controllers\GoodsIssueController::class, 'searchBatches'])->name('search-batches');
-        Route::get('/api/search-sns', [App\Http\Controllers\GoodsIssueController::class, 'searchSns'])->name('search-sns');
+        // =========================================================
+        // 2. ROUTE STANDAR GI
+        // =========================================================
+        Route::get('/', [\App\Http\Controllers\GoodsIssueController::class, 'index'])->name('index');
+        Route::get('/create', [\App\Http\Controllers\GoodsIssueController::class, 'create'])->name('create');
+        Route::post('/', [\App\Http\Controllers\GoodsIssueController::class, 'store'])->name('store');
 
-        Route::get('/{slug}', [App\Http\Controllers\GoodsIssueController::class, 'show'])->name('show');
-        Route::get('/{slug}/print', [App\Http\Controllers\GoodsIssueController::class, 'print'])->name('print');
-        Route::get('/{slug}/print-labels', [App\Http\Controllers\GoodsIssueController::class, 'printLabels'])->name('print_labels');
-        Route::post('/{slug}/void', [App\Http\Controllers\GoodsIssueController::class, 'voidTransaction'])->name('void');
-        Route::get('/{slug}/bast', [App\Http\Controllers\GoodsIssueController::class, 'printBast'])->name('bast');
+        // =========================================================
+        // 3. ROUTE DETAIL / PARAMETER (HARUS DI PALING BAWAH)
+        // =========================================================
+        Route::get('/{slug}', [\App\Http\Controllers\GoodsIssueController::class, 'show'])->name('show');
+        Route::get('/{slug}/print', [\App\Http\Controllers\GoodsIssueController::class, 'print'])->name('print');
+        Route::get('/{slug}/print-labels', [\App\Http\Controllers\GoodsIssueController::class, 'printLabels'])->name('print_labels');
+        Route::post('/{slug}/void', [\App\Http\Controllers\GoodsIssueController::class, 'voidTransaction'])->name('void');
+        Route::get('/{slug}/bast', [\App\Http\Controllers\GoodsIssueController::class, 'printBast'])->name('bast');
     });
 
 

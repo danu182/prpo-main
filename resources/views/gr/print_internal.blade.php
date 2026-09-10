@@ -23,7 +23,7 @@
         .sign-space { height: 70px; }
         footer { position: fixed; bottom: -40px; left: 0; right: 0; height: 30px; border-top: 1px solid #888; text-align: right; font-size: 8pt; color: #555; padding-top: 5px; }
         .pagenum:before { content: "Halaman " counter(page); }
-        
+
         /* 🔥 PEMISAH HALAMAN (MEMECAH KERTAS PER GUDANG) 🔥 */
         .page-break { page-break-after: always; }
     </style>
@@ -66,7 +66,7 @@
             <thead>
                 <tr>
                     <th width="5%">No</th><th width="45%">Nama Barang & Kode</th>
-                    <th width="15%">Qty Terima</th><th width="35%">Kondisi / Catatan</th>
+                    <th width="15%">Qty & Satuan</th><th width="35%">Kondisi / Catatan</th>
                 </tr>
             </thead>
             <tbody>
@@ -77,8 +77,11 @@
                         <strong>{{ $item->purchaseOrderItem?->item_name ?? $item->item?->name ?? '-' }}</strong><br>
                         <span style="font-size: 7.5pt; color: #444;">{{ $item->item?->code ?? '-' }}</span>
                     </td>
-                    <td style="text-align: center; font-size: 10pt;"><strong>{{ (float)$item->qty_received }}</strong></td>
-                    <td>{{ $item->condition?->name ?? '-' }} <br> <i>{{ $item->notes }}</i></td>
+                    <td style="text-align: center;">
+                        <strong style="font-size: 11pt;">{{ (float)$item->qty_received }}</strong><br>
+                        <span style="font-size: 7.5pt; font-weight: bold; color: #0d6efd;">{{ $item->uom }}</span>
+                    </td>
+                    <td>{{ $item->condition?->name ?? '-' }} <br> <i style="font-size: 7.5pt; color: #555;">{{ $item->notes }}</i></td>
                 </tr>
                 @endforeach
             </tbody>

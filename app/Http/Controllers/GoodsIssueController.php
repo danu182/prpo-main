@@ -122,9 +122,13 @@ class GoodsIssueController extends Controller
                     $daftarInventarisBaru = [];
                     $snStringForNote = '';
 
-                    // 🔥 DETEKSI HAK VETO MANUAL DARI USER 🔥
                     $itemNote = $data['notes'] ?? '';
-                    // Jika user sudah ngetik "Ref GR:", "Ref PO:", dsb, Auto-FIFO akan dinonaktifkan untuk baris ini
+                    $selectedBatchId = $data['inventory_stock_id'] ?? null;
+
+                    if (!empty($selectedBatchId) && !is_numeric($selectedBatchId)) {
+                        $itemNote = "Ref GR: " . $selectedBatchId . ($itemNote ? " | " . $itemNote : "");
+                    }
+
                     $isManualRefOverride = preg_match('/Ref (GR|PO|RTV|GI|SA)/i', $itemNote);
 
                     if ($isModeAsset) {
@@ -199,6 +203,42 @@ class GoodsIssueController extends Controller
                         }
                         $qtyRequested = $qtyInput * $conversionFactor;
 
+                        // =========================================================================
+                        // 🔥 BACKEND PROTECTION: CEK SISA BATCH JIKA MEMILIH MANUAL 🔥
+                        // =========================================================================
+                        if (!empty($selectedBatchId) && !is_numeric($selectedBatchId)) {
+                            $totalOutForCheck = \App\Models\StockMutation::where('item_id', $item->id)
+                                ->where('warehouse_id', $request->warehouse_id)
+                                ->where('type', '!=', 'IN')
+                                ->sum('qty');
+
+                            $inMutationsForCheck = \App\Models\StockMutation::where('item_id', $item->id)
+                                ->where('warehouse_id', $request->warehouse_id)
+                                ->where('type', 'IN')
+                                ->orderBy('created_at', 'asc')
+                                ->orderBy('id', 'asc')
+                                ->get();
+
+                            $sisaBatchDipilih = 0;
+                            foreach ($inMutationsForCheck as $mut) {
+                                $qtyIn = (float) $mut->qty;
+                                if ($totalOutForCheck >= $qtyIn) {
+                                    $totalOutForCheck -= $qtyIn;
+                                } else {
+                                    $sisaQ = $qtyIn - $totalOutForCheck;
+                                    $totalOutForCheck = 0;
+                                    if ($mut->reference_number === $selectedBatchId) {
+                                        $sisaBatchDipilih = $sisaQ;
+                                        break;
+                                    }
+                                }
+                            }
+
+                            if ($qtyRequested > $sisaBatchDipilih) {
+                                throw new \Exception("DITOLAK SISTEM: Stok pada Batch {$selectedBatchId} hanya tersisa {$sisaBatchDipilih} {$satuanDasar}, tetapi Anda mencoba mengeluarkan {$qtyRequested}. Silakan 'Tambah Barang' lagi untuk memecah kuantitas ke Batch yang lain, atau gunakan Mode Otomatis.");
+                            }
+                        }
+
                         if (isset($item->is_trackable) && $item->is_trackable) {
                             $snList = $data['sn_list'] ?? [];
                             if (empty($snList) || count($snList) < intval($qtyRequested)) {
@@ -236,11 +276,7 @@ class GoodsIssueController extends Controller
                         $query = \App\Models\InventoryStock::where('warehouse_id', $request->warehouse_id)
                                     ->where('item_id', $item->id)->where('stock_qty', '>', 0);
 
-                        if (!empty($data['inventory_stock_id'])) {
-                            $query->where('id', $data['inventory_stock_id']);
-                        } else {
-                            $query->orderBy('created_at', $sortDirection);
-                        }
+                        $query->orderBy('created_at', $sortDirection);
 
                         $availableStocks = $query->lockForUpdate()->get();
                         $totalAvailable = $availableStocks->sum('stock_qty');
@@ -252,9 +288,6 @@ class GoodsIssueController extends Controller
                         $qtySisa = $qtyRequested;
                         $saldoTotalSaatIni = (float) $item->current_stock;
 
-                        // =========================================================================
-                        // 🔥 MESIN KECERDASAN BUATAN AUTO-FIFO (HANYA AKTIF JIKA TIDAK ADA VETO) 🔥
-                        // =========================================================================
                         $trueOutBefore = \App\Models\StockMutation::where('item_id', $item->id)
                             ->where('warehouse_id', $request->warehouse_id)
                             ->where('type', '!=', 'IN')
@@ -282,7 +315,6 @@ class GoodsIssueController extends Controller
 
                             $fifoRefs = [];
 
-                            // JALANKAN LOGIKA PELACAKAN HANYA JIKA TIDAK ADA INPUT MANUAL
                             if (!$isManualRefOverride) {
                                 $qtyToFind = $potong;
                                 $skipped = 0;
@@ -326,12 +358,10 @@ class GoodsIssueController extends Controller
                                 $mutasiNoteExt .= " [SN: {$snStringForNote}]";
                             }
 
-                            // JIKA ADA HASIL PELACAKAN (SISTEM YANG NYARI SENDIRI), TAMBAHKAN CAP AUTO-FIFO
                             if (!empty($fifoString)) {
                                 $mutasiNoteExt .= "<br><small class='text-muted'>(Auto-FIFO: {$fifoString})</small>";
                             }
 
-                            // JIKA USER NGETIK MANUAL, KITA HARGAI KETIKANNYA (Jangan ditiban)
                             $catatanUser = $itemNote ? " - " . $itemNote : "";
 
                             \App\Models\StockMutation::create([
@@ -349,14 +379,12 @@ class GoodsIssueController extends Controller
 
                         $item->update(['current_stock' => $saldoTotalSaatIni]);
 
-                        // TERAPKAN CAP AUTO FIFO DI LEVEL ITEM GI UNTUK PDF SURAT JALAN KELUAR
                         $finalFifoText = implode(', ', array_unique($allFifoRefsItem));
                         if (!$isManualRefOverride && !empty($finalFifoText)) {
                             $itemNote = trim($itemNote . " | Auto-Trace: {$finalFifoText}", ' |');
                         }
                     }
 
-                    // Simpan Detail Pengeluaran (Goods Issue Item)
                     \App\Models\GoodsIssueItem::create([
                         'goods_issue_id' => $gi->id,
                         'item_id'        => $item->id,
@@ -367,7 +395,6 @@ class GoodsIssueController extends Controller
                         'notes'          => $itemNote,
                     ]);
 
-                    // Simpan Inventaris Pegawai untuk Minor Asset
                     if (!$isModeAsset && isset($item->is_trackable) && $item->is_trackable) {
                         foreach ($daftarInventarisBaru as $invRecord) {
                             \App\Models\EmployeeInventory::create([
@@ -403,9 +430,6 @@ class GoodsIssueController extends Controller
         }
     }
 
-    // ==========================================
-    // 3. MENAMPILKAN DETAIL GI
-    // ==========================================
     public function show($slug)
     {
         $gi = GoodsIssue::with(['items.item.uom', 'issuer', 'status', 'warehouse', 'returns.warehouse'])
@@ -415,9 +439,6 @@ class GoodsIssueController extends Controller
         return view('goods_issues.show', compact('gi'));
     }
 
-    // ==========================================
-    // 4. MENCETAK LABEL ASET
-    // ==========================================
     public function printLabels($slug)
     {
         $gi = GoodsIssue::with(['items.item', 'issuer'])->where('gi_number', $slug)->firstOrFail();
@@ -434,9 +455,6 @@ class GoodsIssueController extends Controller
         return view('goods_issues.print_labels', compact('gi', 'labelItems'));
     }
 
-    // ==========================================
-    // 5. MENCETAK DOKUMEN BUKTI PENGELUARAN (STOK BIASA)
-    // ==========================================
     public function print($slug)
     {
         $gi = \App\Models\GoodsIssue::with(['items.item.uom', 'issuer', 'warehouse'])
@@ -469,9 +487,6 @@ class GoodsIssueController extends Controller
         return $pdf->stream('BAST_' . str_replace('/', '_', $gi->gi_number) . '.pdf');
     }
 
-    // =========================================================================
-    // 6. FUNGSI PEMBATALAN TRANSAKSI (VOID)
-    // =========================================================================
     public function voidTransaction($slug)
     {
         try {
@@ -631,9 +646,6 @@ class GoodsIssueController extends Controller
         }
     }
 
-    // ==========================================
-    // 7. PENCARIAN BARANG (AJAX)
-    // ==========================================
     public function searchItems(Request $request)
     {
         $search = $request->search;
@@ -696,9 +708,6 @@ class GoodsIssueController extends Controller
         return response()->json($results);
     }
 
-    // ==========================================
-    // 8. PENCARIAN ASET & BATCH (AJAX)
-    // ==========================================
     public function searchFixedAssets(Request $request)
     {
         $search = $request->search;
@@ -740,60 +749,91 @@ class GoodsIssueController extends Controller
         }
     }
 
+    // =========================================================================
+    // 🔥 PENCARIAN BATCH: SANGAT CEPAT, ANTI LAG (MAKS 50 DATA) 🔥
+    // =========================================================================
     public function searchBatches(Request $request)
     {
         try {
-            $stocks = \App\Models\InventoryStock::where('item_id', $request->item_id)
-                ->where('warehouse_id', $request->warehouse_id)
-                ->where('stock_qty', '>', 0)
+            $itemId = $request->item_id;
+            $warehouseId = $request->warehouse_id;
+            $search = strtolower($request->search ?? '');
+
+            // 1. Dapatkan Total Barang Keluar
+            $totalOut = \App\Models\StockMutation::where('item_id', $itemId)
+                ->where('warehouse_id', $warehouseId)
+                ->where('type', '!=', 'IN')
+                ->sum('qty');
+
+            // 2. Dapatkan Semua Barang Masuk (Ini dieksekusi DB dalam hitungan milidetik)
+            $inMutations = \App\Models\StockMutation::where('item_id', $itemId)
+                ->where('warehouse_id', $warehouseId)
+                ->where('type', 'IN')
                 ->orderBy('created_at', 'asc')
+                ->orderBy('id', 'asc')
                 ->get();
 
-            $fallbackPtName = null;
-            try {
-                $latestPo = \App\Models\PurchaseOrder::with('company')
-                    ->whereHas('items', function($q) use ($request) {
-                        $q->where('item_id', $request->item_id);
-                    })->latest('id')->first();
-
-                if ($latestPo && $latestPo->company) $fallbackPtName = $latestPo->company->name;
-            } catch (\Exception $e) { }
-
             $formatted = [];
-            foreach ($stocks as $stock) {
-                $info = [];
-                $ptName = null;
 
-                if (!empty($stock->batch_id)) $info[] = "Batch: " . $stock->batch_id;
+            // Masukkan FIFO jika tidak sedang mencari spesifik, atau jika mengetik "otomatis/fifo"
+            if (empty($search) || str_contains('fifo', $search) || str_contains('otomatis', $search)) {
+                $formatted[] = ['id' => '', 'text' => '⚡ Mode Otomatis (FIFO)'];
+            }
 
-                if (!empty($stock->reference_number)) {
-                    $info[] = "Ref: " . $stock->reference_number;
-                    try {
-                        if (str_starts_with($stock->reference_number, 'GR/')) {
-                            $gr = \App\Models\GoodsReceipt::with('purchaseOrder.company')
-                                    ->where('gr_number', $stock->reference_number)->first();
-                            if ($gr && $gr->purchaseOrder && $gr->purchaseOrder->company) {
-                                $ptName = $gr->purchaseOrder->company->name;
-                            }
-                        }
-                    } catch (\Exception $e) { }
-                } elseif (isset($stock->goodsReceipt) && !empty($stock->goodsReceipt->gr_number)) {
-                    $info[] = "GR: " . $stock->goodsReceipt->gr_number;
-                    try {
-                        if ($stock->goodsReceipt->purchaseOrder && $stock->goodsReceipt->purchaseOrder->company) {
-                            $ptName = $stock->goodsReceipt->purchaseOrder->company->name;
-                        }
-                    } catch (\Exception $e) { }
+            $activeBatches = [];
+            foreach ($inMutations as $mut) {
+                $qtyIn = (float) $mut->qty;
+                if ($totalOut >= $qtyIn) {
+                    $totalOut -= $qtyIn; // GR ini sudah habis, buang!
+                    continue;
+                } else {
+                    $sisaQty = $qtyIn - $totalOut;
+                    $totalOut = 0;
+                    $activeBatches[] = [
+                        'mutation' => $mut,
+                        'sisa' => $sisaQty
+                    ];
+                }
+            }
+
+            // Balik urutan agar GR terbaru tampil di atas
+            $activeBatches = array_reverse($activeBatches);
+
+            // Eager load info GR agar tidak terjadi query berulang (N+1 Problem) yang bikin lemot
+            $grNumbers = [];
+            foreach ($activeBatches as $batch) {
+                if (str_starts_with($batch['mutation']->reference_number, 'GR')) {
+                    $grNumbers[] = $batch['mutation']->reference_number;
+                }
+            }
+
+            $grs = \App\Models\GoodsReceipt::with('purchaseOrder.vendor')
+                        ->whereIn('gr_number', array_unique($grNumbers))
+                        ->get()
+                        ->keyBy('gr_number');
+
+            $count = 0;
+            foreach ($activeBatches as $batch) {
+                if ($count >= 50) break; // LIMIT 50 DATA AGAR BROWSER TIDAK NGEHANG
+
+                $mut = $batch['mutation'];
+                $sisa = $batch['sisa'];
+
+                $vendorName = '-';
+                if (isset($grs[$mut->reference_number]) && $grs[$mut->reference_number]->purchaseOrder && $grs[$mut->reference_number]->purchaseOrder->vendor) {
+                    $vendorName = $grs[$mut->reference_number]->purchaseOrder->vendor->name;
                 }
 
-                $finalPtName = $ptName ?? $fallbackPtName;
-                if ($finalPtName) $info[] = "Milik: " . $finalPtName;
-                if ($stock->created_at) $info[] = "In: " . $stock->created_at->format('d/m/y');
+                $date = \Carbon\Carbon::parse($mut->created_at)->format('d/m/Y');
+                $text = "[Sisa: {$sisa}] | {$mut->reference_number} | Vendor: {$vendorName} | Tgl: {$date}";
 
-                $batchText = empty($info) ? "Stok Reguler" : implode(' | ', $info);
-                $finalText = $batchText . ' ➔ Sisa: ' . (float)$stock->stock_qty;
+                // Saring berdasarkan ketikan user (Live Search)
+                if (!empty($search) && !str_contains(strtolower($text), $search)) {
+                    continue;
+                }
 
-                $formatted[] = ['id' => $stock->id, 'text' => $finalText];
+                $formatted[] = ['id' => $mut->reference_number, 'text' => $text, 'sisa' => $sisa];
+                $count++;
             }
 
             return response()->json($formatted);
