@@ -358,15 +358,24 @@ class PurchaseOrderController extends Controller
 
                     foreach ($processedLineItems as $line) {
                         $itemData = $line['itemData'];
-                        $prItem = \App\Models\PurchaseRequestItem::find($itemData['pr_item_id']);
+                        $prItem = \Illuminate\Support\Facades\DB::table('purchase_request_items')->where('id', $itemData['pr_item_id'])->first();
+
+                        // 🔥 PERBAIKAN FATAL: EKSTRAK HANYA ANGKA DARI UOM_ID AGAR DB BISA MENYIMPAN 🔥
+                        $rawUomId = isset($itemData['uom_id']) ? trim($itemData['uom_id']) : '';
+                        preg_match('/\d+/', $rawUomId, $idMatches);
+                        $uomIdSafe = !empty($idMatches[0]) ? (int)$idMatches[0] : null;
+
+                        // BERSIHKAN TEKS DARI EMBEL-EMBEL [PR] AGAR RAPI DI DATABASE
+                        $uomTextSafe = $itemData['uom'] ?? ($prItem->uom ?? 'PCS');
+                        $uomTextSafe = trim(preg_replace('/ \[PO\]| \[PR\]| \[GR\]/i', '', $uomTextSafe));
 
                         $newPoItem = \App\Models\PurchaseOrderItem::create([
                             'purchase_order_id'        => $po->id,
                             'item_id'                  => $itemData['item_id'],
                             'item_name'                => $itemData['item_name_override'] ?? ($prItem->item_name ?? null),
                             'purchase_request_item_id' => $itemData['pr_item_id'],
-                            'uom_id'                   => $itemData['uom_id'] ?? null,
-                            'uom'                      => $itemData['uom'] ?? ($prItem->uom_short ?? 'PCS'),
+                            'uom_id'                   => $uomIdSafe,
+                            'uom'                      => $uomTextSafe,
                             'description'              => $itemData['notes'] ?? (\App\Models\Item::find($itemData['item_id'])->name ?? '-'),
                             'tax_id'                   => null,
                             'qty_ordered'              => $line['qty'],
@@ -450,7 +459,6 @@ class PurchaseOrderController extends Controller
         }
     }
 
-
     // =========================================================================
     // 4. UPDATE PO (EDIT DATA PO)
     // =========================================================================
@@ -515,10 +523,18 @@ class PurchaseOrderController extends Controller
                     $poTotalItemDiscount += $discAmt;
                     $poTotalTax += $taxAmt;
 
+                    // 🔥 PERBAIKAN FATAL: EKSTRAK HANYA ANGKA DARI UOM_ID AGAR DB BISA MENYIMPAN 🔥
+                    $rawUomId = isset($itemData['uom_id']) ? trim($itemData['uom_id']) : $poItem->uom_id;
+                    preg_match('/\d+/', (string)$rawUomId, $idMatches);
+                    $uomIdSafe = !empty($idMatches[0]) ? (int)$idMatches[0] : null;
+
+                    $uomTextSafe = $itemData['uom'] ?? $poItem->uom;
+                    $uomTextSafe = trim(preg_replace('/ \[PO\]| \[PR\]| \[GR\]/i', '', $uomTextSafe));
+
                     $poItem->update([
                         'item_name'       => $itemData['item_name_override'] ?? $poItem->item_name,
-                        'uom_id'          => $itemData['uom_id'] ?? $poItem->uom_id,
-                        'uom'             => $itemData['uom'] ?? $poItem->uom,
+                        'uom_id'          => $uomIdSafe,
+                        'uom'             => $uomTextSafe,
                         'description'     => $itemData['notes'] ?? $poItem->description,
                         'vendor_id'       => $itemData['vendor_id'] ?? $poItem->vendor_id,
                         'tax_id'          => null,
@@ -1490,13 +1506,20 @@ class PurchaseOrderController extends Controller
                     $itemData = $line['itemData'];
                     $masterItem = \App\Models\Item::find($itemData['item_id']);
 
+                    $rawUomId = isset($itemData['uom_id']) ? trim($itemData['uom_id']) : '';
+                    preg_match('/\d+/', $rawUomId, $idMatches);
+                    $uomIdSafe = !empty($idMatches[0]) ? (int)$idMatches[0] : null;
+
+                    $uomTextSafe = $itemData['uom'] ?? ($masterItem->unit ?? 'PCS');
+                    $uomTextSafe = trim(preg_replace('/ \[PO\]| \[PR\]| \[GR\]/i', '', $uomTextSafe));
+
                     $newPoItem = \App\Models\PurchaseOrderItem::create([
                         'purchase_order_id'        => $po->id,
                         'item_id'                  => $itemData['item_id'],
                         'item_name'                => $itemData['item_name_override'] ?? ($masterItem->name ?? '-'),
                         'purchase_request_item_id' => null,
-                        'uom_id'                   => $itemData['uom_id'] ?? null,
-                        'uom'                      => $itemData['uom'] ?? ($masterItem->unit ?? 'PCS'),
+                        'uom_id'                   => $uomIdSafe,
+                        'uom'                      => $uomTextSafe,
                         'description'              => $itemData['notes'] ?? '-',
                         'tax_id'                   => null,
                         'qty_ordered'              => $line['qty'],
@@ -1818,7 +1841,7 @@ class PurchaseOrderController extends Controller
         foreach ($tempFilesToDelete as $trashPath) if (file_exists($trashPath)) unlink($trashPath);
 
         $prefix = $type === 'manual' ? 'Manual_' : 'Digital_';
-        return response($finalPdfOutput)->header('Content-Type', 'application/pdf')->header('Content-Disposition', 'inline; filename="BPR_Detail_Lengkap_' . $prefix . str_replace('/', '_', $po->po_number) . '.pdf"');
+        return response($finalPdfOutput)->header('Content-Type', 'application/pdf')->header('Content-Disposition', 'inline; filename="BPR_Standar_Lengkap_' . $prefix . str_replace('/', '_', $po->po_number) . '.pdf"');
     }
 
 
@@ -1963,24 +1986,19 @@ class PurchaseOrderController extends Controller
     }
 
     // =========================================================================
-    // HELPER: PERBAIKI STATUS PR OTOMATIS (MENDUKUNG PARSIAL QTY & PARSIAL ITEM)
+    // HELPER: PERBAIKI STATUS PR OTOMATIS MENGGUNAKAN NATIVE DB
     // =========================================================================
     private function checkAndUpdatePrStatus($prId)
     {
-        $prRecord = \App\Models\PurchaseRequest::with('items')->find($prId);
-        if (!$prRecord) return;
-
-        $currentSlug = strtolower(optional($prRecord->status)->slug);
-        if (in_array($currentSlug, ['cancelled', 'canceled', 'rejected'])) {
-            return;
-        }
+        $prItems = DB::table('purchase_request_items')->where('purchase_request_id', $prId)->get();
+        if ($prItems->isEmpty()) return;
 
         $anyItemProcessed = false;
         $allItemFulfilled = true;
         $validItemsCount  = 0;
 
-        foreach ($prRecord->items as $item) {
-            $itemStatus = strtoupper($item->status ?? '');
+        foreach ($prItems as $item) {
+            $itemStatus = strtoupper(trim($item->status ?? ''));
             if (in_array($itemStatus, ['REJECTED', 'CANCELED', 'CANCELLED'])) {
                 continue;
             }
@@ -1989,85 +2007,151 @@ class PurchaseOrderController extends Controller
             $targetQty = (float) $item->qty;
             $currentOrdered = (float) ($item->ordered_qty ?? 0);
 
-            if (round($currentOrdered, 2) > 0) {
+            if (round($currentOrdered, 4) > 0) {
                 $anyItemProcessed = true;
             }
 
-            // 🔥 PERBAIKAN: Gunakan round(, 2) dengan toleransi agar tidak error karena float precision 🔥
-            if (round($currentOrdered, 2) < round($targetQty, 2)) {
+            if (round($currentOrdered, 4) < round($targetQty, 4)) {
                 $allItemFulfilled = false;
             }
         }
 
         if ($validItemsCount === 0) return;
 
-        $statusApproved = \App\Models\Status::where('type', 'PR')->whereIn('slug', ['approved', 'disetujui'])->first();
-        $statusPartial  = \App\Models\Status::where('type', 'PR')->whereIn('slug', ['partial_po', 'parsial'])->first();
-        $statusPoIssued = \App\Models\Status::where('type', 'PR')->whereIn('slug', ['po_issued', 'completed', 'selesai'])->first();
+        $statusApproved = DB::table('statuses')->where('type', 'PR')->whereIn('slug', ['approved', 'disetujui'])->value('id');
+        $statusPartial  = DB::table('statuses')->where('type', 'PR')->whereIn('slug', ['partial_po', 'parsial'])->value('id');
+        $statusPoIssued = DB::table('statuses')->where('type', 'PR')
+            ->whereIn('slug', ['po_issued', 'completed', 'selesai', 'po_terbit', 'issued', 'terbit'])
+            ->value('id');
 
+        if (!$statusPoIssued) {
+            $statusPoIssued = DB::table('statuses')->where('type', 'PR')->where('name', 'like', '%Terbit%')->orWhere('name', 'like', '%Selesai%')->value('id');
+        }
+
+        $newStatusId = null;
         if (!$anyItemProcessed) {
-            if ($statusApproved) $prRecord->update(['status_id' => $statusApproved->id]);
+            $newStatusId = $statusApproved;
         } elseif (!$allItemFulfilled) {
-            if ($statusPartial) $prRecord->update(['status_id' => $statusPartial->id]);
+            $newStatusId = $statusPartial;
         } else {
-            if ($statusPoIssued) $prRecord->update(['status_id' => $statusPoIssued->id]);
+            $newStatusId = $statusPoIssued;
+        }
+
+        if ($newStatusId) {
+            DB::table('purchase_requests')->where('id', $prId)->update(['status_id' => $newStatusId]);
         }
     }
 
     // =========================================================================
-    // HELPER 1: HITUNG ULANG QTY PR SECARA ABSOLUT (ANTI-TABRAKAN ID)
+    // HELPER 1: HITUNG ULANG QTY PR SECARA ABSOLUT (ANTI-TABRAKAN & ANTI-JSON)
     // =========================================================================
     private function recalculatePrItemFulfillment($prItemId)
     {
-        $prItem = \App\Models\PurchaseRequestItem::with('item')->find($prItemId);
+        $prItem = DB::table('purchase_request_items')->where('id', $prItemId)->first();
         if (!$prItem) return;
 
-        $baseUomId = optional($prItem->item)->uom_id;
+        $masterItem = DB::table('items')->where('id', $prItem->item_id)->first();
+        $baseUomId = $masterItem->uom_id ?? null;
 
-        $activePoIds = \App\Models\PurchaseOrder::whereHas('status', function($q) {
-            $q->whereNotIn('slug', ['canceled', 'cancelled', 'rejected']);
-        })->pluck('id');
+        $baseUomDb = clone DB::table('uoms')->where('id', $baseUomId)->first();
+        $baseUomName = strtoupper($baseUomDb->name ?? 'PCS');
 
-        $poItems = \App\Models\PurchaseOrderItem::where('purchase_request_item_id', $prItemId)
-            ->whereIn('purchase_order_id', $activePoIds)
-            ->get();
+        $rejectedPoStatusIds = DB::table('statuses')->where('type', 'PO')
+                                 ->whereIn('slug', ['canceled', 'cancelled', 'rejected'])
+                                 ->pluck('id')->toArray();
+
+        $activePoIds = DB::table('purchase_orders')
+                         ->whereNotIn('status_id', $rejectedPoStatusIds)
+                         ->pluck('id')->toArray();
+
+        if (empty($activePoIds)) {
+            DB::table('purchase_request_items')->where('id', $prItemId)->update(['ordered_qty' => 0]);
+            return;
+        }
+
+        $poItems = DB::table('purchase_order_items')
+                     ->where('purchase_request_item_id', $prItemId)
+                     ->whereIn('purchase_order_id', $activePoIds)
+                     ->get();
 
         $totalOrderedInPrUom = 0;
 
-        // 1. CARI FAKTOR KONVERSI PR (SANGAT AKURAT DARI STRING UOM)
+        // 1. CARI FAKTOR KONVERSI PR ITEM
         $prUomFactor = 1;
-        if (preg_match('/\(Isi:\s*([0-9.]+)/i', $prItem->uom, $matches)) {
-            $prUomFactor = (float) $matches[1];
-        } elseif (!empty($prItem->uom_id) && $prItem->uom_id != $baseUomId) {
-            // 🔥 PERBAIKAN: Pastikan uom_id milik item_id yang benar 🔥
-            $uomDb = \App\Models\ItemUom::where('id', $prItem->uom_id)->where('item_id', $prItem->item_id)->first();
-            if ($uomDb) $prUomFactor = (float) $uomDb->conversion_qty;
-        }
+        $prUomId = $prItem->uom_id;
 
+        if (!empty($prUomId) && $prUomId != $baseUomId) {
+            $altDb = DB::table('item_uoms')->where('id', $prUomId)->first();
+            if ($altDb) {
+                $prUomFactor = (float) $altDb->conversion_qty;
+            }
+        }
+        if ($prUomFactor == 1) {
+            $rawPrUom = $prItem->uom ?? '';
+            if (is_string($rawPrUom) && str_starts_with(trim($rawPrUom), '{')) {
+                $dec = json_decode($rawPrUom, true);
+                if ($dec) {
+                    $decLower = array_change_key_case($dec, CASE_LOWER);
+                    $rawPrUom = $decLower['uom_name'] ?? $decLower['name'] ?? $decLower['code'] ?? '';
+                }
+            }
+            if (preg_match('/\(Isi:?\s*([0-9.]+)/i', $rawPrUom, $matches)) {
+                $prUomFactor = (float) $matches[1];
+            } else {
+                $cleanPr = strtoupper(trim(preg_replace('/ \(Isi:.*\)/i', '', $rawPrUom)));
+                $altDb = DB::table('item_uoms')->where('item_id', $prItem->item_id)->whereRaw('UPPER(uom_name) = ?', [$cleanPr])->first();
+                if ($altDb) {
+                    $prUomFactor = (float) $altDb->conversion_qty;
+                }
+            }
+        }
         if ($prUomFactor <= 0) $prUomFactor = 1;
 
-        // 2. HITUNG KONVERSI DARI SEMUA PO AKTIF BERDASARKAN STRING UOM
+        // 2. HITUNG KONVERSI DARI SEMUA PO ITEM AKTIF
         foreach ($poItems as $poItem) {
             $poUomFactor = 1;
+            $poUomId = $poItem->uom_id;
 
-            if (preg_match('/\(Isi:\s*([0-9.]+)/i', $poItem->uom, $matches)) {
-                $poUomFactor = (float) $matches[1];
-            } elseif (!empty($poItem->uom_id) && $poItem->uom_id != optional($poItem->item)->uom_id) {
-                // 🔥 PERBAIKAN: Pastikan uom_id milik item_id yang benar 🔥
-                $uomDb = \App\Models\ItemUom::where('id', $poItem->uom_id)->where('item_id', $poItem->item_id)->first();
-                if ($uomDb) $poUomFactor = (float) $uomDb->conversion_qty;
+            if (!empty($poUomId) && $poUomId != $baseUomId) {
+                $altDb = DB::table('item_uoms')->where('id', $poUomId)->first();
+                if ($altDb) {
+                    $poUomFactor = (float) $altDb->conversion_qty;
+                }
             }
 
+            if ($poUomFactor == 1) {
+                $rawPoUom = $poItem->uom ?? '';
+                if (is_string($rawPoUom) && str_starts_with(trim($rawPoUom), '{')) {
+                    $dec = json_decode($rawPoUom, true);
+                    if ($dec) {
+                        $decLower = array_change_key_case($dec, CASE_LOWER);
+                        $rawPoUom = $decLower['uom_name'] ?? $decLower['name'] ?? $decLower['code'] ?? '';
+                    }
+                }
+                if (preg_match('/\(Isi:?\s*([0-9.]+)/i', $rawPoUom, $matches)) {
+                    $poUomFactor = (float) $matches[1];
+                } else {
+                    $cleanPo = strtoupper(trim(preg_replace('/ \(Isi:.*\)/i', '', $rawPoUom)));
+                    $cleanPo = trim(preg_replace('/ \[PO\]| \[PR\]| \[GR\]/i', '', $cleanPo));
+
+                    $altDb = DB::table('item_uoms')->where('item_id', $poItem->item_id)->whereRaw('UPPER(uom_name) = ?', [$cleanPo])->first();
+                    if ($altDb) {
+                        $poUomFactor = (float) $altDb->conversion_qty;
+                    }
+                }
+            }
             if ($poUomFactor <= 0) $poUomFactor = 1;
 
+            // 3. KALKULASI ABSOLUT
             $qtyInBase = (float)$poItem->qty_ordered * $poUomFactor;
             $qtyInPrUnit = $qtyInBase / $prUomFactor;
 
             $totalOrderedInPrUom += $qtyInPrUnit;
         }
 
-        $prItem->ordered_qty = round($totalOrderedInPrUom, 4); // 🔥 PERBAIKAN: Batasi presisi float 🔥
-        $prItem->save();
+        DB::table('purchase_request_items')
+            ->where('id', $prItemId)
+            ->update(['ordered_qty' => round($totalOrderedInPrUom, 4)]);
     }
 
     // =========================================================================
@@ -2093,7 +2177,6 @@ class PurchaseOrderController extends Controller
 
         return $prefix . str_pad($newSequence, 4, '0', STR_PAD_LEFT);
     }
-
 
     // =========================================================================
     // FUNGSI CANCEL / BATALKAN PO DENGAN REFUND PR OTOMATIS
@@ -2152,8 +2235,4 @@ class PurchaseOrderController extends Controller
             return back()->with('error', 'Gagal membatalkan PO: ' . $e->getMessage());
         }
     }
-
-
-
-
 }

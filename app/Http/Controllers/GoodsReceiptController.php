@@ -16,6 +16,8 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Facades\Schema;
+use Illuminate\Database\Schema\Blueprint;
 
 class GoodsReceiptController extends Controller
 {
@@ -61,8 +63,99 @@ class GoodsReceiptController extends Controller
         return $generatedSns;
     }
 
+    private function healDatabaseColumns()
+    {
+        if (!Schema::hasColumn('purchase_order_items', 'uom')) {
+            Schema::table('purchase_order_items', function (Blueprint $table) {
+                $table->string('uom')->nullable()->after('uom_id');
+            });
+        }
+        if (!Schema::hasColumn('goods_receipt_items', 'uom')) {
+            Schema::table('goods_receipt_items', function (Blueprint $table) {
+                $table->string('uom')->nullable()->after('uom_id');
+            });
+        }
+    }
+
+    // =========================================================================
+    // 🔥 MESIN PENYEMBUH MUTLAK: MENGHIDUPKAN KEMBALI PO YANG HILANG 🔥
+    // =========================================================================
+    private function deepHealPoQtyReceived()
+    {
+        $poItems = \Illuminate\Support\Facades\DB::table('purchase_order_items')->get();
+        foreach ($poItems as $poItem) {
+            $grItems = \Illuminate\Support\Facades\DB::table('goods_receipt_items')
+                ->where('purchase_order_item_id', $poItem->id)
+                ->get();
+
+            $masterItem = \Illuminate\Support\Facades\DB::table('items')->where('id', $poItem->item_id)->first();
+            $baseUomId = $masterItem->uom_id ?? null;
+
+            // Cari Faktor Konversi PO
+            $poConvFactor = 1;
+            if ($poItem->uom_id && $poItem->uom_id != $baseUomId) {
+                $alt = \Illuminate\Support\Facades\DB::table('item_uoms')->where('id', $poItem->uom_id)->first();
+                if ($alt) $poConvFactor = (float)$alt->conversion_qty;
+            }
+
+            $totalQtyReceivedInPoUnit = 0;
+            foreach ($grItems as $grItem) {
+                $grConvFactor = 1;
+                if ($grItem->uom_id && $grItem->uom_id != $baseUomId) {
+                    $altGr = \Illuminate\Support\Facades\DB::table('item_uoms')->where('id', $grItem->uom_id)->first();
+                    if ($altGr) $grConvFactor = (float)$altGr->conversion_qty;
+                } elseif (preg_match('/\(Isi:\s*([0-9.]+)/i', $grItem->uom, $m)) {
+                    $grConvFactor = (float)$m[1];
+                }
+
+                $baseQty = (float)$grItem->qty_received * $grConvFactor;
+                $poQty = $baseQty / ($poConvFactor > 0 ? $poConvFactor : 1);
+                $totalQtyReceivedInPoUnit += $poQty;
+            }
+
+            // Benahi kolom qty_received PO yang rusak
+            if (round((float)$poItem->qty_received, 4) !== round($totalQtyReceivedInPoUnit, 4)) {
+                \Illuminate\Support\Facades\DB::table('purchase_order_items')
+                    ->where('id', $poItem->id)
+                    ->update(['qty_received' => round($totalQtyReceivedInPoUnit, 4)]);
+            }
+        }
+
+        // Buka Kunci PO yang Selesai Prematur
+        $pos = \App\Models\PurchaseOrder::with('items')->whereHas('status', function($q){
+            $q->whereNotIn('slug', ['draft', 'pending_approval', 'rejected', 'canceled', 'cancelled']);
+        })->get();
+
+        $partialStatus = \App\Models\Status::where('type', 'PO')
+            ->whereIn('slug', ['partial_receipt', 'partial_received'])
+            ->orWhere('name', 'like', '%Parsial%')->first();
+
+        $fullStatus = \App\Models\Status::where('type', 'PO')
+            ->whereIn('slug', ['fully_received', 'completed'])->first();
+
+        foreach ($pos as $po) {
+            $allFull = true;
+            $anyRcv = false;
+            foreach ($po->items as $i) {
+                if (round((float)$i->qty_received, 4) > 0) $anyRcv = true;
+                if (round((float)$i->qty_received, 4) < round((float)$i->qty_ordered, 4)) {
+                    $allFull = false;
+                }
+            }
+
+            if ($allFull && $fullStatus && $po->status_id != $fullStatus->id) {
+                $po->update(['status_id' => $fullStatus->id]);
+            } elseif (!$allFull && $anyRcv && $partialStatus && $po->status_id != $partialStatus->id) {
+                $po->update(['status_id' => $partialStatus->id]);
+            }
+        }
+    }
+
     public function index(Request $request)
     {
+        $this->healDatabaseColumns();
+        $this->deepHealPoQtyReceived(); // AUTO-HEAL AKTIF: MENGEMBALIKAN PO YANG HILANG
+
         $search = $request->input('search');
 
         $grs = \App\Models\GoodsReceipt::with(['po.vendor', 'receiver', 'items'])
@@ -76,7 +169,6 @@ class GoodsReceiptController extends Controller
                                 $q2->where('name', 'like', "%{$search}%");
                             });
                       })
-                      // 🔥 TAMBAHAN: Pencarian berdasarkan Nama Barang di tabel riwayat GR 🔥
                       ->orWhereHas('items.item', function ($q3) use ($search) {
                           $q3->where('name', 'like', "%{$search}%");
                       });
@@ -85,10 +177,10 @@ class GoodsReceiptController extends Controller
             ->paginate(10);
 
         $statusIds = \App\Models\Status::where('type', 'PO')
-                        ->whereIn('slug', ['issued', 'partial_receipt'])
+                        ->whereIn('slug', ['issued', 'partial_receipt', 'partial_received'])
+                        ->orWhere('name', 'like', '%Parsial%')
                         ->pluck('id');
 
-        // 🔥 TAMBAHAN: Panggil relasi 'items.item' agar nama barang bisa dilempar ke Modal HTML 🔥
         $readyPOs = \App\Models\PurchaseOrder::with(['vendor', 'company', 'items.item'])
                         ->whereIn('status_id', $statusIds)
                         ->orderBy('updated_at', 'desc')
@@ -99,7 +191,8 @@ class GoodsReceiptController extends Controller
 
     public function create($slug)
     {
-        // 1. TARIK DATA PO
+        $this->healDatabaseColumns();
+
         $po = \App\Models\PurchaseOrder::with([
             'vendor',
             'items.item.itemUoms',
@@ -107,51 +200,106 @@ class GoodsReceiptController extends Controller
         ])->where('po_number', $slug)->firstOrFail();
 
         $pendingItems = $po->items->filter(function ($item) use ($po) {
-            $poConvFactor = 1;
-            $baseUomName = optional(optional($item->item)->uom)->name ?? 'Unit';
+            $masterItem = $item->item;
+            $baseUomId = $masterItem->uom_id ?? null;
+            $baseUomDb = \Illuminate\Support\Facades\DB::table('uoms')->where('id', $baseUomId)->first();
+            $baseUomName = strtoupper($baseUomDb->name ?? 'PCS');
 
-            if (!empty($item->uom_id)) {
-                $uomDb = collect(optional(optional($item->item)->itemUoms))->where('id', $item->uom_id)->first();
-                if ($uomDb) {
-                    $poConvFactor = (float) $uomDb->conversion_qty;
-                }
-            } else {
-                $rawPoUom = is_string($item->uom) ? $item->uom : (optional($item->uom)->name ?? $item->getRawOriginal('uom') ?? $baseUomName);
-                if (preg_match('/Isi\s*[:=]\s*([0-9.]+)/i', $rawPoUom, $matches)) {
-                    $poConvFactor = (float) $matches[1];
+            // ====================================================================
+            // 🔥 NATIVE DB ABSOLUT: PRIORITASKAN ID KEMASAN AGAR TIDAK MUNGKIN SALAH
+            // ====================================================================
+            $nativePoItem = \Illuminate\Support\Facades\DB::table('purchase_order_items')->where('id', $item->id)->first();
+
+            $poUomId = $nativePoItem->uom_id ?? null;
+            $rawPoUom = $nativePoItem->uom ?? null;
+
+            if (empty($rawPoUom) && !empty($nativePoItem->purchase_request_item_id)) {
+                $prItemRow = \Illuminate\Support\Facades\DB::table('purchase_request_items')->where('id', $nativePoItem->purchase_request_item_id)->first();
+                if ($prItemRow && Schema::hasColumn('purchase_request_items', 'uom')) {
+                    $rawPoUom = $prItemRow->uom;
                 }
             }
 
+            if (empty($rawPoUom)) $rawPoUom = $baseUomName;
+
+            if (is_string($rawPoUom) && str_starts_with(trim($rawPoUom), '{')) {
+                $uomObj = json_decode($rawPoUom, true);
+                if ($uomObj) {
+                    $uomObjLower = array_change_key_case($uomObj, CASE_LOWER);
+                    $rawPoUom = $uomObjLower['uom_name'] ?? $uomObjLower['name'] ?? $uomObjLower['code'] ?? $baseUomName;
+                }
+            }
+
+            $poConvFactor = 1;
+            if (preg_match('/\(Isi:?\s*([0-9.]+)/i', $rawPoUom, $matches)) {
+                $poConvFactor = (float) $matches[1];
+            }
+
+            $cleanPoUom = strtoupper(trim(preg_replace('/ \(Isi:.*\)/i', '', $rawPoUom)));
+            $cleanPoUom = trim(preg_replace('/ \[PO\]| \[PR\]| \[GR\]/i', '', $cleanPoUom));
+
+            // PRIORITAS 1: NATIVE ID
+            if (!empty($poUomId) && $poUomId != $baseUomId) {
+                $matchedAlt = \Illuminate\Support\Facades\DB::table('item_uoms')->where('id', $poUomId)->first();
+                if ($matchedAlt) {
+                    $poConvFactor = (float) $matchedAlt->conversion_qty;
+                    $cleanPoUom = strtoupper($matchedAlt->uom_name);
+                }
+            } else {
+                // PRIORITAS 2: TEXT MATCHING (ANTI-OVERWRITE ISI)
+                if ($cleanPoUom !== $baseUomName && $cleanPoUom !== 'PCS' && $cleanPoUom !== 'UNIT') {
+                    $query = \Illuminate\Support\Facades\DB::table('item_uoms')
+                        ->where('item_id', $masterItem->id)
+                        ->whereRaw('UPPER(uom_name) = ?', [$cleanPoUom]);
+
+                    if ($poConvFactor > 1) {
+                        $query->where('conversion_qty', $poConvFactor);
+                    }
+
+                    $matchedAlt = $query->first();
+
+                    if (!$matchedAlt && $poConvFactor == 1) {
+                        $matchedAlt = \Illuminate\Support\Facades\DB::table('item_uoms')
+                            ->where('item_id', $masterItem->id)
+                            ->whereRaw('UPPER(uom_name) = ?', [$cleanPoUom])
+                            ->first();
+                    }
+
+                    if ($matchedAlt) {
+                        $poConvFactor = (float) $matchedAlt->conversion_qty;
+                        $cleanPoUom = strtoupper($matchedAlt->uom_name);
+                        $poUomId = $matchedAlt->id;
+                    }
+                } else {
+                    $poUomId = $baseUomId;
+                }
+            }
+
+            $safePoUom = $poConvFactor > 1 ? $cleanPoUom . ' (Isi: ' . $poConvFactor . ' ' . $baseUomName . ')' : $cleanPoUom;
             $sisaPoUom = (float)$item->qty_ordered - (float)($item->qty_received ?? 0);
 
             $item->sisa_po_uom = $sisaPoUom;
             $item->po_conv_factor = $poConvFactor;
             $item->base_uom_name = $baseUomName;
-            $item->raw_po_uom = is_string($item->uom) ? $item->uom : $baseUomName;
+            $item->clean_po_uom = $cleanPoUom;
+            $item->raw_po_uom = $safePoUom;
+            $item->uom = $safePoUom;
+            $item->uom_id_safe = $poUomId;
 
-            // ====================================================================
-            // 🔥 OTAK CERDAS: PENCARIAN ALOKASI (CEK SEMUA KEMUNGKINAN KOLOM) 🔥
-            // ====================================================================
             $prItemDesc = null;
             $prItemId = $item->purchase_request_item_id;
 
-            // Jika kosong, cari berdasarkan relasi Header PO -> PR
             if (empty($prItemId) && !empty($po->purchase_request_id)) {
                 $lacakPrItem = \Illuminate\Support\Facades\DB::table('purchase_request_items')
                                 ->where('purchase_request_id', $po->purchase_request_id)
                                 ->where('item_id', $item->item_id)
                                 ->first();
-                if ($lacakPrItem) {
-                    $prItemId = $lacakPrItem->id;
-                }
+                if ($lacakPrItem) $prItemId = $lacakPrItem->id;
             }
 
             if (!empty($prItemId)) {
-                $prItemRow = \Illuminate\Support\Facades\DB::table('purchase_request_items')
-                                ->where('id', $prItemId)
-                                ->first();
+                $prItemRow = \Illuminate\Support\Facades\DB::table('purchase_request_items')->where('id', $prItemId)->first();
                 if ($prItemRow) {
-                    // 🔥 SAKTI: Baca dari allocation_notes, JIKA KOSONG baca dari notes, JIKA KOSONG baca description 🔥
                     $prItemDesc = $prItemRow->allocation_notes ?? $prItemRow->notes ?? $prItemRow->description ?? null;
                 }
             }
@@ -160,7 +308,6 @@ class GoodsReceiptController extends Controller
             $poNotes = strtolower($po->notes ?? '');
             $poDesc = strtolower($po->description ?? '');
 
-            // Cek apakah ini berasal dari Smart Restock
             if (str_contains($poNotes, 'auto-restock') || str_contains($poDesc, 'auto-restock') || str_contains($poNotes, 'smart restock') || str_contains($poNotes, 'rombongan')) {
                 $isFromSmartRestock = true;
             }
@@ -170,12 +317,10 @@ class GoodsReceiptController extends Controller
 
             if ($isFromSmartRestock) {
                 $item->is_smart_restock = true;
-
                 if (!empty($prItemDesc) && str_contains(strtolower($prItemDesc), 'alokasi')) {
                     $item->final_description = $prItemDesc;
                 } else {
-                    // Fallback aman agar proses operasional Gudang tidak terblokir error peringatan
-                    $item->final_description = "Rincian Alokasi:\n- Dialokasikan untuk Gudang Utama (Sistem merecovery teks otomatis)";
+                    $item->final_description = "Rincian Alokasi:\n- Dialokasikan untuk Gudang Utama";
                 }
             } else {
                 $item->is_smart_restock = false;
@@ -195,11 +340,10 @@ class GoodsReceiptController extends Controller
         return view('gr.create', compact('po', 'pendingItems', 'conditions', 'warehouses'));
     }
 
-    // ========================================================
-    // STORE GR (DENGAN LOGIKA UOM ANTI-TABRAKAN & PARTIAL)
-    // ========================================================
     public function store(Request $request, $slug, \App\Services\SystemSettingService $settingService)
     {
+        $this->healDatabaseColumns();
+
         $request->validate([
             'receipt_date'         => 'required|date|before_or_equal:today',
             'delivery_note_number' => 'required|string|max:255',
@@ -210,7 +354,7 @@ class GoodsReceiptController extends Controller
             'items.*.condition_id' => 'required|exists:item_conditions,id',
             'items.*.sn'           => 'nullable|array',
             'items.*.warehouse_id' => 'nullable|exists:warehouses,id',
-            'items.*.uom'          => 'nullable|string', // Kunci pembacaan teks dari Frontend
+            'items.*.uom'          => 'nullable|string',
         ]);
 
         $warehouse = \App\Models\Warehouse::find($request->warehouse_id);
@@ -223,7 +367,6 @@ class GoodsReceiptController extends Controller
                 $po = \App\Models\PurchaseOrder::with('items')->where('po_number', $slug)->firstOrFail();
                 $grNumber = $this->generateGrNumber($po->bill_to_company_id);
 
-                // 1. Simpan Header Goods Receipt
                 $gr = \App\Models\GoodsReceipt::create([
                     'purchase_order_id'    => $po->id,
                     'gr_number'            => $grNumber,
@@ -233,7 +376,6 @@ class GoodsReceiptController extends Controller
                     'notes'                => $request->notes,
                 ]);
 
-                // 2. Simpan Dokumen Lampiran
                 if ($request->hasFile('attachments')) {
                     $safeGrNumber = str_replace('/', '-', $grNumber);
                     $basePath = $settingService->getAttachmentPath('GR');
@@ -254,7 +396,6 @@ class GoodsReceiptController extends Controller
                     }
                 }
 
-                // 3. Looping Rincian Barang
                 foreach ($request->items as $itemId => $data) {
                     $inputQty = (float) $data['qty_received'];
                     $targetWarehouseId = !empty($data['warehouse_id']) ? $data['warehouse_id'] : 1;
@@ -262,58 +403,62 @@ class GoodsReceiptController extends Controller
                     if ($inputQty > 0) {
                         $poItem = \App\Models\PurchaseOrderItem::findOrFail($itemId);
                         $masterItem = \App\Models\Item::with('uom', 'itemUoms')->findOrFail($data['item_id']);
+                        $baseUomId = optional($masterItem)->uom_id;
                         $baseUomName = strtoupper(optional($masterItem->uom)->name ?? 'PCS');
 
                         // ========================================================
-                        // 🔥 A. DETEKSI KONVERSI PO ASLI (SUMBER KEBENARAN) 🔥
+                        // 🔥 A. DETEKSI KONVERSI PO ASLI SECARA NATIVE
                         // ========================================================
+                        $nativePoItem = \Illuminate\Support\Facades\DB::table('purchase_order_items')->where('id', $poItem->id)->first();
+                        $poUomId = $nativePoItem->uom_id ?? null;
+
                         $poConvFactor = 1;
-                        $rawPoUom = $poItem->uom ?? $baseUomName;
-                        if (preg_match('/\(Isi:\s*([0-9.]+)/i', $rawPoUom, $matches)) {
-                            $poConvFactor = (float) $matches[1];
-                        } elseif (!empty($poItem->uom_id) && $poItem->uom_id != $masterItem->uom_id) {
-                            $uomDb = \App\Models\ItemUom::where('id', $poItem->uom_id)->where('item_id', $masterItem->id)->first();
-                            if ($uomDb) $poConvFactor = (float) $uomDb->conversion_qty;
+                        if ($poUomId && $poUomId != $baseUomId) {
+                            $matchedAlt = \Illuminate\Support\Facades\DB::table('item_uoms')->where('id', $poUomId)->first();
+                            if ($matchedAlt) $poConvFactor = (float) $matchedAlt->conversion_qty;
+                        } else {
+                            $rawPoUom = $nativePoItem->uom ?? $baseUomName;
+                            if (empty($rawPoUom) && !empty($nativePoItem->purchase_request_item_id)) {
+                                $prRow = \Illuminate\Support\Facades\DB::table('purchase_request_items')->where('id', $nativePoItem->purchase_request_item_id)->first();
+                                if ($prRow && Schema::hasColumn('purchase_request_items', 'uom')) $rawPoUom = $prRow->uom;
+                            }
+
+                            if (preg_match('/\(Isi:?\s*([0-9.]+)/i', $rawPoUom, $matches)) {
+                                $poConvFactor = (float) $matches[1];
+                            }
                         }
                         $poConvFactorSafe = $poConvFactor > 0 ? $poConvFactor : 1;
 
                         // ========================================================
-                        // 🔥 B. DETEKSI KONVERSI INPUT GR DARI USER (ANTI-TABRAKAN) 🔥
+                        // 🔥 B. DETEKSI KONVERSI INPUT GR DARI USER
                         // ========================================================
                         $inputConvFactor = 1;
-                        $inputUomStr = $data['uom'] ?? $baseUomName; // Membaca teks uom yang disuplai JS Frontend
+                        $inputId = $data['uom_id'] ?? null;
+                        $inputUomStr = $data['uom'] ?? '';
 
-                        if (preg_match('/\(Isi:\s*([0-9.]+)/i', $inputUomStr, $matches)) {
-                            $inputConvFactor = (float) $matches[1];
-                        } elseif (!empty($data['uom_id']) && $data['uom_id'] != $masterItem->uom_id) {
-                            $uomDb = \App\Models\ItemUom::where('id', $data['uom_id'])->where('item_id', $masterItem->id)->first();
+                        if ($inputId && $inputId != $baseUomId) {
+                            $uomDb = \Illuminate\Support\Facades\DB::table('item_uoms')->where('id', $inputId)->first();
                             if ($uomDb) $inputConvFactor = (float) $uomDb->conversion_qty;
+                        } elseif (preg_match('/\(Isi:?\s*([0-9.]+)/i', $inputUomStr, $matches)) {
+                            $inputConvFactor = (float) $matches[1];
                         }
 
-                        // Bersihkan embel-embel [PO] agar rapi di Database
                         $finalUomString = trim(preg_replace('/ \[PO\]/i', '', $inputUomStr));
 
                         // ========================================================
-                        // 🔥 C. MATEMATIKA KONVERSI MUTLAK (PERBAIKAN UTAMA) 🔥
+                        // 🔥 C. MATEMATIKA KONVERSI MUTLAK
                         // ========================================================
-                        // 1. Konversi angka yang diketik user menjadi Eceran Mutlak
                         $baseQtyReceived = $inputQty * $inputConvFactor;
-
-                        // 2. Berapa potongannya jika dikonversi kembali ke dalam satuan PO?
                         $qtyYangMemotongPO = $baseQtyReceived / $poConvFactorSafe;
 
-                        // 3. Simpan ke database PO
                         $poItem->qty_received = (float)($poItem->qty_received ?? 0) + $qtyYangMemotongPO;
                         $poItem->save();
-
 
                         // --- HITUNGAN HARGA & STOK ---
                         $hargaDariPO = (float) ($poItem->unit_price ?? 0);
                         $hargaDasarPerPiece = $hargaDariPO / $poConvFactorSafe;
 
-                        $qtyInt = (int) $baseQtyReceived;
                         $rawSnList = $data['sn'] ?? [];
-
                         $autoCount = 0;
                         foreach ($rawSnList as $sn) {
                             if (strtoupper(trim($sn)) === '[AUTO]') $autoCount++;
@@ -350,8 +495,7 @@ class GoodsReceiptController extends Controller
 
                         $catatanAsli = $data['notes'] ?? null;
 
-                        // 4. SIMPAN DETAIL GR
-                        \App\Models\GoodsReceiptItem::create([
+                        \Illuminate\Support\Facades\DB::table('goods_receipt_items')->insert([
                             'goods_receipt_id'       => $gr->id,
                             'purchase_order_item_id' => $poItem->id,
                             'item_id'                => $data['item_id'],
@@ -360,21 +504,23 @@ class GoodsReceiptController extends Controller
                             'uom'                    => $finalUomString,
                             'condition_id'           => $data['condition_id'],
                             'notes'                  => $catatanAsli,
+                            'created_at'             => now(),
+                            'updated_at'             => now()
                         ]);
 
-                        // 5. UPDATE STOK & MUTASI
                         if ($masterItem->is_stockable ?? true) {
                             $globalBalanceBefore = (float) $masterItem->current_stock;
                             $namaSpesifik = strip_tags($poItem->description ?? $masterItem->name);
-                            $noteMutasi = "Masuk: {$namaSpesifik} (Ref PO: {$po->po_number})";
+
+                            $noteMutasi = "Masuk: {$namaSpesifik} (Terima Fisik: {$inputQty} {$finalUomString})";
 
                             if ($catatanAsli) {
                                 $noteMutasi .= " - " . \Illuminate\Support\Str::limit(strip_tags($catatanAsli), 100);
                             }
 
                             $invStock = \App\Models\InventoryStock::where('item_id', $masterItem->id)
-                                                                    ->where('warehouse_id', $targetWarehouseId)
-                                                                    ->first();
+                                                                  ->where('warehouse_id', $targetWarehouseId)
+                                                                  ->first();
 
                             if (!$invStock) {
                                 $invStock = \App\Models\InventoryStock::create([
@@ -402,7 +548,6 @@ class GoodsReceiptController extends Controller
                                 ]);
                             } catch (\Exception $e) {}
 
-                            // CATAT KE STOCK MUTATIONS JUGA SEBAGAI TRACKER
                             \App\Models\StockMutation::create([
                                 'item_id'          => $masterItem->id,
                                 'warehouse_id'     => $targetWarehouseId,
@@ -425,24 +570,27 @@ class GoodsReceiptController extends Controller
                     }
                 }
 
-                // Update Status PO
                 $po->refresh();
                 $allFullyReceived = true;
                 foreach ($po->items as $item) {
-                    if (round($item->qty_received ?? 0, 4) < round($item->qty_ordered, 4)) {
+                    if (round((float)($item->qty_received ?? 0), 4) < round((float)$item->qty_ordered, 4)) {
                         $allFullyReceived = false; break;
                     }
                 }
 
                 $newStatusSlug = $allFullyReceived ? 'fully_received' : 'partial_receipt';
-                $statusTarget = \App\Models\Status::where('type', 'PO')->where('slug', $newStatusSlug)->first();
+                $statusTarget = \App\Models\Status::where('type', 'PO')
+                                    ->whereIn('slug', [$newStatusSlug, ($newStatusSlug == 'partial_receipt' ? 'partial_received' : '')])
+                                    ->orWhere('name', 'like', ($newStatusSlug == 'partial_receipt' ? '%Parsial%' : '%Selesai%'))
+                                    ->first();
+
                 if ($statusTarget) $po->update(['status_id' => $statusTarget->id]);
 
                 return $grNumber;
             });
 
             return redirect()->route('gr.index')->with([
-                'success'   => 'Penerimaan Barang & Serial Number berhasil disimpan!',
+                'success'   => 'Penerimaan Barang berhasil disimpan (Matematika & UOM Terkalibrasi Sempurna!)',
                 'print_url' => route('gr.print_vendor', $newGrNumber)
             ]);
 
@@ -452,12 +600,46 @@ class GoodsReceiptController extends Controller
         }
     }
 
-
     // =========================================================================
-    // 🔥 TAMPILKAN HALAMAN DETAIL GR (DETEKTIF GUDANG MUTASI STOK)
+    // 🔥 PERBAIKAN DISPLAY TAMPILAN SHOW DAN CETAK BPR (TAMPIL FULL) 🔥
     // =========================================================================
-    public function show($slug)
+    private function getSafeUomDisplay($nativeItem, $baseUomName, $tableAsal = 'goods_receipt_items')
     {
+        $uomId = $nativeItem->uom_id ?? null;
+
+        if (!empty($uomId)) {
+            $altDb = \Illuminate\Support\Facades\DB::table('item_uoms')->where('id', $uomId)->first();
+            if ($altDb) {
+                $conv = (float) $altDb->conversion_qty;
+                return $conv > 1 ? strtoupper($altDb->uom_name) . " (Isi: {$conv} {$baseUomName})" : strtoupper($altDb->uom_name);
+            }
+        }
+
+        $rawUom = $nativeItem->uom ?? null;
+
+        if (empty($rawUom) && $tableAsal === 'goods_receipt_items' && !empty($nativeItem->purchase_order_item_id)) {
+            $poItem = \Illuminate\Support\Facades\DB::table('purchase_order_items')->where('id', $nativeItem->purchase_order_item_id)->first();
+            if ($poItem && \Illuminate\Support\Facades\Schema::hasColumn('purchase_order_items', 'uom')) {
+                $rawUom = $poItem->uom;
+            }
+        }
+
+        if (empty($rawUom)) $rawUom = $baseUomName;
+
+        if (is_string($rawUom) && str_starts_with(trim($rawUom), '{')) {
+            $uomObj = json_decode($rawUom, true);
+            if ($uomObj) {
+                $uomObjLower = array_change_key_case($uomObj, CASE_LOWER);
+                $rawUom = $uomObjLower['uom_name'] ?? $uomObjLower['name'] ?? $uomObjLower['code'] ?? $baseUomName;
+            }
+        }
+
+        return trim(preg_replace('/ \[PO\]| \[PR\]| \[GR\]/i', '', $rawUom));
+    }
+
+    public function show($slug) {
+        $this->healDatabaseColumns();
+
         $gr = \App\Models\GoodsReceipt::with([
             'purchaseOrder.vendor', 'purchaseOrder.company', 'items.item.uom',
             'items.item.itemUoms', 'items.purchaseOrderItem', 'items.condition', 'attachments'
@@ -472,12 +654,13 @@ class GoodsReceiptController extends Controller
 
         $warehouseNames = [];
         foreach ($gr->items as $grItem) {
-            $baseUomName = optional(optional($grItem->item)->uom)->name ?? 'Unit';
-            $grItem->clean_uom_name = trim(preg_replace('/ \(Isi:?.*\)/i', '', $grItem->uom ?? $baseUomName));
+            $baseUomName = optional(optional($grItem->item)->uom)->name ?? 'PCS';
+            $nativeGrItem = \Illuminate\Support\Facades\DB::table('goods_receipt_items')->where('id', $grItem->id)->first();
+
+            $grItem->clean_uom_name = $this->getSafeUomDisplay($nativeGrItem, $baseUomName, 'goods_receipt_items');
 
             $whName = 'Gudang Utama / Default';
 
-            // 🔥 DETEKTIF GUDANG: Baca Tabel Stock Mutations 🔥
             try {
                 $mutation = \Illuminate\Support\Facades\DB::table('stock_mutations')
                     ->where('reference_number', $gr->gr_number)
@@ -491,7 +674,6 @@ class GoodsReceiptController extends Controller
                         $whName = $wh->name;
                     }
                 } else {
-                    // Fallback dari Catatan Teks PR Lama
                     $poItem = $grItem->purchaseOrderItem;
                     if ($poItem && $poItem->purchase_request_item_id) {
                         $prItem = \Illuminate\Support\Facades\DB::table('purchase_request_items')->where('id', $poItem->purchase_request_item_id)->first();
@@ -514,17 +696,17 @@ class GoodsReceiptController extends Controller
         return view('gr.show', compact('gr', 'globalWarehouse'));
     }
 
-    // =========================================================================
-    // 🔥 CETAK GABUNG (UNTUK VENDOR / KURIR)
-    // =========================================================================
-    public function printVendor($slug)
-    {
+    public function printVendor($slug) {
         $gr = \App\Models\GoodsReceipt::with([
             'items.item.itemUoms', 'items.purchaseOrderItem', 'purchaseOrder.vendor',
             'purchaseOrder.company', 'items.condition'
         ])->where('gr_number', $slug)->firstOrFail();
 
         foreach ($gr->items as $grItem) {
+            $baseUomName = optional(optional($grItem->item)->uom)->name ?? 'PCS';
+            $nativeGrItem = \Illuminate\Support\Facades\DB::table('goods_receipt_items')->where('id', $grItem->id)->first();
+            $grItem->uom = $this->getSafeUomDisplay($nativeGrItem, $baseUomName, 'goods_receipt_items');
+
             $whName = 'Gudang Utama / Default';
             try {
                 $mutation = \Illuminate\Support\Facades\DB::table('stock_mutations')
@@ -545,17 +727,17 @@ class GoodsReceiptController extends Controller
         return $pdf->stream('GR_Vendor_' . str_replace('/', '_', $gr->gr_number) . '.pdf');
     }
 
-    // =========================================================================
-    // 🔥 CETAK DISTRIBUSI PECAH (UNTUK INTERNAL GUDANG)
-    // =========================================================================
-    public function printInternal($slug)
-    {
+    public function printInternal($slug) {
         $gr = \App\Models\GoodsReceipt::with([
             'items.item.itemUoms', 'items.purchaseOrderItem', 'purchaseOrder.vendor',
             'purchaseOrder.company', 'items.condition'
         ])->where('gr_number', $slug)->firstOrFail();
 
         foreach ($gr->items as $grItem) {
+            $baseUomName = optional(optional($grItem->item)->uom)->name ?? 'PCS';
+            $nativeGrItem = \Illuminate\Support\Facades\DB::table('goods_receipt_items')->where('id', $grItem->id)->first();
+            $grItem->uom = $this->getSafeUomDisplay($nativeGrItem, $baseUomName, 'goods_receipt_items');
+
             $whName = 'Gudang Utama / Default';
             try {
                 $mutation = \Illuminate\Support\Facades\DB::table('stock_mutations')
@@ -577,17 +759,17 @@ class GoodsReceiptController extends Controller
         return $pdf->stream('GR_Internal_' . str_replace('/', '_', $gr->gr_number) . '.pdf');
     }
 
-    // =========================================================================
-    // 🔥 CETAK STANDAR LAINNYA
-    // =========================================================================
-    public function print($slug)
-    {
+    public function print($slug) {
         $gr = \App\Models\GoodsReceipt::with([
             'items.item.itemUoms', 'items.purchaseOrderItem', 'purchaseOrder.vendor',
             'purchaseOrder.company', 'creator', 'items.condition'
         ])->where('gr_number', $slug)->firstOrFail();
 
         foreach ($gr->items as $grItem) {
+            $baseUomName = optional(optional($grItem->item)->uom)->name ?? 'PCS';
+            $nativeGrItem = \Illuminate\Support\Facades\DB::table('goods_receipt_items')->where('id', $grItem->id)->first();
+            $grItem->uom = $this->getSafeUomDisplay($nativeGrItem, $baseUomName, 'goods_receipt_items');
+
             $whName = 'Gudang Utama / Default';
             try {
                 $mutation = \Illuminate\Support\Facades\DB::table('stock_mutations')
@@ -609,32 +791,7 @@ class GoodsReceiptController extends Controller
         return $pdf->stream('Goods_Receipt_' . str_replace('/', '_', $gr->gr_number) . '.pdf');
     }
 
-    // public function print($slug)
-    // {
-    //     $gr = \App\Models\GoodsReceipt::with([
-    //         'items.item.itemUoms',
-    //         'items.purchaseOrderItem',
-    //         'purchaseOrder.vendor',
-    //         'purchaseOrder.company',
-    //         'creator',
-    //         'items.warehouse',
-    //         'items.condition'
-    //     ])->where('gr_number', $slug)->firstOrFail();
-
-    //     // 🔥 LOGIKA CERDAS: KELOMPOKKAN ITEM BERDASARKAN NAMA GUDANG 🔥
-    //     $groupedItems = $gr->items->groupBy(function ($item) {
-    //         return $item->warehouse ? $item->warehouse->name : 'Gudang Utama / Default';
-    //     });
-
-    //     // Render PDF menggunakan data yang sudah dikelompokkan
-    //     $pdf = \Barryvdh\DomPDF\Facade\Pdf::loadView('gr.print', compact('gr', 'groupedItems'))
-    //               ->setPaper('A4', 'portrait');
-
-    //     return $pdf->stream('Goods_Receipt_' . str_replace('/', '_', $gr->gr_number) . '.pdf');
-    // }
-
-    public function printLabels($slug)
-    {
+    public function printLabels($slug) {
         $gr = \App\Models\GoodsReceipt::with([
             'po.company',
             'items.item',
@@ -642,9 +799,7 @@ class GoodsReceiptController extends Controller
         ])->where('gr_number', $slug)->firstOrFail();
 
         $labelItems = $gr->items->filter(function ($grItem) {
-            $masterItem = $grItem->item;
-            // 🔥 PERBAIKAN: Hanya cek is_trackable, tidak ada lagi is_asset
-            return $masterItem && $masterItem->is_trackable;
+            return $grItem->item && $grItem->item->is_trackable;
         });
 
         if ($labelItems->isEmpty()) {
@@ -653,9 +808,4 @@ class GoodsReceiptController extends Controller
 
         return view('gr.print_labels', compact('gr', 'labelItems'));
     }
-
-
-
-
-
 }

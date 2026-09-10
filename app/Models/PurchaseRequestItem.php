@@ -40,10 +40,12 @@ class PurchaseRequestItem extends Model
         return $this->hasMany(VendorQuote::class, 'purchase_request_item_id');
     }
 
-    // Relasi (Jika belum ada, tambahkan sekalian agar View Edit bisa memanggilnya)
-    public function uom()
+    // SEBELUMNYA: public function uom()
+    // UBAH MENJADI SEPERTI DI BAWAH INI:
+
+    public function masterUom()
     {
-        return $this->belongsTo(Uom::class, 'uom_id'); // Sesuaikan dengan nama model UOM Komandan
+        return $this->belongsTo(Uom::class, 'uom_id');
     }
 
 

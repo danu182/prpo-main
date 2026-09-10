@@ -8,30 +8,30 @@
         body { font-family: Arial, Helvetica, sans-serif; font-size: 10pt; color: #000; margin: 0; padding: 0; }
         .company-name { font-size: 16pt; font-weight: bold; margin: 0; text-transform: uppercase; }
         .doc-title { font-size: 12pt; margin: 5px 0 15px 0; }
-        
+
         .wrapper { border: 1px solid #000; width: 100%; }
-        
+
         table.grid { width: 100%; border-collapse: collapse; border-top: 1px solid #000; }
         table.grid th, table.grid td { border: 1px solid #000; padding: 6px 4px; vertical-align: middle; }
         table.grid th { text-align: center; font-weight: bold; background-color: #fff; }
         table.grid th:first-child, table.grid td:first-child { border-left: none; }
         table.grid th:last-child, table.grid td:last-child { border-right: none; }
         table.grid tr:last-child td { border-bottom: none; }
-        
+
         table.sign-table { width: 100%; border-collapse: collapse; border-top: 1px solid #000; page-break-inside: avoid; }
         table.sign-table td { border: none; padding: 5px; vertical-align: middle; text-align: center; }
-        
+
         .stamp { display: inline-block; padding: 4px 10px; font-weight: bold; font-size: 10pt; letter-spacing: 1px; text-transform: uppercase; border: 2px solid; }
         .stamp-issued { color: #198754; border-color: #198754; } .stamp-approved { color: #0d6efd; border-color: #0d6efd; }
         .stamp-rejected { color: #dc3545; border-color: #dc3545; } .stamp-pending { color: #aaa; border-color: #aaa; border-style: dashed; }
-        
+
         .break-text { word-wrap: break-word; word-break: break-all; }
         table.amount-box { width: 100%; border: none !important; margin: 0; padding: 0; }
         table.amount-box td { border: none !important; padding: 0 !important; margin: 0 !important; vertical-align: middle; }
         .curr-txt { text-align: left; width: 1%; padding-right: 5px !important; color: #555; font-size: 9pt; }
         .curr-txt-red { text-align: left; width: 1%; padding-right: 5px !important; color: red; font-size: 9pt; }
         .num-txt { text-align: right; font-size: 10pt; } .num-txt-red { text-align: right; font-size: 10pt; color: red; }
-        
+
         footer { position: fixed; bottom: -30px; left: 0px; right: 0px; height: 30px; font-size: 8pt; color: #555; font-style: italic; }
     </style>
 </head>
@@ -77,7 +77,7 @@
                 if((float)($item->tax_amount ?? 0) > 0) $rowspanCount++;
             }
             if(isset($charges)) $rowspanCount += count($charges);
-            
+
             $sumItemDisc = $po->items->sum('discount_amount');
             $actualGlobalDisc = (float)($po->discount_total ?? 0) - $sumItemDisc;
             if($actualGlobalDisc > 0) $rowspanCount++;
@@ -94,8 +94,8 @@
                 <tr>
                     <th style="width: 4%;">No</th>
                     <th style="width: 14%;">Invoices No.</th>
-                    <th style="width: 29%;">Description</th>
-                    <th style="width: 10%;">Reference</th>
+                    <th style="width: 26%;">Description</th>
+                    <th style="width: 13%;">Qty & Satuan</th>
                     <th style="width: 14%;">Unit Price</th>
                     <th style="width: 16%;">Total Amount</th>
                     <th style="width: 13%;">Account No</th>
@@ -108,13 +108,42 @@
                         $price = (float) ($item->unit_price ?? $item->price ?? 0);
                         $discAmt = (float) ($item->discount_amount ?? 0);
                         $taxAmt = (float) ($item->tax_amount ?? 0);
-                        $uomStr = preg_replace('/ \(Isi:.*\)/i', '', is_string($item->uom) ? $item->uom : (optional(optional($item->item)->uom)->name ?? 'PCS'));
+
+                        // =========================================================================
+                        // 🔥 NATIVE UOM EXTRACTOR (ANTI BUG & NULL) 🔥
+                        // =========================================================================
+                        $masterItem = $item->item;
+                        $baseUomName = strtoupper(optional(optional($masterItem)->uom)->name ?? 'PCS');
+
+                        $rawUom = $item->getRawOriginal('uom');
+
+                        if (empty($rawUom) && !empty($item->uom_id) && $masterItem) {
+                            $altDb = \Illuminate\Support\Facades\DB::table('item_uoms')->where('id', $item->uom_id)->first();
+                            if ($altDb) {
+                                $rawUom = strtoupper($altDb->uom_name) . " (Isi: " . (float)$altDb->conversion_qty . " " . $baseUomName . ")";
+                            }
+                        }
+
+                        if (empty($rawUom)) $rawUom = $baseUomName;
+
+                        if (is_string($rawUom) && str_starts_with(trim($rawUom), '{')) {
+                            $uomObj = json_decode($rawUom, true);
+                            if ($uomObj) {
+                                $uomObjLower = array_change_key_case($uomObj, CASE_LOWER);
+                                $rawUom = $uomObjLower['uom_name'] ?? $uomObjLower['name'] ?? $uomObjLower['code'] ?? $baseUomName;
+                            }
+                        }
+
+                        $cleanUomDisplay = trim(preg_replace('/ \[PO\]| \[PR\]| \[GR\]/i', '', $rawUom));
                     @endphp
                     <tr>
                         <td style="text-align: center;">{{ $index + 1 }}</td>
                         <td style="text-align: center; color: #0d6efd;" class="break-text">@if($index === 0) {{ !empty($po->invoice_number) ? wordwrap($po->invoice_number, 14, " ", true) : '-' }} @endif</td>
                         <td><strong style="font-size: 13px;">{{ $item->item_name ?? optional($item->item)->name }}</strong> @if(!empty($item->description) && $item->description !== '-') <br><span style="font-size: 10px; color: #555;">{!! strip_tags($item->description) !!}</span> @endif</td>
-                        <td style="text-align: center;">{{ $qty }} {{ strtoupper($uomStr) }}</td>
+                        <td style="text-align: center;">
+                            <strong>{{ $qty }}</strong><br>
+                            <span style="font-size: 7.5pt; color: #0d6efd; font-weight: bold;">{{ $cleanUomDisplay }}</span>
+                        </td>
                         <td><table class="amount-box"><tr><td class="curr-txt">{{ $currency }}</td><td class="num-txt">{{ number_format($price, 0, ',', '.') }}</td></tr></table></td>
                         <td><table class="amount-box"><tr><td class="curr-txt">{{ $currency }}</td><td class="num-txt">{{ number_format($qty * $price, 0, ',', '.') }}</td></tr></table></td>
                         @if($index === 0)
@@ -186,7 +215,7 @@
         @php
             $approvals = \App\Models\DocumentApproval::with('role')->where('document_id', $po->id)->where('document_type', get_class($po))->orderBy('step_order', 'asc')->get();
             $totalCols = 1 + $approvals->count();
-            
+
             $prepUser = $po->user; $prepSigBase64 = null;
             if ($prepUser && $prepUser->signature) {
                 $path = public_path('storage/' . $prepUser->signature);

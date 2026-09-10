@@ -94,68 +94,31 @@
 
                         @foreach($pendingItems as $index => $item)
                         @php
-                            // =========================================================================
-                            // 🔥 LOGIKA UOM & KONVERSI SUPER CERDAS (MENGABAIKAN TABRAKAN ID) 🔥
-                            // =========================================================================
                             $masterItem = $item->item ?? $item;
                             $baseUomId = optional($masterItem)->uom_id;
-                            $baseUomName = strtoupper(optional(optional($masterItem)->uom)->name ?? 'PCS');
+                            $baseUomName = $item->base_uom_name ?? 'PCS';
 
-                            $poUomStr = $item->uom ?? $item->raw_po_uom ?? '';
-                            $poConvFactor = 1;
-                            $poUomDisplay = $baseUomName;
+                            $poConvFactor = $item->po_conv_factor ?? 1;
+                            $poUomDisplay = $item->uom ?? $baseUomName;
+                            $cleanPoUomName = $item->clean_po_uom ?? $baseUomName;
+                            $poUomIdSafe = $item->uom_id_safe ?? null;
 
-                            // 1. PRIORITAS UTAMA: Baca dari UOM ID untuk akurasi mutlak
-                            if (!empty($item->uom_id) && $item->uom_id != $baseUomId) {
-                                $uomDb = collect($masterItem->itemUoms)->where('id', $item->uom_id)->first()
-                                      ?? collect($masterItem->itemUoms)->where('uom_id', $item->uom_id)->first();
-                                if ($uomDb) {
-                                    $poConvFactor = (float) $uomDb->conversion_qty;
-                                    $poUomDisplay = strtoupper($uomDb->uom_name) . ' (ISI: ' . $poConvFactor . ' ' . $baseUomName . ')';
-                                }
-                            }
-
-                            // 2. FALLBACK: Jika ID gagal/tidak ada, baca dari String Text (Penyelamat)
-                            if ($poConvFactor == 1 && !empty($poUomStr)) {
-                                if (is_string($poUomStr) && str_starts_with(trim($poUomStr), '{')) {
-                                    $uomObj = json_decode($poUomStr);
-                                    $poUomStr = $uomObj->code ?? $uomObj->name ?? $baseUomName;
-                                }
-
-                                if (preg_match('/\(Isi:\s*([0-9.]+)/i', $poUomStr, $matches)) {
-                                    $poConvFactor = (float) $matches[1];
-                                    $cleanName = trim(preg_replace('/ \(Isi:.*\)/i', '', $poUomStr));
-                                    $cleanName = preg_replace('/ \[PO\]/i', '', $cleanName);
-                                    $poUomDisplay = strtoupper($cleanName) . ' (ISI: ' . $poConvFactor . ' ' . $baseUomName . ')';
-                                } else {
-                                    $matchedAlt = optional($masterItem)->itemUoms ? collect($masterItem->itemUoms)->where('uom_name', trim($poUomStr))->first() : null;
-                                    if ($matchedAlt) {
-                                        $poConvFactor = (float) $matchedAlt->conversion_qty;
-                                        $poUomDisplay = strtoupper($matchedAlt->uom_name) . ' (ISI: ' . $poConvFactor . ' ' . $baseUomName . ')';
-                                    } elseif (strtoupper(trim($poUomStr)) !== 'PCS' && strtoupper(trim($poUomStr)) !== 'UNIT') {
-                                        $poUomDisplay = strtoupper(trim($poUomStr));
-                                    }
-                                }
-                            }
-
-                            // Kalkulasi Kuantitas Aktual
+                            // Kalkulasi Kuantitas
                             $qtyPesanPo = (float)($item->qty_ordered ?? $item->qty ?? 0);
                             $qtySudahTerimaPo = (float)($item->qty_received ?? 0);
                             $qtySisaPo = max(0, $qtyPesanPo - $qtySudahTerimaPo);
 
-                            // 🔥 MAX BASE QTY = Jatah Maksimal dalam satuan Eceran (Pieces) 🔥
+                            // MAX BASE QTY = Jatah Maksimal dalam satuan Eceran
                             $maxBaseQty = $qtySisaPo * $poConvFactor;
 
                             $isTrackable = $masterItem && ($masterItem->is_asset || $masterItem->is_trackable);
-                            $finalDesc = $item->notes ?? $item->description ?? '-';
+                            $finalDesc = $item->final_description ?? '-';
                         @endphp
 
                         <tr class="item-row" id="row_{{ $index }}">
                             <td class="py-3 ps-4">
                                 <input type="hidden" name="items[{{ $item->id }}][item_id]" value="{{ $masterItem->id ?? '' }}">
-
                                 <div class="mb-1 fw-bold text-dark">{{ $item->item_name ?? $masterItem->name ?? 'Unknown Item' }}</div>
-
                                 <span class="border badge bg-secondary-subtle text-secondary border-secondary-subtle">{{ $masterItem->code ?? '-' }}</span>
                                 @if($isTrackable)
                                     <span class="border badge bg-warning-subtle text-warning-emphasis border-warning"><i class="bi bi-upc-scan me-1"></i>Wajib Lacak (SN)</span>
@@ -163,9 +126,7 @@
 
                                 @if(!empty($finalDesc) && $finalDesc !== '-' && $finalDesc !== ($masterItem->name ?? ''))
                                     <div class="p-2 mt-2 border rounded shadow-sm border-info-subtle bg-info-subtle text-dark" style="font-size: 0.75rem;">
-                                        <div class="mb-1 fw-bold text-info-emphasis">
-                                            <i class="bi bi-info-circle-fill me-1"></i> Catatan & Alokasi:
-                                        </div>
+                                        <div class="mb-1 fw-bold text-info-emphasis"><i class="bi bi-info-circle-fill me-1"></i> Catatan & Alokasi:</div>
                                         {!! nl2br(e($finalDesc)) !!}
                                     </div>
                                 @endif
@@ -183,29 +144,23 @@
 
                             <td>
                                 <div class="mb-1 shadow-sm input-group input-group-sm">
-                                    {{-- Value default dikosongkan (0) agar user wajib mengetik manual untuk keamanan --}}
                                     <input type="number" name="items[{{ $item->id }}][qty_received]" id="qty-input-{{ $index }}" class="text-center form-control fw-bold text-success qty-input" value="0" min="0" max="{{ $qtySisaPo }}" step="0.01" oninput="checkMaxQty({{ $index }}, {{ $isTrackable ? 'true' : 'false' }})">
 
-                                    {{-- 🔥 DROPDOWN KONVERSI UOM CERDAS 🔥 --}}
                                     <select name="items[{{ $item->id }}][uom_id]" id="uom-select-{{ $index }}" class="form-select border-success bg-success-subtle text-success fw-bold uom-selector" style="max-width: 140px;" data-current-conv="{{ $poConvFactor }}" onchange="changeUom(this, {{ $index }}, {{ $maxBaseQty }})">
+                                        <option value="{{ $poUomIdSafe ?? '' }}" data-name="{{ $poUomDisplay }}" data-conv="{{ $poConvFactor }}" selected>{{ $poUomDisplay }} [PO]</option>
 
-                                        {{-- 1. Satuan Bawaan PO --}}
-                                        <option value="{{ $item->uom_id ?? '' }}" data-name="{{ $poUomDisplay }}" data-conv="{{ $poConvFactor }}" selected>{{ $poUomDisplay }} [PO]</option>
-
-                                        {{-- 2. Satuan Dasar Eceran (Jika PO menggunakan Pack) --}}
                                         @if($poConvFactor != 1)
                                             <option value="{{ $baseUomId }} " data-name="{{ $baseUomName }}" data-conv="1">{{ $baseUomName }} (Ecer)</option>
                                         @endif
 
-                                        {{-- 3. Satuan Alternatif Lainnya --}}
                                         @if(optional($masterItem)->itemUoms)
                                             @foreach($masterItem->itemUoms as $altUom)
                                                 @php
                                                     $altConv = (float)$altUom->conversion_qty;
                                                     $altVal = $altUom->uom_id ?? $altUom->id;
-                                                    $safeAltVal = $altVal . str_repeat(' ', $loop->iteration + 1); // Kamuflase Select2
+                                                    $safeAltVal = $altVal . str_repeat(' ', $loop->iteration + 1);
                                                 @endphp
-                                                @if($altConv != 1 && $altConv != $poConvFactor)
+                                                @if($altConv != 1 && !($altConv == $poConvFactor && strtoupper(trim($altUom->uom_name)) === strtoupper($cleanPoUomName)))
                                                     <option value="{{ $safeAltVal }}" data-name="{{ strtoupper($altUom->uom_name) }} (ISI: {{ $altConv }} {{ $baseUomName }})" data-conv="{{ $altConv }}">
                                                         {{ strtoupper($altUom->uom_name) }} (ISI: {{ $altConv }})
                                                     </option>
@@ -222,7 +177,6 @@
                             <td>
                                 @php
                                     $expectedWhId = '';
-                                    // Ambil variabel gudang jika dikirim controller. Jika tidak, abaikan auto-select.
                                     $warehousesList = $warehouses ?? [];
                                     if (!empty($finalDesc) && count($warehousesList) > 0) {
                                         foreach($warehousesList as $w) {
@@ -327,7 +281,6 @@
         }
     }
 
-    // 🔥 LOGIKA JAVASCRIPT MATEMATIKA KONVERSI 🔥
     function changeUom(selectElement, index, maxBaseQty) {
         let selectedOption = selectElement.options[selectElement.selectedIndex];
         let newConvRate = parseFloat(selectedOption.getAttribute('data-conv')) || 1;
@@ -340,7 +293,6 @@
         let qtyInput = document.getElementById(`qty-input-${index}`);
         let currentQty = parseFloat(qtyInput.value) || 0;
 
-        // Hitung Kuantitas & Maksimal baru secara akurat
         let newQty = (currentQty * oldConvRate) / newConvRate;
         let newMaxVal = parseFloat((maxBaseQty / newConvRate).toFixed(4));
 
@@ -462,7 +414,6 @@
         });
     }
 
-    // 🔥 FUNGSI ALARM SALAH GUDANG 🔥
     function validateWarehouseSelection(selectElement) {
         let expectedWhId = selectElement.getAttribute('data-expected-wh');
         let selectedWhId = selectElement.value;

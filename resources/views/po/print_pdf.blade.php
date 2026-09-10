@@ -37,11 +37,8 @@
 
         .signature-img { max-height: 55px; max-width: 110px; object-fit: contain; margin-top: 5px; }
 
-
-        /* Pengaturan Margin Halaman PDF */
         @page { margin: 15mm 15mm 20mm 15mm; }
 
-        /* Pengaturan Catatan Kaki (Fixed Footer) */
         footer {
             position: fixed;
             bottom: -15mm;
@@ -52,17 +49,14 @@
             font-size: 8pt;
             color: #777;
         }
-
     </style>
 </head>
 <body>
 
     @php
-        // Deteksi Tipe Cetakan (Default ke digital jika variabel tidak ada)
         $isDigital = (!isset($type) || $type === 'digital');
     @endphp
 
-    {{-- 🔥 FOOTER DINAMIS 🔥 --}}
     <footer>
         @if($isDigital)
             <em>Dokumen digital ini diterbitkan secara elektronik oleh sistem ProcureApp pada {{ \Carbon\Carbon::now()->translatedFormat('d F Y H:i') }} WIB dan sah sebagai bukti pemesanan barang.</em>
@@ -122,8 +116,8 @@
         <thead>
             <tr>
                 <th width="5%">No</th>
-                <th width="35%">Deskripsi Barang</th>
-                <th width="10%">Qty</th>
+                <th width="30%">Deskripsi Barang</th>
+                <th width="15%">Qty & Satuan</th>
                 <th width="20%">Harga Satuan</th>
                 <th width="10%">Disc/Tax</th>
                 <th width="20%">Subtotal</th>
@@ -131,13 +125,47 @@
         </thead>
         <tbody>
             @foreach($po->items as $index => $item)
+                @php
+                    // =========================================================================
+                    // 🔥 NATIVE UOM EXTRACTOR (MENGHINDARI BUG ELOQUENT & NULL) 🔥
+                    // =========================================================================
+                    $masterItem = $item->item;
+                    $baseUomName = strtoupper(optional(optional($masterItem)->uom)->name ?? 'PCS');
+
+                    // Tarik murni dari database tanpa campur tangan Model Relasi
+                    $rawUom = $item->getRawOriginal('uom');
+
+                    // Fallback jika database sempat menyimpan NULL di masa lalu
+                    if (empty($rawUom) && !empty($item->uom_id) && $masterItem) {
+                        $altDb = \Illuminate\Support\Facades\DB::table('item_uoms')->where('id', $item->uom_id)->first();
+                        if ($altDb) {
+                            $rawUom = strtoupper($altDb->uom_name) . " (Isi: " . (float)$altDb->conversion_qty . " " . $baseUomName . ")";
+                        }
+                    }
+
+                    if (empty($rawUom)) $rawUom = $baseUomName;
+
+                    // Bersihkan JSON jika ada sisa data kotor
+                    if (is_string($rawUom) && str_starts_with(trim($rawUom), '{')) {
+                        $uomObj = json_decode($rawUom, true);
+                        if ($uomObj) {
+                            $uomObjLower = array_change_key_case($uomObj, CASE_LOWER);
+                            $rawUom = $uomObjLower['uom_name'] ?? $uomObjLower['name'] ?? $uomObjLower['code'] ?? $baseUomName;
+                        }
+                    }
+
+                    $cleanUomDisplay = trim(preg_replace('/ \[PO\]| \[PR\]| \[GR\]/i', '', $rawUom));
+                @endphp
                 <tr>
                     <td class="text-center">{{ $index + 1 }}</td>
                     <td>
                         <strong>{{ optional($item->item)->code ?? '' }} - {{ optional($item->item)->name ?? 'Item Tidak Diketahui' }}</strong><br>
                         <span style="font-size: 8pt; color: #555;">{!! strip_tags($item->description) !!}</span>
                     </td>
-                    <td class="text-center">{{ (float)$item->qty_ordered }} {{ $item->uom }}</td>
+                    <td class="text-center">
+                        <strong style="font-size: 11pt;">{{ (float)$item->qty_ordered }}</strong><br>
+                        <span style="font-size: 7.5pt; font-weight: bold; color: #0d6efd;">{{ $cleanUomDisplay }}</span>
+                    </td>
                     <td class="text-right">{{ number_format($item->unit_price, 0, ',', '.') }}</td>
                     <td class="text-right" style="font-size: 8pt; white-space: nowrap;">
                         @if($item->discount_amount > 0)
@@ -215,7 +243,7 @@
         $approvals = $po->approvals->sortBy('step_order');
         $totalColumns = 2 + $approvals->count();
         $tdWidth = (100 / $totalColumns) . '%';
-        
+
         $prepSigBase64 = null;
         if (optional($po->user)->signature) {
             $path = public_path('storage/' . $po->user->signature);

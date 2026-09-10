@@ -142,47 +142,83 @@
             <div id="itemsContainer">
                 @foreach($pr->items as $index => $item)
                     @php
-                        $baseUomId = optional($item->item)->uom_id;
-                        $baseUomName = optional(optional($item->item)->uom)->name ?? 'PCS';
+                        // =========================================================================
+                        // 🔥 PURE NATIVE QUERY MYSQL (MENGHANCURKAN SEMUA KUTUKAN ELOQUENT) 🔥
+                        // =========================================================================
+                        $masterItem = $item->item;
+                        $baseUomId = optional($masterItem)->uom_id;
+                        $baseUomName = strtoupper(optional($masterItem->uom)->name ?? 'PCS');
+
+                        // 1. KITA HANCURKAN ELOQUENT ORM! BACA DATA MENTAH DARI DATABASE NATIVE
+                        $nativePrItem = \Illuminate\Support\Facades\DB::table('purchase_request_items')->where('id', $item->id)->first();
+
+                        $prUomId = $nativePrItem->uom_id ?? null;
+                        $rawPrUom = $nativePrItem->uom ?? $baseUomName;
 
                         $prConvRate = 1;
                         $cleanPrUom = $baseUomName;
-                        $safePrUom = $baseUomName;
-                        $prUomId = $item->uom_id ?? $baseUomId;
 
-                        if ($prUomId == $baseUomId) {
-                            $prConvRate = 1;
-                            $cleanPrUom = $baseUomName;
-                            $safePrUom = $baseUomName;
-                        } elseif (!empty($prUomId) && optional($item->item)->itemUoms) {
-                            $altUom = collect($item->item->itemUoms)->where('id', $prUomId)->first() ?? collect($item->item->itemUoms)->where('uom_id', $prUomId)->first();
-                            if ($altUom) {
-                                $prConvRate = (float) $altUom->conversion_qty;
-                                $cleanPrUom = $altUom->uom_name;
-                                $safePrUom = $cleanPrUom . ' (Isi: ' . $prConvRate . ' ' . $baseUomName . ')';
-                            }
+                        // 2. PRIORITAS 1: CARI BERDASARKAN ID DI TABEL KEMASAN ALTERNATIF
+                        $matchedAltById = null;
+                        if ($prUomId && $prUomId != $baseUomId) {
+                            $matchedAltById = \Illuminate\Support\Facades\DB::table('item_uoms')
+                                ->where('id', $prUomId)
+                                ->where('item_id', $masterItem->id)
+                                ->first();
+                        }
+
+                        if ($matchedAltById) {
+                            // JIKA ID COCOK DENGAN BARANGNYA, BERARTI PASTI LUSIN/PACK!
+                            $prConvRate = (float) $matchedAltById->conversion_qty;
+                            $cleanPrUom = strtoupper($matchedAltById->uom_name);
+                            $prUomId = $matchedAltById->id;
                         } else {
-                            $rawUom = $item->getRawOriginal('uom') ?? $item->uom;
-                            if (is_string($rawUom) && !str_starts_with(trim($rawUom), '{')) {
-                                $cleanPrUom = trim(preg_replace('/ \(Isi:.*\)/i', '', $rawUom));
-                                $safePrUom = $rawUom;
-                                if (preg_match('/\(Isi:\s*([0-9.]+)/i', $rawUom, $matches)) {
-                                    $prConvRate = (float) $matches[1];
+                            // 3. PRIORITAS 2: JIKA ID GAGAL (KARENA SMART RESTOCK / MANUAL ERROR), BACA DARI TEKS STRING
+
+                            // Eksekutor Pembersih Sampah JSON di Database
+                            if (is_string($rawPrUom) && str_starts_with(trim($rawPrUom), '{')) {
+                                $uomObj = json_decode($rawPrUom, true);
+                                if ($uomObj) {
+                                    $uomObjLower = array_change_key_case($uomObj, CASE_LOWER);
+                                    $rawPrUom = $uomObjLower['uom_name'] ?? $uomObjLower['name'] ?? $uomObjLower['code'] ?? $baseUomName;
                                 }
+                            }
+
+                            $stringToMatch = strtoupper(trim(preg_replace('/ \(Isi:.*\)/i', '', $rawPrUom)));
+                            $stringToMatch = trim(preg_replace('/ \[PO\]| \[PR\]| \[GR\]/i', '', $stringToMatch));
+
+                            if ($stringToMatch !== $baseUomName && $stringToMatch !== 'PCS' && $stringToMatch !== 'UNIT') {
+                                $matchedAltByName = \Illuminate\Support\Facades\DB::table('item_uoms')
+                                    ->where('item_id', $masterItem->id)
+                                    ->whereRaw('UPPER(uom_name) = ?', [$stringToMatch])
+                                    ->first();
+
+                                if ($matchedAltByName) {
+                                    $prConvRate = (float) $matchedAltByName->conversion_qty;
+                                    $cleanPrUom = strtoupper($matchedAltByName->uom_name);
+                                    $prUomId = $matchedAltByName->id;
+                                }
+                            } else {
+                                $prUomId = $baseUomId;
+                                $cleanPrUom = $baseUomName;
                             }
                         }
 
-                        $targetBaseQty = $item->qty * $prConvRate;
-                        $orderedBaseQty = (float)($item->ordered_qty ?? 0) * $prConvRate;
-                        $sisaBaseQty = max(0, $targetBaseQty - $orderedBaseQty);
-                        $remainingNominal = $prConvRate > 0 ? ($sisaBaseQty / $prConvRate) : 0;
-                        $remainingNominal = round($remainingNominal, 2);
+                        $safePrUom = $prConvRate > 1 ? $cleanPrUom . ' (Isi: ' . $prConvRate . ' ' . $baseUomName . ')' : $cleanPrUom;
 
-                        $itemStatus = strtoupper(trim($item->status ?? ''));
+                        // 4. KALKULASI ABSOLUT SISA JATAH DARI DATA NATIVE DB
+                        $targetBaseQty = (float)$nativePrItem->qty * $prConvRate;
+                        $orderedBaseQty = (float)($nativePrItem->ordered_qty ?? 0) * $prConvRate;
+                        $sisaBaseQty = max(0, $targetBaseQty - $orderedBaseQty);
+
+                        $remainingNominal = $prConvRate > 0 ? ($sisaBaseQty / $prConvRate) : 0;
+                        $remainingNominal = round($remainingNominal, 4);
+
+                        $itemStatus = strtoupper(trim($nativePrItem->status ?? ''));
                         if($sisaBaseQty <= 0 || !in_array($itemStatus, ['APPROVED', 'PARTIAL', 'PARTIAL_PO'])) { continue; }
 
                         $suggestedVendorId = $item->suggested_vendor_id;
-                        $quote = $suggestedVendorId ? $item->vendorQuotes->where('vendor_id', $suggestedVendorId)->first() : optional($item->vendorQuotes)->first();
+                        $quote = $suggestedVendorId ? optional($item->vendorQuotes)->where('vendor_id', $suggestedVendorId)->first() : optional($item->vendorQuotes)->first();
                         $price = $quote ? ($quote->quoted_price ?? $quote->price ?? 0) : 0;
                     @endphp
 
@@ -191,8 +227,8 @@
                             <div class="gap-3 d-flex align-items-center w-75">
                                 <input type="checkbox" name="po_items[{{ $index }}][is_selected]" class="m-0 form-check-input row-checkbox" checked onchange="toggleRow(this)" style="transform: scale(1.4); cursor: pointer;">
                                 <div>
-                                    <div class="fw-bolder text-dark fs-6">{{ optional($item->item)->name ?? 'Item Terhapus' }}</div>
-                                    <span class="mt-1 border badge bg-secondary-subtle text-secondary border-secondary-subtle">{{ optional($item->item)->code }}</span>
+                                    <div class="fw-bolder text-dark fs-6">{{ optional($masterItem)->name ?? 'Item Terhapus' }}</div>
+                                    <span class="mt-1 border badge bg-secondary-subtle text-secondary border-secondary-subtle">{{ optional($masterItem)->code }}</span>
                                     <input type="hidden" name="po_items[{{ $index }}][item_id]" value="{{ $item->item_id }}">
                                     <input type="hidden" name="po_items[{{ $index }}][pr_item_id]" value="{{ $item->id }}">
                                 </div>
@@ -224,7 +260,7 @@
                                         <div class="col-md-7">
                                             <div class="mb-3">
                                                 <label class="form-label small fw-bold text-dark">Nama Barang di PO (Bisa disesuaikan)</label>
-                                                <input type="text" name="po_items[{{ $index }}][item_name_override]" class="form-control form-input-custom fw-bold text-primary" value="{{ $item->item_name ?? optional($item->item)->name }}" placeholder="Ketik nama spesifik barang...">
+                                                <input type="text" name="po_items[{{ $index }}][item_name_override]" class="form-control form-input-custom fw-bold text-primary" value="{{ $item->item_name ?? optional($masterItem)->name }}" placeholder="Ketik nama spesifik barang...">
                                             </div>
                                             <label class="form-label small fw-bold text-dark">Spesifikasi Detail (Bisa diedit)</label>
                                             <textarea name="po_items[{{ $index }}][notes]" id="spec_{{ $index }}" class="form-control form-input-custom ckeditor-spec" placeholder="Ketik spesifikasi detail di sini...">{!! $item->specification ?? $item->notes !!}</textarea>
@@ -239,14 +275,12 @@
                                                     <i class="bi bi-plus-lg me-1"></i> Tambah File
                                                 </button>
 
-                                                {{-- 🔥 FASILITAS VENDOR QUOTES / INTIP PENAWARAN ASLI DARI PR 🔥 --}}
                                                 @if($item->vendorQuotes && $item->vendorQuotes->count() > 0)
                                                 <div class="pt-2 border-top">
                                                     <button class="bg-white shadow-sm btn btn-outline-secondary btn-sm w-100 rounded-3 fw-bold d-flex justify-content-between align-items-center vendor-pr-header" type="button" data-bs-toggle="collapse" data-bs-target="#vendorData{{ $index }}" aria-expanded="false">
                                                         <span class="text-primary"><i class="bi bi-search me-1"></i> Intip Penawaran PR</span>
                                                         <span class="shadow-sm badge bg-primary rounded-pill">{{ $item->vendorQuotes->count() }} Vendor</span>
                                                     </button>
-
                                                     <div class="mt-2 collapse vendor-pr-body" id="vendorData{{ $index }}">
                                                         <div class="gap-2 d-flex flex-column">
                                                             @foreach($item->vendorQuotes as $vq)
@@ -271,22 +305,6 @@
                                                                             <a href="{{ $vq->reference_link }}" target="_blank" onclick="event.stopPropagation();" class="mb-1 text-decoration-none fw-bold me-2 d-inline-block"><i class="bi bi-link-45deg"></i> Link Toko/Bukti</a>
                                                                         @endif
                                                                         <span class="mb-1 text-muted fst-italic d-block">{{ $vq->notes ?? 'Tidak ada catatan.' }}</span>
-
-                                                                        @if(isset($vq->attachments) && count($vq->attachments) > 0)
-                                                                            <div class="flex-wrap gap-1 mt-1 d-flex">
-                                                                                @foreach($vq->attachments as $vFile)
-                                                                                    <a href="{{ asset('storage/' . $vFile->file_path) }}" target="_blank" onclick="event.stopPropagation();" class="border badge bg-secondary-subtle text-secondary text-decoration-none border-secondary-subtle">
-                                                                                        <i class="bi bi-paperclip"></i> {{ $vFile->file_name ?? 'Lampiran' }}
-                                                                                    </a>
-                                                                                @endforeach
-                                                                            </div>
-                                                                        @elseif(!empty($vq->file_path))
-                                                                            <div class="mt-1">
-                                                                                <a href="{{ asset('storage/' . $vq->file_path) }}" target="_blank" onclick="event.stopPropagation();" class="border badge bg-secondary-subtle text-secondary text-decoration-none border-secondary-subtle">
-                                                                                    <i class="bi bi-paperclip"></i> Lihat Lampiran
-                                                                                </a>
-                                                                            </div>
-                                                                        @endif
                                                                     </div>
                                                                 </div>
                                                             @endforeach
@@ -308,22 +326,32 @@
                                     </div>
 
                                     <select name="po_items[{{ $index }}][uom_id]" class="shadow-sm form-select border-primary text-primary fw-bold uom-selector" data-current-conv="{{ $prConvRate }}" onchange="updateRowUom(this, {{ $index }})">
-                                        <option value="{{ $prUomId }}" data-name="{{ $safePrUom }}" data-conv="{{ $prConvRate }}">{{ $cleanPrUom }} @if($prConvRate>1) (Isi: {{(float)$prConvRate}}) @endif [PR]</option>
 
+                                        {{-- Tampilkan Satuan Bawaan PR --}}
+                                        <option value="{{ $prUomId }}" data-name="{{ $safePrUom }}" data-conv="{{ $prConvRate }}" selected>
+                                            {{ $cleanPrUom }} @if($prConvRate > 1) (Isi: {{(float)$prConvRate}} {{ $baseUomName }}) @endif [PR]
+                                        </option>
+
+                                        {{-- Tampilkan Satuan Dasar Jika Bukan Bawaan PR --}}
                                         @if($prConvRate != 1)
-                                            <option value="{{ $baseUomId }} " data-name="{{ $baseUomName }}" data-conv="1">{{ $baseUomName }} (Dasar)</option>
+                                            <option value="{{ $baseUomId }} " data-name="{{ $baseUomName }}" data-conv="1">{{ $baseUomName }} (Ecer)</option>
                                         @endif
 
-                                        @if(optional($item->item)->itemUoms)
-                                            @foreach($item->item->itemUoms as $altUom)
+                                        {{-- Tampilkan Satuan Alternatif Lainnya --}}
+                                        @if(optional($masterItem)->itemUoms)
+                                            @foreach($masterItem->itemUoms as $altUom)
                                                 @php
                                                     $altVal = $altUom->uom_id ?? $altUom->id;
                                                     $altConv = (float)$altUom->conversion_qty;
                                                     $safeAltVal = $altVal . str_repeat(' ', $loop->iteration + 1);
+
+                                                    // 🔥 PERBAIKAN: Hanya sembunyikan jika NAMA dan ISI-nya persis sama dengan PR 🔥
+                                                    $isExactSameAsPr = ($altConv == $prConvRate && strtoupper(trim($altUom->uom_name)) === strtoupper($cleanPrUom));
                                                 @endphp
-                                                @if($altConv != 1 && $altConv != $prConvRate)
-                                                    <option value="{{ $safeAltVal }}" data-name="{{ $altUom->uom_name }} (Isi: {{ $altConv }} {{ $baseUomName }})" data-conv="{{ $altConv }}">
-                                                        {{ $altUom->uom_name }} (Isi: {{ $altConv }})
+
+                                                @if($altConv != 1 && !$isExactSameAsPr)
+                                                    <option value="{{ $safeAltVal }}" data-name="{{ strtoupper($altUom->uom_name) }} (Isi: {{ $altConv }} {{ $baseUomName }})" data-conv="{{ $altConv }}">
+                                                        {{ strtoupper($altUom->uom_name) }} (Isi: {{ $altConv }})
                                                     </option>
                                                 @endif
                                             @endforeach
@@ -340,39 +368,27 @@
                                         <input type="number" name="po_items[{{ $index }}][unit_price]" class="form-control text-end fw-bold price-input" value="{{ $price }}" min="0" step="any" oninput="calculateRow(this)" required>
                                     </div>
                                 </div>
-
                                 <div class="col-md-3">
                                     <label class="form-label small fw-bold text-dark">Diskon per Item</label>
                                     <div class="shadow-sm input-group-modern">
-                                        <select name="po_items[{{ $index }}][discount_type]" class="text-center form-select fw-bold text-secondary disc-type" style="flex: 0 0 85px;" onchange="calculateRow(this)">
-                                            <option value="PERCENT">%</option>
-                                            <option value="FIXED" class="dynamic-currency-text">IDR</option>
-                                        </select>
+                                        <select name="po_items[{{ $index }}][discount_type]" class="text-center form-select fw-bold text-secondary disc-type" style="flex: 0 0 85px;" onchange="calculateRow(this)"><option value="PERCENT">%</option><option value="FIXED">IDR</option></select>
                                         <input type="number" name="po_items[{{ $index }}][discount_value]" class="form-control text-end fw-bold text-danger disc-val" value="0" min="0" step="any" oninput="calculateRow(this)">
                                     </div>
                                     <input type="hidden" name="po_items[{{ $index }}][discount_amount]" class="disc-amt-hidden" value="0">
                                 </div>
-
                                 <div class="col-md-3">
                                     <label class="form-label small fw-bold text-dark">Pajak (VAT/PPN)</label>
                                     <div class="shadow-sm input-group-modern">
-                                        <select name="po_items[{{ $index }}][tax_type]" class="text-center form-select fw-bold text-secondary tax-type-select" style="flex: 0 0 85px;" onchange="toggleTaxUI(this); calculateRow(this)">
-                                            <option value="PERCENT">%</option>
-                                            <option value="FIXED" class="dynamic-currency-text">IDR</option>
-                                        </select>
+                                        <select name="po_items[{{ $index }}][tax_type]" class="text-center form-select fw-bold text-secondary tax-type-select" style="flex: 0 0 85px;" onchange="toggleTaxUI(this); calculateRow(this)"><option value="PERCENT">%</option><option value="FIXED">IDR</option></select>
                                         <select name="po_items[{{ $index }}][tax_id]" class="form-select text-end fw-bold text-info tax-master-select" onchange="applyMasterTax(this); calculateRow(this)">
-                                            <option value="" data-rate="0">- Tanpa Pajak -</option>
-                                            <option value="MANUAL_PERCENT" data-rate="0">Manual (%)</option>
-                                            @foreach($taxes as $tax)
-                                                <option value="{{ $tax->id }}" data-rate="{{ (float)$tax->percent }}">{{ $tax->name }} ({{ (float)$tax->percent }}%)</option>
-                                            @endforeach
+                                            <option value="" data-rate="0">- Tanpa Pajak -</option><option value="MANUAL_PERCENT" data-rate="0">Manual (%)</option>
+                                            @foreach($taxes as $tax)<option value="{{ $tax->id }}" data-rate="{{ (float)$tax->percent }}">{{ $tax->name }}</option>@endforeach
                                         </select>
                                         <input type="number" name="po_items[{{ $index }}][tax_value]" class="form-control text-end fw-bold text-info tax-val-input d-none" value="0" min="0" step="any" oninput="calculateRow(this)">
                                     </div>
                                     <input type="hidden" name="po_items[{{ $index }}][tax_amount]" class="tax-amt-hidden" value="0">
                                 </div>
                             </div>
-
                         </div>
                     </div>
                 @endforeach
@@ -462,7 +478,7 @@
                                     <select name="global_discounts[0][vendor_id]" class="bg-white border-0 form-select text-dark small fw-bold dynamic-vendor-select" style="max-width: 120px;">
                                         <option value="ALL">- Semua Vendor -</option>
                                     </select>
-                                    <select name="global_discounts[0][type]" class="px-1 text-center border-0 form-select bg-light fw-bold" style="flex: 0 0 75px;">
+                                    <select name="global_discounts[0][type]" class="px-1 text-center border-0 form-select bg-light fw-bold" style="flex: 0 0 75px;" onchange="calculateGrandTotal()">
                                         <option value="PERCENT">%</option>
                                         <option value="FIXED" class="dynamic-currency-text">IDR</option>
                                     </select>

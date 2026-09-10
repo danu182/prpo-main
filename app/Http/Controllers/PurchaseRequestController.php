@@ -20,7 +20,8 @@ use App\Notifications\DocumentApprovalNotification;
 use App\Models\ApprovalWorkflow;
 use App\Models\DocumentApproval;
 use App\Services\SystemSettingService;
-use PDF;
+use Illuminate\Support\Facades\Schema;
+use Illuminate\Database\Schema\Blueprint;
 
 class PurchaseRequestController extends Controller
 {
@@ -31,48 +32,32 @@ class PurchaseRequestController extends Controller
     // =========================================================================
     public function index(\Illuminate\Http\Request $request)
     {
-        // 1. Tangkap semua input filter dari Blade
         $search = $request->input('search');
         $statusFilter = $request->input('status');
         $departmentFilter = $request->input('department');
 
-        // 2. Ambil data User yang sedang Login
         $user = auth()->user();
-
-        // 🔥 LOGIKA BYPASS SUPER ADMIN YANG LEBIH KUAT & ANTI GAGAL 🔥
         $userRoleNames = $user->getRoleNames()->toArray();
         $isSuperAdmin = in_array('Super Admin', $userRoleNames) || in_array('Super Administrator', $userRoleNames) || $user->id === 1;
-
         $userRoleIds = $user->roles->pluck('id')->toArray();
 
-        // 3. Kueri utama untuk menarik data PR (Purchase Request)
         $query = \App\Models\PurchaseRequest::with(['user', 'status', 'company', 'purchaseOrders']);
 
-        // =========================================================================
-        // 🔥 GEMBOK PRIVASI: MENCEGAH SALING INTIP DOKUMEN 🔥
-        // =========================================================================
         if (!$isSuperAdmin) {
             $query->where(function ($q) use ($user, $userRoleIds) {
-                // A. User bisa melihat dokumen jika dia adalah Pembuat (Creator/Requester)
-                // HANYA MENGGUNAKAN user_id KARENA KOLOM created_by TIDAK ADA DI TABEL
                 $q->where('purchase_requests.user_id', $user->id);
 
-                // B. User bisa melihat dokumen jika dia bertugas sebagai APPROVER (Penyetuju)
                 if (!empty($userRoleIds)) {
                     $q->orWhereExists(function ($subQuery) use ($user, $userRoleIds) {
                         $subQuery->select(\DB::raw(1))
                                  ->from('document_approvals')
-                                 // Join ke tabel users untuk mencocokkan departemen pembuat PR
                                  ->join('users as pembuat', 'pembuat.id', '=', 'purchase_requests.user_id')
                                  ->whereColumn('document_approvals.document_id', 'purchase_requests.id')
                                  ->whereIn('document_approvals.document_type', [\App\Models\PurchaseRequest::class, 'PR', 'PurchaseRequest'])
                                  ->whereIn('document_approvals.role_id', $userRoleIds)
                                  ->where(function ($deptQ) use ($user) {
-                                     // 1. Jika Matriks secara spesifik menunjuk ke departemen user ini
                                      $deptQ->where('document_approvals.target_department_id', $user->department_id)
-                                           // 2. Jika Matriks berlaku umum (Semua Departemen)
                                            ->orWhere('document_approvals.target_department_id', 'all')
-                                           // 3. Jika Matriks Kosong (Default), maka departemen Pembuat PR harus SAMA dengan departemen Approver
                                            ->orWhere(function ($emptyDeptQ) use ($user) {
                                                $emptyDeptQ->where(function($qNull) {
                                                     $qNull->whereNull('document_approvals.target_department_id')
@@ -84,9 +69,7 @@ class PurchaseRequestController extends Controller
                 }
             });
         }
-        // =========================================================================
 
-        // 4. Terapkan Filter Pencarian & Dropdown
         $query->when($search, function ($q) use ($search) {
             $q->where(function($subQ) use ($search) {
                 $subQ->where('pr_number', 'like', "%{$search}%")
@@ -108,14 +91,10 @@ class PurchaseRequestController extends Controller
             });
         });
 
-        // 5. Eksekusi Kueri dengan Paginasi
         $requests = $query->latest()->paginate(10);
-
-        // 6. Tarik data untuk mengisi dropdown filter di atas tabel
         $statuses = \App\Models\Status::where('type', 'PR')->get();
         $companies = \App\Models\Company::orderBy('name')->get();
 
-        // 7. Lempar data ke halaman pr.index
         return view('pr.index', compact('requests', 'statuses', 'companies'));
     }
 
@@ -127,7 +106,6 @@ class PurchaseRequestController extends Controller
         $currencies = \App\Models\Currency::where('is_active', true)->get();
         $users = \App\Models\User::with('company')->orderBy('name')->get();
 
-        // 🔥 TARIK DATA MATRIKS KHUSUS PR 🔥
         $customWorkflows = [];
         if (class_exists('\App\Models\ApprovalWorkflow')) {
             $customWorkflows = \App\Models\ApprovalWorkflow::where('is_active', true)
@@ -141,6 +119,9 @@ class PurchaseRequestController extends Controller
         return view('pr.create', compact('companies', 'vendors', 'currencies', 'users', 'customWorkflows'));
     }
 
+    // =========================================================================
+    // 🔥 PENCARIAN BARANG & KONVERSI UOM (ANTI TABRAKAN) 🔥
+    // =========================================================================
     public function searchItems(Request $request)
     {
         $search = $request->search;
@@ -157,17 +138,17 @@ class PurchaseRequestController extends Controller
         $formattedItems = [];
         foreach ($items as $item) {
             $uomList = [];
-            $baseUomName = optional($item->uom)->name ?? 'Unit';
+            $baseUomName = strtoupper(optional($item->uom)->name ?? 'UNIT');
 
-            // 1. Masukkan Satuan Dasar
+            // 1. Masukkan Satuan Dasar (Berikan Prefix BASE_)
             $uomList[] = [
-                'id' => $item->uom_id ?? '',
-                'name' => $baseUomName,
+                'id' => 'BASE_' . ($item->uom_id ?? 0),
+                'name' => $baseUomName . ' (Dasar)',
                 'isi' => 1,
                 'base' => $baseUomName
             ];
 
-            // 2. Tarik Kemasan Alternatif Manual dari Database
+            // 2. Tarik Kemasan Alternatif (Berikan Prefix ALT_)
             try {
                 $altUoms = \Illuminate\Support\Facades\DB::table('item_uoms')
                     ->where('item_id', $item->id)
@@ -176,8 +157,8 @@ class PurchaseRequestController extends Controller
 
                 foreach ($altUoms as $alt) {
                     $uomList[] = [
-                        'id' => $alt->id,
-                        'name' => $alt->uom_name,
+                        'id' => 'ALT_' . $alt->id,
+                        'name' => strtoupper($alt->uom_name) . ' (Isi: ' . (float)$alt->conversion_qty . ')',
                         'isi' => $alt->conversion_qty,
                         'base' => $baseUomName
                     ];
@@ -218,8 +199,18 @@ class PurchaseRequestController extends Controller
         return $prefix . sprintf('%04d', $newNumber);
     }
 
+    // =========================================================================
+    // 🔥 STORE PR (MENGANDUNG AUTO-HEAL DATABASE & ANTI-TABRAKAN UOM) 🔥
+    // =========================================================================
     public function store(Request $request, \App\Services\SystemSettingService $settingService)
     {
+        // 🔥 AUTO-HEAL DATABASE: Jika kolom uom belum ada, sistem akan otomatis membuatnya! 🔥
+        if (!Schema::hasColumn('purchase_request_items', 'uom')) {
+            Schema::table('purchase_request_items', function (Blueprint $table) {
+                $table->string('uom')->nullable()->after('uom_id');
+            });
+        }
+
         $request->validate([
             'user_id'         => 'required|exists:users,id',
             'company_id'      => 'required|exists:companies,id',
@@ -229,8 +220,8 @@ class PurchaseRequestController extends Controller
             'items'           => 'required|array|min:1',
             'items.*.item_id' => 'required|exists:items,id',
             'items.*.qty'     => 'required|numeric|min:0.01',
-            'items.*.uom_id'  => 'required|integer',
-            'items.*.item_name'     => 'nullable|string|max:255', // 🔥 Validasi Nama Spesifik
+            'items.*.uom_id'  => 'required',
+            'items.*.item_name'     => 'nullable|string|max:255',
             'items.*.specification' => 'nullable|string',
             'items.*.vendors.*.files.*' => 'nullable|file|mimes:pdf,jpg,jpeg,png,doc,docx,xls,xlsx|max:5120',
         ], [
@@ -241,7 +232,6 @@ class PurchaseRequestController extends Controller
             DB::transaction(function () use ($request, $settingService) {
                 $newPrNumber = $this->generatePrNumber($request->company_id);
 
-                // 1. Hitung Estimasi Total
                 $estimasiGrandTotal = 0;
                 foreach ($request->items as $itemData) {
                     $hargaTermurah = 0;
@@ -252,7 +242,6 @@ class PurchaseRequestController extends Controller
                     $estimasiGrandTotal += ($itemData['qty'] * $hargaTermurah);
                 }
 
-                // 2. Buat Header PR
                 $pr = \App\Models\PurchaseRequest::create([
                     'pr_number'             => $newPrNumber,
                     'user_id'               => $request->user_id,
@@ -265,26 +254,49 @@ class PurchaseRequestController extends Controller
                     'created_by'            => auth()->id(),
                 ]);
 
-                // 3. Simpan Item, Vendor, dan Upload Lampiran
                 foreach ($request->items as $itemIndex => $itemData) {
-                    $uomName = 'PCS';
                     $masterItem = \App\Models\Item::with('uom', 'itemUoms')->find($itemData['item_id']);
+                    $baseUomName = strtoupper(optional($masterItem->uom)->name ?? 'PCS');
+
+                    $uomName = $baseUomName;
+                    $finalUomId = null;
+
+                    // 🔥 LOGIKA CERDAS DEKODE UOM 🔥
                     if ($masterItem) {
-                        if ($masterItem->uom_id == $itemData['uom_id']) { $uomName = $masterItem->uom->name; }
-                        else { $altUom = $masterItem->itemUoms->where('id', $itemData['uom_id'])->first(); $uomName = $altUom ? $altUom->uom_name : 'PCS'; }
+                        $rawUomId = $itemData['uom_id'];
+
+                        if (str_starts_with($rawUomId, 'ALT_')) {
+                            $cleanId = (int) str_replace('ALT_', '', $rawUomId);
+                            $altUom = collect($masterItem->itemUoms)->where('id', $cleanId)->first();
+                            if ($altUom) {
+                                $finalUomId = $cleanId;
+                                $uomName = strtoupper($altUom->uom_name);
+                            }
+                        } elseif (str_starts_with($rawUomId, 'BASE_')) {
+                            $cleanId = (int) str_replace('BASE_', '', $rawUomId);
+                            $finalUomId = $cleanId;
+                            $uomName = $baseUomName;
+                        } else {
+                            $finalUomId = (int) $rawUomId;
+                            if ($finalUomId == $masterItem->uom_id) {
+                                $uomName = $baseUomName;
+                            } else {
+                                $altUom = collect($masterItem->itemUoms)->where('id', $finalUomId)->first();
+                                if ($altUom) {
+                                    $uomName = strtoupper($altUom->uom_name);
+                                }
+                            }
+                        }
                     }
 
                     $prItem = \App\Models\PurchaseRequestItem::create([
                         'purchase_request_id' => $pr->id,
                         'item_id'             => $itemData['item_id'],
-
-                        // 🔥 SIMPAN NAMA SPESIFIK & DESKRIPSI 🔥
                         'item_name'           => $itemData['item_name'] ?? null,
                         'specification'       => $itemData['specification'] ?? null,
-
                         'qty'                 => $itemData['qty'],
-                        'uom_id'              => $itemData['uom_id'],
-                        'uom'                 => $uomName,
+                        'uom_id'              => $finalUomId,
+                        'uom'                 => $uomName, // INI SEKARANG DIJAMIN MASUK KE DATABASE KARENA KOLOM UOM SUDAH DIBIKIN!
                         'estimated_price'     => 0,
                         'status'              => 'PENDING'
                     ]);
@@ -305,7 +317,6 @@ class PurchaseRequestController extends Controller
                                     'updated_at'     => now(),
                                 ]);
 
-                                // Handle Upload Lampiran Vendor
                                 if ($request->hasFile("items.$itemIndex.vendors.$vendorIndex.files")) {
                                     $safePrNumber = str_replace(['/', '\\'], '-', $newPrNumber);
 
@@ -337,14 +348,10 @@ class PurchaseRequestController extends Controller
                     }
                 }
 
-                // ====================================================================
-                // 🔥 LOGIKA OVERRIDE WORKFLOW (JALUR TIKUS / CUSTOM ROUTE) 🔥
-                // ====================================================================
                 $customWorkflowId = $request->input('custom_workflow_id');
                 $needsApproval = false;
 
                 if ($customWorkflowId) {
-                    // JIKA MEMILIH MATRIKS MANUAL DARI DROPDOWN
                     $workflow = \App\Models\ApprovalWorkflow::with('steps')->find($customWorkflowId);
 
                     if ($workflow && $workflow->steps->count() > 0) {
@@ -364,17 +371,15 @@ class PurchaseRequestController extends Controller
                         $this->logHistory($pr->id, 'SYSTEM', "Menggunakan Rute Persetujuan Khusus: " . $workflow->name);
                     }
                 } else {
-                    // JIKA DROPDOWN KOSONG (GUNAKAN STANDAR DEPARTEMEN)
-                    $pr->amount = $estimasiGrandTotal; // Set sementara untuk perhitungan
+                    $pr->amount = $estimasiGrandTotal;
                     $needsApproval = \App\Services\ApprovalService::generateWorkflow($pr);
-                    unset($pr->amount); // Bersihkan kembali agar tidak error saat disimpan
+                    unset($pr->amount);
 
                     if ($needsApproval) {
                         $this->logHistory($pr->id, 'SYSTEM', "Rute persetujuan standar (Departemen) berhasil di-generate.");
                     }
                 }
 
-                // UPDATE STATUS PR BERDASARKAN HASIL MATRIKS
                 if ($needsApproval) {
                     $pendingStatus = \App\Models\Status::where('type', 'PR')->where('slug', 'pending_approval')->first();
                     $pr->update(['status_id' => $pendingStatus ? $pendingStatus->id : 1]);
@@ -384,7 +389,7 @@ class PurchaseRequestController extends Controller
                     $this->logHistory($pr->id, 'AUTO-APPROVED', "PR {$newPrNumber} disetujui otomatis karena tidak ada aturan aktif atau nominal di bawah batas.");
                 }
 
-            }); // <-- Ini penutup dari DB::transaction
+            });
 
             return redirect()->route('pr.index')->with('success', 'PR Berhasil Diajukan beserta seluruh data Vendor!');
         } catch (\Exception $e) {
@@ -406,7 +411,6 @@ class PurchaseRequestController extends Controller
         $vendors = \App\Models\Vendor::where('is_active', true)->get();
         $users = \App\Models\User::orderBy('name')->get();
 
-        // 🔥 TARIK DATA MATRIKS KHUSUS PR 🔥
         $customWorkflows = [];
         $selectedWorkflowId = null;
 
@@ -419,7 +423,6 @@ class PurchaseRequestController extends Controller
                       ->orWhere('document_type', 'PurchaseRequest');
                 })->get();
 
-            // Lacak matriks apa yang dipakai sebelumnya dari histori
             $historyLog = \App\Models\PurchaseRequestHistory::where('purchase_request_id', $pr->id)
                 ->where('action', 'SYSTEM')
                 ->where('note', 'like', 'Menggunakan Rute Persetujuan Khusus:%')
@@ -442,6 +445,13 @@ class PurchaseRequestController extends Controller
     // =========================================================================
     public function update(Request $request, $slug, \App\Services\SystemSettingService $settingService)
     {
+        // 🔥 AUTO-HEAL DATABASE
+        if (!Schema::hasColumn('purchase_request_items', 'uom')) {
+            Schema::table('purchase_request_items', function (Blueprint $table) {
+                $table->string('uom')->nullable()->after('uom_id');
+            });
+        }
+
         $request->validate([
             'user_id'         => 'required|exists:users,id',
             'company_id'      => 'required|exists:companies,id',
@@ -451,6 +461,7 @@ class PurchaseRequestController extends Controller
             'items'           => 'required|array|min:1',
             'items.*.item_id' => 'required|exists:items,id',
             'items.*.qty'     => 'required|numeric|min:0.01',
+            'items.*.uom_id'  => 'required',
             'items.*.item_name'     => 'nullable|string|max:255',
             'items.*.specification' => 'nullable|string',
         ]);
@@ -467,7 +478,6 @@ class PurchaseRequestController extends Controller
                     'description'  => $request->description,
                 ]);
 
-                // 1. HITUNG ULANG ESTIMASI GRAND TOTAL
                 $estimasiGrandTotal = 0;
                 foreach ($request->items as $itemData) {
                     $hargaTermurah = 0;
@@ -478,7 +488,6 @@ class PurchaseRequestController extends Controller
                     $estimasiGrandTotal += ($itemData['qty'] * $hargaTermurah);
                 }
 
-                // 2. PENYELAMATAN & PEMBERSIHAN FILE LAMA
                 $keptFileIds = [];
                 foreach ($request->items as $itemData) {
                     if (isset($itemData['vendors'])) {
@@ -490,17 +499,14 @@ class PurchaseRequestController extends Controller
                     }
                 }
 
-                // Ambil data file yang dipertahankan untuk dimasukkan lagi nanti
                 $savedFilesData = DB::table('pr_vendor_attachments')->whereIn('id', $keptFileIds)->get()->keyBy('id');
 
-                // BERSINKAN RECORD LAMA & HAPUS FILE FISIK YANG TIDAK DIPERTAHANKAN
                 foreach($pr->items as $oldItem) {
                     $oldVendors = $oldItem->vendorQuotes ?? $oldItem->vendors ?? [];
                     foreach($oldVendors as $oldVendor) {
                         $attachments = DB::table('pr_vendor_attachments')->where('pr_item_vendor_id', $oldVendor->id)->get();
                         foreach($attachments as $att) {
                             if (!in_array($att->id, $keptFileIds)) {
-                                // 🔥 Hapus fisik file dari server jika user menghapusnya dari layar 🔥
                                 if (\Illuminate\Support\Facades\Storage::disk('public')->exists($att->file_path)) {
                                     \Illuminate\Support\Facades\Storage::disk('public')->delete($att->file_path);
                                 }
@@ -512,13 +518,38 @@ class PurchaseRequestController extends Controller
                     $oldItem->delete();
                 }
 
-                // 3. MASUKKAN ITEM & VENDOR BARU
                 foreach ($request->items as $itemIndex => $itemData) {
-                    $uomName = 'Unit';
                     $masterItem = \App\Models\Item::with('uom', 'itemUoms')->find($itemData['item_id']);
+                    $baseUomName = strtoupper(optional($masterItem->uom)->name ?? 'PCS');
+
+                    $uomName = $baseUomName;
+                    $finalUomId = null;
+
                     if ($masterItem) {
-                        if ($masterItem->uom_id == $itemData['uom_id']) { $uomName = optional($masterItem->uom)->name ?? 'Unit'; }
-                        else { $altUom = $masterItem->itemUoms->where('id', $itemData['uom_id'])->first(); $uomName = $altUom ? $altUom->uom_name : 'Unit'; }
+                        $rawUomId = $itemData['uom_id'];
+
+                        if (str_starts_with($rawUomId, 'ALT_')) {
+                            $cleanId = (int) str_replace('ALT_', '', $rawUomId);
+                            $altUom = collect($masterItem->itemUoms)->where('id', $cleanId)->first();
+                            if ($altUom) {
+                                $finalUomId = $cleanId;
+                                $uomName = strtoupper($altUom->uom_name);
+                            }
+                        } elseif (str_starts_with($rawUomId, 'BASE_')) {
+                            $cleanId = (int) str_replace('BASE_', '', $rawUomId);
+                            $finalUomId = $cleanId;
+                            $uomName = $baseUomName;
+                        } else {
+                            $finalUomId = (int) $rawUomId;
+                            if ($finalUomId == $masterItem->uom_id) {
+                                $uomName = $baseUomName;
+                            } else {
+                                $altUom = collect($masterItem->itemUoms)->where('id', $finalUomId)->first();
+                                if ($altUom) {
+                                    $uomName = strtoupper($altUom->uom_name);
+                                }
+                            }
+                        }
                     }
 
                     $prItem = \App\Models\PurchaseRequestItem::create([
@@ -527,15 +558,13 @@ class PurchaseRequestController extends Controller
                         'item_name'           => $itemData['item_name'] ?? null,
                         'specification'       => $itemData['specification'] ?? null,
                         'qty'                 => $itemData['qty'],
-                        'uom_id'              => $itemData['uom_id'],
-                        'uom'                 => $uomName,
+                        'uom_id'              => $finalUomId,
+                        'uom'                 => $uomName, // MASUK KE DB DENGAN AMAN!
                         'status'              => 'PENDING'
                     ]);
 
                     if (isset($itemData['vendors'])) {
                         foreach ($itemData['vendors'] as $vIdx => $vData) {
-
-                            // LOMPATI JIKA VENDOR KOSONG
                             if (empty($vData['vendor_id'])) continue;
 
                             $currencyObj = \App\Models\Currency::where('code', $vData['currency'] ?? 'IDR')->first();
@@ -550,7 +579,6 @@ class PurchaseRequestController extends Controller
                                 'created_at'     => now(), 'updated_at' => now(),
                             ]);
 
-                            // A. KEMBALIKAN FILE LAMA YANG DIPERTAHANKAN
                             if (!empty($vData['existing_files'])) {
                                 foreach ($vData['existing_files'] as $oldFileId) {
                                     if ($savedFilesData->has($oldFileId)) {
@@ -565,7 +593,6 @@ class PurchaseRequestController extends Controller
                                 }
                             }
 
-                            // B. SIMPAN FILE UPLOAD BARU
                             if ($request->hasFile("items.$itemIndex.vendors.$vIdx.files")) {
                                 $settingPath = \Illuminate\Support\Facades\DB::table('system_settings')->where('setting_key', 'path_pr_attachment')->value('setting_value');
                                 $basePath = $settingPath ? $settingPath : 'attachments/purchase_requests';
@@ -589,11 +616,6 @@ class PurchaseRequestController extends Controller
 
                 $this->logHistory($pr->id, 'UPDATED', "Data PR diperbarui oleh " . auth()->user()->name);
 
-                // ====================================================================
-                // 🔥 4. LOGIKA OVERRIDE WORKFLOW (JALUR TIKUS / CUSTOM ROUTE) 🔥
-                // ====================================================================
-
-                // Bersihkan matriks lama terlebih dahulu agar tidak dobel
                 \App\Models\DocumentApproval::where('document_id', $pr->id)->whereIn('document_type', [get_class($pr), 'PR', 'PurchaseRequest'])->delete();
 
                 $customWorkflowId = $request->input('custom_workflow_id');
@@ -617,7 +639,7 @@ class PurchaseRequestController extends Controller
                         $this->logHistory($pr->id, 'SYSTEM', "Revisi menggunakan Rute Persetujuan Khusus: " . $workflow->name);
                     }
                 } else {
-                    $pr->amount = $estimasiGrandTotal; // Set sementara untuk perhitungan
+                    $pr->amount = $estimasiGrandTotal;
                     $needsApproval = \App\Services\ApprovalService::generateWorkflow($pr);
                     unset($pr->amount);
 
@@ -626,7 +648,6 @@ class PurchaseRequestController extends Controller
                     }
                 }
 
-                // 5. UPDATE STATUS PR BERDASARKAN HASIL MATRIKS
                 if ($needsApproval) {
                     $pendingStatus = \App\Models\Status::where('type', 'PR')->where('slug', 'pending_approval')->first();
                     $pr->update(['status_id' => $pendingStatus ? $pendingStatus->id : 1]);
@@ -675,7 +696,6 @@ class PurchaseRequestController extends Controller
         if ($currentApproval) {
             $currentRoleName = $currentApproval->role->name;
 
-            // 🔥 1. Bikin Nama Lengkap (Jabatan + Departemen) untuk ditampilkan di Blade
             $targetDeptId = $currentApproval->target_department_id;
             $deptName = '';
             if (!empty($targetDeptId) && $targetDeptId !== 'all') {
@@ -686,22 +706,19 @@ class PurchaseRequestController extends Controller
             }
             $roleDisplay = $currentRoleName . $deptName;
 
-            // 🔥 2. Logika Kunci Ganda: Cek Jabatan (Role) & Cek Divisi (Department)
             if ($user->hasRole('Super Admin') || $user->hasRole('Super Administrator')) {
                 $canApprove = true;
             } elseif ($user->hasRole($currentRoleName)) {
                 if (!empty($targetDeptId) && $targetDeptId !== 'all') {
-                    // Harus dari departemen yang diwajibkan Matriks
                     if ($user->department_id == $targetDeptId) {
                         $canApprove = true;
                     }
                 } else {
-                    // Atasan Langsung (Sama dengan departemen pembuat PR)
                     $pembuatPR = \App\Models\User::find($pr->user_id);
                     if ($pembuatPR && $user->department_id == $pembuatPR->department_id) {
                         $canApprove = true;
                     } elseif ($targetDeptId === 'all') {
-                        $canApprove = true; // Berlaku untuk semua departemen
+                        $canApprove = true;
                     }
                 }
             }
@@ -732,7 +749,6 @@ class PurchaseRequestController extends Controller
             return redirect()->back()->with('error', 'Dokumen ini tidak sedang menunggu persetujuan Anda.');
         }
 
-        // 🔥 LOGIKA KEAMANAN GANDA SAAT SUBMIT 🔥
         $user = auth()->user();
         $isAuthorized = false;
 
@@ -759,7 +775,6 @@ class PurchaseRequestController extends Controller
 
         $approverRoleName = $currentApproval ? $currentApproval->role->name : 'Atasan';
 
-        // EKSEKUSI PENOLAKAN GLOBAL
         if ($request->global_action === 'REJECT') {
             if ($currentApproval) {
                 $currentApproval->update(['status' => 'REJECTED', 'approved_by' => auth()->id(), 'approved_at' => now()]);
@@ -780,7 +795,6 @@ class PurchaseRequestController extends Controller
             return redirect()->route('pr.index')->with('error', 'Purchase Request ditolak secara keseluruhan.');
         }
 
-        // EKSEKUSI PERSETUJUAN PER ITEM
         $totalApprovedItems = 0;
         $rejectedDetails = [];
         $vendorDetails = [];
@@ -822,7 +836,6 @@ class PurchaseRequestController extends Controller
             return redirect()->route('pr.index')->with('error', 'PR ditolak karena semua item di dalamnya ditolak.');
         }
 
-        // DOKUMEN LOLOS MATRIKS
         $currentApproval->update(['status' => 'APPROVED', 'approved_by' => auth()->id(), 'approved_at' => now()]);
         $pr->update(['current_approval_level' => $currentApproval->step_order]);
 
@@ -1052,6 +1065,132 @@ class PurchaseRequestController extends Controller
         ]);
     }
 
+    // =========================================================================
+    // 🔥 GENERATE PR DARI SMART RESTOCK (PASTIKAN UOM STRING TERSIMPAN) 🔥
+    // =========================================================================
+    public function generateMassPr(\Illuminate\Http\Request $request)
+    {
+        // 🔥 AUTO-HEAL DATABASE: Jika kolom uom belum ada, sistem akan otomatis membuatnya! 🔥
+        if (!Schema::hasColumn('purchase_request_items', 'uom')) {
+            Schema::table('purchase_request_items', function (Blueprint $table) {
+                $table->string('uom')->nullable()->after('uom_id');
+            });
+        }
+
+        $request->validate(['items' => 'required|array']);
+
+        \Illuminate\Support\Facades\DB::beginTransaction();
+        try {
+            $selectedItems = collect($request->items)->filter(function ($item) {
+                return isset($item['is_selected']) && $item['qty'] > 0;
+            });
+
+            if ($selectedItems->isEmpty()) {
+                throw new \Exception('Gagal: Anda harus mencentang minimal 1 barang untuk dibuatkan PR!');
+            }
+
+            $consolidatedItems = [];
+            foreach ($selectedItems as $item) {
+                $itemId = $item['item_id'];
+                $qty = (float)$item['qty'];
+                $warehouseName = $item['warehouse_name'] ?? 'Gudang Utama / Default';
+
+                $groupKey = $itemId . '_' . $warehouseName;
+
+                if (!isset($consolidatedItems[$groupKey])) {
+                    $consolidatedItems[$groupKey] = [
+                        'item_id'   => $itemId,
+                        'warehouse' => $warehouseName,
+                        'total_qty' => 0,
+                    ];
+                }
+                $consolidatedItems[$groupKey]['total_qty'] += $qty;
+            }
+
+            $companyId = $request->company_id;
+            $prNumber = $this->generatePrNumber($companyId);
+            $statusDraftId = \App\Models\Status::where('type', 'PR')->whereIn('slug', ['draft', 'pending'])->first()->id ?? 1;
+
+            $pr = \App\Models\PurchaseRequest::create([
+                'pr_number'     => $prNumber,
+                'request_date'  => now(),
+                'need_date'     => now()->addDays(14),
+                'department_id' => auth()->user()->department_id ?? null,
+                'company_id'    => $companyId,
+                'user_id'       => auth()->id(),
+                'requester_id'  => auth()->id(),
+                'description'   => 'Auto-Restock Rombongan (Multi-Gudang)',
+                'status_id'     => $statusDraftId,
+                'notes'         => 'Dokumen PR ini digenerate secara otomatis oleh sistem Smart Restock.',
+            ]);
+
+            foreach ($consolidatedItems as $data) {
+                $masterItem = \App\Models\Item::with('uom')->find($data['item_id']);
+                if (!$masterItem) continue;
+
+                $alokasiTeks = "Rincian Alokasi:\n- " . $data['total_qty'] . " Pcs dialokasikan untuk " . $data['warehouse'];
+
+                \Illuminate\Support\Facades\DB::table('purchase_request_items')->insert([
+                    'purchase_request_id' => $pr->id,
+                    'item_id'             => $masterItem->id,
+                    'item_name'           => $masterItem->name,
+                    'qty'                 => $data['total_qty'],
+                    'uom_id'              => $masterItem->uom_id ?? null,
+                    'uom'                 => strtoupper(optional($masterItem->uom)->name ?? 'PCS'), // 🔥 PASTIKAN STRING TERSIMPAN!
+                    'status'              => 'PENDING',
+                    'allocation_notes'    => $alokasiTeks,
+                    'created_at'          => now(),
+                    'updated_at'          => now(),
+                ]);
+            }
+
+            $needsApproval = \App\Services\ApprovalService::generateWorkflow($pr);
+
+            if ($needsApproval) {
+                $statusPending = \App\Models\Status::where('type', 'PR')->where('slug', 'pending_approval')->first();
+                if ($statusPending) $pr->update(['status_id' => $statusPending->id]);
+
+                if (class_exists('\App\Models\PurchaseRequestHistory')) {
+                    \App\Models\PurchaseRequestHistory::create([
+                        'purchase_request_id' => $pr->id,
+                        'user_id' => auth()->id(),
+                        'action' => 'SUBMITTED',
+                        'note' => 'PR Massal digenerate otomatis dan masuk antrean persetujuan.'
+                    ]);
+                }
+            } else {
+                $statusApproved = \App\Models\Status::where('type', 'PR')->where('slug', 'approved')->first();
+                if ($statusApproved) $pr->update(['status_id' => $statusApproved->id]);
+
+                if (class_exists('\App\Models\PurchaseRequestHistory')) {
+                    \App\Models\PurchaseRequestHistory::create([
+                        'purchase_request_id' => $pr->id,
+                        'user_id' => auth()->id(),
+                        'action' => 'APPROVED',
+                        'note' => 'PR Massal Auto-Approved karena tidak ada aturan matriks.'
+                    ]);
+                }
+            }
+
+            if (class_exists('\App\Models\History')) {
+                \App\Models\History::create([
+                    'record_id'   => $pr->id,
+                    'record_type' => get_class($pr),
+                    'user_id'     => auth()->id(),
+                    'action'      => 'CREATED',
+                    'note'        => 'Dokumen PR dibuat masal melalui fitur Smart Restock.'
+                ]);
+            }
+
+            \Illuminate\Support\Facades\DB::commit();
+            return redirect()->route('pr.edit', $pr->pr_number)->with('success', 'Hore! Mass PR berhasil di-generate secara otomatis dan Rute Persetujuan telah aktif!');
+
+        } catch (\Exception $e) {
+            \Illuminate\Support\Facades\DB::rollback();
+            return back()->with('error', $e->getMessage());
+        }
+    }
+
     public function printCompleteWithAttachments($slug)
     {
         $pr = \App\Models\PurchaseRequest::with([
@@ -1112,5 +1251,4 @@ class PurchaseRequestController extends Controller
                 ->header('Content-Type', 'application/pdf')
                 ->header('Content-Disposition', 'inline; filename="' . $filename . '"');
     }
-
 }
