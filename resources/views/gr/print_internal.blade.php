@@ -26,6 +26,11 @@
 
         /* 🔥 PEMISAH HALAMAN (MEMECAH KERTAS PER GUDANG) 🔥 */
         .page-break { page-break-after: always; }
+
+        /* Style Khusus Serial Number PDF */
+        .sn-box { margin-top: 8px; padding-top: 6px; border-top: 1px dashed #999; }
+        .sn-title { font-size: 7.5pt; font-weight: bold; color: #000; margin-bottom: 4px; }
+        .sn-item { display: inline-block; background-color: #f8f9fa; padding: 2px 5px; margin: 1px 2px 2px 0; border: 1px solid #ccc; border-radius: 3px; font-size: 7.5pt; color: #333; }
     </style>
 </head>
 <body>
@@ -65,8 +70,10 @@
         <table class="data-table">
             <thead>
                 <tr>
-                    <th width="5%">No</th><th width="45%">Nama Barang & Kode</th>
-                    <th width="15%">Qty & Satuan</th><th width="35%">Kondisi / Catatan</th>
+                    <th width="5%">No</th>
+                    <th width="40%">Nama Barang & Kode</th>
+                    <th width="15%">Qty & Satuan</th>
+                    <th width="40%">Kondisi / Catatan & Serial Number</th>
                 </tr>
             </thead>
             <tbody>
@@ -81,7 +88,24 @@
                         <strong style="font-size: 11pt;">{{ (float)$item->qty_received }}</strong><br>
                         <span style="font-size: 7.5pt; font-weight: bold; color: #0d6efd;">{{ $item->uom }}</span>
                     </td>
-                    <td>{{ $item->condition?->name ?? '-' }} <br> <i style="font-size: 7.5pt; color: #555;">{{ $item->notes }}</i></td>
+                    <td>
+                        <div style="font-weight: bold;">{{ $item->condition?->name ?? '-' }}</div>
+                        @if(!empty($item->notes))
+                            <i style="font-size: 7.5pt; color: #555;">{{ $item->notes }}</i>
+                        @endif
+
+                        {{-- 🔥 BLOK TAMPILAN SERIAL NUMBER 🔥 --}}
+                        @if(!empty($item->sn_list) && count($item->sn_list) > 0)
+                            <div class="sn-box">
+                                <div class="sn-title">SERIAL NUMBER ({{ count($item->sn_list) }} Unit):</div>
+                                <div>
+                                    @foreach($item->sn_list as $sn)
+                                        <span class="sn-item">{{ $sn }}</span>
+                                    @endforeach
+                                </div>
+                            </div>
+                        @endif
+                    </td>
                 </tr>
                 @endforeach
             </tbody>

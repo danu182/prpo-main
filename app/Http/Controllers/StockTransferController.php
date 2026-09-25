@@ -64,14 +64,9 @@ class StockTransferController extends Controller
                     $baseUomName = optional($item->uom)->name ?? 'PCS';
                     $itemNote = $data['notes'] ?? null;
 
-                    // 🔥 TANGKAP NAMA SPESIFIK / ALIAS DARI FORM 🔥
                     $specificName = $data['item_name'] ?? $item->name;
-
                     $isModeAsset = !empty($data['asset_ids']);
 
-                    // ========================================================
-                    // JALUR 1: ASET TETAP (MAJOR ASSET)
-                    // ========================================================
                     if ($isModeAsset) {
                         if (empty($data['asset_ids'])) throw new \Exception("Aset untuk barang {$item->name} belum dipilih!");
 
@@ -90,7 +85,6 @@ class StockTransferController extends Controller
                             ]);
                         }
 
-                        // Pindahkan lokasi gudang
                         \App\Models\FixedAsset::whereIn('id', $assetIds)->update(['warehouse_id' => $request->to_warehouse_id]);
 
                         $itemNoteCombined = implode(' | ', $snArr) . ($itemNote ? " | " . $itemNote : "");
@@ -98,7 +92,7 @@ class StockTransferController extends Controller
                         StockTransferItem::create([
                             'stock_transfer_id'  => $transfer->id,
                             'item_id'            => $item->id,
-                            'item_name'          => $specificName, // 🔥 SIMPAN NAMA ALIAS 🔥
+                            'item_name'          => $specificName,
                             'inventory_stock_id' => null,
                             'qty_transferred'    => count($assetIds),
                             'uom_id'             => null,
@@ -109,9 +103,6 @@ class StockTransferController extends Controller
                         continue;
                     }
 
-                    // ========================================================
-                    // JALUR 2: BARANG STOK BIASA & STOK LACAK (MINOR)
-                    // ========================================================
                     $qtyInput = (float) $data['qty'];
                     $uomId = $data['uom_info'] ?? null;
                     $conversionFactor = 1;
@@ -130,31 +121,79 @@ class StockTransferController extends Controller
 
                     if ($baseQtyRequested <= 0) throw new \Exception("Kuantitas {$item->name} tidak boleh 0!");
 
-                    // KELUAR DARI GUDANG ASAL
+                    // 🔥 VALIDASI KETAT JIKA USER MEMILIH BATCH TERTENTU (BUKAN AUTO-FIFO) 🔥
+                    $selectedBatchRef = $data['inventory_stock_id'] ?? null;
+                    
+                    if (!empty($selectedBatchRef) && !is_numeric($selectedBatchRef)) {
+                        $tempTotalOut = \App\Models\StockMutation::where('item_id', $item->id)
+                            ->where('warehouse_id', $request->from_warehouse_id)
+                            ->where('type', '!=', 'IN')
+                            ->sum('qty');
+
+                        $tempInMutations = \App\Models\StockMutation::where('item_id', $item->id)
+                            ->where('warehouse_id', $request->from_warehouse_id)
+                            ->where('type', 'IN')
+                            ->orderBy('created_at', 'asc')
+                            ->orderBy('id', 'asc')
+                            ->get();
+
+                        $sisaBatchDipilih = 0;
+                        foreach ($tempInMutations as $mut) {
+                            if ($tempTotalOut >= $mut->qty) {
+                                $tempTotalOut -= $mut->qty;
+                                continue;
+                            }
+                            $sisa = $mut->qty - $tempTotalOut;
+                            $tempTotalOut = 0;
+
+                            if ($mut->reference_number === $selectedBatchRef) {
+                                $sisaBatchDipilih = $sisa;
+                                break;
+                            }
+                        }
+
+                        if (round($baseQtyRequested, 4) > round($sisaBatchDipilih, 4)) {
+                            throw new \Exception("DITOLAK! Sisa fisik stok dari dokumen [{$selectedBatchRef}] di gudang ini hanya tersisa {$sisaBatchDipilih} {$baseUomName}, tetapi Anda mencoba memindahkan {$baseQtyRequested}!");
+                        }
+                    }
+
+                    // PROSES PENGURANGAN STOK GUDANG ASAL
                     $query = InventoryStock::where('warehouse_id', $request->from_warehouse_id)
                                 ->where('item_id', $item->id)->where('stock_qty', '>', 0);
 
-                    if (!empty($data['inventory_stock_id'])) { $query->where('id', $data['inventory_stock_id']); }
-                    else { $query->orderBy('created_at', 'asc'); }
+                    if (!empty($selectedBatchRef) && is_numeric($selectedBatchRef)) { 
+                        $query->where('id', $selectedBatchRef); 
+                    } else { 
+                        $query->orderBy('created_at', 'asc'); 
+                    }
 
                     $availableStocks = $query->lockForUpdate()->get();
                     $totalAvailable = $availableStocks->sum('stock_qty');
 
                     if (round($totalAvailable, 4) < round($baseQtyRequested, 4)) {
-                        throw new \Exception("Stok {$item->name} di Gudang Asal tidak cukup!");
+                        throw new \Exception("Stok {$item->name} di Gudang Asal secara total tidak cukup!");
                     }
 
                     $qtySisa = $baseQtyRequested;
                     $sourceBatchIds = [];
+                    
+                    if (!empty($selectedBatchRef) && !is_numeric($selectedBatchRef)) {
+                        $sourceBatchIds[] = $selectedBatchRef; // Tangkap nama referensi dokumen
+                    }
 
                     foreach ($availableStocks as $stockRow) {
                         if ($qtySisa <= 0) break;
                         $potong = min($stockRow->stock_qty, $qtySisa);
-                        $sourceBatchIds[] = $stockRow->batch_id;
+                        
+                        if (empty($selectedBatchRef)) {
+                            $sourceBatchIds[] = $stockRow->batch_id ?? 'REGULER';
+                        }
 
                         $balanceBefore = $item->current_stock;
                         $stockRow->decrement('stock_qty', $potong);
                         $qtySisa -= $potong;
+
+                        $catatanRef = (!empty($selectedBatchRef) && !is_numeric($selectedBatchRef)) ? " (Target Ref: {$selectedBatchRef})" : "";
 
                         StockMutation::create([
                             'item_id'          => $item->id,
@@ -164,7 +203,7 @@ class StockTransferController extends Controller
                             'balance_before'   => $balanceBefore,
                             'balance_after'    => $balanceBefore,
                             'reference_number' => $tfNumber,
-                            'notes'            => "Transfer KELUAR ke " . Warehouse::find($request->to_warehouse_id)->name,
+                            'notes'            => "Transfer KELUAR ke " . Warehouse::find($request->to_warehouse_id)->name . $catatanRef,
                             'created_by'       => auth()->id(),
                         ]);
                     }
@@ -175,14 +214,17 @@ class StockTransferController extends Controller
                                         ->where('warehouse_id', $request->to_warehouse_id)
                                         ->first();
 
-                    if ($newStock) { $newStock->increment('stock_qty', $baseQtyRequested); }
-                    else {
+                    $batchLabel = !empty($sourceBatchIds) ? implode(', ', array_unique(array_filter($sourceBatchIds))) : null;
+
+                    if ($newStock) { 
+                        $newStock->increment('stock_qty', $baseQtyRequested); 
+                    } else {
                         $newStock = InventoryStock::create([
                             'company_id'       => $companyId,
                             'item_id'          => $item->id,
                             'warehouse_id'     => $request->to_warehouse_id,
                             'stock_qty'        => $baseQtyRequested,
-                            'batch_id'         => !empty($sourceBatchIds) ? implode(',', array_filter($sourceBatchIds)) : null,
+                            'batch_id'         => $batchLabel,
                             'reference_number' => $tfNumber,
                         ]);
                     }
@@ -202,7 +244,7 @@ class StockTransferController extends Controller
                     StockTransferItem::create([
                         'stock_transfer_id'  => $transfer->id,
                         'item_id'            => $item->id,
-                        'item_name'          => $specificName, // 🔥 SIMPAN NAMA ALIAS 🔥
+                        'item_name'          => $specificName,
                         'inventory_stock_id' => $newStock->id,
                         'qty_transferred'    => $qtyInput,
                         'uom_id'             => $uomId ?: null,
@@ -262,11 +304,9 @@ class StockTransferController extends Controller
                                     ->whereHas('status', function($q) { $q->where('slug', 'available'); })
                                     ->count();
 
-                // 🔥 CARI SEMUA RIWAYAT NAMA DARI PO 🔥
                 $historicalNames = \App\Models\PurchaseOrderItem::where('item_id', $item->id)
                                     ->whereNotNull('item_name')->distinct()->pluck('item_name')->toArray();
 
-                // 🔥 CARI NAMA TERAKHIR YANG DIPAKAI DI PO 🔥
                 $latestPoItem = \App\Models\PurchaseOrderItem::where('item_id', $item->id)
                                     ->whereNotNull('item_name')->latest('id')->first();
 
@@ -293,6 +333,108 @@ class StockTransferController extends Controller
             return response()->json($formattedItems);
         } catch (\Exception $e) {
             return response()->json(['error' => $e->getMessage()], 500);
+        }
+    }
+
+    public function searchFixedAssets(Request $request)
+    {
+        $search = $request->search;
+        $itemId = $request->item_id;
+        $warehouseId = $request->warehouse_id;
+
+        try {
+            $assets = \App\Models\FixedAsset::where('item_id', $itemId)
+                ->where('warehouse_id', $warehouseId)
+                ->whereHas('status', function($q) {
+                    $q->where('slug', 'available');
+                })
+                ->when($search, function($query) use ($search) {
+                    $query->where(function($q) use ($search) {
+                        $q->where('asset_number', 'like', "%{$search}%")
+                          ->orWhere('serial_number', 'like', "%{$search}%")
+                          ->orWhere('name', 'like', "%{$search}%");
+                    });
+                })
+                ->limit(50)
+                ->get();
+
+            $formatted = [];
+            foreach ($assets as $asset) {
+                $text = $asset->asset_number . ' (' . $asset->name . ')';
+                if (!empty($asset->serial_number)) $text .= ' | SN: ' . $asset->serial_number;
+                $formatted[] = ['id' => $asset->id, 'text' => $text];
+            }
+
+            return response()->json($formatted);
+        } catch (\Exception $e) {
+            \Illuminate\Support\Facades\Log::error("Error Search Asset Transfer: " . $e->getMessage());
+            return response()->json(['error' => 'Terjadi kesalahan sistem'], 500);
+        }
+    }
+
+    // 🔥 METODE CERDAS: MENCARI BATCH BERDASARKAN REFERENSI MASUK 🔥
+    public function searchBatches(Request $request)
+    {
+        try {
+            $itemId = $request->item_id;
+            $warehouseId = $request->warehouse_id;
+            $search = $request->search;
+
+            // 1. Dapatkan Total Barang Keluar untuk di-FIFO-kan
+            $totalOut = \App\Models\StockMutation::where('item_id', $itemId)
+                ->where('warehouse_id', $warehouseId)
+                ->where('type', '!=', 'IN')
+                ->sum('qty');
+
+            // 2. Dapatkan Riwayat Barang Masuk
+            $inMutations = \App\Models\StockMutation::where('item_id', $itemId)
+                ->where('warehouse_id', $warehouseId)
+                ->where('type', 'IN')
+                ->orderBy('created_at', 'asc')
+                ->orderBy('id', 'asc')
+                ->get();
+
+            $formatted = [];
+            foreach ($inMutations as $mut) {
+                // Lewati batch jika sudah habis terpakai
+                if ($totalOut >= $mut->qty) {
+                    $totalOut -= $mut->qty;
+                    continue; 
+                }
+
+                // Sisa bersih dari dokumen masuk ini
+                $sisaBatch = $mut->qty - $totalOut;
+                $totalOut = 0;
+
+                // Lacak nama vendor jika dokumennya adalah Penerimaan (GR)
+                $infoAsal = '';
+                if (str_starts_with($mut->reference_number, 'GR')) {
+                    try {
+                        $gr = \App\Models\GoodsReceipt::with('po.vendor')->where('gr_number', $mut->reference_number)->first();
+                        if ($gr && $gr->po && $gr->po->vendor) {
+                            $infoAsal = " (Vendor: " . \Illuminate\Support\Str::limit($gr->po->vendor->name, 15) . ")";
+                        }
+                    } catch (\Exception $e) {}
+                }
+
+                $text = "Ref: {$mut->reference_number}{$infoAsal} | Tgl: " . $mut->created_at->format('d/m/y') . " ➔ Sisa: " . (float)$sisaBatch;
+
+                // Filter Pencarian di Kotak Dropdown
+                if ($search && stripos($text, $search) === false) {
+                    continue;
+                }
+
+                $formatted[] = [
+                    'id'   => $mut->reference_number, // Kunci: Mengirimkan Nama Dokumennya!
+                    'text' => $text,
+                    'sisa' => (float)$sisaBatch
+                ];
+            }
+
+            return response()->json($formatted);
+        } catch (\Exception $e) {
+            \Illuminate\Support\Facades\Log::error("Error Search Batches Transfer: " . $e->getMessage());
+            return response()->json(['error' => 'Gagal memuat batch'], 500);
         }
     }
 

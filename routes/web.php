@@ -308,6 +308,13 @@ Route::middleware('auth')->group(function () {
     // =========================================================================
     Route::prefix('stock-transfers')->name('stock-transfers.')->middleware(['can:manage_gi'])->group(function () {
         Route::get('/search-items', [App\Http\Controllers\StockTransferController::class, 'searchItems'])->name('search-items');
+
+        // 🔥 TAMBAHKAN BARIS INI UNTUK MENGATASI ERROR 🔥
+        Route::get('/search-assets', [App\Http\Controllers\StockTransferController::class, 'searchFixedAssets'])->name('search-assets');
+
+        // 🔥 TAMBAHKAN BARIS INI UNTUK PENCARIAN BATCH MUTASI 🔥
+        Route::get('/search-batches', [App\Http\Controllers\StockTransferController::class, 'searchBatches'])->name('search-batches');
+
         Route::get('/', [App\Http\Controllers\StockTransferController::class, 'index'])->name('index');
         Route::get('/create', [App\Http\Controllers\StockTransferController::class, 'create'])->name('create');
         Route::post('/', [App\Http\Controllers\StockTransferController::class, 'store'])->name('store');

@@ -92,27 +92,35 @@
                     </thead>
                     <tbody>
 
-                        @foreach($pendingItems as $index => $item)
+                        @foreach ($pendingItems as $index => $item)
                         @php
                             $masterItem = $item->item ?? $item;
                             $baseUomId = optional($masterItem)->uom_id;
-                            $baseUomName = $item->base_uom_name ?? 'PCS';
+                            $baseUomName =$item->base_uom_name ?? 'PCS';
 
-                            $poConvFactor = $item->po_conv_factor ?? 1;
+                            $poConvFactor =$item->po_conv_factor ?? 1;
                             $poUomDisplay = $item->uom ?? $baseUomName;
                             $cleanPoUomName = $item->clean_po_uom ?? $baseUomName;
-                            $poUomIdSafe = $item->uom_id_safe ?? null;
+                            $poUomIdSafe =$item->uom_id_safe ?? null;
 
-                            // Kalkulasi Kuantitas
                             $qtyPesanPo = (float)($item->qty_ordered ?? $item->qty ?? 0);
                             $qtySudahTerimaPo = (float)($item->qty_received ?? 0);
-                            $qtySisaPo = max(0, $qtyPesanPo - $qtySudahTerimaPo);
+                            $qtySisaPo = max(0, $qtyPesanPo -$qtySudahTerimaPo);
 
-                            // MAX BASE QTY = Jatah Maksimal dalam satuan Eceran
                             $maxBaseQty = $qtySisaPo * $poConvFactor;
 
-                            $isTrackable = $masterItem && ($masterItem->is_asset || $masterItem->is_trackable);
+                            $isTrackable = $masterItem?->is_asset || $masterItem?->is_trackable;
                             $finalDesc = $item->final_description ?? '-';
+
+                            $expectedWhId = '';$warehousesList = isset($warehouses) ?$warehouses : [];
+                            if (!empty($finalDesc) && count($warehousesList) > 0) {
+                                foreach ($warehousesList as $w) {
+                                    if (str_contains($finalDesc,$w->name)) {
+                                        $expectedWhId =$w->id;
+                                        break;
+                                    }
+                                }
+                            }
                         @endphp
 
                         <tr class="item-row" id="row_{{ $index }}">
@@ -124,7 +132,7 @@
                                     <span class="border badge bg-warning-subtle text-warning-emphasis border-warning"><i class="bi bi-upc-scan me-1"></i>Wajib Lacak (SN)</span>
                                 @endif
 
-                                @if(!empty($finalDesc) && $finalDesc !== '-' && $finalDesc !== ($masterItem->name ?? ''))
+                                @if(!empty($finalDesc) &&$finalDesc !== '-' && $finalDesc !== ($masterItem->name ?? ''))
                                     <div class="p-2 mt-2 border rounded shadow-sm border-info-subtle bg-info-subtle text-dark" style="font-size: 0.75rem;">
                                         <div class="mb-1 fw-bold text-info-emphasis"><i class="bi bi-info-circle-fill me-1"></i> Catatan & Alokasi:</div>
                                         {!! nl2br(e($finalDesc)) !!}
@@ -144,13 +152,13 @@
 
                             <td>
                                 <div class="mb-1 shadow-sm input-group input-group-sm">
-                                    <input type="number" name="items[{{ $item->id }}][qty_received]" id="qty-input-{{ $index }}" class="text-center form-control fw-bold text-success qty-input" value="0" min="0" max="{{ $qtySisaPo }}" step="0.01" oninput="checkMaxQty({{ $index }}, {{ $isTrackable ? 'true' : 'false' }})">
+                                    <input type="number" name="items[{{ $item->id }}][qty_received]" id="qty-input-{{ $index }}" class="text-center form-control fw-bold text-success qty-input" value="0" min="0" max="{{ $qtySisaPo }}" step="0.01" oninput="checkMaxQty({{ $index }}, {{$isTrackable ? 'true' : 'false' }})">
 
-                                    <select name="items[{{ $item->id }}][uom_id]" id="uom-select-{{ $index }}" class="form-select border-success bg-success-subtle text-success fw-bold uom-selector" style="max-width: 140px;" data-current-conv="{{ $poConvFactor }}" onchange="changeUom(this, {{ $index }}, {{ $maxBaseQty }})">
+                                    <select name="items[{{ $item->id }}][uom_id]" id="uom-select-{{ $index }}" class="form-select border-success bg-success-subtle text-success fw-bold uom-selector" style="max-width: 140px;" data-current-conv="{{ $poConvFactor }}" onchange="changeUom(this, {{ $index }}, {{$maxBaseQty }})">
                                         <option value="{{ $poUomIdSafe ?? '' }}" data-name="{{ $poUomDisplay }}" data-conv="{{ $poConvFactor }}" selected>{{ $poUomDisplay }} [PO]</option>
 
                                         @if($poConvFactor != 1)
-                                            <option value="{{ $baseUomId }} " data-name="{{ $baseUomName }}" data-conv="1">{{ $baseUomName }} (Ecer)</option>
+                                            <option value="{{ $baseUomId }}" data-name="{{ $baseUomName }}" data-conv="1">{{ $baseUomName }} (Ecer)</option>
                                         @endif
 
                                         @if(optional($masterItem)->itemUoms)
@@ -158,11 +166,11 @@
                                                 @php
                                                     $altConv = (float)$altUom->conversion_qty;
                                                     $altVal = $altUom->uom_id ?? $altUom->id;
-                                                    $safeAltVal = $altVal . str_repeat(' ', $loop->iteration + 1);
+                                                    $safeAltVal = $altVal . '_' .$loop->iteration;
                                                 @endphp
-                                                @if($altConv != 1 && !($altConv == $poConvFactor && strtoupper(trim($altUom->uom_name)) === strtoupper($cleanPoUomName)))
-                                                    <option value="{{ $safeAltVal }}" data-name="{{ strtoupper($altUom->uom_name) }} (ISI: {{ $altConv }} {{ $baseUomName }})" data-conv="{{ $altConv }}">
-                                                        {{ strtoupper($altUom->uom_name) }} (ISI: {{ $altConv }})
+                                                @if($altConv != 1 && !($altConv ==$poConvFactor && strtoupper(trim($altUom->uom_name)) === strtoupper($cleanPoUomName)))
+                                                    <option value="{{ $altUom->id }}" data-name="{{ strtoupper($altUom->uom_name) }} (ISI: {{$altConv }} {{ $baseUomName }})" data-conv="{{ $altConv }}">
+                                                        {{ strtoupper($altUom->uom_name) }} (ISI: {{$altConv }})
                                                     </option>
                                                 @endif
                                             @endforeach
@@ -175,35 +183,20 @@
                             </td>
 
                             <td>
-                                @php
-                                    $expectedWhId = '';
-                                    $warehousesList = $warehouses ?? [];
-                                    if (!empty($finalDesc) && count($warehousesList) > 0) {
-                                        foreach($warehousesList as $w) {
-                                            if (str_contains($finalDesc, $w->name)) {
-                                                $expectedWhId = $w->id;
-                                                break;
-                                            }
-                                        }
-                                    }
-                                @endphp
-
                                 <label class="mb-1 fw-bold text-primary" style="font-size: 0.65rem;">Gudang Tujuan:</label>
                                 <select name="items[{{ $item->id }}][warehouse_id]" class="mb-2 form-select form-select-sm border-primary wh-selector" data-expected-wh="{{ $expectedWhId }}" onchange="validateWarehouseSelection(this)" {{ $isTrackable ? 'required' : '' }}>
                                     @if(!$isTrackable && !optional($masterItem)->is_stockable)
                                         <option value="">-- Non-Stok --</option>
                                     @else
                                         <option value="">-- Pilih Gudang --</option>
-                                        @foreach($warehousesList as $indexWh => $wh)
+                                        @foreach ($warehousesList as $indexWh => $wh)
                                             @php
                                                 $isSelected = '';
-                                                if ($expectedWhId == $wh->id) {
-                                                    $isSelected = 'selected';
-                                                } elseif ($expectedWhId == '' && $indexWh === 0) {
-                                                    $isSelected = 'selected';
+                                                if ($expectedWhId == $wh->id) {$isSelected = 'selected';
+                                                } elseif ($expectedWhId == '' && $indexWh === 0) {$isSelected = 'selected';
                                                 }
                                             @endphp
-                                            <option value="{{ $wh->id }}" {{ $isSelected }}>{{ $wh->name }}</option>
+                                            <option value="{{ $wh->id }}" {{ $isSelected }}>{{$wh->name }}</option>
                                         @endforeach
                                     @endif
                                 </select>
@@ -211,7 +204,7 @@
                                 <label class="mb-1 fw-bold text-muted" style="font-size: 0.65rem;">Kondisi Fisik:</label>
                                 <select name="items[{{ $item->id }}][condition_id]" class="form-select form-select-sm">
                                     @if(isset($conditions))
-                                        @foreach($conditions as $cond)
+                                        @foreach ($conditions as $cond)
                                             <option value="{{ $cond->id }}">{{ $cond->name }}</option>
                                         @endforeach
                                     @endif
@@ -312,7 +305,7 @@
         if (helpMax) helpMax.innerText = newMaxVal;
         if (sisaText) sisaText.innerText = newMaxVal;
 
-        let cleanUomName = selectedOption.text.replace(/ \[PO\]|\(Ecer\)/gi, '').trim();
+        let cleanUomName = selectedOption.text.replace(/ [PO]|\(Ecer\)/gi, '').trim();
         if (helpUom) helpUom.innerText = cleanUomName;
 
         let isTrackable = document.getElementById(`sn-container-${index}`) !== null;

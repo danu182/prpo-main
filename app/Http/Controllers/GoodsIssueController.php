@@ -203,9 +203,6 @@ class GoodsIssueController extends Controller
                         }
                         $qtyRequested = $qtyInput * $conversionFactor;
 
-                        // =========================================================================
-                        // 🔥 BACKEND PROTECTION: CEK SISA BATCH JIKA MEMILIH MANUAL 🔥
-                        // =========================================================================
                         if (!empty($selectedBatchId) && !is_numeric($selectedBatchId)) {
                             $totalOutForCheck = \App\Models\StockMutation::where('item_id', $item->id)
                                 ->where('warehouse_id', $request->warehouse_id)
@@ -750,7 +747,7 @@ class GoodsIssueController extends Controller
     }
 
     // =========================================================================
-    // 🔥 PENCARIAN BATCH: SANGAT CEPAT, ANTI LAG (MAKS 50 DATA) 🔥
+    // 🔥 PENCARIAN BATCH KELAS DUNIA (MENAMPILKAN SISA & AWAL) 🔥
     // =========================================================================
     public function searchBatches(Request $request)
     {
@@ -783,15 +780,18 @@ class GoodsIssueController extends Controller
             $activeBatches = [];
             foreach ($inMutations as $mut) {
                 $qtyIn = (float) $mut->qty;
+
                 if ($totalOut >= $qtyIn) {
                     $totalOut -= $qtyIn; // GR ini sudah habis, buang!
                     continue;
                 } else {
                     $sisaQty = $qtyIn - $totalOut;
                     $totalOut = 0;
+
                     $activeBatches[] = [
                         'mutation' => $mut,
-                        'sisa' => $sisaQty
+                        'sisa' => $sisaQty,
+                        'awal' => $qtyIn // <- DATA AWAL DITAMBAHKAN DI SINI
                     ];
                 }
             }
@@ -799,7 +799,7 @@ class GoodsIssueController extends Controller
             // Balik urutan agar GR terbaru tampil di atas
             $activeBatches = array_reverse($activeBatches);
 
-            // Eager load info GR agar tidak terjadi query berulang (N+1 Problem) yang bikin lemot
+            // Eager load info GR agar tidak terjadi query berulang (N+1 Problem)
             $grNumbers = [];
             foreach ($activeBatches as $batch) {
                 if (str_starts_with($batch['mutation']->reference_number, 'GR')) {
@@ -818,6 +818,7 @@ class GoodsIssueController extends Controller
 
                 $mut = $batch['mutation'];
                 $sisa = $batch['sisa'];
+                $awal = $batch['awal']; // <- TARIK DATA AWAL
 
                 $vendorName = '-';
                 if (isset($grs[$mut->reference_number]) && $grs[$mut->reference_number]->purchaseOrder && $grs[$mut->reference_number]->purchaseOrder->vendor) {
@@ -825,7 +826,9 @@ class GoodsIssueController extends Controller
                 }
 
                 $date = \Carbon\Carbon::parse($mut->created_at)->format('d/m/Y');
-                $text = "[Sisa: {$sisa}] | {$mut->reference_number} | Vendor: {$vendorName} | Tgl: {$date}";
+
+                // 🔥 PERUBAHAN TEXT: MENAMPILKAN SISA DAN AWAL 🔥
+                $text = "[Sisa: {$sisa} / Awal: {$awal}] | {$mut->reference_number} | Vendor: {$vendorName} | Tgl: {$date}";
 
                 // Saring berdasarkan ketikan user (Live Search)
                 if (!empty($search) && !str_contains(strtolower($text), $search)) {

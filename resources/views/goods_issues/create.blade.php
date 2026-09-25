@@ -151,12 +151,11 @@
                 </div>
             </td>
             <td class="py-3">
-                <!-- 🔥 SELECT KOSONG TANPA OPTION AGAR TIDAK BENTROK DENGAN AJAX 🔥 -->
                 <select name="items[${rowCount}][inventory_stock_id]" class="form-select form-select-sm batch-select fw-bold border-info-subtle text-info-emphasis" id="batch_${rowCount}"></select>
             </td>
             <td class="py-3">
                 <div class="qty-container" id="qty_container_${rowCount}">
-                    <label class="mb-1 fw-bold text-dark" style="font-size: 0.65rem;">Kuantitas Keluar</label>
+                    <label class="mb-1 fw-bold text-dark" style="font-size: 0.65rem;" id="qty_label_${rowCount}">Kuantitas Keluar</label>
                     <div class="mb-1 shadow-sm input-group input-group-sm">
                         <input type="number" name="items[${rowCount}][qty_issued]" class="text-center form-control fw-bold text-danger qty-input" id="qty_${rowCount}" step="0.01" min="0.01" oninput="checkMax(${rowCount})" data-global-max="0" required>
                         <span class="input-group-text uom-text fw-bold bg-light" id="uom_${rowCount}">PCS</span>
@@ -164,9 +163,9 @@
                     <div class="text-muted" style="font-size: 0.65rem;">Max: <span class="max-qty text-danger fw-bold" id="max_qty_${rowCount}">0</span></div>
                 </div>
 
-                <div class="sn-container d-none" id="sn_container_${rowCount}">
-                    <label class="mb-1 fw-bold text-warning-emphasis" style="font-size: 0.65rem;"><i class="bi bi-upc-scan me-1"></i>Pilih Aset / SN (Wajib)</label>
-                    <select name="items[${rowCount}][asset_ids][]" class="form-select form-select-sm sn-select" id="sn_${rowCount}" multiple="multiple"></select>
+                <div class="mt-2 sn-container d-none" id="sn_container_${rowCount}">
+                    <label class="mb-1 fw-bold text-warning-emphasis" style="font-size: 0.65rem;"><i class="bi bi-upc-scan me-1"></i>Pilih Serial Number (Wajib)</label>
+                    <select class="form-select form-select-sm sn-select" id="sn_${rowCount}" multiple="multiple"></select>
                 </div>
             </td>
             <td class="py-3">
@@ -198,6 +197,33 @@
         }
     }
 
+    function initSnSelect2(rowId, ajaxUrl, placeholderText) {
+        let snSelect = $(`#sn_${rowId}`);
+        if (snSelect.hasClass("select2-hidden-accessible")) {
+            snSelect.select2('destroy');
+        }
+        snSelect.empty();
+        snSelect.select2({
+            theme: 'bootstrap-5',
+            placeholder: placeholderText,
+            ajax: {
+                url: ajaxUrl,
+                dataType: 'json',
+                delay: 250,
+                data: function(params) {
+                    return {
+                        search: params.term, // 🔍 Ini yang memungkinkan Live Search langsung dari ketikan user
+                        item_id: $(`#row_${rowId} .item-select`).val(),
+                        warehouse_id: $('#warehouse_id').val()
+                    };
+                },
+                processResults: function(data) {
+                    return { results: data };
+                }
+            }
+        });
+    }
+
     function initSelect2(rowId) {
         $(`#row_${rowId} .item-select`).select2({
             theme: 'bootstrap-5',
@@ -218,7 +244,12 @@
             }
         }).on('select2:select', function(e) {
             let data = e.params.data;
-            let isAsset = data.is_asset || data.is_trackable;
+
+            let isAsset = (data.is_asset == 1 || data.is_asset === true || data.is_asset === '1');
+            let isTrackable = (data.is_trackable == 1 || data.is_trackable === true || data.is_trackable === '1');
+
+            let hasAssetStock = (parseInt(data.available_asset) > 0);
+            let hasBulkStock = (parseInt(data.available_bulk) > 0);
 
             $(`#stock_info_${rowId}`).html(`<span class="shadow-sm badge bg-success">Stok Tersedia: ${data.stock}</span>`);
             $(`#uom_${rowId}`).text(data.base_uom_name);
@@ -240,35 +271,63 @@
             nameSelect.trigger('change');
             $(`#specific_name_container_${rowId}`).removeClass('d-none');
 
-            if(isAsset) {
+            // 1. Reset Semua Tampilan & Matikan Event Lama
+            $(`#qty_label_${rowId}`).text('Kuantitas Keluar');
+            $(`#qty_container_${rowId}`).removeClass('d-none');
+            $(`#qty_${rowId}`).attr('required', 'required').removeAttr('readonly').removeClass('bg-light text-muted');
+
+            $(`#sn_container_${rowId}`).addClass('d-none');
+            $(`#sn_${rowId}`).removeAttr('required').off('change.auto_sync'); // Matikan auto-sync sblmnya
+            $(`#batch_${rowId}`).closest('td').find('.select2').removeClass('opacity-50').css('pointer-events', 'auto');
+
+            // 2. LOGIKA KEPUTUSAN
+            if (isAsset && hasAssetStock) {
+                // KONDISI A: ASET TETAP MURNI (Sembunyikan Qty)
                 $(`#qty_container_${rowId}`).addClass('d-none');
                 $(`#qty_${rowId}`).removeAttr('required');
+
                 $(`#sn_container_${rowId}`).removeClass('d-none');
-                $(`#sn_${rowId}`).attr('required', 'required');
+                $(`#sn_${rowId}`).attr('required', 'required').attr('name', `items[${rowId}][asset_ids][]`);
                 $(`#batch_${rowId}`).closest('td').find('.select2').addClass('opacity-50').css('pointer-events', 'none');
+
+                initSnSelect2(rowId, '{{ route("goods-issues.search_assets") }}', 'Ketik / Cari Aset Tetap di sini...');
+
+            } else if (hasBulkStock && (isTrackable || isAsset)) {
+                // KONDISI B: BARANG BER-SN (Qty MUNCUL TAPI DIKUNCI, AUTO-SYNC AKTIF!)
+                $(`#qty_label_${rowId}`).html('Kuantitas Keluar <span class="badge bg-warning text-dark ms-1" style="font-size:0.55rem;">(Otomatis)</span>');
+                $(`#qty_${rowId}`).attr('readonly', 'readonly').addClass('bg-light text-muted').val('');
+
+                $(`#sn_container_${rowId}`).removeClass('d-none');
+                $(`#sn_${rowId}`).attr('required', 'required').attr('name', `items[${rowId}][sn_list][]`);
+
+                initSnSelect2(rowId, '{{ route("goods-issues.search_sns") }}', 'Ketik Serial Number di sini untuk mencari...');
+
+                // 🔥 KUNCI: SYNC QTY DENGAN JUMLAH SN YANG DIPILIH 🔥
+                $(`#sn_${rowId}`).on('change.auto_sync', function() {
+                    let count = $(this).val() ? $(this).val().length : '';
+                    $(`#qty_${rowId}`).val(count);
+                    checkMax(rowId);
+                });
+
             } else {
-                $(`#qty_container_${rowId}`).removeClass('d-none');
-                $(`#qty_${rowId}`).attr('required', 'required');
-                $(`#sn_container_${rowId}`).addClass('d-none');
-                $(`#sn_${rowId}`).removeAttr('required');
-                $(`#batch_${rowId}`).closest('td').find('.select2').removeClass('opacity-50').css('pointer-events', 'auto');
+                // KONDISI C: BARANG BIASA
                 $(`#batch_${rowId}`).val(null).trigger('change');
             }
         });
 
-        // 🔥 SELECT2 BATCH: SEKARANG MENDETEKSI SISA, MENGUBAH ANGKA MAX, DAN MEMAKSA KOTAK SEARCH TAMPIL 🔥
+        // 🔥 SELECT2 BATCH MODE
         $(`#row_${rowId} .batch-select`).select2({
             theme: 'bootstrap-5',
             placeholder: '⚡ Mode Otomatis (FIFO)',
             allowClear: true,
-            minimumResultsForSearch: 0, // INI PERINTAH MUTLAK UNTUK MEMAKSA KOTAK PENCARIAN SELALU MUNCUL!
+            minimumResultsForSearch: 0,
             ajax: {
                 url: '{{ route("goods-issues.search_batches") }}',
                 dataType: 'json',
                 delay: 250,
                 data: function(params) {
                     return {
-                        search: params.term, // INI YANG BIKIN BISA DI-SEARCH!
+                        search: params.term,
                         item_id: $(`#row_${rowId} .item-select`).val(),
                         warehouse_id: $('#warehouse_id').val()
                     };
@@ -296,30 +355,30 @@
              $(`#max_qty_${rowId}`).text(globalMax);
              qtyInput.attr('max', globalMax);
         });
-
-        $(`#row_${rowId} .sn-select`).select2({
-            theme: 'bootstrap-5',
-            placeholder: 'Pilih Aset (Bisa Lebih dari 1)...',
-            ajax: {
-                url: '{{ route("goods-issues.search_assets") }}',
-                dataType: 'json',
-                delay: 250,
-                data: function(params) {
-                    return {
-                        search: params.term,
-                        item_id: $(`#row_${rowId} .item-select`).val(),
-                        warehouse_id: $('#warehouse_id').val()
-                    };
-                },
-                processResults: function(data) {
-                    return { results: data };
-                }
-            }
-        });
     }
 
     function confirmSubmit() {
         const form = document.getElementById('giForm');
+        let hasReceipt = false;
+
+        document.querySelectorAll('.qty-input').forEach(function(input) {
+            if ((parseFloat(input.value) || 0) > 0) {
+                hasReceipt = true;
+            }
+        });
+
+        let hasAsset = document.querySelectorAll('select[name*="[asset_ids][]"]').length > 0;
+
+        if (!hasReceipt && !hasAsset) {
+            Swal.fire({
+                icon: 'warning',
+                title: 'Perhatian!',
+                text: 'Minimal 1 barang harus diisi Qty Keluarnya!',
+                confirmButtonColor: '#198754'
+            });
+            return;
+        }
+
         if (!form.checkValidity()) {
             form.reportValidity();
             return;
