@@ -15,45 +15,58 @@ use Illuminate\Support\Str;
 class BillRequestController extends Controller
 {
 
-    /**
+   /**
      * Helper Sakti untuk mencari status_id
      */
     private function getStatusId($slug)
     {
         $status = \App\Models\Status::where('type', 'OPEX')->where('slug', $slug)->first();
-        return $status ? $status->id : null;
+        return $status ? $status->id : null; // Pastikan data di Seeder sudah masuk
     }
 
 
     // --- HELPER NUMBER GENERATOR (MIRIP PR) ---
+    /**
+     * Helper untuk generate nomor tagihan otomatis
+     * Format: BILL/CODE/YYYY/MM/DD/XXXX (Reset harian)
+     */
     private function generateBillNumber($companyId)
     {
+        // 1. Ambil Data Company
         $company = \App\Models\Company::find($companyId);
 
+        // Ambil kode. Jika kolom 'code' kosong, ambil 3 huruf pertama nama PT
         if ($company && !empty($company->code)) {
             $code = strtoupper($company->code);
         } else {
+            // Fallback: PT. Maju Jaya -> PTM
             $cleanName = preg_replace('/[^A-Za-z0-9]/', '', $company->name ?? 'GEN');
             $code = strtoupper(substr($cleanName, 0, 3));
         }
 
+        // 2. Format Tanggal (Harian): YYYY/MM/DD
         $now = now();
         $dateStr = $now->format('Y/m/d');
 
+        // 3. Susun Prefix
+        // Contoh: BILL/TLKM/2026/02/11/
         $prefix = "BILL/{$code}/{$dateStr}/";
 
+        // 4. Cari Nomor Terakhir (Lock For Update agar aman saat traffic tinggi)
         $lastBill = \App\Models\BillRequest::where('bill_number', 'like', $prefix . '%')
                     ->orderBy('id', 'desc')
                     ->lockForUpdate()
                     ->first();
 
         if ($lastBill) {
+            // Ambil 4 digit terakhir
             $lastNumber = (int) substr($lastBill->bill_number, -4);
             $newNumber = $lastNumber + 1;
         } else {
             $newNumber = 1;
         }
 
+        // 5. Gabungkan (0001)
         return $prefix . sprintf('%04d', $newNumber);
     }
 
@@ -62,10 +75,13 @@ class BillRequestController extends Controller
     {
         return \App\Models\Tax::where('name', 'PPN')
             ->where('is_active', true)
-            ->where('effective_date', '<=', $billDate)
-            ->orderBy('effective_date', 'desc')
+            ->where('effective_date', '<=', $billDate) // Cari yang sudah berlaku pada tanggal bill
+            ->orderBy('effective_date', 'desc')        // Ambil yang paling terbaru/mendekati
             ->first();
     }
+
+
+
 
 
     // --- 1. MENAMPILKAN LIST & TAB LANGGANAN ---
@@ -75,6 +91,7 @@ class BillRequestController extends Controller
 
         $query = \App\Models\BillRequest::with(['company', 'user', 'status'])->latest();
 
+        // 🔥 LOGIKA TAB: Jika membuka tab 'recurring', filter hanya tagihan berulang yang aktif
         if ($request->get('tab') == 'recurring') {
             $query->where('is_recurring', true);
         }
@@ -110,6 +127,9 @@ class BillRequestController extends Controller
     }
 
 
+
+
+
     public function create()
     {
         $companies  = \App\Models\Company::all();
@@ -120,10 +140,11 @@ class BillRequestController extends Controller
         $chargeTypes = \App\Models\ChargeType::where('is_active', true)->orderBy('name')->get();
         $discountTypes = \App\Models\DiscountType::where('is_active', true)->orderBy('name')->get();
 
+        // 🔥 PERBAIKAN DI SINI: Sesuaikan dengan isi database (App\Models\BillRequest) 🔥
         $customWorkflows = [];
         if (class_exists('\App\Models\ApprovalWorkflow')) {
             $customWorkflows = \App\Models\ApprovalWorkflow::where('document_type', 'App\Models\BillRequest')
-                                ->orWhere('document_type', 'OPEX')
+                                ->orWhere('document_type', 'OPEX') // Fallback jaga-jaga
                                 ->where('is_active', true)
                                 ->get();
         }
@@ -132,14 +153,19 @@ class BillRequestController extends Controller
     }
 
 
+
+
+
+
     // --- 4. APPROVAL LOGIC (SAMA SEPERTI PR) ---
     public function approveReject(Request $request, $id)
     {
         $bill = BillRequest::findOrFail($id);
         $user = Auth::user();
-        $action = $request->action;
+        $action = $request->action; // APPROVED / REJECTED
         $reason = $request->reason;
 
+        // Security Gate (Sama seperti PR)
         if ($bill->current_approval_level == 0 && !$user->hasRole('Manager')) {
             return back()->with('error', 'Akses Ditolak: Giliran Manager.');
         }
@@ -147,17 +173,21 @@ class BillRequestController extends Controller
             return back()->with('error', 'Akses Ditolak: Giliran Director.');
         }
 
+        // Logic Status
         if ($action == 'REJECTED') {
             $bill->update(['status' => 'REJECTED', 'rejection_reason' => $reason]);
             $this->logHistory($bill, 'REJECTED', "Ditolak oleh " . $user->name . ". Alasan: $reason");
         } else {
+            // Jika Approved
             if ($bill->current_approval_level == 0) {
+                // Manager Approve -> Lanjut ke Director
                 $bill->update([
                     'current_approval_level' => 1,
                     'status' => 'APPROVED_MANAGER'
                 ]);
                 $this->logHistory($bill, 'APPROVED', 'Disetujui oleh Manager.');
             } else {
+                // Director Approve -> Final
                 $bill->update([
                     'current_approval_level' => 2,
                     'status' => 'APPROVED'
@@ -170,38 +200,97 @@ class BillRequestController extends Controller
     }
 
     // --- 5. FUNGSI LOG HISTORY (PRIVATE) ---
+    /**
+     * Helper untuk mencatat Log History
+     */
     private function logHistory($bill, $action, $note = null)
     {
         \App\Models\History::create([
             'user_id'     => auth()->id(),
-            'record_type' => \App\Models\BillRequest::class,
-            'record_id'   => $bill->id,
-            'action'      => $action,
-            'note'        => $note
+            'record_type' => \App\Models\BillRequest::class, // Simpan nama Model
+            'record_id'   => $bill->id,                      // Simpan ID Tagihan
+            'action'      => $action,                        // Contoh: "Membuat Tagihan"
+            'note'        => $note                           // Catatan tambahan (opsional)
         ]);
     }
 
 
+
+
+    // Contoh di method approve/reject
     public function decide(Request $request, $id)
     {
         $bill = BillRequest::findOrFail($id);
 
         if ($request->action == 'APPROVED') {
             $bill->update(['status' => 'APPROVED']);
+
+            // CATAT HISTORY
             $this->logHistory($bill, 'Menyetujui Tagihan', 'Disetujui oleh Manager/Director');
 
         } elseif ($request->action == 'REJECTED') {
             $bill->update(['status' => 'REJECTED', 'rejection_reason' => $request->reason]);
+
+            // CATAT HISTORY
             $this->logHistory($bill, 'Menolak Tagihan', 'Alasan: ' . $request->reason);
         }
 
         return back();
     }
 
+    // public function reject(Request $request, $slug)
+    // {
+    //     $request->validate(['rejection_reason' => 'required|string|min:5']);
+    //     \DB::beginTransaction();
+    //     try {
+    //         // 🔥 PERBAIKAN: Cari berdasarkan bill_number
+    //         $bill = \App\Models\BillRequest::with('status')->where('bill_number', $slug)->firstOrFail();
+
+    //         // ... (Sisa kode reject tetap sama seperti sebelumnya) ...
+    //         if ($bill->status && $bill->status->slug !== 'pending') {
+    //             return back()->with('error', 'Tagihan ini sudah diproses sebelumnya.');
+    //         }
+
+    //         $currentApproval = \App\Models\DocumentApproval::with('role')
+    //             ->where('document_id', $bill->id)
+    //             ->where('document_type', get_class($bill))
+    //             ->where('status', 'PENDING')
+    //             ->orderBy('step_order', 'asc')
+    //             ->first();
+
+    //         $approverRoleName = $currentApproval && $currentApproval->role ? $currentApproval->role->name : 'Atasan';
+
+    //         if ($currentApproval) {
+    //             $currentApproval->update([
+    //                 'status'      => 'REJECTED',
+    //                 'approved_by' => auth()->id(),
+    //                 'approved_at' => now()
+    //             ]);
+    //         }
+
+    //         $bill->status_id = $this->getStatusId('rejected');
+    //         $bill->rejection_reason = $request->rejection_reason;
+    //         $bill->current_approval_level = 0;
+    //         $bill->save();
+
+    //         $this->logHistory($bill, 'Ditolak', "Menolak Tagihan ({$approverRoleName}). Alasan: {$request->rejection_reason}");
+
+    //         \DB::commit();
+    //         return back()->with('error', 'Tagihan OPEX telah ditolak dan dikembalikan.');
+
+    //     } catch (\Exception $e) {
+    //         \DB::rollback();
+    //         return back()->with('error', 'Terjadi kesalahan sistem: ' . $e->getMessage());
+    //     }
+    // }
+
+
 
     public function print($id)
     {
         $bill = \App\Models\BillRequest::with(['user', 'company', 'items', 'media'])->findOrFail($id);
+
+        // Kita gunakan view khusus print
         return view('bills.print', compact('bill'));
     }
 
@@ -210,19 +299,25 @@ class BillRequestController extends Controller
     {
         $bill = \App\Models\BillRequest::findOrFail($id);
 
+        // 1. Validasi: Hanya status APPROVED yang bisa dibayar
         if ($bill->status !== 'APPROVED') {
             return back()->with('error', 'Tagihan harus disetujui terlebih dahulu sebelum ditandai lunas.');
         }
 
         DB::beginTransaction();
         try {
+            // 2. Update Status menjadi PAID
             $updateData = ['status' => 'PAID'];
 
+            // 3. Logic Recurring: Jika tagihan rutin, siapkan jadwal berikutnya
             if ($bill->is_recurring && $bill->type == 'ROUTINE') {
+                // Hitung tanggal generate berikutnya (berdasarkan recurring_period bulan)
                 $updateData['next_generation_date'] = now()->addMonths($bill->recurring_period);
             }
 
             $bill->update($updateData);
+
+            // 4. Catat ke Audit Trail (Tabel Histories)
             $this->logHistory($bill, 'Menandai Pembayaran Lunas', 'Finance telah mengonfirmasi pembayaran selesai.');
 
             DB::commit();
@@ -233,6 +328,7 @@ class BillRequestController extends Controller
             return back()->with('error', 'Gagal memproses pembayaran: ' . $e->getMessage());
         }
     }
+
 
 
     // =========================================================================
@@ -247,7 +343,7 @@ class BillRequestController extends Controller
             'due_date'              => 'required|date|after_or_equal:bill_date',
             'vendor_name'           => 'required|string|max:255',
             'vendor_invoice_number' => 'nullable|string|max:255',
-            'account_number'        => 'nullable|string|max:255',
+            'account_number'        => 'nullable|string|max:255', // 🔥 VALIDASI KOLOM BARU 🔥
             'items'                 => 'required|array|min:1',
             'items.*.name'          => 'required|string',
             'items.*.qty'           => 'required|numeric|min:1',
@@ -258,7 +354,6 @@ class BillRequestController extends Controller
         try {
             $company = \App\Models\Company::find($request->paid_by_company_id);
             $companyCode = $company ? ($company->code ?? 'GEN') : 'GEN';
-            $companyName = $company ? $company->name : '-';
             $monthYear = \Carbon\Carbon::parse($request->bill_date)->format('Y/m');
 
             $prefix = "BILL/OPX/{$companyCode}/{$monthYear}/";
@@ -270,6 +365,7 @@ class BillRequestController extends Controller
 
             $totalSubtotal = 0; $totalItemDisc = 0; $totalTax = 0; $totalCharge = 0; $totalExtDisc = 0;
 
+            // 1. Simpan Data Tagihan Utama
             $bill = \App\Models\BillRequest::create([
                 'bill_number'           => $billNumber,
                 'title'                 => 'Tagihan Opex - ' . $request->vendor_name,
@@ -278,7 +374,7 @@ class BillRequestController extends Controller
                 'type'                  => 'OPEX',
                 'vendor_name'           => $request->vendor_name,
                 'vendor_invoice_number' => $request->vendor_invoice_number,
-                'account_number'        => $request->account_number,
+                'account_number'        => $request->account_number, // 🔥 SIMPAN KOLOM BARU 🔥
                 'description'           => $request->note,
                 'invoice_date'          => $request->bill_date,
                 'due_date'              => $request->due_date,
@@ -291,58 +387,32 @@ class BillRequestController extends Controller
                 'next_generation_date'  => $request->is_recurring == '1' ? \Carbon\Carbon::parse($request->bill_date)->add((int)$request->recurring_interval, $request->recurring_period) : null,
             ]);
 
-            // 🔥 KERANJANG SEMENTARA UNTUK GOOGLE SHEET 🔥
-            $googleSheetRows = [];
-
+            // 2. Simpan Data Item (Baris per Baris)
             foreach ($request->items as $item) {
                 $qty = (float)$item['qty'];
                 $price = (float)$item['price'];
                 $gross = $qty * $price;
 
+                // Diskon
                 $discVal = (float)($item['discount_value'] ?? 0);
                 $discType = $item['discount_type'] ?? 'fixed';
                 $discAmount = ($discType == 'percent') ? ($gross * $discVal / 100) : $discVal;
                 $dpp = $gross - $discAmount;
 
+                // 🔥 UPDATE LOGIKA PAJAK (HYBRID) 🔥
                 $taxVal = (float)($item['tax_value'] ?? 0);
                 $taxType = $item['tax_type'] ?? 'percent';
                 $taxId = $item['tax_id'] ?? null;
-                if ($taxId === 'MANUAL_PERCENT') $taxType = 'percent';
+
+                // Pastikan jika tipenya manual persentase, kalkulasinya tetap pakai %
+                if ($taxId === 'MANUAL_PERCENT') {
+                    $taxType = 'percent';
+                }
+
                 $taxAmount = ($taxType == 'percent') ? ($dpp * $taxVal / 100) : $taxVal;
 
-                // -------------------------------------------------------------
-                // 🔥 PELACAKAN KATEGORI ANTI-GAGAL 🔥
-                // -------------------------------------------------------------
-                $categoryName = 'Lainnya';
-                $masterItem = null;
-
-                if (!empty($item['item_id'])) {
-                    $masterItem = \App\Models\Item::find($item['item_id']);
-                } elseif (!empty($item['code'])) {
-                    $masterItem = \App\Models\Item::where('code', $item['code'])->first();
-                } elseif (!empty($item['name'])) {
-                    $exploded = explode(' - ', $item['name']);
-                    $potentialCode = trim($exploded[0]);
-                    $masterItem = \App\Models\Item::where('code', $potentialCode)
-                                    ->orWhere('name', $item['name'])
-                                    ->first();
-                }
-
-                if ($masterItem && $masterItem->category_id) {
-                    $kategori = \DB::table('categories')->where('id', $masterItem->category_id)->first();
-                    if ($kategori) {
-                        $categoryName = $kategori->name;
-                    }
-                }
-
-                // -------------------------------------------------------------
-                // 🔥 PENANGKAP LAYANAN CUSTOM 3 LAPIS 🔥
-                // Teks yang akan dicetak di DB dan Google Sheet dipastikan SAMA
-                // -------------------------------------------------------------
-                $namaLayananCustom = $item['name_override'] ?? $item['item_name'] ?? $item['name'] ?? 'Layanan Tanpa Nama';
-
                 $bill->items()->create([
-                    'name'            => $namaLayananCustom, // Tersimpan secara harfiah sesuai inputan form
+                    'name'            => $item['name_override'] ?? $item['name'], // 🔥 TERIMA NAMA CUSTOM 🔥
                     'description'     => $item['description'] ?? null,
                     'qty'             => $qty,
                     'price'           => $price,
@@ -350,7 +420,7 @@ class BillRequestController extends Controller
                     'discount_type'   => $discType,
                     'discount_value'  => $discVal,
                     'discount_amount' => $discAmount,
-                    'tax_id'          => is_numeric($taxId) ? $taxId : null,
+                    'tax_id'          => is_numeric($taxId) ? $taxId : null, // 🔥 SIMPAN ID PAJAK MASTER 🔥
                     'tax_type'        => $taxType,
                     'tax_value'       => $taxVal,
                     'tax_amount'      => $taxAmount,
@@ -358,25 +428,9 @@ class BillRequestController extends Controller
                 ]);
 
                 $totalSubtotal += $gross; $totalItemDisc += $discAmount; $totalTax += $taxAmount;
-
-                // 🔥 MASUKKAN KE KERANJANG GOOGLE SHEET 🔥
-                $googleSheetRows[] = [
-                    \Carbon\Carbon::parse($request->bill_date)->format('d-M-Y'),
-                    $companyName,
-                    $request->vendor_name,
-                    $namaLayananCustom,                                        // 🔥 Layanan Custom
-                    $categoryName,                                             // 🔥 Kategori
-                    $gross,
-                    $taxAmount,
-                    $dpp + $taxAmount,
-                    $request->vendor_invoice_number ?? '-',
-                    $request->account_number ?? '-',
-                    $billNumber,
-                    $companyName,
-                    '-',
-                ];
             }
 
+            // 3. Simpan Biaya Ekstra
             if ($request->has('charges')) {
                 foreach ($request->charges as $charge) {
                     if (!empty($charge['charge_type_id']) && $charge['amount'] > 0) {
@@ -386,6 +440,7 @@ class BillRequestController extends Controller
                 }
             }
 
+            // 4. Simpan Potongan Ekstra
             if ($request->has('discounts')) {
                 foreach ($request->discounts as $discount) {
                     if (!empty($discount['discount_type_id']) && $discount['amount'] > 0) {
@@ -395,9 +450,11 @@ class BillRequestController extends Controller
                 }
             }
 
+            // 5. Kalkulasi Akhir Grand Total
             $grandTotal = max(0, ($totalSubtotal - $totalItemDisc) + $totalTax + $totalCharge - $totalExtDisc);
             $bill->update(['subtotal' => $totalSubtotal, 'total_discount' => $totalItemDisc + $totalExtDisc, 'total_tax' => $totalTax, 'total_charge' => $totalCharge, 'amount' => $grandTotal]);
 
+            // 6. Upload Lampiran Jika Ada
             if ($request->hasFile('attachments')) {
                 $basePath = \DB::table('system_settings')->where('setting_key', 'path_bills_opex')->value('setting_value') ?: 'attachments/opex';
                 $safeBillNumber = str_replace(['/', '\\'], '-', $bill->bill_number);
@@ -413,60 +470,57 @@ class BillRequestController extends Controller
                 }
             }
 
+            // Catat log dokumen dibuat
             $this->logHistory($bill, 'CREATED', "Membuat tagihan baru No: {$billNumber}");
 
+            // ====================================================================
+            // 🔥 7. LOGIKA OVERRIDE WORKFLOW (JALUR TIKUS / CUSTOM ROUTE) 🔥
+            // ====================================================================
             $customWorkflowId = $request->input('custom_workflow_id');
             $needsApproval = false;
 
             if ($customWorkflowId) {
+                // A. JIKA USER MEMILIH JALUR KHUSUS DI DROPDOWN
+                // Sistem akan mem-bypass ApprovalService standar departemen
                 $workflow = \App\Models\ApprovalWorkflow::with('steps')->find($customWorkflowId);
 
                 if ($workflow && $workflow->steps->count() > 0) {
                     foreach ($workflow->steps as $step) {
+                        // 🔥 AMBIL DEPARTEMEN DARI MATRIKS 🔥
                         $targetDept = $step->target_department_id ?? $step->department_id ?? null;
+
                         \App\Models\DocumentApproval::create([
                             'document_id'          => $bill->id,
                             'document_type'        => get_class($bill),
                             'role_id'              => $step->role_id,
-                            'target_department_id' => $targetDept,
+                            'target_department_id' => $targetDept, // 🔥 SIMPAN KE DATABASE 🔥
                             'step_order'           => $step->step_order,
                             'status'               => 'PENDING'
                         ]);
                     }
                     $needsApproval = true;
+                    // Logika di fungsi store sebelumnya:
                     $this->logHistory($bill, 'SYSTEM', "Menggunakan Rute Persetujuan Khusus: " . $workflow->name);
-                }
+                } // 🔥 KURUNG KURAWAL INI YANG TERTINGGAL SEBELUMNYA 🔥
             } else {
+                // B. JIKA DROPDOWN DIKOSONGKAN (Kembali ke Jalan Tol Utama / Default Departemen)
+                // Memakai service otomatis yang sudah Komandan buat sebelumnya
                 $needsApproval = \App\Services\ApprovalService::generateWorkflow($bill);
                 if ($needsApproval) {
                     $this->logHistory($bill, 'SYSTEM', "Rute persetujuan standar (Departemen) berhasil di-generate.");
                 }
             }
 
+            // 8. Update status terakhir berdasarkan keberadaan matriks approval
             if ($needsApproval) {
                 $bill->update(['status_id' => $this->getStatusId('pending') ?? 1]);
             } else {
+                // Jika ternyata kosong (baik khusus maupun standar tidak ada), langsung disetujui
                 $bill->update(['status_id' => $this->getStatusId('approved') ?? 3]);
                 $this->logHistory($bill, 'APPROVED', "Auto-Approved karena tidak ada aturan/matriks persetujuan aktif.");
             }
 
             \DB::commit();
-
-            // ====================================================================
-            // 🔥 SYNC KE GOOGLE SHEET 🔥
-            // ====================================================================
-            try {
-                $sheetService = new \App\Services\GoogleSheetService();
-                $tabName = env('GOOGLE_SHEET_OPEX_TAB_NAME', 'Sheet1');
-
-                foreach ($googleSheetRows as $rowData) {
-                    $sheetService->appendRow($tabName, $rowData);
-                }
-            } catch (\Exception $e) {
-                \Log::error("Google Sheet Sync Error pada Bill {$billNumber}: " . $e->getMessage());
-            }
-            // ====================================================================
-
             return redirect()->route('bills.index')->with('success', "Tagihan Opex berhasil disimpan! Nomor: {$billNumber}");
 
         } catch (\Exception $e) {
@@ -474,22 +528,22 @@ class BillRequestController extends Controller
             return back()->withInput()->with('error', 'Gagal menyimpan tagihan: ' . $e->getMessage());
         }
     }
-
-
-
     // =========================================================================
     // 5. EDIT (FORM EDIT BERBASIS SLUG)
     // =========================================================================
     public function edit($slug)
     {
+        // 1. Tarik Data Tagihan Utama beserta Relasinya
         $bill = \App\Models\BillRequest::with(['items', 'charges', 'discounts', 'status'])->where('bill_number', $slug)->firstOrFail();
 
+        // Cek Status (Hanya Pending/Draft yang boleh diedit)
         if ($bill->status && !in_array($bill->status->slug, ['pending', 'draft'])) {
             return back()->with('error', 'Tagihan yang sudah disetujui atau diproses tidak dapat diedit!');
         }
 
+        // 2. Tarik Master Data
         $companies     = \App\Models\Company::all();
-        $taxes         = \App\Models\Tax::where('is_active', true)->orderBy('name')->get();
+        $taxes         = \App\Models\Tax::where('is_active', true)->orderBy('name')->get(); // 🔥 MASTER PAJAK 🔥
         $currencies    = \App\Models\Currency::where('is_active', true)->orderBy('name')->get();
         $vendors       = \App\Models\Vendor::orderBy('name')->get();
         $chargeTypes   = \App\Models\ChargeType::where('is_active', true)->orderBy('name')->get();
@@ -497,8 +551,12 @@ class BillRequestController extends Controller
 
         $opexItems     = \App\Models\Item::whereNotIn('item_type_code', ['AST', 'STK'])->orWhereNull('item_type_code')->orderBy('name')->get();
 
+        // 3. Tarik Lampiran
         $attachments = \DB::table('bill_attachments')->where('bill_request_id', $bill->id)->get();
 
+        // =========================================================================
+        // 🔥 LOGIKA DETEKTIF MATRIKS (WORKFLOW) 🔥
+        // =========================================================================
         $customWorkflows = [];
         $selectedWorkflowId = null;
 
@@ -511,12 +569,14 @@ class BillRequestController extends Controller
                       ->orWhere('document_type', 'like', '%bill%');
                 })->get();
 
+            // A. Lacak dari History Utama
             $historyLog = \App\Models\History::where('record_id', $bill->id)
                 ->whereIn('record_type', [get_class($bill), 'App\Models\BillRequest', 'OPEX'])
                 ->where('action', 'SYSTEM')
                 ->where('note', 'like', 'Menggunakan Rute Persetujuan Khusus:%')
                 ->orderBy('id', 'desc')->first();
 
+            // B. Lacak Silsilah Jika ini Tagihan Recurring (Berulang)
             if (!$historyLog) {
                 $recurringLog = \App\Models\History::where('record_id', $bill->id)
                     ->whereIn('record_type', [get_class($bill), 'App\Models\BillRequest', 'OPEX'])
@@ -538,6 +598,7 @@ class BillRequestController extends Controller
                 }
             }
 
+            // Jika ketemu nama workflow-nya
             if ($historyLog) {
                 $workflowName = trim(str_replace('Menggunakan Rute Persetujuan Khusus:', '', $historyLog->note));
                 $matchedWorkflow = $customWorkflows->where('name', $workflowName)->first();
@@ -546,6 +607,7 @@ class BillRequestController extends Controller
                 }
             }
 
+            // C. Fallback: Cocokkan jumlah Step (Jabatan)
             if (!$selectedWorkflowId) {
                 $currentApprovals = \App\Models\DocumentApproval::where('document_id', $bill->id)
                     ->whereIn('document_type', [get_class($bill), 'App\Models\BillRequest', 'OPEX'])
@@ -570,6 +632,7 @@ class BillRequestController extends Controller
             }
         }
 
+        // 4. Lemparkan semua variabel ke Blade!
         return view('bills.edit', compact(
             'bill', 'companies', 'taxes', 'currencies', 'vendors',
             'opexItems', 'chargeTypes', 'discountTypes', 'attachments',
@@ -639,7 +702,7 @@ class BillRequestController extends Controller
                 $taxAmount = ($taxType == 'percent') ? ($dpp * $taxVal / 100) : $taxVal;
 
                 $bill->items()->create([
-                    'name'            => $item['name_override'] ?? $item['name'],
+                    'name'            => $item['name_override'] ?? $item['name'], // 🔥 TERIMA NAMA CUSTOM 🔥
                     'description'     => $item['description'] ?? null,
                     'qty' => $qty,
                     'price' => $price,
@@ -689,6 +752,7 @@ class BillRequestController extends Controller
                 }
             }
 
+            // 🔥 LOGIKA MENGHAPUS LAMPIRAN LAMA YANG DICENTANG SAAT EDIT 🔥
             if ($request->has('delete_media')) {
                 foreach ($request->delete_media as $mediaId) {
                     $attachment = \DB::table('bill_attachments')->where('id', $mediaId)->first();
@@ -768,6 +832,7 @@ class BillRequestController extends Controller
                 ->where('status', 'PENDING')
                 ->orderBy('step_order', 'asc')->first();
 
+            // 🔥 SISTEM BYPASS GUDANG DEWA FOR SUPER ADMIN 🔥
             if (!$currentApproval) {
                 $isSuperAdmin = auth()->id() === 1 || auth()->user()->hasRole(['Super Administrator', 'Super Admin']);
                 if (!$isSuperAdmin) {
@@ -794,7 +859,7 @@ class BillRequestController extends Controller
 
             if ($nextApproval) {
                 $nextRoleName = $nextApproval->role ? $nextApproval->role->name : 'Atasan Berikutnya';
-                $bill->update(['status_id' => $this->getStatusId('pending')]);
+                $bill->update(['status_id' => $this->getStatusId('pending')]); // Tetap pending/menunggu
                 $catatan .= "Diteruskan ke: **" . strtoupper($nextRoleName) . "**\n";
                 $successMsg = "Disetujui! Dokumen telah diteruskan ke {$nextRoleName}.";
             } else {
@@ -847,9 +912,11 @@ class BillRequestController extends Controller
         try {
             $attachment = \DB::table('bill_attachments')->where('id', $attachmentId)->first();
             if ($attachment) {
+                // Hapus file fisik dari folder
                 if (\Storage::disk('public')->exists($attachment->file_path)) {
                     \Storage::disk('public')->delete($attachment->file_path);
                 }
+                // Hapus dari database
                 \DB::table('bill_attachments')->where('id', $attachmentId)->delete();
             }
             return back()->with('success', 'File lampiran berhasil dihapus secara permanen!');
@@ -885,6 +952,7 @@ class BillRequestController extends Controller
         try {
             $bill = \App\Models\BillRequest::where('bill_number', $slug)->firstOrFail();
 
+            // Ambil path penyimpanan yang sama seperti fungsi Store/Update
             $basePath = \DB::table('system_settings')->where('setting_key', 'path_bills_opex')->value('setting_value') ?: 'attachments/opex';
             $safeBillNumber = str_replace(['/', '\\'], '-', $bill->bill_number);
             $storagePath = $basePath . '/' . $safeBillNumber;
@@ -902,6 +970,7 @@ class BillRequestController extends Controller
                 ]);
             }
 
+            // Catat di Audit Trail
             $this->logHistory($bill, 'UPLOAD SUSULAN', 'Staf menambahkan dokumen/bukti lampiran susulan setelah tagihan berstatus Lunas.');
 
             DB::commit();
@@ -917,6 +986,7 @@ class BillRequestController extends Controller
     // =========================================================================
     public function voidPayment(Request $request, $slug)
     {
+        // Gembok khusus Super Admin & Manager
         $userRoles = auth()->user()->getRoleNames()->toArray();
         $canVoid = in_array('Super Administrator', $userRoles) || in_array('Super Admin', $userRoles) || in_array('manager', array_map('strtolower', $userRoles)) || auth()->id() === 1;
 
@@ -936,11 +1006,13 @@ class BillRequestController extends Controller
                 return back()->with('error', 'Hanya tagihan berstatus LUNAS (PAID) yang bisa dibatalkan.');
             }
 
+            // Kembalikan statusnya ke APPROVED
             $bill->update([
                 'status'    => 'APPROVED',
                 'status_id' => $this->getStatusId('approved')
             ]);
 
+            // Catat di Audit Trail secara detail
             $this->logHistory($bill, 'PEMBAYARAN DIBATALKAN (VOID)', 'Pembayaran telah ditarik kembali/dibatalkan. Alasan: ' . $request->void_reason);
 
             DB::commit();
@@ -958,6 +1030,7 @@ class BillRequestController extends Controller
     // =========================================================================
     public function voidBill(Request $request, $slug)
     {
+        // Gembok khusus Super Admin / Eksekutif
         $userRoles = auth()->user()->getRoleNames()->toArray();
         $isSuperAdmin = in_array('Super Administrator', $userRoles) || in_array('Super Admin', $userRoles) || auth()->id() === 1;
 
@@ -973,21 +1046,25 @@ class BillRequestController extends Controller
         try {
             $bill = \App\Models\BillRequest::where('bill_number', $slug)->firstOrFail();
 
+            // Cegah void jika sudah lunas, dicicil, atau sudah void/reject
             $statusSlug = strtolower(optional($bill->status)->slug);
             if (in_array($statusSlug, ['paid', 'lunas', 'void', 'cancelled', 'rejected', 'partial', 'partial_paid', 'dicicil']) || strtoupper($bill->status) === 'PAID') {
                 return back()->with('error', 'Aksi Ditolak: Tagihan yang sudah memiliki riwayat pembayaran (Lunas/Dicicil) tidak dapat di-Void secara sepihak.');
             }
 
+            // Batalkan seluruh antrean persetujuan (jika ada)
             \App\Models\DocumentApproval::where('document_id', $bill->id)
                 ->whereIn('document_type', ['OPEX', 'App\Models\BillRequest'])
                 ->delete();
 
+            // Update status menjadi VOID / CANCELLED
             $bill->update([
                 'status'    => 'VOID',
-                'status_id' => $this->getStatusId('void') ?? $this->getStatusId('cancelled'),
-                'rejection_reason' => 'VOIDED: ' . $request->void_reason
+                'status_id' => $this->getStatusId('void') ?? $this->getStatusId('cancelled'), // Pastikan di seeder ada status void/cancelled
+                'rejection_reason' => 'VOIDED: ' . $request->void_reason // Kita simpan alasannya di field rejection_reason
             ]);
 
+            // Catat di Audit Trail secara detail
             $this->logHistory($bill, 'TAGIHAN DIBATALKAN (VOID)', "Tagihan dibatalkan secara permanen oleh Sistem/Atasan. Alasan: " . $request->void_reason);
 
             DB::commit();
@@ -1005,6 +1082,7 @@ class BillRequestController extends Controller
     // =========================================================================
     public function show($slug)
     {
+        // 1. Tarik Data Utama + Relasi (Eager Loading agar performa cepat)
         $bill = \App\Models\BillRequest::with([
             'status',
             'items',
@@ -1015,10 +1093,12 @@ class BillRequestController extends Controller
             'discounts.discountType'
         ])->where('bill_number', $slug)->firstOrFail();
 
+        // 2. Tarik Data Lampiran Fisik dari tabel terpisah
         $attachments = \DB::table('bill_attachments')
             ->where('bill_request_id', $bill->id)
             ->get();
 
+        // 3. Lemparkan ke Halaman Blade
         return view('bills.show', compact('bill', 'attachments'));
     }
 
@@ -1035,11 +1115,13 @@ class BillRequestController extends Controller
                 return back()->with('error', 'Tagihan ini bukan tagihan berulang.');
             }
 
+            // Matikan sakelar recurring dan kosongkan jadwal berikutnya
             $bill->update([
                 'is_recurring' => false,
                 'next_generation_date' => null
             ]);
 
+            // Catat di Audit Trail agar riwayatnya jelas
             $this->logHistory($bill, 'STOP LANGGANAN', 'Siklus tagihan berulang telah dihentikan oleh pengguna. Sistem tidak akan meng-generate tagihan ini lagi di masa depan.');
 
             return back()->with('success', 'Siklus langganan berhasil dihentikan!');
@@ -1055,6 +1137,7 @@ class BillRequestController extends Controller
     // =========================================================================
     public function prinBpr(\Illuminate\Http\Request $request, $slug)
     {
+        // 1. Deteksi URL, defaultnya pakai digital jika tidak ada parameter
         $type = $request->query('type', 'digital');
         $viewTemplate = $type === 'manual' ? 'bills.pdf_bpr_manual' : 'bills.pdf_bpr_digital';
 
@@ -1062,6 +1145,7 @@ class BillRequestController extends Controller
 
         $attachments = \DB::table('bill_attachments')->where('bill_request_id', $bill->id)->get();
 
+        // 2. Load View secara dinamis berdasarkan pilihan
         $pdf = \Barryvdh\DomPDF\Facade\Pdf::loadView($viewTemplate, compact('bill', 'attachments'))
                 ->setPaper('a4', 'portrait');
 
@@ -1075,6 +1159,7 @@ class BillRequestController extends Controller
     // =========================================================================
     public function printBprWithAttachments(\Illuminate\Http\Request $request, $slug)
     {
+        // 1. Deteksi URL
         $type = $request->query('type', 'digital');
         $viewTemplate = $type === 'manual' ? 'bills.pdf_bpr_manual' : 'bills.pdf_bpr_digital';
 
@@ -1082,25 +1167,30 @@ class BillRequestController extends Controller
             'items', 'company', 'user', 'charges.chargeType', 'discounts.discountType'
         ])->where('bill_number', $slug)->firstOrFail();
 
+        // 2. RENDER DOMPDF MENGGUNAKAN TEMPLATE DINAMIS
         $attachments = \DB::table('bill_attachments')->where('bill_request_id', $bill->id)->get();
         $pdf = \Barryvdh\DomPDF\Facade\Pdf::loadView($viewTemplate, compact('bill', 'attachments'))
                 ->setPaper('A4', 'portrait');
 
+        // 3. SIAPKAN FOLDER SEMENTARA
         $tempDir = storage_path('app/public/temp_pdf');
         if (!file_exists($tempDir)) {
             mkdir($tempDir, 0777, true);
         }
 
+        // 4. SIMPAN HASIL DOMPDF UTAMA
         $tempMainPdfName = 'main_bpr_' . $bill->id . '_' . time() . '.pdf';
         $tempMainPdfPath = $tempDir . '/' . $tempMainPdfName;
         file_put_contents($tempMainPdfPath, $pdf->output());
 
+        // 5. INISIASI MESIN PENGGABUNG PDF
         $oMerger = \Webklex\PDFMerger\Facades\PDFMergerFacade::init();
         $oMerger->addPDF($tempMainPdfPath, 'all');
 
         $tempFilesToDelete = [$tempMainPdfPath];
         $totalLampiranDiDatabase = 0;
 
+        // 6. PROSES LAMPIRAN (ANTI-BADAI FPDI)
         if ($attachments && $attachments->count() > 0) {
             $totalLampiranDiDatabase = $attachments->count();
 
@@ -1181,6 +1271,7 @@ class BillRequestController extends Controller
             $tempFilesToDelete[] = $noDataTempPath;
         }
 
+        // 7. JAHIT SEMUA PDF MENJADI SATU KESATUAN
         $oMerger->merge();
         $finalPdfOutput = $oMerger->output();
 
@@ -1197,15 +1288,23 @@ class BillRequestController extends Controller
                 ->header('Content-Disposition', 'inline; filename="' . $filename . '"');
     }
 
+
+    // Fungsi Cetak Manual
     public function printBprManual($slug) {
         $bill = \App\Models\BillRequest::with(['items', 'user', 'company'])->where('bill_number', $slug)->firstOrFail();
         $pdf = \Barryvdh\DomPDF\Facade\Pdf::loadView('bills.pdf_bpr_manual', compact('bill'))->setPaper('a4', 'portrait');
         return $pdf->stream('BPR_Manual_' . str_replace('/', '_', $bill->bill_number) . '.pdf');
     }
 
+    // Fungsi Cetak Digital (Otomatis)
     public function printBprDigital($slug) {
         $bill = \App\Models\BillRequest::with(['items', 'user', 'company'])->where('bill_number', $slug)->firstOrFail();
         $pdf = \Barryvdh\DomPDF\Facade\Pdf::loadView('bills.pdf_bpr_digital', compact('bill'))->setPaper('a4', 'portrait');
         return $pdf->stream('BPR_Digital_' . str_replace('/', '_', $bill->bill_number) . '.pdf');
     }
+
+
+
+
+
 }
