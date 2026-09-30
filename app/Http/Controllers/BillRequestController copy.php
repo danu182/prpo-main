@@ -528,6 +528,7 @@ class BillRequestController extends Controller
             return back()->withInput()->with('error', 'Gagal menyimpan tagihan: ' . $e->getMessage());
         }
     }
+
     // =========================================================================
     // 5. EDIT (FORM EDIT BERBASIS SLUG)
     // =========================================================================
@@ -667,6 +668,11 @@ class BillRequestController extends Controller
             }
 
             $currency = \App\Models\Currency::find($request->currency_id)->code ?? 'IDR';
+
+            // Ambil nama perusahaan untuk keperluan Google Sheet
+            $company = \App\Models\Company::find($request->paid_by_company_id);
+            $companyName = $company ? $company->name : '-';
+
             $bill->update([
                 'company_id'            => $request->paid_by_company_id,
                 'vendor_name'           => $request->vendor_name,
@@ -684,6 +690,9 @@ class BillRequestController extends Controller
             $bill->items()->delete(); $bill->charges()->delete(); $bill->discounts()->delete();
             $totalSubtotal = 0; $totalItemDisc = 0; $totalTax = 0; $totalCharge = 0; $totalExtDisc = 0;
 
+            // 🔥 KERANJANG SEMENTARA UNTUK GOOGLE SHEET 🔥
+            $googleSheetRows = [];
+
             foreach ($request->items as $item) {
                 $qty = (float)$item['qty']; $price = (float)$item['price']; $gross = $qty * $price;
 
@@ -694,29 +703,71 @@ class BillRequestController extends Controller
                 $taxVal = (float)($item['tax_value'] ?? 0);
                 $taxType = $item['tax_type'] ?? 'percent';
                 $taxId = $item['tax_id'] ?? null;
-
-                if ($taxId === 'MANUAL_PERCENT') {
-                    $taxType = 'percent';
-                }
-
+                if ($taxId === 'MANUAL_PERCENT') $taxType = 'percent';
                 $taxAmount = ($taxType == 'percent') ? ($dpp * $taxVal / 100) : $taxVal;
 
+                // -------------------------------------------------------------
+                // 🔥 PELACAKAN KATEGORI ANTI-GAGAL 🔥
+                // -------------------------------------------------------------
+                $categoryName = 'Lainnya';
+                $masterItem = null;
+
+                if (!empty($item['item_id'])) {
+                    $masterItem = \App\Models\Item::find($item['item_id']);
+                } elseif (!empty($item['code'])) {
+                    $masterItem = \App\Models\Item::where('code', $item['code'])->first();
+                } elseif (!empty($item['name'])) {
+                    $exploded = explode(' - ', $item['name']);
+                    $potentialCode = trim($exploded[0]);
+                    $masterItem = \App\Models\Item::where('code', $potentialCode)
+                                    ->orWhere('name', $item['name'])
+                                    ->first();
+                }
+
+                if ($masterItem && $masterItem->category_id) {
+                    $kategori = \DB::table('categories')->where('id', $masterItem->category_id)->first();
+                    if ($kategori) {
+                        $categoryName = $kategori->name;
+                    }
+                }
+
+                // Teks Layanan
+                $namaLayananCustom = $item['name_override'] ?? $item['item_name'] ?? $item['name'] ?? 'Layanan Tanpa Nama';
+
                 $bill->items()->create([
-                    'name'            => $item['name_override'] ?? $item['name'], // 🔥 TERIMA NAMA CUSTOM 🔥
+                    'name'            => $namaLayananCustom,
                     'description'     => $item['description'] ?? null,
-                    'qty' => $qty,
-                    'price' => $price,
-                    'amount' => $dpp + $taxAmount,
-                    'discount_type' => $discType,
-                    'discount_value' => $discVal,
+                    'qty'             => $qty,
+                    'price'           => $price,
+                    'amount'          => $dpp + $taxAmount,
+                    'discount_type'   => $discType,
+                    'discount_value'  => $discVal,
                     'discount_amount' => $discAmount,
-                    'tax_id' => is_numeric($taxId) ? $taxId : null,
-                    'tax_type' => $taxType,
-                    'tax_value' => $taxVal,
-                    'tax_amount' => $taxAmount,
-                    'subtotal' => $gross,
+                    'tax_id'          => is_numeric($taxId) ? $taxId : null,
+                    'tax_type'        => $taxType,
+                    'tax_value'       => $taxVal,
+                    'tax_amount'      => $taxAmount,
+                    'subtotal'        => $gross,
                 ]);
+
                 $totalSubtotal += $gross; $totalItemDisc += $discAmount; $totalTax += $taxAmount;
+
+                // 🔥 MASUKKAN KE KERANJANG GOOGLE SHEET 🔥
+                $googleSheetRows[] = [
+                    \Carbon\Carbon::parse($request->bill_date)->format('d-M-Y'),
+                    $companyName,
+                    $request->vendor_name,
+                    $namaLayananCustom,                                        // 🔥 Layanan Custom
+                    $categoryName,                                             // 🔥 Kategori
+                    $gross,
+                    $taxAmount,
+                    $dpp + $taxAmount,
+                    $request->vendor_invoice_number ?? '-',
+                    $request->account_number ?? '-',
+                    $bill->bill_number,
+                    $companyName,
+                    '-',
+                ];
             }
 
             if ($request->has('charges')) {
@@ -752,7 +803,6 @@ class BillRequestController extends Controller
                 }
             }
 
-            // 🔥 LOGIKA MENGHAPUS LAMPIRAN LAMA YANG DICENTANG SAAT EDIT 🔥
             if ($request->has('delete_media')) {
                 foreach ($request->delete_media as $mediaId) {
                     $attachment = \DB::table('bill_attachments')->where('id', $mediaId)->first();
@@ -804,6 +854,26 @@ class BillRequestController extends Controller
             }
 
             \DB::commit();
+
+            // ====================================================================
+            // 🔥 SYNC KE GOOGLE SHEET (HAPUS LAMA, TULIS BARU) 🔥
+            // ====================================================================
+            try {
+                $sheetService = new \App\Services\GoogleSheetService();
+                $tabName = env('GOOGLE_SHEET_OPEX_TAB_NAME', 'Sheet1');
+
+                // 1. SAPU BERSIH baris tagihan lama di Sheet
+                $sheetService->deleteRowsByBillNumber($tabName, $bill->bill_number);
+
+                // 2. TULIS KEMBALI data yang sudah direvisi
+                foreach ($googleSheetRows as $rowData) {
+                    $sheetService->appendRow($tabName, $rowData);
+                }
+            } catch (\Exception $e) {
+                \Log::error("Google Sheet Sync Error pada Bill Update {$bill->bill_number}: " . $e->getMessage());
+            }
+            // ====================================================================
+
             return redirect()->route('bills.show', $bill->bill_number)->with('success', "Tagihan Opex berhasil diperbarui!");
         } catch (\Exception $e) {
             \DB::rollback();
