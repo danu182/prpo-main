@@ -24,6 +24,12 @@ class CategorySeeder extends Seeder
             ['name' => 'Alat Tulis Kantor (ATK)', 'code' => 'ATK', 'parent_id' => $invParent->id],
             ['name' => 'Perlengkapan Umum',       'code' => 'CNS', 'parent_id' => $invParent->id],
             ['name' => 'Makanan & Minuman',       'code' => 'FNB', 'parent_id' => $invParent->id],
+            ['name' => 'Email',                   'code' => 'EML', 'parent_id' => $invParent->id],
+            ['name' => 'Google Workspace',        'code' => 'GOW', 'parent_id' => $invParent->id],
+            ['name' => 'Hosting',                 'code' => 'HOS', 'parent_id' => $invParent->id],
+            ['name' => 'Domain',                  'code' => 'DOM', 'parent_id' => $invParent->id],
+            ['name' => 'Internet',                'code' => 'INT', 'parent_id' => $invParent->id],
+
 
             // Anak dari Aset Tetap (Sesuaikan dengan TYPE di Excel Anda)
             ['name' => 'Elektronik & IT',         'code' => 'ELK', 'parent_id' => $astParent->id],

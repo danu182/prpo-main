@@ -23,6 +23,7 @@ use App\Http\Controllers\FinanceReportController;
 use App\Http\Controllers\GoodsIssueReturnController;
 use App\Http\Controllers\StockTransferController;
 use App\Http\Controllers\VendorController;
+use App\Http\Controllers\CategoryController;
 
 /*
 |--------------------------------------------------------------------------
@@ -210,7 +211,7 @@ Route::middleware('auth')->group(function () {
 
    // Modul Pengeluaran Barang (Goods Issue)
     Route::prefix('goods-issues')->name('goods-issues.')->middleware(['can:manage_gi'])->group(function () {
-        
+
         // =========================================================
         // 1. ROUTE KHUSUS AJAX LIVE SEARCH (HARUS DI ATAS {slug})
         // =========================================================
@@ -552,6 +553,23 @@ Route::middleware('auth')->group(function () {
         Route::post('/{id}/approve', [\App\Http\Controllers\StockOpnameController::class, 'approve'])->name('approve');
         Route::post('/{id}/reject', [\App\Http\Controllers\StockOpnameController::class, 'reject'])->name('reject');
     });
+
+
+    /// ====================================================
+    // MASTER KATEGORI
+    // ====================================================
+    Route::prefix('categories')
+    ->name('categories.')
+    ->middleware(['can:view_assets'])
+    ->group(function () {
+        Route::get('/', [CategoryController::class, 'index'])->name('index');
+        Route::get('/create', [CategoryController::class, 'create'])->name('create');
+        Route::post('/', [CategoryController::class, 'store'])->name('store');
+        Route::get('/{category}/edit', [CategoryController::class, 'edit'])->name('edit');
+        Route::put('/{category}', [CategoryController::class, 'update'])->name('update');
+        Route::delete('/{category}', [CategoryController::class, 'destroy'])->name('destroy');
+    });
+
 
     /// ====================================================
     // MASTER KATEGORI ASET
