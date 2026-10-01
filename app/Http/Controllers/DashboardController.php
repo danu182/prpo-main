@@ -20,7 +20,7 @@ class DashboardController extends Controller
         $opexBulanIni = BillRequest::whereMonth('invoice_date', $currentMonth)
             ->whereYear('invoice_date', $currentYear)
             ->whereHas('status', function($q) {
-                $q->whereNotIn('slug', ['rejected', 'draft', 'cancelled']);
+                $q->whereNotIn('slug', ['rejected', 'draft', 'cancelled', 'canceled']);
             })->sum('amount');
 
         $opexUnpaidBills = BillRequest::with('payments')->whereHas('status', function($q) {
@@ -34,7 +34,7 @@ class DashboardController extends Controller
         $monthlyOpex = BillRequest::select(DB::raw('MONTH(invoice_date) as month'), DB::raw('SUM(amount) as total'))
             ->whereYear('invoice_date', $currentYear)
             ->whereHas('status', function($q) {
-                $q->whereNotIn('slug', ['rejected', 'draft']);
+                $q->whereNotIn('slug', ['rejected', 'draft', 'cancelled', 'canceled']);
             })->groupBy('month')->pluck('total', 'month')->toArray();
 
         $urgentBills = BillRequest::with(['status', 'payments'])
@@ -61,14 +61,23 @@ class DashboardController extends Controller
         $monthlyPO = [];
         try {
             if (class_exists('\App\Models\PurchaseOrder')) {
+                // 🔥 PELACAKAN CERDAS STATUS BATAL PO 🔥
+                $invalidPoStatuses = \App\Models\Status::where('type', 'PO')
+                    ->whereIn('slug', ['canceled', 'cancelled', 'rejected', 'void', 'draft'])
+                    ->pluck('id')->toArray();
+
+                if (empty($invalidPoStatuses)) {
+                    $invalidPoStatuses = [99999]; // Fallback aman
+                }
+
                 $poBulanIni = \App\Models\PurchaseOrder::whereMonth('po_date', $currentMonth)
                     ->whereYear('po_date', $currentYear)
-                    ->whereNotIn('status_id', [13, 14])
+                    ->whereNotIn('status_id', $invalidPoStatuses) // <-- MENGGUNAKAN PELACAKAN CERDAS
                     ->sum('grand_total');
 
                 $monthlyPO = \App\Models\PurchaseOrder::select(DB::raw('MONTH(po_date) as month'), DB::raw('SUM(grand_total) as total'))
                     ->whereYear('po_date', $currentYear)
-                    ->whereNotIn('status_id', [13, 14])
+                    ->whereNotIn('status_id', $invalidPoStatuses) // <-- MENGGUNAKAN PELACAKAN CERDAS
                     ->groupBy('month')->pluck('total', 'month')->toArray();
             }
         } catch (\Exception $e) {

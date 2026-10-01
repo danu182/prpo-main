@@ -316,7 +316,6 @@ class BillRequestController extends Controller
                     $masterItem = \App\Models\Item::where('code', $item['code'])->first();
                     if ($masterItem) $masterItemId = $masterItem->id;
                 } elseif (!empty($item['name'])) {
-                    // Memecah teks dari dropdown form (Contoh: "JSA-0060 - Jasa IT")
                     $exploded = explode(' - ', $item['name']);
                     $potentialCode = trim($exploded[0]);
                     $masterItem = \App\Models\Item::where('code', $potentialCode)->orWhere('name', $item['name'])->first();
@@ -359,7 +358,8 @@ class BillRequestController extends Controller
                     $dpp,
                     $taxAmount,
                     $dpp + $taxAmount,
-                    $request->vendor_invoice_number ?? '-', $request->account_number ?? '-', $billNumber, $companyName, '-'
+                    $request->vendor_invoice_number ?? '-', $request->account_number ?? '-', $billNumber, $companyName, '-',
+                    '-' // 🔥 Kolom Notes untuk Child dikosongkan
                 ];
             }
 
@@ -382,7 +382,8 @@ class BillRequestController extends Controller
                             $charge['amount'],
                             0,
                             $charge['amount'],
-                            $request->vendor_invoice_number ?? '-', $request->account_number ?? '-', $billNumber, $companyName, '-'
+                            $request->vendor_invoice_number ?? '-', $request->account_number ?? '-', $billNumber, $companyName, '-',
+                            '-' // 🔥 Kolom Notes untuk Child dikosongkan
                         ];
                     }
                 }
@@ -407,7 +408,8 @@ class BillRequestController extends Controller
                             -abs($discount['amount']),
                             0,
                             -abs($discount['amount']),
-                            $request->vendor_invoice_number ?? '-', $request->account_number ?? '-', $billNumber, $companyName, '-'
+                            $request->vendor_invoice_number ?? '-', $request->account_number ?? '-', $billNumber, $companyName, '-',
+                            '-' // 🔥 Kolom Notes untuk Child dikosongkan
                         ];
                     }
                 }
@@ -432,6 +434,7 @@ class BillRequestController extends Controller
                 $billNumber,
                 $companyName,
                 '-',
+                $request->note ?? '-' // 🔥 CATATAN GLOBAL OPEX (Tampil di Parent)
             ];
 
             $googleSheetRows = array_merge([$parentRow], $childRows);
@@ -604,55 +607,54 @@ class BillRequestController extends Controller
 
 
     // =========================================================================
-    // UPDATE (SIMPAN REVISI PO + PARENT-CHILD GOOGLE SHEET)
+    // UPDATE (SIMPAN REVISI OPEX + PARENT-CHILD GOOGLE SHEET)
     // =========================================================================
     public function update(Request $request, $slug)
     {
         $request->validate([
-            'company_id'            => 'required|exists:companies,id',
+            'paid_by_company_id'    => 'required|exists:companies,id',
             'currency_id'           => 'required|exists:currencies,id',
-            'po_date'               => 'required|date',
-            'delivery_date'         => 'nullable|date|after_or_equal:po_date', // Contoh field tambahan PO
+            'bill_date'             => 'required|date',
+            'due_date'              => 'required|date|after_or_equal:bill_date',
             'vendor_name'           => 'required|string|max:255',
-            'vendor_invoice_number' => 'nullable|string|max:255', // Jika PO sudah ada invoice
-            'account_number'        => 'nullable|string|max:255', // Account BPR
+            'vendor_invoice_number' => 'nullable|string|max:255',
+            'account_number'        => 'nullable|string|max:255',
             'items'                 => 'required|array|min:1',
-            // Tambahkan validasi lain sesuai kebutuhan form PO Anda
         ]);
 
         \DB::beginTransaction();
         try {
-            // 1. Ambil Data PO Berdasarkan Slug (po_number)
-            $po = \App\Models\PurchaseOrder::where('po_number', $slug)->firstOrFail();
+            // 1. Ambil Data Bill Berdasarkan Slug
+            $bill = \App\Models\BillRequest::where('bill_number', $slug)->firstOrFail();
 
-            // Cek Status PO (Opsional, sesuaikan dengan aturan bisnis Anda)
-            // Misal: Jika PO sudah dibayar atau diproses, tidak boleh di-update
-            if ($po->status && in_array(strtolower($po->status->slug), ['paid', 'partial', 'completed'])) {
-                return back()->with('error', 'Gagal! Purchase Order ini sudah diproses atau dibayar.');
+            if ($bill->status && in_array($bill->status->slug, ['paid', 'partial', 'completed'])) {
+                return back()->with('error', 'Gagal! Tagihan ini sudah diproses atau dibayar.');
             }
 
             // 2. Siapkan Variabel Pendukung
             $currency = \App\Models\Currency::find($request->currency_id)->code ?? 'IDR';
-            $company = \App\Models\Company::find($request->company_id);
+            $company = \App\Models\Company::find($request->paid_by_company_id);
             $companyName = $company ? $company->name : '-';
 
-            // 3. Update Data Induk PO (Header)
-            $po->update([
-                'company_id'            => $request->company_id,
+            // 3. Update Data Induk Opex (Header)
+            $bill->update([
+                'company_id'            => $request->paid_by_company_id,
                 'vendor_name'           => $request->vendor_name,
                 'vendor_invoice_number' => $request->vendor_invoice_number,
                 'account_number'        => $request->account_number,
-                'description'           => $request->note, // Catatan PO
-                'po_date'               => $request->po_date,
-                'delivery_date'         => $request->delivery_date,
+                'description'           => $request->note, // Catatan OPEX
+                'invoice_date'          => $request->bill_date,
+                'due_date'              => $request->due_date,
                 'currency'              => $currency,
-                // Tambahkan field lain jika perlu, misal terms_of_payment
+                'is_recurring'          => $request->is_recurring == '1',
+                'recurring_interval'    => $request->is_recurring == '1' ? (int)$request->recurring_interval : null,
+                'recurring_period'      => $request->is_recurring == '1' ? $request->recurring_period : null,
             ]);
 
-            // 4. Bersihkan Relasi Lama (Items, Charges, Discounts)
-            $po->items()->delete();
-            $po->charges()->delete();    // Asumsi model PO punya relasi charges()
-            $po->discounts()->delete();  // Asumsi model PO punya relasi discounts()
+            // 4. Bersihkan Relasi Lama
+            $bill->items()->delete();
+            $bill->charges()->delete();
+            $bill->discounts()->delete();
 
             $totalSubtotal = 0;
             $totalItemDisc = 0;
@@ -664,21 +666,18 @@ class BillRequestController extends Controller
             $childRows = [];
 
             // ==========================================
-            // A. PROSES ITEM UTAMA PO (CHILD)
+            // A. PROSES ITEM UTAMA (CHILD)
             // ==========================================
             foreach ($request->items as $item) {
                 $qty = (float)$item['qty'];
                 $price = (float)$item['price'];
                 $gross = $qty * $price;
 
-                // Hitung Diskon Item
                 $discVal = (float)($item['discount_value'] ?? 0);
                 $discType = $item['discount_type'] ?? 'fixed';
                 $discAmount = ($discType == 'percent') ? ($gross * $discVal / 100) : $discVal;
+                $dpp = $gross - $discAmount;
 
-                $dpp = $gross - $discAmount; // Dasar Pengenaan Pajak (Setelah Diskon)
-
-                // Hitung Pajak (Tax) Item
                 $taxVal = (float)($item['tax_value'] ?? 0);
                 $taxType = $item['tax_type'] ?? 'percent';
                 $taxId = $item['tax_id'] ?? null;
@@ -690,8 +689,6 @@ class BillRequestController extends Controller
 
                 // Pelacakan Kategori Master Item
                 $masterItemId = null;
-                $categoryName = 'Barang Stok (Inventory)'; // Default kategori PO
-
                 if (!empty($item['item_id'])) {
                     $masterItemId = $item['item_id'];
                 } elseif (!empty($item['code'])) {
@@ -704,6 +701,7 @@ class BillRequestController extends Controller
                     if ($masterItem) $masterItemId = $masterItem->id;
                 }
 
+                $categoryName = 'Lainnya';
                 if ($masterItemId) {
                     $masterItemData = \App\Models\Item::find($masterItemId);
                     if ($masterItemData && $masterItemData->category_id) {
@@ -712,14 +710,13 @@ class BillRequestController extends Controller
                     }
                 }
 
-                // Simpan Item ke Database
-                $po->items()->create([
+                $bill->items()->create([
                     'item_id'         => $masterItemId,
                     'name'            => $namaItemCustom,
                     'description'     => $item['description'] ?? null,
                     'qty'             => $qty,
                     'price'           => $price,
-                    'amount'          => $dpp + $taxAmount, // Total bersih item ini
+                    'amount'          => $dpp + $taxAmount,
                     'discount_type'   => $discType,
                     'discount_value'  => $discVal,
                     'discount_amount' => $discAmount,
@@ -727,17 +724,15 @@ class BillRequestController extends Controller
                     'tax_type'        => $taxType,
                     'tax_value'       => $taxVal,
                     'tax_amount'      => $taxAmount,
-                    'subtotal'        => $gross, // Total kotor item ini
+                    'subtotal'        => $gross,
                 ]);
 
-                // Akumulasi Total Induk
                 $totalSubtotal += $gross;
                 $totalItemDisc += $discAmount;
                 $totalTax += $taxAmount;
 
-                // Tambahkan ke Array Google Sheet (Child Row - Item)
                 $childRows[] = [
-                    \Carbon\Carbon::parse($request->po_date)->format('d-M-Y'),
+                    \Carbon\Carbon::parse($request->bill_date)->format('d-M-Y'),
                     $companyName,
                     $request->vendor_name,
                     "  ↳ [Item] " . $namaItemCustom,
@@ -747,8 +742,10 @@ class BillRequestController extends Controller
                     $dpp + $taxAmount,
                     $request->vendor_invoice_number ?? '-',
                     $request->account_number ?? '-',
-                    $po->po_number, // Kolom K: ID Pencarian (nomer BPR)
-                    auth()->user()->name ?? 'System' // Kolom L: Pembuat
+                    $bill->bill_number,
+                    $companyName,
+                    '-',
+                    '-' // 🔥 Kolom Notes (dikosongkan untuk Child)
                 ];
             }
 
@@ -758,7 +755,7 @@ class BillRequestController extends Controller
             if ($request->has('charges')) {
                 foreach ($request->charges as $charge) {
                     if (!empty($charge['charge_type_id']) && $charge['amount'] > 0) {
-                        $po->charges()->create([
+                        $bill->charges()->create([
                             'charge_type_id' => $charge['charge_type_id'],
                             'amount'         => $charge['amount'],
                             'note'           => $charge['note'] ?? null
@@ -770,20 +767,21 @@ class BillRequestController extends Controller
                         $chargeName = $chargeType ? $chargeType->name : 'Biaya Tambahan';
                         $note = !empty($charge['note']) ? ' (' . $charge['note'] . ')' : '';
 
-                        // Tambahkan ke Array Google Sheet (Child Row - Charge)
                         $childRows[] = [
-                            \Carbon\Carbon::parse($request->po_date)->format('d-M-Y'),
+                            \Carbon\Carbon::parse($request->bill_date)->format('d-M-Y'),
                             $companyName,
                             $request->vendor_name,
                             "  ↳ [+] " . $chargeName . $note,
                             'Biaya Tambahan',
                             $charge['amount'],
-                            0, // Anggap charges tidak kena pajak (sesuaikan jika perlu)
+                            0,
                             $charge['amount'],
                             $request->vendor_invoice_number ?? '-',
                             $request->account_number ?? '-',
-                            $po->po_number,
-                            auth()->user()->name ?? 'System'
+                            $bill->bill_number,
+                            $companyName,
+                            '-',
+                            '-' // 🔥 Kolom Notes (dikosongkan untuk Child)
                         ];
                     }
                 }
@@ -795,7 +793,7 @@ class BillRequestController extends Controller
             if ($request->has('discounts')) {
                 foreach ($request->discounts as $discount) {
                     if (!empty($discount['discount_type_id']) && $discount['amount'] > 0) {
-                        $po->discounts()->create([
+                        $bill->discounts()->create([
                             'discount_type_id' => $discount['discount_type_id'],
                             'amount'           => $discount['amount'],
                             'note'             => $discount['note'] ?? null
@@ -807,9 +805,8 @@ class BillRequestController extends Controller
                         $discName = $discType ? $discType->name : 'Potongan';
                         $note = !empty($discount['note']) ? ' (' . $discount['note'] . ')' : '';
 
-                        // Tambahkan ke Array Google Sheet (Child Row - Discount)
                         $childRows[] = [
-                            \Carbon\Carbon::parse($request->po_date)->format('d-M-Y'),
+                            \Carbon\Carbon::parse($request->bill_date)->format('d-M-Y'),
                             $companyName,
                             $request->vendor_name,
                             "  ↳ [-] " . $discName . $note,
@@ -819,42 +816,46 @@ class BillRequestController extends Controller
                             -abs($discount['amount']),
                             $request->vendor_invoice_number ?? '-',
                             $request->account_number ?? '-',
-                            $po->po_number,
-                            auth()->user()->name ?? 'System'
+                            $bill->bill_number,
+                            $companyName,
+                            '-',
+                            '-' // 🔥 Kolom Notes (dikosongkan untuk Child)
                         ];
                     }
                 }
             }
 
             // ==========================================
-            // 5. KALKULASI GRAND TOTAL PO
+            // 5. KALKULASI GRAND TOTAL
             // ==========================================
             $grandTotal = max(0, ($totalSubtotal - $totalItemDisc) + $totalTax + $totalCharge - $totalExtDisc);
 
-            $po->update([
+            $bill->update([
                 'subtotal'       => $totalSubtotal,
                 'total_discount' => $totalItemDisc + $totalExtDisc,
                 'total_tax'      => $totalTax,
                 'total_charge'   => $totalCharge,
-                'grand_total'    => $grandTotal // atau 'amount' => $grandTotal sesuai nama field database
+                'amount'         => $grandTotal
             ]);
 
             // ==========================================
             // 6. MEMBUAT BARIS INDUK GOOGLE SHEET (PARENT)
             // ==========================================
             $parentRow = [
-                \Carbon\Carbon::parse($request->po_date)->format('d-M-Y'),
+                \Carbon\Carbon::parse($request->bill_date)->format('d-M-Y'),
                 $companyName,
                 $request->vendor_name,
-                "⭐ GRAND TOTAL PO",
+                "⭐ GRAND TOTAL",
                 "SUMMARY",
                 ($totalSubtotal - $totalItemDisc + $totalCharge - $totalExtDisc), // DPP Keseluruhan
                 $totalTax,
                 $grandTotal,
                 $request->vendor_invoice_number ?? '-',
                 $request->account_number ?? '-',
-                $po->po_number,
-                auth()->user()->name ?? 'System',
+                $bill->bill_number,
+                $companyName,
+                '-',
+                $request->note ?? '-' // 🔥 CATATAN / DESKRIPSI GLOBAL OPEX (Tampil di Parent)
             ];
 
             // Gabungkan Parent dan Child
@@ -864,32 +865,31 @@ class BillRequestController extends Controller
             // 7. HANDLE ATTACHMENTS (Jika Ada File Baru/Hapus)
             // ==========================================
             if ($request->hasFile('attachments')) {
-                // Asumsi nama tabel setting sama dengan opex, tapi key path-nya beda (contoh: path_po)
-                $basePath = \DB::table('system_settings')->where('setting_key', 'path_po')->value('setting_value') ?: 'attachments/po';
-                $storagePath = $basePath . '/' . str_replace(['/', '\\'], '-', $po->po_number);
+                $basePath = \DB::table('system_settings')->where('setting_key', 'path_bills_opex')->value('setting_value') ?: 'attachments/opex';
+                $storagePath = $basePath . '/' . str_replace(['/', '\\'], '-', $bill->bill_number);
 
                 foreach ($request->file('attachments') as $file) {
                     $originalName = $file->getClientOriginalName();
                     $path = $file->storeAs($storagePath, time() . '_' . uniqid() . '_' . str_replace(' ', '_', $originalName), 'public');
 
-                    \DB::table('po_attachments')->insert([ // Asumsi nama tabel: po_attachments
-                        'purchase_order_id' => $po->id,
-                        'file_name'         => $originalName,
-                        'file_path'         => str_replace('\\', '/', $path),
-                        'created_at'        => now(),
-                        'updated_at'        => now()
+                    \DB::table('bill_attachments')->insert([
+                        'bill_request_id' => $bill->id,
+                        'file_name'       => $originalName,
+                        'file_path'       => str_replace('\\', '/', $path),
+                        'created_at'      => now(),
+                        'updated_at'      => now()
                     ]);
                 }
             }
 
             if ($request->has('delete_media')) {
                 foreach ($request->delete_media as $mediaId) {
-                    $attachment = \DB::table('po_attachments')->where('id', $mediaId)->first();
+                    $attachment = \DB::table('bill_attachments')->where('id', $mediaId)->first();
                     if ($attachment) {
                         if (\Illuminate\Support\Facades\Storage::disk('public')->exists($attachment->file_path)) {
                             \Illuminate\Support\Facades\Storage::disk('public')->delete($attachment->file_path);
                         }
-                        \DB::table('po_attachments')->where('id', $mediaId)->delete();
+                        \DB::table('bill_attachments')->where('id', $mediaId)->delete();
                     }
                 }
             }
@@ -897,22 +897,22 @@ class BillRequestController extends Controller
             // ==========================================
             // 8. LOG HISTORY & WORKFLOW APPROVAL
             // ==========================================
-            $this->logHistory($po, 'UPDATED', "Merevisi dokumen PO. Total Baru: {$currency} " . number_format($grandTotal, 0, ',', '.'));
+            $this->logHistory($bill, 'UPDATED', "Merevisi dokumen Opex. Total Baru: {$currency} " . number_format($grandTotal, 0, ',', '.'));
 
             // Hapus workflow lama
-            \App\Models\DocumentApproval::where('document_id', $po->id)->where('document_type', get_class($po))->delete();
+            \App\Models\DocumentApproval::where('document_id', $bill->id)->where('document_type', get_class($bill))->delete();
 
             $customWorkflowId = $request->input('custom_workflow_id');
             $needsApproval = false;
 
             if ($customWorkflowId) {
-                // Workflow Khusus PO
+                // Workflow Khusus
                 $workflow = \App\Models\ApprovalWorkflow::with('steps')->find($customWorkflowId);
                 if ($workflow && $workflow->steps->count() > 0) {
                     foreach ($workflow->steps as $step) {
                         \App\Models\DocumentApproval::create([
-                            'document_id'          => $po->id,
-                            'document_type'        => get_class($po),
+                            'document_id'          => $bill->id,
+                            'document_type'        => get_class($bill),
                             'role_id'              => $step->role_id,
                             'target_department_id' => $step->target_department_id ?? $step->department_id ?? null,
                             'step_order'           => $step->step_order,
@@ -920,18 +920,18 @@ class BillRequestController extends Controller
                         ]);
                     }
                     $needsApproval = true;
-                    $this->logHistory($po, 'SYSTEM', "Revisi menggunakan Rute Persetujuan Khusus: " . $workflow->name);
+                    $this->logHistory($bill, 'SYSTEM', "Revisi menggunakan Rute Persetujuan Khusus: " . $workflow->name);
                 }
             } else {
-                // Workflow Default PO (menggunakan ApprovalService)
-                $needsApproval = \App\Services\ApprovalService::generateWorkflow($po);
+                // Workflow Default (menggunakan ApprovalService)
+                $needsApproval = \App\Services\ApprovalService::generateWorkflow($bill);
             }
 
-            // Update Status PO berdasarkan ada tidaknya approval
+            // Update Status berdasarkan ada tidaknya approval
             if ($needsApproval) {
-                $po->update(['status_id' => $this->getStatusId('pending') ?? 1]);
+                $bill->update(['status_id' => $this->getStatusId('pending') ?? 1]);
             } else {
-                $po->update(['status_id' => $this->getStatusId('approved') ?? 3]);
+                $bill->update(['status_id' => $this->getStatusId('approved') ?? 3]);
             }
 
             \DB::commit();
@@ -941,27 +941,26 @@ class BillRequestController extends Controller
             // ==========================================
             try {
                 $sheetService = new \App\Services\GoogleSheetService();
-                $tabName = env('GOOGLE_SHEET_PO_TAB_NAME', 'PO_Sheet');
+                $tabName = env('GOOGLE_SHEET_OPEX_TAB_NAME', 'Sheet1');
 
-                // LAKUKAN PENGHAPUSAN BARIS LAMA TERLEBIH DAHULU (Berdasarkan Kolom K: Nomer BPR/PO)
-                // Pastikan fungsi ini sudah diperbaiki di GoogleSheetService agar benar-benar menghapus!
-                $sheetService->deleteRowsByBillNumber($tabName, $po->po_number);
+                // Hapus formasi lama di Sheet
+                $sheetService->deleteRowsByBillNumber($tabName, $bill->bill_number);
 
-                // INSERT BARIS YANG BARU
+                // Insert formasi yang baru
                 if (!empty($googleSheetRows)) {
                     foreach ($googleSheetRows as $rowData) {
                         $sheetService->appendRow($tabName, $rowData);
                     }
                 }
             } catch (\Exception $e) {
-                \Log::error("Google Sheet Sync Error pada PO Update {$po->po_number}: " . $e->getMessage());
+                \Log::error("Google Sheet Sync Error pada Opex Update {$bill->bill_number}: " . $e->getMessage());
             }
 
-            return redirect()->route('po.show', $po->po_number)->with('success', "Purchase Order berhasil diperbarui!");
+            return redirect()->route('bills.show', $bill->bill_number)->with('success', "Tagihan berhasil diperbarui!");
 
         } catch (\Exception $e) {
             \DB::rollback();
-            return back()->withInput()->with('error', 'Gagal update PO: ' . $e->getMessage());
+            return back()->withInput()->with('error', 'Gagal update tagihan: ' . $e->getMessage());
         }
     }
 
@@ -1471,3 +1470,4 @@ class BillRequestController extends Controller
         return $pdf->stream('BPR_Digital_' . str_replace('/', '_', $bill->bill_number) . '.pdf');
     }
 }
+// ini code untuk update yang opex nya, jika ada eror silahkan update atau sesuaikan lagi ya karena tadi ada salah code juga wkwk
