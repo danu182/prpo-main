@@ -115,12 +115,16 @@ class PurchaseOrderController extends Controller
                 $gross = $qty * $price;
                 $discVal = (float) ($itemData['discount_value'] ?? 0);
                 $discType = $itemData['discount_type'] ?? 'FIXED';
-                $discAmt = ($discType == 'PERCENT') ? ($gross * $discVal / 100) : $discVal;
+                $discAmt = (strtoupper($discType) == 'PERCENT') ? ($gross * $discVal / 100) : $discVal;
                 $dpp = $gross - $discAmt;
 
                 $taxAmt = 0;
                 $taxId = $itemData['tax_id'] ?? null;
+                $taxVal = 0;
+                $taxType = 'FIXED';
                 if ($taxId && $tax = \App\Models\Tax::find($taxId)) {
+                    $taxVal = $tax->percent;
+                    $taxType = 'PERCENT';
                     $taxAmt = ($dpp * $tax->percent) / 100;
                 }
 
@@ -154,11 +158,20 @@ class PurchaseOrderController extends Controller
                 $grandSubtotal += $dpp;
                 $grandTax += $taxAmt;
 
+                // 🔥 LABEL PINTAR ITEM 🔥
+                $infoTambahan = "";
+                if ($discAmt > 0) {
+                    $infoTambahan .= (strtoupper($discType) === 'PERCENT') ? " (-Disc " . floatval($discVal) . "%)" : " (-Diskon Rp" . number_format($discAmt, 0, ',', '.') . ")";
+                }
+                if ($taxAmt > 0) {
+                    $infoTambahan .= (strtoupper($taxType) === 'PERCENT') ? " (+PPN " . floatval($taxVal) . "%)" : " (+Pajak Rp" . number_format($taxAmt, 0, ',', '.') . ")";
+                }
+
                 $childRows[] = [
                     \Carbon\Carbon::parse($po->po_date)->format('d-M-Y'), $companyName, $vendorName,
-                    "  ↳ [Item] " . $itemName, $categoryName, $dpp, $taxAmt, $dpp + $taxAmt,
+                    "  ↳ [Item] " . $itemName . $infoTambahan, $categoryName, $dpp, $taxAmt, $dpp + $taxAmt,
                     $request->invoice_number ?? '-', $request->account_number ?? '-', $po->po_number, auth()->user()->name ?? 'System', '-',
-                    '-' // 🔥 Keterangan Child Dikosongkan
+                    '-'
                 ];
             }
 
@@ -176,22 +189,22 @@ class PurchaseOrderController extends Controller
                             \Carbon\Carbon::parse($po->po_date)->format('d-M-Y'), $companyName, $vendorName,
                             "  ↳ [+] Biaya: " . $name, 'Biaya Tambahan', $amount, 0, $amount,
                             $request->invoice_number ?? '-', $request->account_number ?? '-', $po->po_number, auth()->user()->name ?? 'System', '-',
-                            '-' // 🔥 Keterangan Child Dikosongkan
+                            '-'
                         ];
                     }
                 }
             }
 
-            $globalDiscType = $request->global_discount_type ?? 'FIXED';
+            $globalDiscType = strtoupper($request->global_discount_type ?? 'FIXED');
             $globalDiscVal  = (float) ($request->global_discount_value ?? 0);
-            $globalDiscAmount = ($globalDiscType == 'PERCENT') ? ($grandSubtotal * $globalDiscVal / 100) : $globalDiscVal;
+            $globalDiscAmount = ($globalDiscType === 'PERCENT') ? ($grandSubtotal * $globalDiscVal / 100) : $globalDiscVal;
 
             if ($globalDiscAmount > 0) {
                 $childRows[] = [
                     \Carbon\Carbon::parse($po->po_date)->format('d-M-Y'), $companyName, $vendorName,
                     "  ↳ [-] Diskon Global", 'Potongan / Diskon', -$globalDiscAmount, 0, -$globalDiscAmount,
                     $request->invoice_number ?? '-', $request->account_number ?? '-', $po->po_number, auth()->user()->name ?? 'System', '-',
-                    '-' // 🔥 Keterangan Child Dikosongkan
+                    '-'
                 ];
             }
 
@@ -203,12 +216,20 @@ class PurchaseOrderController extends Controller
                 'grand_total'    => $poGrandTotal
             ]);
 
+            // 🔥 LABEL PINTAR GLOBAL 🔥
+            $globalDiscLabel = "";
+            if ($globalDiscAmount > 0) {
+                $globalDiscLabel = ($globalDiscType === 'PERCENT') ? " (-Disc Global " . floatval($globalDiscVal) . "%)" : " (-Disc Global Rp" . number_format($globalDiscAmount, 0, ',', '.') . ")";
+            }
+
+            $judulParent = "⭐ GRAND TOTAL PO" . $globalDiscLabel;
+
             $parentRow = [
                 \Carbon\Carbon::parse($po->po_date)->format('d-M-Y'), $companyName, $vendorName,
-                "⭐ GRAND TOTAL PO", "SUMMARY",
+                $judulParent, "SUMMARY",
                 $grandSubtotal - $globalDiscAmount + $totalCharges, $grandTax, $poGrandTotal,
                 $request->invoice_number ?? '-', $request->account_number ?? '-', $po->po_number, auth()->user()->name ?? 'System', '-',
-                $request->notes ?? '-' // 🔥 KETERANGAN PARENT
+                $request->notes ?? '-'
             ];
 
             if (!empty($prItemIdsToHeal)) {
@@ -306,6 +327,16 @@ class PurchaseOrderController extends Controller
 
                         $masterItem = \App\Models\Item::find($itemData['item_id']);
                         $itemName = $itemData['item_name_override'] ?? ($masterItem->name ?? '-');
+
+                        // 🔥 LABEL PINTAR ITEM 🔥
+                        $infoTambahan = "";
+                        if ($discAmt > 0) {
+                            $infoTambahan .= ($discType === 'PERCENT') ? " (-Disc " . floatval($discVal) . "%)" : " (-Diskon Rp" . number_format($discAmt, 0, ',', '.') . ")";
+                        }
+                        if ($taxAmt > 0) {
+                            $infoTambahan .= ($taxType === 'PERCENT') ? " (+PPN " . floatval($taxVal) . "%)" : " (+Pajak Rp" . number_format($taxAmt, 0, ',', '.') . ")";
+                        }
+
                         $categoryName = 'Lainnya';
                         if ($masterItem && $masterItem->category_id) {
                             $kategori = \DB::table('categories')->where('id', $masterItem->category_id)->first();
@@ -314,13 +345,14 @@ class PurchaseOrderController extends Controller
 
                         $childRows[] = [
                             \Carbon\Carbon::parse($request->po_date ?? now())->format('d-M-Y'), $companyName, $vendorName,
-                            "  ↳ [Item] " . $itemName, $categoryName, $dpp, $taxAmt, $dpp + $taxAmt,
+                            "  ↳ [Item] " . $itemName . $infoTambahan, $categoryName, $dpp, $taxAmt, $dpp + $taxAmt,
                             $request->invoice_number ?? '-', $request->account_number ?? '-', $newPoNumber, auth()->user()->name ?? 'System', '-',
-                            '-' // 🔥 Keterangan Child Dikosongkan
+                            '-'
                         ];
                     }
 
-                    $globalDiscType = 'FIXED'; $globalDiscVal = 0; $poGlobalDiscount = 0;
+                    $globalDiscType = strtoupper($request->input('global_discount_type', 'FIXED'));
+                    $globalDiscVal = 0; $poGlobalDiscount = 0;
                     if ($request->has('global_discounts')) {
                         foreach ($request->global_discounts as $gDisc) {
                             if ($gDisc['vendor_id'] == 'ALL' || $gDisc['vendor_id'] == $vendorId) {
@@ -335,13 +367,14 @@ class PurchaseOrderController extends Controller
                             \Carbon\Carbon::parse($request->po_date ?? now())->format('d-M-Y'), $companyName, $vendorName,
                             "  ↳ [-] Diskon Global", 'Potongan / Diskon', -$poGlobalDiscount, 0, -$poGlobalDiscount,
                             $request->invoice_number ?? '-', $request->account_number ?? '-', $newPoNumber, auth()->user()->name ?? 'System', '-',
-                            '-' // 🔥 Keterangan Child Dikosongkan
+                            '-'
                         ];
                     }
 
                     $dppAfterGlobalDisc = ($poSubtotalGross - $poTotalItemDiscount) - $poGlobalDiscount;
 
-                    $globalTaxType = 'FIXED'; $globalTaxVal = 0; $poGlobalTax = 0;
+                    $globalTaxType = strtoupper($request->input('global_tax_type', 'FIXED'));
+                    $globalTaxVal = 0; $poGlobalTax = 0;
                     if ($request->has('global_taxes')) {
                         foreach ($request->global_taxes as $gTax) {
                             if ($gTax['vendor_id'] == 'ALL' || $gTax['vendor_id'] == $vendorId) {
@@ -356,7 +389,7 @@ class PurchaseOrderController extends Controller
                             \Carbon\Carbon::parse($request->po_date ?? now())->format('d-M-Y'), $companyName, $vendorName,
                             "  ↳ [+] Pajak Global", 'Pajak', 0, $poGlobalTax, $poGlobalTax,
                             $request->invoice_number ?? '-', $request->account_number ?? '-', $newPoNumber, auth()->user()->name ?? 'System', '-',
-                            '-' // 🔥 Keterangan Child Dikosongkan
+                            '-'
                         ];
                     }
 
@@ -369,9 +402,9 @@ class PurchaseOrderController extends Controller
                                 $chargeType = \DB::table('charge_types')->where('id', $charge['charge_type_id'])->first();
                                 $childRows[] = [
                                     \Carbon\Carbon::parse($request->po_date ?? now())->format('d-M-Y'), $companyName, $vendorName,
-                                    "  ↳ [+] " . ($chargeType->name ?? 'Biaya Ekstra'), 'Biaya Tambahan', (float)$charge['amount'], 0, (float)$charge['amount'],
+                                    "  ↳ [+] " . ($chargeType->name ?? 'Biaya Tambahan'), 'Biaya Tambahan', (float)$charge['amount'], 0, (float)$charge['amount'],
                                     $request->invoice_number ?? '-', $request->account_number ?? '-', $newPoNumber, auth()->user()->name ?? 'System', '-',
-                                    '-' // 🔥 Keterangan Child Dikosongkan
+                                    '-'
                                 ];
                             }
                         }
@@ -388,7 +421,7 @@ class PurchaseOrderController extends Controller
                                     \Carbon\Carbon::parse($request->po_date ?? now())->format('d-M-Y'), $companyName, $vendorName,
                                     "  ↳ [-] " . ($discType->name ?? 'Potongan Ekstra'), 'Potongan / Diskon', -(float)$disc['amount'], 0, -(float)$disc['amount'],
                                     $request->invoice_number ?? '-', $request->account_number ?? '-', $newPoNumber, auth()->user()->name ?? 'System', '-',
-                                    '-' // 🔥 Keterangan Child Dikosongkan
+                                    '-'
                                 ];
                             }
                         }
@@ -496,13 +529,26 @@ class PurchaseOrderController extends Controller
                         }
                     }
 
+                    // 🔥 LABEL PINTAR GLOBAL 🔥
+                    $globalTaxLabel = "";
+                    if ($poGlobalTax > 0) {
+                        $globalTaxLabel = ($globalTaxType === 'PERCENT') ? " (+PPN Global " . floatval($globalTaxVal) . "%)" : " (+Pajak Global Rp" . number_format($poGlobalTax, 0, ',', '.') . ")";
+                    }
+
+                    $globalDiscLabel = "";
+                    if ($poGlobalDiscount > 0) {
+                        $globalDiscLabel = ($globalDiscType === 'PERCENT') ? " (-Disc Global " . floatval($globalDiscVal) . "%)" : " (-Disc Global Rp" . number_format($poGlobalDiscount, 0, ',', '.') . ")";
+                    }
+
+                    $judulParent = "⭐ GRAND TOTAL PO" . $globalTaxLabel . $globalDiscLabel;
+
                     // PARENT ROW GOOGLE SHEET
                     $parentRow = [
-                        \Carbon\Carbon::parse($po->po_date)->format('d-M-Y'), $companyName, $vendorName,
-                        "⭐ GRAND TOTAL PO", "SUMMARY",
+                        \Carbon\Carbon::parse($request->po_date ?? now())->format('d-M-Y'), $companyName, $vendorName,
+                        $judulParent, "SUMMARY",
                         $poSubtotalGross - $poGlobalDiscount + $poChargeTotal - $poExtraDiscountTotal, $totalAllTaxes, $poGrandTotal,
                         $request->invoice_number ?? '-', $request->account_number ?? '-', $newPoNumber, auth()->user()->name ?? 'System', '-',
-                        $request->notes ?? '-' // 🔥 KETERANGAN PARENT
+                        $request->notes ?? '-'
                     ];
 
                     // SYNC GOOGLE SHEET
@@ -614,6 +660,15 @@ class PurchaseOrderController extends Controller
                     $taxType = strtoupper($itemData['tax_type'] ?? 'FIXED');
                     $taxAmt = ($taxType === 'PERCENT') ? ($dpp * ($taxVal / 100)) : $taxVal;
 
+                    // 🔥 PELACAK TAMBAHAN UNTUK NAMA SHEET 🔥
+                    $infoTambahan = "";
+                    if ($discAmt > 0) {
+                        $infoTambahan .= ($discType === 'PERCENT') ? " (-Disc " . floatval($discVal) . "%)" : " (-Diskon Rp" . number_format($discAmt, 0, ',', '.') . ")";
+                    }
+                    if ($taxAmt > 0) {
+                        $infoTambahan .= ($taxType === 'PERCENT') ? " (+PPN " . floatval($taxVal) . "%)" : " (+Pajak Rp" . number_format($taxAmt, 0, ',', '.') . ")";
+                    }
+
                     $files = $request->file("po_items.{$itemId}.attachments");
                     if (!empty($files)) {
                         foreach (is_array($files) ? $files : [$files] as $file) {
@@ -667,9 +722,9 @@ class PurchaseOrderController extends Controller
 
                     $childRows[] = [
                         \Carbon\Carbon::parse($request->po_date ?? $po->po_date)->format('d-M-Y'), $companyName, $vendorName,
-                        "  ↳ [Item] " . $itemName, $categoryName, $dpp, $taxAmt, $dpp + $taxAmt,
+                        "  ↳ [Item] " . $itemName . $infoTambahan, $categoryName, $dpp, $taxAmt, $dpp + $taxAmt,
                         $request->invoice_number ?? '-', $request->account_number ?? '-', $po->po_number, auth()->user()->name ?? 'System', '-',
-                        '-' // 🔥 Keterangan Child Dikosongkan
+                        '-'
                     ];
                 }
 
@@ -696,7 +751,7 @@ class PurchaseOrderController extends Controller
                         \Carbon\Carbon::parse($request->po_date ?? $po->po_date)->format('d-M-Y'), $companyName, $vendorName,
                         "  ↳ [-] Diskon Global", 'Potongan / Diskon', -$poGlobalDiscount, 0, -$poGlobalDiscount,
                         $request->invoice_number ?? '-', $request->account_number ?? '-', $po->po_number, auth()->user()->name ?? 'System', '-',
-                        '-' // 🔥 Keterangan Child Dikosongkan
+                        '-'
                     ];
                 }
 
@@ -711,7 +766,7 @@ class PurchaseOrderController extends Controller
                         \Carbon\Carbon::parse($request->po_date ?? $po->po_date)->format('d-M-Y'), $companyName, $vendorName,
                         "  ↳ [+] Pajak Global", 'Pajak', 0, $poGlobalTax, $poGlobalTax,
                         $request->invoice_number ?? '-', $request->account_number ?? '-', $po->po_number, auth()->user()->name ?? 'System', '-',
-                        '-' // 🔥 Keterangan Child Dikosongkan
+                        '-'
                     ];
                 }
 
@@ -730,7 +785,7 @@ class PurchaseOrderController extends Controller
                                 \Carbon\Carbon::parse($request->po_date ?? $po->po_date)->format('d-M-Y'), $companyName, $vendorName,
                                 "  ↳ [+] " . ($chargeType->name ?? 'Biaya Tambahan'), 'Biaya Tambahan', $charge['amount'], 0, $charge['amount'],
                                 $request->invoice_number ?? '-', $request->account_number ?? '-', $po->po_number, auth()->user()->name ?? 'System', '-',
-                                '-' // 🔥 Keterangan Child Dikosongkan
+                                '-'
                             ];
                         }
                     }
@@ -749,9 +804,9 @@ class PurchaseOrderController extends Controller
                             $discType = \DB::table('discount_types')->where('id', $disc['discount_type_id'])->first();
                             $childRows[] = [
                                 \Carbon\Carbon::parse($request->po_date ?? $po->po_date)->format('d-M-Y'), $companyName, $vendorName,
-                                "  ↳ [-] " . ($discType->name ?? 'Potongan Ekstra'), 'Potongan / Diskon', -$disc['amount'], 0, -$disc['amount'],
+                                "  ↳ [-] " . ($discType->name ?? 'Potongan Ekstra'), 'Potongan / Diskon', -(float)$disc['amount'], 0, -(float)$disc['amount'],
                                 $request->invoice_number ?? '-', $request->account_number ?? '-', $po->po_number, auth()->user()->name ?? 'System', '-',
-                                '-' // 🔥 Keterangan Child Dikosongkan
+                                '-'
                             ];
                         }
                     }
@@ -778,12 +833,25 @@ class PurchaseOrderController extends Controller
                     'account_number'        => $request->account_number,
                 ]);
 
+                // 🔥 LABEL PINTAR GLOBAL 🔥
+                $globalTaxLabel = "";
+                if ($poGlobalTax > 0) {
+                    $globalTaxLabel = ($globalTaxType === 'PERCENT') ? " (+PPN Global " . floatval($globalTaxVal) . "%)" : " (+Pajak Global Rp" . number_format($poGlobalTax, 0, ',', '.') . ")";
+                }
+
+                $globalDiscLabel = "";
+                if ($poGlobalDiscount > 0) {
+                    $globalDiscLabel = ($globalDiscType === 'PERCENT') ? " (-Disc Global " . floatval($globalDiscVal) . "%)" : " (-Disc Global Rp" . number_format($poGlobalDiscount, 0, ',', '.') . ")";
+                }
+
+                $judulParent = "⭐ GRAND TOTAL PO" . $globalTaxLabel . $globalDiscLabel;
+
                 $parentRow = [
                     \Carbon\Carbon::parse($request->po_date ?? $po->po_date)->format('d-M-Y'), $companyName, $vendorName,
-                    "⭐ GRAND TOTAL PO", "SUMMARY",
+                    $judulParent, "SUMMARY",
                     $poSubtotalGross - $poGlobalDiscount + $poChargeTotal - $poExtraDiscountTotal, $poTotalTax + $poGlobalTax, $poGrandTotal,
                     $request->invoice_number ?? '-', $request->account_number ?? '-', $po->po_number, auth()->user()->name ?? 'System', '-',
-                    $request->notes ?? '-' // 🔥 KETERANGAN PARENT
+                    $request->notes ?? '-'
                 ];
 
                 $prItemIds = $po->items->pluck('purchase_request_item_id')->filter()->unique()->toArray();
@@ -1539,7 +1607,7 @@ class PurchaseOrderController extends Controller
         $currencies = \App\Models\Currency::where('is_active', true)->get();
         $discountTypes = \App\Models\DiscountType::where('is_active', true)->get();
 
-        $masterItems = \App\Models\Item::with('itemUoms')->orderBy('name')->get();
+        $masterItems = \App\Models\Item::with(['itemUoms', 'uom'])->orderBy('name')->get();
 
         $headOffice = \App\Models\Company::where('is_head_office', true)->first();
         $defaultShippingAddress = $headOffice ? $headOffice->address : '';
@@ -1616,6 +1684,15 @@ class PurchaseOrderController extends Controller
                     $masterItem = \App\Models\Item::find($itemData['item_id']);
                     $itemName = $itemData['item_name_override'] ?? ($masterItem->name ?? '-');
 
+                    // 🔥 PELACAK TAMBAHAN UNTUK NAMA SHEET 🔥
+                    $infoTambahan = "";
+                    if ($discAmt > 0) {
+                        $infoTambahan .= ($discType === 'PERCENT') ? " (-Disc " . floatval($discVal) . "%)" : " (-Diskon Rp" . number_format($discAmt, 0, ',', '.') . ")";
+                    }
+                    if ($taxAmt > 0) {
+                        $infoTambahan .= ($taxType === 'PERCENT') ? " (+PPN " . floatval($taxVal) . "%)" : " (+Pajak Rp" . number_format($taxAmt, 0, ',', '.') . ")";
+                    }
+
                     $categoryName = 'Lainnya';
                     if ($masterItem && $masterItem->category_id) {
                         $kategori = \DB::table('categories')->where('id', $masterItem->category_id)->first();
@@ -1624,7 +1701,7 @@ class PurchaseOrderController extends Controller
 
                     $childRows[] = [
                         \Carbon\Carbon::parse($request->po_date ?? now())->format('d-M-Y'), $companyName, $vendorName,
-                        "  ↳ [Item] " . $itemName, $categoryName, $dpp, $taxAmt, $dpp + $taxAmt,
+                        "  ↳ [Item] " . $itemName . $infoTambahan, $categoryName, $dpp, $taxAmt, $dpp + $taxAmt,
                         $request->invoice_number ?? '-', $request->account_number ?? '-', $newPoNumber, auth()->user()->name ?? 'System', '-',
                         '-' // 🔥 Keterangan Child Dikosongkan
                     ];
@@ -1641,7 +1718,7 @@ class PurchaseOrderController extends Controller
                         \Carbon\Carbon::parse($request->po_date ?? now())->format('d-M-Y'), $companyName, $vendorName,
                         "  ↳ [-] Diskon Global", 'Potongan / Diskon', -$poGlobalDiscount, 0, -$poGlobalDiscount,
                         $request->invoice_number ?? '-', $request->account_number ?? '-', $newPoNumber, auth()->user()->name ?? 'System', '-',
-                        '-' // 🔥 Keterangan Child Dikosongkan
+                        '-'
                     ];
                 }
 
@@ -1656,7 +1733,7 @@ class PurchaseOrderController extends Controller
                         \Carbon\Carbon::parse($request->po_date ?? now())->format('d-M-Y'), $companyName, $vendorName,
                         "  ↳ [+] Pajak Global", 'Pajak', 0, $poGlobalTax, $poGlobalTax,
                         $request->invoice_number ?? '-', $request->account_number ?? '-', $newPoNumber, auth()->user()->name ?? 'System', '-',
-                        '-' // 🔥 Keterangan Child Dikosongkan
+                        '-'
                     ];
                 }
 
@@ -1672,7 +1749,7 @@ class PurchaseOrderController extends Controller
                                 \Carbon\Carbon::parse($request->po_date ?? now())->format('d-M-Y'), $companyName, $vendorName,
                                 "  ↳ [+] " . ($chargeType->name ?? 'Biaya Tambahan'), 'Biaya Tambahan', (float)$charge['amount'], 0, (float)$charge['amount'],
                                 $request->invoice_number ?? '-', $request->account_number ?? '-', $newPoNumber, auth()->user()->name ?? 'System', '-',
-                                '-' // 🔥 Keterangan Child Dikosongkan
+                                '-'
                             ];
                         }
                     }
@@ -1690,7 +1767,7 @@ class PurchaseOrderController extends Controller
                                 \Carbon\Carbon::parse($request->po_date ?? now())->format('d-M-Y'), $companyName, $vendorName,
                                 "  ↳ [-] " . ($discType->name ?? 'Potongan Ekstra'), 'Potongan / Diskon', -(float)$disc['amount'], 0, -(float)$disc['amount'],
                                 $request->invoice_number ?? '-', $request->account_number ?? '-', $newPoNumber, auth()->user()->name ?? 'System', '-',
-                                '-' // 🔥 Keterangan Child Dikosongkan
+                                '-'
                             ];
                         }
                     }
@@ -1797,10 +1874,23 @@ class PurchaseOrderController extends Controller
 
                 $this->logHistory($po->id, 'CREATED', "Direct PO (Tanpa PR) berhasil dibuat.");
 
+                // 🔥 LABEL PINTAR GLOBAL 🔥
+                $globalTaxLabel = "";
+                if ($poGlobalTax > 0) {
+                    $globalTaxLabel = ($globalTaxType === 'PERCENT') ? " (+PPN Global " . floatval($globalTaxVal) . "%)" : " (+Pajak Global Rp" . number_format($poGlobalTax, 0, ',', '.') . ")";
+                }
+
+                $globalDiscLabel = "";
+                if ($poGlobalDiscount > 0) {
+                    $globalDiscLabel = ($globalDiscType === 'PERCENT') ? " (-Disc Global " . floatval($globalDiscVal) . "%)" : " (-Disc Global Rp" . number_format($poGlobalDiscount, 0, ',', '.') . ")";
+                }
+
+                $judulParent = "⭐ GRAND TOTAL PO" . $globalTaxLabel . $globalDiscLabel;
+
                 // 🔥 MEMBUAT BARIS INDUK (PARENT ROW) 🔥
                 $parentRow = [
                     \Carbon\Carbon::parse($request->po_date ?? now())->format('d-M-Y'), $companyName, $vendorName,
-                    "⭐ GRAND TOTAL PO", "SUMMARY",
+                    $judulParent, "SUMMARY",
                     $poSubtotalGross - $poGlobalDiscount + $poChargeTotal - $poExtraDiscountTotal, $totalAllTaxes, $poGrandTotal,
                     $request->invoice_number ?? '-', $request->account_number ?? '-', $newPoNumber, auth()->user()->name ?? 'System', '-',
                     $request->notes ?? '-' // 🔥 KETERANGAN PARENT
@@ -1821,6 +1911,7 @@ class PurchaseOrderController extends Controller
 
                 if ($customWorkflowId) {
                     $workflow = \App\Models\ApprovalWorkflow::with('steps')->find($customWorkflowId);
+
                     if ($workflow && $workflow->steps->count() > 0) {
                         foreach ($workflow->steps as $step) {
                             $targetDept = $step->target_department_id ?? $step->department_id ?? null;
@@ -2081,7 +2172,7 @@ class PurchaseOrderController extends Controller
                     }
                 } else {
                     $errorHtml = "<div style='border:2px solid red; padding:20px; text-align:center; font-family:sans-serif; margin-top:50px;'>
-                                    <h2 style='color:red;'>⚠️ FILE FISIK HILANG ⚠️️</h2>
+                                    <h2 style='color:red;'>⚠️ FILE FISIK HILANG ⚠️</h2>
                                     <p>Data lampiran <b>{$file->file_name}</b> tercatat di sistem, tapi file aslinya tidak ditemukan di server.</p>
                                   </div>";
                     $errorPdf = \Barryvdh\DomPDF\Facade\Pdf::loadHTML($errorHtml)->setPaper('a4', 'portrait');

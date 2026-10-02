@@ -254,15 +254,29 @@
 <datalist id="chargeTypeList">@foreach($chargeTypes as $type) <option value="{{ $type->name }}"></option> @endforeach</datalist>
 <datalist id="discountTypeList">@foreach($discountTypes as $type) <option value="{{ $type->name }}"></option> @endforeach</datalist>
 
+
 {{-- MASTER ITEM LIST (UNTUK DROPDOWN CLONE) --}}
 <div id="masterItemSelectTemplate" class="d-none">
     <select class="form-select select2-item item-select" required onchange="onItemSelect(this, 'INDEX')">
         <option value="">-- Pilih Barang Master --</option>
         @foreach($masterItems as $m)
-            <option value="{{ $m->id }}" data-base-uom="{{ $m->unit ?? 'PCS' }}" data-uoms="{{ json_encode($m->itemUoms) }}">{{ $m->code }} - {{ $m->name }}</option>
+            @php
+                // Cari nama UOM dasarnya melalui relasi uom()
+                $baseUomName = 'PCS';
+                if ($m->uom_id && $m->uom) {
+                    // Gunakan $m->uom->name (atau $m->uom->uom_name jika nama fieldnya uom_name)
+                    $baseUomName = $m->uom->name ?? $m->uom->uom_name ?? 'PCS';
+                } elseif (!empty($m->unit)) {
+                    $baseUomName = $m->unit;
+                }
+            @endphp
+            <option value="{{ $m->id }}" data-base-uom="{{ $baseUomName }}" data-uoms="{{ json_encode($m->itemUoms) }}">
+                {{ $m->code }} - {{ $m->name }}
+            </option>
         @endforeach
     </select>
 </div>
+
 
 <template id="chargeRowTemplate">
     <tr class="charge-row border-bottom">

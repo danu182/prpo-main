@@ -298,17 +298,28 @@ class BillRequestController extends Controller
             foreach ($request->items as $item) {
                 $qty = (float)$item['qty']; $price = (float)$item['price']; $gross = $qty * $price;
                 $discVal = (float)($item['discount_value'] ?? 0); $discType = $item['discount_type'] ?? 'fixed';
-                $discAmount = ($discType == 'percent') ? ($gross * $discVal / 100) : $discVal;
+                $discAmount = ($discType == 'percent' || $discType == 'PERCENT') ? ($gross * $discVal / 100) : $discVal;
                 $dpp = $gross - $discAmount;
 
                 $taxVal = (float)($item['tax_value'] ?? 0); $taxType = $item['tax_type'] ?? 'percent';
                 $taxId = $item['tax_id'] ?? null;
-                if ($taxId === 'MANUAL_PERCENT') $taxType = 'percent';
-                $taxAmount = ($taxType == 'percent') ? ($dpp * $taxVal / 100) : $taxVal;
+
+                // Pengecekan cerdas dari Master Pajak
+                if ($taxId && is_numeric($taxId)) {
+                    $taxMaster = \App\Models\Tax::find($taxId);
+                    if ($taxMaster) {
+                        $taxVal = $taxMaster->percent;
+                        $taxType = 'percent';
+                    }
+                } elseif ($taxId === 'MANUAL_PERCENT') {
+                    $taxType = 'percent';
+                }
+
+                $taxAmount = ($taxType == 'percent' || $taxType == 'PERCENT') ? ($dpp * $taxVal / 100) : $taxVal;
 
                 $namaLayananCustom = $item['name_override'] ?? $item['item_name'] ?? $item['name'] ?? 'Layanan Tanpa Nama';
 
-                // 🔥 PELACAKAN KATEGORI MASTER ITEM YANG DIPERBAIKI 🔥
+                // Pelacakan Kategori Master Item
                 $masterItemId = null;
                 if (!empty($item['item_id'])) {
                     $masterItemId = $item['item_id'];
@@ -331,7 +342,8 @@ class BillRequestController extends Controller
                     }
                 }
 
-                $bill->items()->create([
+                // SIMPAN KE DATABASE DULU AGAR PASTI BENAR!
+                $savedItem = $bill->items()->create([
                     'item_id'         => $masterItemId,
                     'name'            => $namaLayananCustom,
                     'description'     => $item['description'] ?? null,
@@ -348,18 +360,31 @@ class BillRequestController extends Controller
                     'subtotal'        => $gross,
                 ]);
 
-                $totalSubtotal += $gross; $totalItemDisc += $discAmount; $totalTax += $taxAmount;
+                $totalSubtotal += $savedItem->subtotal;
+                $totalItemDisc += $savedItem->discount_amount;
+                $totalTax += $savedItem->tax_amount;
+
+                // 🔥 GENERATE LABEL SHEET DARI DATA DATABASE 🔥
+                $infoTambahan = "";
+                if ($savedItem->discount_amount > 0) {
+                    $infoTambahan .= (strtoupper($savedItem->discount_type) === 'PERCENT') ? " (-Disc {$savedItem->discount_value}%)" : " (-Diskon Rp" . number_format($savedItem->discount_amount, 0, ',', '.') . ")";
+                }
+                if ($savedItem->tax_amount > 0) {
+                    $infoTambahan .= (strtoupper($savedItem->tax_type) === 'PERCENT') ? " (+PPN {$savedItem->tax_value}%)" : " (+Pajak Rp" . number_format($savedItem->tax_amount, 0, ',', '.') . ")";
+                }
+
+                $dppSheet = $savedItem->subtotal - $savedItem->discount_amount;
 
                 $childRows[] = [
                     \Carbon\Carbon::parse($request->bill_date)->format('d-M-Y'),
                     $companyName, $request->vendor_name,
-                    "  ↳ [Item] " . $namaLayananCustom,
-                    $categoryName,                             // 🔥 Kategori Item Akan Akurat Disini
-                    $dpp,
-                    $taxAmount,
-                    $dpp + $taxAmount,
-                    $request->vendor_invoice_number ?? '-', $request->account_number ?? '-', $billNumber, $companyName, '-',
-                    '-' // 🔥 Kolom Notes untuk Child dikosongkan
+                    "  ↳ [Item] " . $namaLayananCustom . $infoTambahan, // 🔥 SUNTIKKAN LABEL DISINI
+                    $categoryName,
+                    $dppSheet,
+                    $savedItem->tax_amount,
+                    $savedItem->amount,
+                    $request->vendor_invoice_number ?? '-', $request->account_number ?? '-', $billNumber, auth()->user()->name ?? 'System', '-',
+                    '-'
                 ];
             }
 
@@ -367,23 +392,23 @@ class BillRequestController extends Controller
             if ($request->has('charges')) {
                 foreach ($request->charges as $charge) {
                     if (!empty($charge['charge_type_id']) && $charge['amount'] > 0) {
-                        $bill->charges()->create(['charge_type_id' => $charge['charge_type_id'], 'amount' => $charge['amount'], 'note' => $charge['note'] ?? null]);
-                        $totalCharge += $charge['amount'];
+                        $savedCharge = $bill->charges()->create(['charge_type_id' => $charge['charge_type_id'], 'amount' => $charge['amount'], 'note' => $charge['note'] ?? null]);
+                        $totalCharge += $savedCharge->amount;
 
-                        $chargeType = \DB::table('charge_types')->where('id', $charge['charge_type_id'])->first();
+                        $chargeType = \DB::table('charge_types')->where('id', $savedCharge->charge_type_id)->first();
                         $chargeName = $chargeType ? $chargeType->name : 'Biaya Tambahan';
-                        $note = !empty($charge['note']) ? ' (' . $charge['note'] . ')' : '';
+                        $note = !empty($savedCharge->note) ? ' (' . $savedCharge->note . ')' : '';
 
                         $childRows[] = [
                             \Carbon\Carbon::parse($request->bill_date)->format('d-M-Y'),
                             $companyName, $request->vendor_name,
                             "  ↳ [+] " . $chargeName . $note,
                             'Biaya Tambahan',
-                            $charge['amount'],
+                            $savedCharge->amount,
                             0,
-                            $charge['amount'],
-                            $request->vendor_invoice_number ?? '-', $request->account_number ?? '-', $billNumber, $companyName, '-',
-                            '-' // 🔥 Kolom Notes untuk Child dikosongkan
+                            $savedCharge->amount,
+                            $request->vendor_invoice_number ?? '-', $request->account_number ?? '-', $billNumber, auth()->user()->name ?? 'System', '-',
+                            '-'
                         ];
                     }
                 }
@@ -393,23 +418,23 @@ class BillRequestController extends Controller
             if ($request->has('discounts')) {
                 foreach ($request->discounts as $discount) {
                     if (!empty($discount['discount_type_id']) && $discount['amount'] > 0) {
-                        $bill->discounts()->create(['discount_type_id' => $discount['discount_type_id'], 'amount' => $discount['amount'], 'note' => $discount['note'] ?? null]);
-                        $totalExtDisc += $discount['amount'];
+                        $savedDisc = $bill->discounts()->create(['discount_type_id' => $discount['discount_type_id'], 'amount' => $discount['amount'], 'note' => $discount['note'] ?? null]);
+                        $totalExtDisc += $savedDisc->amount;
 
-                        $discType = \DB::table('discount_types')->where('id', $discount['discount_type_id'])->first();
+                        $discType = \DB::table('discount_types')->where('id', $savedDisc->discount_type_id)->first();
                         $discName = $discType ? $discType->name : 'Potongan';
-                        $note = !empty($discount['note']) ? ' (' . $discount['note'] . ')' : '';
+                        $note = !empty($savedDisc->note) ? ' (' . $savedDisc->note . ')' : '';
 
                         $childRows[] = [
                             \Carbon\Carbon::parse($request->bill_date)->format('d-M-Y'),
                             $companyName, $request->vendor_name,
                             "  ↳ [-] " . $discName . $note,
                             'Potongan / Diskon',
-                            -abs($discount['amount']),
+                            -abs($savedDisc->amount),
                             0,
-                            -abs($discount['amount']),
-                            $request->vendor_invoice_number ?? '-', $request->account_number ?? '-', $billNumber, $companyName, '-',
-                            '-' // 🔥 Kolom Notes untuk Child dikosongkan
+                            -abs($savedDisc->amount),
+                            $request->vendor_invoice_number ?? '-', $request->account_number ?? '-', $billNumber, auth()->user()->name ?? 'System', '-',
+                            '-'
                         ];
                     }
                 }
@@ -417,14 +442,59 @@ class BillRequestController extends Controller
 
             // 4. Kalkulasi Grand Total
             $grandTotal = max(0, ($totalSubtotal - $totalItemDisc) + $totalTax + $totalCharge - $totalExtDisc);
+
+            // 🔥 Cek Pajak & Diskon Global dari Form
+            $globalTaxValue = (float)$request->input('global_tax_value', 0);
+            $globalTaxType = $request->input('global_tax_type', 'PERCENT');
+            $globalTaxLabel = "";
+            $globalTaxAmount = 0;
+
+            if ($globalTaxValue > 0) {
+                if (strtoupper($globalTaxType) === 'PERCENT') {
+                    $dppAwal = $totalSubtotal - $totalItemDisc; // DPP sebelum pajak global
+                    $globalTaxAmount = ($dppAwal * $globalTaxValue) / 100;
+                    $globalTaxLabel = " (+PPN Global {$globalTaxValue}%)";
+                } else {
+                    $globalTaxAmount = $globalTaxValue;
+                    $globalTaxLabel = " (+Pajak Global Rp" . number_format($globalTaxAmount, 0, ',', '.') . ")";
+                }
+
+                // Tambahkan sebagai pajak global ke Grand Total
+                $grandTotal += $globalTaxAmount;
+                $totalTax += $globalTaxAmount; // Akumulasikan ke total pajak
+            }
+
+            $globalDiscValue = (float)$request->input('global_discount_value', 0);
+            $globalDiscType = $request->input('global_discount_type', 'PERCENT');
+            $globalDiscLabel = "";
+            $globalDiscAmount = 0;
+
+            if ($globalDiscValue > 0) {
+                if (strtoupper($globalDiscType) === 'PERCENT') {
+                    $dppAwal = $totalSubtotal - $totalItemDisc;
+                    $globalDiscAmount = ($dppAwal * $globalDiscValue) / 100;
+                    $globalDiscLabel = " (-Disc Global {$globalDiscValue}%)";
+                } else {
+                    $globalDiscAmount = $globalDiscValue;
+                    $globalDiscLabel = " (-Disc Global Rp" . number_format($globalDiscAmount, 0, ',', '.') . ")";
+                }
+
+                // Kurangkan dari Grand Total
+                $grandTotal -= $globalDiscAmount;
+                $totalItemDisc += $globalDiscAmount; // Akumulasikan ke total diskon
+            }
+
             $bill->update(['subtotal' => $totalSubtotal, 'total_discount' => $totalItemDisc + $totalExtDisc, 'total_tax' => $totalTax, 'total_charge' => $totalCharge, 'amount' => $grandTotal]);
 
             // 🔥 MEMBUAT BARIS INDUK (PARENT ROW) 🔥
+            // Jika ada pajak/diskon global, tempelkan di judul GRAND TOTAL
+            $judulParent = "⭐ GRAND TOTAL" . $globalTaxLabel . $globalDiscLabel;
+
             $parentRow = [
                 \Carbon\Carbon::parse($request->bill_date)->format('d-M-Y'),
                 $companyName,
                 $request->vendor_name,
-                "⭐ GRAND TOTAL",
+                $judulParent,
                 "SUMMARY",
                 ($totalSubtotal - $totalItemDisc + $totalCharge - $totalExtDisc),
                 $totalTax,
@@ -432,9 +502,9 @@ class BillRequestController extends Controller
                 $request->vendor_invoice_number ?? '-',
                 $request->account_number ?? '-',
                 $billNumber,
-                $companyName,
+                auth()->user()->name ?? 'System',
                 '-',
-                $request->note ?? '-' // 🔥 CATATAN GLOBAL OPEX (Tampil di Parent)
+                $request->note ?? '-' // 🔥 CATATAN / DESKRIPSI GLOBAL PO (Tampil di Parent)
             ];
 
             $googleSheetRows = array_merge([$parentRow], $childRows);
@@ -675,15 +745,25 @@ class BillRequestController extends Controller
 
                 $discVal = (float)($item['discount_value'] ?? 0);
                 $discType = $item['discount_type'] ?? 'fixed';
-                $discAmount = ($discType == 'percent') ? ($gross * $discVal / 100) : $discVal;
+                $discAmount = (strtoupper($discType) === 'PERCENT') ? ($gross * $discVal / 100) : $discVal;
                 $dpp = $gross - $discAmount;
 
                 $taxVal = (float)($item['tax_value'] ?? 0);
                 $taxType = $item['tax_type'] ?? 'percent';
                 $taxId = $item['tax_id'] ?? null;
-                if ($taxId === 'MANUAL_PERCENT') $taxType = 'percent';
 
-                $taxAmount = ($taxType == 'percent') ? ($dpp * $taxVal / 100) : $taxVal;
+                // Pengecekan cerdas dari Master Pajak
+                if ($taxId && is_numeric($taxId)) {
+                    $taxMaster = \App\Models\Tax::find($taxId);
+                    if ($taxMaster) {
+                        $taxVal = $taxMaster->percent;
+                        $taxType = 'percent';
+                    }
+                } elseif ($taxId === 'MANUAL_PERCENT') {
+                    $taxType = 'percent';
+                }
+
+                $taxAmount = (strtoupper($taxType) === 'PERCENT') ? ($dpp * $taxVal / 100) : $taxVal;
 
                 $namaItemCustom = $item['name_override'] ?? $item['item_name'] ?? $item['name'] ?? 'Barang Tanpa Nama';
 
@@ -710,7 +790,8 @@ class BillRequestController extends Controller
                     }
                 }
 
-                $bill->items()->create([
+                // SIMPAN KE DATABASE DULU AGAR PASTI BENAR!
+                $savedItem = $bill->items()->create([
                     'item_id'         => $masterItemId,
                     'name'            => $namaItemCustom,
                     'description'     => $item['description'] ?? null,
@@ -727,25 +808,37 @@ class BillRequestController extends Controller
                     'subtotal'        => $gross,
                 ]);
 
-                $totalSubtotal += $gross;
-                $totalItemDisc += $discAmount;
-                $totalTax += $taxAmount;
+                // 🔥 AMBIL KEMBALI DARI DATABASE AGAR PERHITUNGAN SHEET SAMA DENGAN DATABASE 🔥
+                $totalSubtotal += $savedItem->subtotal;
+                $totalItemDisc += $savedItem->discount_amount;
+                $totalTax += $savedItem->tax_amount;
+
+                // 🔥 GENERATE LABEL SHEET DARI DATA DATABASE 🔥
+                $infoTambahan = "";
+                if ($savedItem->discount_amount > 0) {
+                    $infoTambahan .= (strtoupper($savedItem->discount_type) === 'PERCENT') ? " (-Disc {$savedItem->discount_value}%)" : " (-Diskon Rp" . number_format($savedItem->discount_amount, 0, ',', '.') . ")";
+                }
+                if ($savedItem->tax_amount > 0) {
+                    $infoTambahan .= (strtoupper($savedItem->tax_type) === 'PERCENT') ? " (+PPN {$savedItem->tax_value}%)" : " (+Pajak Rp" . number_format($savedItem->tax_amount, 0, ',', '.') . ")";
+                }
+
+                $dppSheet = $savedItem->subtotal - $savedItem->discount_amount;
 
                 $childRows[] = [
                     \Carbon\Carbon::parse($request->bill_date)->format('d-M-Y'),
                     $companyName,
                     $request->vendor_name,
-                    "  ↳ [Item] " . $namaItemCustom,
+                    "  ↳ [Item] " . $namaItemCustom . $infoTambahan, // 🔥 SUNTIKKAN LABEL DISINI
                     $categoryName,
-                    $dpp,
-                    $taxAmount,
-                    $dpp + $taxAmount,
+                    $dppSheet,
+                    $savedItem->tax_amount,
+                    $savedItem->amount,
                     $request->vendor_invoice_number ?? '-',
                     $request->account_number ?? '-',
                     $bill->bill_number,
-                    $companyName,
+                    auth()->user()->name ?? 'System',
                     '-',
-                    '-' // 🔥 Kolom Notes (dikosongkan untuk Child)
+                    '-'
                 ];
             }
 
@@ -755,17 +848,17 @@ class BillRequestController extends Controller
             if ($request->has('charges')) {
                 foreach ($request->charges as $charge) {
                     if (!empty($charge['charge_type_id']) && $charge['amount'] > 0) {
-                        $bill->charges()->create([
+                        $savedCharge = $bill->charges()->create([
                             'charge_type_id' => $charge['charge_type_id'],
                             'amount'         => $charge['amount'],
                             'note'           => $charge['note'] ?? null
                         ]);
 
-                        $totalCharge += $charge['amount'];
+                        $totalCharge += $savedCharge->amount;
 
-                        $chargeType = \DB::table('charge_types')->where('id', $charge['charge_type_id'])->first();
+                        $chargeType = \DB::table('charge_types')->where('id', $savedCharge->charge_type_id)->first();
                         $chargeName = $chargeType ? $chargeType->name : 'Biaya Tambahan';
-                        $note = !empty($charge['note']) ? ' (' . $charge['note'] . ')' : '';
+                        $note = !empty($savedCharge->note) ? ' (' . $savedCharge->note . ')' : '';
 
                         $childRows[] = [
                             \Carbon\Carbon::parse($request->bill_date)->format('d-M-Y'),
@@ -773,15 +866,15 @@ class BillRequestController extends Controller
                             $request->vendor_name,
                             "  ↳ [+] " . $chargeName . $note,
                             'Biaya Tambahan',
-                            $charge['amount'],
+                            $savedCharge->amount,
                             0,
-                            $charge['amount'],
+                            $savedCharge->amount,
                             $request->vendor_invoice_number ?? '-',
                             $request->account_number ?? '-',
                             $bill->bill_number,
-                            $companyName,
+                            auth()->user()->name ?? 'System',
                             '-',
-                            '-' // 🔥 Kolom Notes (dikosongkan untuk Child)
+                            '-'
                         ];
                     }
                 }
@@ -793,17 +886,17 @@ class BillRequestController extends Controller
             if ($request->has('discounts')) {
                 foreach ($request->discounts as $discount) {
                     if (!empty($discount['discount_type_id']) && $discount['amount'] > 0) {
-                        $bill->discounts()->create([
+                        $savedDisc = $bill->discounts()->create([
                             'discount_type_id' => $discount['discount_type_id'],
                             'amount'           => $discount['amount'],
                             'note'             => $discount['note'] ?? null
                         ]);
 
-                        $totalExtDisc += $discount['amount'];
+                        $totalExtDisc += $savedDisc->amount;
 
-                        $discType = \DB::table('discount_types')->where('id', $discount['discount_type_id'])->first();
+                        $discType = \DB::table('discount_types')->where('id', $savedDisc->discount_type_id)->first();
                         $discName = $discType ? $discType->name : 'Potongan';
-                        $note = !empty($discount['note']) ? ' (' . $discount['note'] . ')' : '';
+                        $note = !empty($savedDisc->note) ? ' (' . $savedDisc->note . ')' : '';
 
                         $childRows[] = [
                             \Carbon\Carbon::parse($request->bill_date)->format('d-M-Y'),
@@ -811,15 +904,15 @@ class BillRequestController extends Controller
                             $request->vendor_name,
                             "  ↳ [-] " . $discName . $note,
                             'Potongan / Diskon',
-                            -abs($discount['amount']), // Nilai minus
+                            -abs($savedDisc->amount), // Nilai minus
                             0,
-                            -abs($discount['amount']),
+                            -abs($savedDisc->amount),
                             $request->vendor_invoice_number ?? '-',
                             $request->account_number ?? '-',
                             $bill->bill_number,
-                            $companyName,
+                            auth()->user()->name ?? 'System',
                             '-',
-                            '-' // 🔥 Kolom Notes (dikosongkan untuk Child)
+                            '-'
                         ];
                     }
                 }
@@ -829,6 +922,47 @@ class BillRequestController extends Controller
             // 5. KALKULASI GRAND TOTAL
             // ==========================================
             $grandTotal = max(0, ($totalSubtotal - $totalItemDisc) + $totalTax + $totalCharge - $totalExtDisc);
+
+            // 🔥 Cek Pajak & Diskon Global dari Form
+            $globalTaxValue = (float)$request->input('global_tax_value', 0);
+            $globalTaxType = $request->input('global_tax_type', 'PERCENT');
+            $globalTaxLabel = "";
+            $globalTaxAmount = 0;
+
+            if ($globalTaxValue > 0) {
+                if (strtoupper($globalTaxType) === 'PERCENT') {
+                    $dppAwal = $totalSubtotal - $totalItemDisc; // DPP sebelum pajak global
+                    $globalTaxAmount = ($dppAwal * $globalTaxValue) / 100;
+                    $globalTaxLabel = " (+PPN Global {$globalTaxValue}%)";
+                } else {
+                    $globalTaxAmount = $globalTaxValue;
+                    $globalTaxLabel = " (+Pajak Global Rp" . number_format($globalTaxAmount, 0, ',', '.') . ")";
+                }
+
+                // Tambahkan sebagai pajak global ke Grand Total
+                $grandTotal += $globalTaxAmount;
+                $totalTax += $globalTaxAmount; // Akumulasikan ke total pajak
+            }
+
+            $globalDiscValue = (float)$request->input('global_discount_value', 0);
+            $globalDiscType = $request->input('global_discount_type', 'PERCENT');
+            $globalDiscLabel = "";
+            $globalDiscAmount = 0;
+
+            if ($globalDiscValue > 0) {
+                if (strtoupper($globalDiscType) === 'PERCENT') {
+                    $dppAwal = $totalSubtotal - $totalItemDisc;
+                    $globalDiscAmount = ($dppAwal * $globalDiscValue) / 100;
+                    $globalDiscLabel = " (-Disc Global {$globalDiscValue}%)";
+                } else {
+                    $globalDiscAmount = $globalDiscValue;
+                    $globalDiscLabel = " (-Disc Global Rp" . number_format($globalDiscAmount, 0, ',', '.') . ")";
+                }
+
+                // Kurangkan dari Grand Total
+                $grandTotal -= $globalDiscAmount;
+                $totalItemDisc += $globalDiscAmount; // Akumulasikan ke total diskon
+            }
 
             $bill->update([
                 'subtotal'       => $totalSubtotal,
@@ -841,11 +975,14 @@ class BillRequestController extends Controller
             // ==========================================
             // 6. MEMBUAT BARIS INDUK GOOGLE SHEET (PARENT)
             // ==========================================
+            // Jika ada pajak/diskon global, tempelkan di judul GRAND TOTAL
+            $judulParent = "⭐ GRAND TOTAL" . $globalTaxLabel . $globalDiscLabel;
+
             $parentRow = [
                 \Carbon\Carbon::parse($request->bill_date)->format('d-M-Y'),
                 $companyName,
                 $request->vendor_name,
-                "⭐ GRAND TOTAL",
+                $judulParent,
                 "SUMMARY",
                 ($totalSubtotal - $totalItemDisc + $totalCharge - $totalExtDisc), // DPP Keseluruhan
                 $totalTax,
@@ -853,7 +990,7 @@ class BillRequestController extends Controller
                 $request->vendor_invoice_number ?? '-',
                 $request->account_number ?? '-',
                 $bill->bill_number,
-                $companyName,
+                auth()->user()->name ?? 'System',
                 '-',
                 $request->note ?? '-' // 🔥 CATATAN / DESKRIPSI GLOBAL OPEX (Tampil di Parent)
             ];
@@ -1470,4 +1607,3 @@ class BillRequestController extends Controller
         return $pdf->stream('BPR_Digital_' . str_replace('/', '_', $bill->bill_number) . '.pdf');
     }
 }
-// ini code untuk update yang opex nya, jika ada eror silahkan update atau sesuaikan lagi ya karena tadi ada salah code juga wkwk
