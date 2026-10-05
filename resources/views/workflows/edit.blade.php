@@ -1,7 +1,7 @@
 @extends('layouts.app')
 
 @section('content')
-<div class="container-fluid pb-5">
+<div class="pb-5 container-fluid">
     <div class="mb-4">
         <a href="{{ route('workflows.index') }}" class="mb-3 border btn btn-light rounded-pill fw-bold"><i class="bi bi-arrow-left me-1"></i> Kembali</a>
         <h4 class="mb-1 fw-bold text-dark"><i class="bi bi-sliders me-2 text-warning"></i>Ubah Formasi Persetujuan</h4>
@@ -13,7 +13,7 @@
     @endif
 
     <div class="row">
-        <div class="col-lg-8">
+        <div class="col-lg-9">
             <div class="border-0 border-4 shadow-sm card border-start border-primary rounded-4">
                 <div class="py-3 bg-white card-header border-bottom">
                     <h6 class="mb-0 fw-bold"><i class="bi bi-list-ol me-2"></i>Urutan Tanda Tangan (Dari Bawah ke Atas)</h6>
@@ -24,7 +24,7 @@
                         @csrf
                         @method('PUT')
 
-                        {{-- 🔥 KOTAK INFO MATRIKS (SUDAH DIPERBAIKI LENGKAP) 🔥 --}}
+                        {{-- 🔥 KOTAK INFO MATRIKS 🔥 --}}
                         <div class="p-4 mb-4 bg-white border border-4 shadow-sm border-primary rounded-3 border-start">
                             <div class="row g-3">
                                 <div class="col-md-12">
@@ -36,7 +36,7 @@
                                     <label class="mb-1 form-label fw-bold small text-muted">Untuk Jenis Dokumen</label>
                                     <select name="document_type" class="form-select fw-bold bg-light" required>
                                         <option value="">-- Pilih Dokumen --</option>
-                                        @foreach($supportedModels as $namespace => $label)
+                                        @foreach($supportedModels as $namespace =>$label)
                                             <option value="{{ $namespace }}" {{ $workflow->document_type == $namespace ? 'selected' : '' }}>{{ $label }}</option>
                                         @endforeach
                                     </select>
@@ -55,12 +55,12 @@
                         </div>
 
                         <div id="step-container">
-                            @forelse($workflow->steps as $index => $step)
+                            @forelse($workflow->steps as $index =>$step)
                                 <div class="p-3 mb-3 bg-white border shadow-sm step-row d-flex align-items-center rounded-3">
                                     <div class="me-3">
                                         <span class="px-2 py-2 badge bg-dark rounded-circle step-number">{{ $index + 1 }}</span>
                                     </div>
-                                    <div class="flex-grow-1 me-3">
+                                    <div class="flex-grow-1 me-2" style="width: 20%">
                                         <label class="mb-1 small text-muted fw-bold">Pilih Jabatan (Role)</label>
                                         <select name="steps[{{ $index }}][role_id]" class="form-select border-primary fw-bold" required>
                                             <option value="">-- Pilih Jabatan --</option>
@@ -70,8 +70,7 @@
                                         </select>
                                     </div>
 
-                                    {{-- 🔥 TARGET DEPARTEMEN HYBRID 🔥 --}}
-                                    <div class="flex-grow-1 me-3">
+                                    <div class="flex-grow-1 me-2" style="width: 20%">
                                         <label class="mb-1 small text-muted fw-bold">Departemen Penyetuju</label>
                                         <select name="steps[{{ $index }}][target_department_id]" class="form-select border-info text-dark fw-bold">
                                             <option value="" {{ is_null($step->target_department_id) ? 'selected' : '' }}>[Atasan Langsung / Satu Departemen]</option>
@@ -82,8 +81,19 @@
                                         </select>
                                     </div>
 
-                                    <div class="flex-grow-1 me-3">
-                                        <label class="mb-1 small text-muted fw-bold">Minimal Nominal (Rp)</label>
+                                    {{-- 🔥 TAMBAHAN FORM USER SPESIFIK 🔥 --}}
+                                    <div class="flex-grow-1 me-2" style="width: 25%">
+                                        <label class="mb-1 small text-muted fw-bold">Pilih Spesifik User (Opsional)</label>
+                                        <select name="steps[{{ $index }}][user_id]" class="form-select border-secondary">
+                                            <option value="">-- Kosongkan (Ikuti Jabatan/Dept) --</option>
+                                            @foreach($users as $user)
+                                                <option value="{{ $user->id }}" {{ $step->user_id == $user->id ? 'selected' : '' }}>{{ $user->name }}</option>
+                                            @endforeach
+                                        </select>
+                                    </div>
+
+                                    <div class="flex-grow-1 me-2" style="width: 15%">
+                                        <label class="mb-1 small text-muted fw-bold">Min Nominal (Rp)</label>
                                         <input type="number" name="steps[{{ $index }}][min_amount]" class="form-control border-warning fw-bold text-dark" value="{{ (int)$step->min_amount }}" min="0" required>
                                     </div>
                                     <div class="mt-4">
@@ -111,12 +121,14 @@
                 </div>
             </div>
         </div>
-        <div class="col-lg-4">
+
+        <div class="col-lg-3">
             <div class="shadow-sm alert alert-info border-info rounded-4">
                 <h6 class="fw-bold"><i class="bi bi-info-circle-fill me-2"></i>Cara Kerja Hybrid:</h6>
                 <ul class="mb-0 small ps-3">
-                    <li class="mb-2">Jika Anda memilih <b>[Atasan Langsung]</b>, sistem memaksa mencari penyetuju dari Departemen yang <b>SAMA PERSIS</b> dengan pembuat tagihan.</li>
-                    <li class="mb-2">Jika Anda memilih <b>Nama Departemen (Cth: HRD)</b>, sistem akan melempar persetujuan tersebut khusus ke orang dengan jabatan tersebut di divisi HRD.</li>
+                    <li class="mb-2">Jika Anda mengisi <b>Spesifik User</b>, sistem hanya akan meminta persetujuan dari nama orang tersebut.</li>
+                    <li class="mb-2">Jika Spesifik User dikosongkan, sistem beralih mengecek jabatan.</li>
+                    <li class="mb-2">Jika Departemen diset <b>[Atasan Langsung]</b>, sistem memaksa mencari atasan di departemen pembuat tagihan.</li>
                     <li class="mb-0"><b>Minimal Nominal:</b> Berguna jika Direktur hanya mau menyetujui tagihan di atas angka tertentu.</li>
                 </ul>
             </div>
@@ -144,6 +156,13 @@
             @endforeach
         `;
 
+        let userOptions = `
+            <option value="">-- Kosongkan (Ikuti Jabatan/Dept) --</option>
+            @foreach($users as $user)
+                <option value="{{ $user->id }}">{{ $user->name }}</option>
+            @endforeach
+        `;
+
         let stepIndex = {{ $workflow->steps->count() }};
 
         $('#btn-add-step').click(function() {
@@ -154,20 +173,26 @@
                     <div class="me-3">
                         <span class="px-2 py-2 badge bg-dark rounded-circle step-number">X</span>
                     </div>
-                    <div class="flex-grow-1 me-3">
+                    <div class="flex-grow-1 me-2" style="width: 20%">
                         <label class="mb-1 small text-muted fw-bold">Pilih Jabatan (Role)</label>
                         <select name="steps[${stepIndex}][role_id]" class="form-select border-primary fw-bold" required>
                             ${roleOptions}
                         </select>
                     </div>
-                    <div class="flex-grow-1 me-3">
+                    <div class="flex-grow-1 me-2" style="width: 20%">
                         <label class="mb-1 small text-muted fw-bold">Departemen Penyetuju</label>
                         <select name="steps[${stepIndex}][target_department_id]" class="form-select border-info text-dark fw-bold">
                             ${deptOptions}
                         </select>
                     </div>
-                    <div class="flex-grow-1 me-3">
-                        <label class="mb-1 small text-muted fw-bold">Minimal Nominal (Rp)</label>
+                    <div class="flex-grow-1 me-2" style="width: 25%">
+                        <label class="mb-1 small text-muted fw-bold">Pilih Spesifik User (Opsional)</label>
+                        <select name="steps[${stepIndex}][user_id]" class="form-select border-secondary">
+                            ${userOptions}
+                        </select>
+                    </div>
+                    <div class="flex-grow-1 me-2" style="width: 15%">
+                        <label class="mb-1 small text-muted fw-bold">Min Nominal (Rp)</label>
                         <input type="number" name="steps[${stepIndex}][min_amount]" class="form-control border-warning fw-bold text-dark" value="0" min="0" required>
                     </div>
                     <div class="mt-4">
@@ -183,18 +208,17 @@
         });
 
         $(document).on('click', '.btn-remove-step', function() {
-            $(this).closest('.step-row').fadeOut(300, function() {
-                $(this).remove();
+            $(this).closest('.step-row').fadeOut(300, function() {$(this).remove();
                 updateStepNumbers();
             });
         });
 
         function updateStepNumbers() {
-            $('.step-row').each(function(index) {
-                $(this).find('.step-number').text(index + 1);
-                $(this).find('select').eq(0).attr('name', 'steps[' + index + '][role_id]');
-                $(this).find('select').eq(1).attr('name', 'steps[' + index + '][target_department_id]');
-                $(this).find('input[type="number"]').attr('name', 'steps[' + index + '][min_amount]');
+            $('.step-row').each(function(index) {$(this).find('.step-number').text(index + 1);
+
+                // Pastikan urutan select array sesuai dengan layout HTML: Role (0), Dept (1), User (2), MinAmount(input)
+                $(this).find('select').eq(0).attr('name', 'steps[' + index + '][role_id]');$(this).find('select').eq(1).attr('name', 'steps[' + index + '][target_department_id]');
+                $(this).find('select').eq(2).attr('name', 'steps[' + index + '][user_id]');$(this).find('input[type="number"]').attr('name', 'steps[' + index + '][min_amount]');
             });
         }
     });

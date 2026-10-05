@@ -1,7 +1,7 @@
 @extends('layouts.app')
 
 @section('content')
-<div class="container-fluid pb-5">
+<div class="pb-5 container-fluid">
     <div class="mb-4">
         <a href="{{ route('workflows.index') }}" class="mb-3 border btn btn-light rounded-pill fw-bold"><i class="bi bi-arrow-left me-1"></i> Kembali</a>
         <h4 class="mb-1 fw-bold text-dark"><i class="bi bi-plus-circle me-2 text-primary"></i>Buat Matriks Persetujuan Baru</h4>
@@ -29,7 +29,7 @@
     <form action="{{ route('workflows.store') }}" method="POST" id="workflowForm">
         @csrf
         <div class="row g-4">
-            <div class="col-lg-4">
+            <div class="col-lg-3">
                 <div class="border-0 shadow-sm card rounded-4">
                     <div class="py-3 bg-white card-header border-bottom">
                         <h6 class="mb-0 fw-bold"><i class="bi bi-info-square me-2"></i>Info Matriks</h6>
@@ -43,7 +43,7 @@
                             <label class="form-label fw-bold small text-muted">Untuk Jenis Dokumen</label>
                             <select name="document_type" class="form-select border-primary fw-bold" required>
                                 <option value="">-- Pilih Dokumen --</option>
-                                @foreach($supportedModels as $namespace => $label)
+                                @foreach($supportedModels as $namespace =>$label)
                                     <option value="{{ $namespace }}" {{ old('document_type') == $namespace ? 'selected' : '' }}>{{ $label }}</option>
                                 @endforeach
                             </select>
@@ -63,7 +63,7 @@
                 </div>
             </div>
 
-            <div class="col-lg-8">
+            <div class="col-lg-9">
                 <div class="border-0 border-4 shadow-sm card border-start border-primary rounded-4">
                     <div class="py-3 bg-white card-header border-bottom d-flex justify-content-between align-items-center">
                         <h6 class="mb-0 fw-bold"><i class="bi bi-list-ol me-2"></i>Urutan Tanda Tangan (Dari Bawah ke Atas)</h6>
@@ -110,6 +110,13 @@
             @endforeach
         `;
 
+        let userOptions = `
+            <option value="">-- Kosongkan (Ikuti Jabatan/Dept) --</option>
+            @foreach($users as $user)
+                <option value="{{ $user->id }}">{{ $user->name }}</option>
+            @endforeach
+        `;
+
         let stepIndex = 0;
 
         $('#btn-add-step').click(function() {
@@ -118,16 +125,22 @@
                     <div class="me-3">
                         <span class="px-3 py-2 badge bg-dark rounded-circle step-number fs-6">X</span>
                     </div>
-                    <div class="flex-grow-1 me-3">
+                    <div class="flex-grow-1 me-3" style="width: 30%">
                         <label class="mb-1 small text-muted fw-bold">Pilih Jabatan (Role)</label>
                         <select name="steps[${stepIndex}][role_id]" class="form-select border-primary fw-bold" required>
                             ${roleOptions}
                         </select>
                     </div>
-                    <div class="flex-grow-1 me-3">
+                    <div class="flex-grow-1 me-3" style="width: 30%">
                         <label class="mb-1 small text-muted fw-bold">Departemen Penyetuju</label>
                         <select name="steps[${stepIndex}][target_department_id]" class="form-select border-info text-dark fw-bold">
                             ${deptOptions}
+                        </select>
+                    </div>
+                    <div class="flex-grow-1 me-3" style="width: 30%">
+                        <label class="mb-1 small text-muted fw-bold">Pilih Spesifik User (Opsional)</label>
+                        <select name="steps[${stepIndex}][user_id]" class="form-select border-secondary">
+                            ${userOptions}
                         </select>
                     </div>
                     <div class="mt-4">
@@ -143,18 +156,15 @@
         });
 
         $(document).on('click', '.btn-remove-step', function() {
-            $(this).closest('.step-row').fadeOut(300, function() {
-                $(this).remove();
+            $(this).closest('.step-row').fadeOut(300, function() {$(this).remove();
                 updateStepNumbers();
             });
         });
 
         function updateStepNumbers() {
             $('.step-row').each(function(index) {
-                $(this).find('.step-number').text(index + 1);
-                // Update indeks array agar selalu berurutan
-                $(this).find('select').eq(0).attr('name', 'steps[' + index + '][role_id]');
-                $(this).find('select').eq(1).attr('name', 'steps[' + index + '][target_department_id]');
+                $(this).find('.step-number').text(index + 1);                 // Update indeks array agar selalu berurutan$(this).find('select').eq(0).attr('name', 'steps[' + index + '][role_id]');
+                $(this).find('select').eq(1).attr('name', 'steps[' + index + '][target_department_id]');$(this).find('select').eq(2).attr('name', 'steps[' + index + '][user_id]');
             });
         }
     });

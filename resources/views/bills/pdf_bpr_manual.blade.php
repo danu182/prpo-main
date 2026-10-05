@@ -40,23 +40,23 @@
 
     {{-- KOTAK INFORMASI --}}
     <table class="info-table">
-        <tr>
-            <td width="13%" style="padding-top: 8px;">Requester</td><td width="2%" style="padding-top: 8px;">:</td>
-            <td width="35%" class="td-divider" style="padding-top: 8px;">{{ $bill->user->name ?? 'System' }}</td>
-            <td width="13%" style="padding-left: 12px; padding-top: 8px;">Title</td><td width="2%" style="padding-top: 8px;">:</td>
-            <td width="35%" style="padding-top: 8px;">{{ $bill->title ?? 'Tagihan Opex' }}</td>
-        </tr>
-        <tr>
-            <td>Department</td><td>:</td><td class="td-divider">{{ optional($bill->user->department)->name ?? 'Umum' }}</td>
-            <td style="padding-left: 12px;">Bill Ref.</td><td>:</td><td class="fw-bold">{{ $bill->bill_number }}</td>
-        </tr>
-        <tr>
-            <td style="padding-bottom: 8px;">Request Date</td><td style="padding-bottom: 8px;">:</td>
-            <td class="td-divider" style="padding-bottom: 8px;">{{ date('d-M-y', strtotime($bill->created_at)) }}</td>
-            <td style="padding-left: 12px; padding-bottom: 8px;">Due Date</td><td style="padding-bottom: 8px;">:</td>
-            <td style="padding-bottom: 8px;">{{ $bill->due_date ? date('d-M-y', strtotime($bill->due_date)) : '-' }}</td>
-        </tr>
-    </table>
+    <tr>
+        <td width="13%" style="padding-top: 8px;">Requester</td><td width="2%" style="padding-top: 8px;">:</td>
+        <td width="35%" style="padding-top: 8px;">{{ $bill->user->name ?? 'System' }}</td>
+        <td width="13%" style="padding-left: 12px; padding-top: 8px;">Title</td><td width="2%" style="padding-top: 8px;">:</td>
+        <td width="35%" style="padding-top: 8px;">{{ $bill->title ?? 'Tagihan Opex' }}</td>
+    </tr>
+    <tr>
+        <td>Department</td><td>:</td><td>{{ optional($bill->user->department)->name ?? 'Umum' }}</td>
+        <td style="padding-left: 12px;">Bill Ref.</td><td>:</td><td class="fw-bold">{{ $bill->bill_number }}</td>
+    </tr>
+    <tr>
+        <td style="padding-bottom: 8px;">Request Date</td><td style="padding-bottom: 8px;">:</td>
+        <td style="padding-bottom: 8px;">{{ date('d-M-y', strtotime($bill->created_at)) }}</td>
+        <td style="padding-left: 12px; padding-bottom: 8px;">Due Date</td><td style="padding-bottom: 8px;">:</td>
+        <td style="padding-bottom: 8px;">{{ $bill->due_date ? date('d-M-y', strtotime($bill->due_date)) : '-' }}</td>
+    </tr>
+</table>
 
     {{-- TABEL ITEM DETAIL --}}
     <table class="main-table">

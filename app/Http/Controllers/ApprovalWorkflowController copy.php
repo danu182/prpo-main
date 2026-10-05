@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use Illuminate\Http\Request;
 use App\Models\ApprovalWorkflow;
 use App\Models\Department;
+use App\Models\User; // Tambahkan model User
 use Spatie\Permission\Models\Role;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
@@ -13,11 +14,7 @@ class ApprovalWorkflowController extends Controller
 {
     public function index()
     {
-        // Tambahkan with(['steps.role', 'steps.user']) agar data formasi bisa ditampilkan di tabel index
-        $workflows = ApprovalWorkflow::with(['department', 'steps.role', 'steps.user'])
-                        ->withCount('steps')
-                        ->get();
-
+        $workflows = ApprovalWorkflow::withCount('steps')->with('department')->get();
         return view('workflows.index', compact('workflows'));
     }
 
@@ -28,25 +25,22 @@ class ApprovalWorkflowController extends Controller
         $supportedModels = \App\Models\DocumentType::where('is_active', true)->pluck('name', 'model_class');
 
         // Ambil data user untuk dipilih di form
-        $users = \App\Models\User::orderBy('name')->get();
+        $users = User::orderBy('name')->get();
 
         return view('workflows.create', compact('roles', 'departments', 'supportedModels', 'users'));
     }
 
-
-
-   public function store(Request $request)
+    public function store(Request $request)
     {
         $deptId = $request->department_id ?: null;
 
         $request->validate([
-            // 🔥 PERBAIKAN: Hapus Validasi Unique agar bisa membuat banyak variasi matriks! 🔥
             'document_type'   => 'required|string',
             'department_id'   => 'nullable|exists:departments,id',
             'name'            => 'required|string|max:255',
             'steps'           => 'nullable|array',
             'steps.*.role_id' => 'required|exists:roles,id',
-            'steps.*.user_id' => 'nullable|exists:users,id' // 🔥 TAMBAHAN: Validasi untuk user_id spesifik
+            'steps.*.user_id' => 'nullable|exists:users,id' // Validasi user_id spesifik
         ]);
 
         try {
@@ -69,7 +63,7 @@ class ApprovalWorkflowController extends Controller
                             'step_order'           => $order,
                             'role_id'              => $step['role_id'],
                             'target_department_id' => $targetDept,
-                            'user_id'              => $step['user_id'] ?? null, // 🔥 TAMBAHAN: Simpan user_id jika ada
+                            'user_id'              => $step['user_id'] ?? null, // Simpan user_id jika ada
                             'min_amount'           => $step['min_amount'] ?? 0
                         ]);
                         $order++;
@@ -83,19 +77,34 @@ class ApprovalWorkflowController extends Controller
         }
     }
 
+    public function edit($id)
+    {
+        $workflow = ApprovalWorkflow::with(['steps' => function($q) {
+            $q->orderBy('step_order', 'asc');
+        }])->findOrFail($id);
+
+        $roles = Role::where('name', '!=', 'Super Admin')->orderBy('name')->get();
+        $departments = Department::orderBy('name')->get();
+        $supportedModels = \App\Models\DocumentType::where('is_active', true)->pluck('name', 'model_class');
+
+        // Ambil data user untuk dipilih di form
+        $users = User::orderBy('name')->get();
+
+        return view('workflows.edit', compact('workflow', 'roles', 'departments', 'supportedModels', 'users'));
+    }
+
     public function update(Request $request, $id)
     {
         $workflow = ApprovalWorkflow::findOrFail($id);
         $deptId = $request->department_id ?: null;
 
         $request->validate([
-            // 🔥 PERBAIKAN: Hapus Validasi Unique di fungsi update juga 🔥
             'document_type'   => 'required|string',
             'department_id'   => 'nullable|exists:departments,id',
             'name'            => 'required|string|max:255',
             'steps'           => 'nullable|array',
             'steps.*.role_id' => 'required|exists:roles,id',
-            'steps.*.user_id' => 'nullable|exists:users,id' // 🔥 TAMBAHAN: Validasi untuk user_id spesifik
+            'steps.*.user_id' => 'nullable|exists:users,id' // Validasi user_id spesifik
         ]);
 
         try {
@@ -119,7 +128,7 @@ class ApprovalWorkflowController extends Controller
                             'step_order'           => $order,
                             'role_id'              => $step['role_id'],
                             'target_department_id' => $targetDept,
-                            'user_id'              => $step['user_id'] ?? null, // 🔥 TAMBAHAN: Simpan user_id jika ada
+                            'user_id'              => $step['user_id'] ?? null, // Simpan user_id jika ada
                             'min_amount'           => $step['min_amount'] ?? 0
                         ]);
                         $order++;
@@ -132,24 +141,4 @@ class ApprovalWorkflowController extends Controller
             return back()->with('error', 'Gagal memperbarui matriks: ' . $e->getMessage());
         }
     }
-
-
-
-    public function edit($id)
-    {
-        $workflow = ApprovalWorkflow::with(['steps' => function($q) {
-            $q->orderBy('step_order', 'asc');
-        }])->findOrFail($id);
-
-        $roles = Role::where('name', '!=', 'Super Admin')->orderBy('name')->get();
-        $departments = Department::orderBy('name')->get();
-        $supportedModels = \App\Models\DocumentType::where('is_active', true)->pluck('name', 'model_class');
-
-        // Ambil data user untuk dipilih di form
-        $users = \App\Models\User::orderBy('name')->get();
-
-        return view('workflows.edit', compact('workflow', 'roles', 'departments', 'supportedModels', 'users'));
-    }
-
-
 }

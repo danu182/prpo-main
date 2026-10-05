@@ -1401,11 +1401,13 @@ class BillRequestController extends Controller
     // =========================================================================
     // 4. SHOW (DETAIL BERBASIS SLUG NOMOR DOKUMEN)
     // =========================================================================
+
     public function show($slug)
     {
+        // 1. Ambil data Bill beserta relasinya
         $bill = \App\Models\BillRequest::with([
             'status',
-            'items',
+            'items.item', // 🔥 PENTING: Eager load agar Kode & Nama Master Item terbaca di layar!
             'company',
             'user',
             'histories.user',
@@ -1413,11 +1415,19 @@ class BillRequestController extends Controller
             'discounts.discountType'
         ])->where('bill_number', $slug)->firstOrFail();
 
+        // 2. Ambil data Lampiran (Attachments)
         $attachments = \DB::table('bill_attachments')
             ->where('bill_request_id', $bill->id)
             ->get();
 
-        return view('bills.show', compact('bill', 'attachments'));
+        // 3. Ambil data Alur Persetujuan (Approval Process)
+        $approvals = \App\Models\DocumentApproval::with(['role'])
+            ->where('document_id', $bill->id)
+            ->whereIn('document_type', ['App\Models\BillRequest', 'OPEX', 'BillRequest', get_class($bill)])
+            ->orderBy('step_order', 'asc')
+            ->get();
+
+        return view('bills.show', compact('bill', 'attachments', 'approvals'));
     }
 
 

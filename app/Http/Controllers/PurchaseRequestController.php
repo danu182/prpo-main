@@ -672,7 +672,7 @@ class PurchaseRequestController extends Controller
                     'items.vendorQuotes.attachments',
                     'items.item.uom',
                     'items.item.itemUoms',
-                    'user',
+                    'user.department', // 🔥 Ditambahkan agar department user terbaca
                     'company',
                     'histories.user',
                     'status'
@@ -684,11 +684,16 @@ class PurchaseRequestController extends Controller
         $isEditable = in_array(optional($pr->status)->slug, ['pending_approval', 'draft']);
 
         $user = auth()->user();
-        $currentApproval = \App\Models\DocumentApproval::with('role')->where('document_id', $pr->id)
-            ->where('document_type', get_class($pr))
-            ->where('status', 'PENDING')
+
+        // 🔥 AMBIL SELURUH APPROVAL UNTUK TIMELINE TRACKING (SAMA SEPERTI OPEX/PO) 🔥
+        $approvals = \App\Models\DocumentApproval::with(['role'])
+            ->where('document_id', $pr->id)
+            ->whereIn('document_type', [get_class($pr), 'App\Models\PurchaseRequest', 'PR', 'PurchaseRequest'])
             ->orderBy('step_order', 'asc')
-            ->first();
+            ->get();
+
+        // Ambil approval yang sedang aktif (PENDING) untuk logika tombol
+        $currentApproval = $approvals->where('status', 'PENDING')->first();
 
         $canApprove = false;
         $roleDisplay = null;
@@ -724,7 +729,8 @@ class PurchaseRequestController extends Controller
             }
         }
 
-        return view('pr.show', compact('pr', 'currencySymbols', 'isEditable', 'canApprove', 'roleDisplay'));
+        // 🔥 LEMPAR VARIABEL $approvals KE VIEW 🔥
+        return view('pr.show', compact('pr', 'currencySymbols', 'isEditable', 'canApprove', 'roleDisplay', 'approvals'));
     }
 
     public function decide(Request $request, string $slug)

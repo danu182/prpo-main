@@ -195,9 +195,9 @@ class PurchaseOrderController extends Controller
                 }
             }
 
-            $globalDiscType = strtoupper($request->global_discount_type ?? 'FIXED');
+            $globalDiscType = $request->global_discount_type ?? 'FIXED';
             $globalDiscVal  = (float) ($request->global_discount_value ?? 0);
-            $globalDiscAmount = ($globalDiscType === 'PERCENT') ? ($grandSubtotal * $globalDiscVal / 100) : $globalDiscVal;
+            $globalDiscAmount = (strtoupper($globalDiscType) == 'PERCENT') ? ($grandSubtotal * $globalDiscVal / 100) : $globalDiscVal;
 
             if ($globalDiscAmount > 0) {
                 $childRows[] = [
@@ -402,7 +402,7 @@ class PurchaseOrderController extends Controller
                                 $chargeType = \DB::table('charge_types')->where('id', $charge['charge_type_id'])->first();
                                 $childRows[] = [
                                     \Carbon\Carbon::parse($request->po_date ?? now())->format('d-M-Y'), $companyName, $vendorName,
-                                    "  ↳ [+] " . ($chargeType->name ?? 'Biaya Tambahan'), 'Biaya Tambahan', (float)$charge['amount'], 0, (float)$charge['amount'],
+                                    "  ↳ [+] " . ($chargeType->name ?? 'Biaya Ekstra'), 'Biaya Tambahan', (float)$charge['amount'], 0, (float)$charge['amount'],
                                     $request->invoice_number ?? '-', $request->account_number ?? '-', $newPoNumber, auth()->user()->name ?? 'System', '-',
                                     '-'
                                 ];
@@ -544,7 +544,7 @@ class PurchaseOrderController extends Controller
 
                     // PARENT ROW GOOGLE SHEET
                     $parentRow = [
-                        \Carbon\Carbon::parse($request->po_date ?? now())->format('d-M-Y'), $companyName, $vendorName,
+                        \Carbon\Carbon::parse($po->po_date)->format('d-M-Y'), $companyName, $vendorName,
                         $judulParent, "SUMMARY",
                         $poSubtotalGross - $poGlobalDiscount + $poChargeTotal - $poExtraDiscountTotal, $totalAllTaxes, $poGrandTotal,
                         $request->invoice_number ?? '-', $request->account_number ?? '-', $newPoNumber, auth()->user()->name ?? 'System', '-',
@@ -783,7 +783,7 @@ class PurchaseOrderController extends Controller
                             $chargeType = \DB::table('charge_types')->where('id', $charge['charge_type_id'])->first();
                             $childRows[] = [
                                 \Carbon\Carbon::parse($request->po_date ?? $po->po_date)->format('d-M-Y'), $companyName, $vendorName,
-                                "  ↳ [+] " . ($chargeType->name ?? 'Biaya Tambahan'), 'Biaya Tambahan', $charge['amount'], 0, $charge['amount'],
+                                "  ↳ [+] " . ($chargeType->name ?? 'Biaya Tambahan'), 'Biaya Tambahan', (float)$charge['amount'], 0, (float)$charge['amount'],
                                 $request->invoice_number ?? '-', $request->account_number ?? '-', $po->po_number, auth()->user()->name ?? 'System', '-',
                                 '-'
                             ];
@@ -1028,7 +1028,19 @@ class PurchaseOrderController extends Controller
     // =========================================================================
     public function show($slug)
     {
-        $po = \App\Models\PurchaseOrder::with(['items.item.itemUoms', 'vendor', 'company', 'billToCompany', 'status', 'user', 'purchaseRequest', 'attachments', 'approvals.role', 'histories.user'])->where('po_number', $slug)->firstOrFail();
+        // 1. Ambil data PO beserta relasinya, MENGGUNAKAN RELASI 'items.item' agar info barang master terbaca
+        $po = \App\Models\PurchaseOrder::with([
+            'items.item.itemUoms',
+            'vendor',
+            'company',
+            'billToCompany',
+            'status',
+            'user',
+            'purchaseRequest',
+            'attachments',
+            'approvals.role',
+            'histories.user'
+        ])->where('po_number', $slug)->firstOrFail();
 
         $charges = \DB::table('purchase_order_charges')->where('purchase_order_id', $po->id)->get();
         $extraDiscounts = \DB::table('purchase_order_discounts')->where('purchase_order_id', $po->id)->get();
@@ -1042,7 +1054,14 @@ class PurchaseOrderController extends Controller
 
         $hasBeenPartiallyApproved = $po->approvals->where('status', 'APPROVED')->isNotEmpty();
 
-        return view('po.show', compact('po', 'charges', 'extraDiscounts', 'hasBeenPartiallyApproved'));
+        // 2. Ambil data Alur Persetujuan (Approval Process) dan lempar ke view
+        $approvals = \App\Models\DocumentApproval::with(['role'])
+            ->where('document_id', $po->id)
+            ->whereIn('document_type', ['App\Models\PurchaseOrder', 'PO', 'PurchaseOrder', get_class($po)])
+            ->orderBy('step_order', 'asc')
+            ->get();
+
+        return view('po.show', compact('po', 'charges', 'extraDiscounts', 'hasBeenPartiallyApproved', 'approvals'));
     }
 
 
@@ -1887,7 +1906,7 @@ class PurchaseOrderController extends Controller
 
                 $judulParent = "⭐ GRAND TOTAL PO" . $globalTaxLabel . $globalDiscLabel;
 
-                // 🔥 MEMBUAT BARIS INDUK (PARENT ROW) 🔥
+                // PARENT ROW GOOGLE SHEET
                 $parentRow = [
                     \Carbon\Carbon::parse($request->po_date ?? now())->format('d-M-Y'), $companyName, $vendorName,
                     $judulParent, "SUMMARY",
@@ -1896,7 +1915,7 @@ class PurchaseOrderController extends Controller
                     $request->notes ?? '-' // 🔥 KETERANGAN PARENT
                 ];
 
-                // 🔥 SYNC GOOGLE SHEET 🔥
+                // SYNC GOOGLE SHEET
                 try {
                     $sheetService = new \App\Services\GoogleSheetService();
                     $tabName = env('GOOGLE_SHEET_PO_TAB_NAME', 'PO_Sheet');
@@ -2172,7 +2191,7 @@ class PurchaseOrderController extends Controller
                     }
                 } else {
                     $errorHtml = "<div style='border:2px solid red; padding:20px; text-align:center; font-family:sans-serif; margin-top:50px;'>
-                                    <h2 style='color:red;'>⚠️ FILE FISIK HILANG ⚠️</h2>
+                                    <h2 style='color:red;'>⚠️️ FILE FISIK HILANG ⚠️</h2>
                                     <p>Data lampiran <b>{$file->file_name}</b> tercatat di sistem, tapi file aslinya tidak ditemukan di server.</p>
                                   </div>";
                     $errorPdf = \Barryvdh\DomPDF\Facade\Pdf::loadHTML($errorHtml)->setPaper('a4', 'portrait');

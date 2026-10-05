@@ -24,10 +24,10 @@
             <table class="table align-middle table-hover">
                 <thead class="bg-light text-muted small text-uppercase">
                     <tr>
-                        <th width="40%">Jenis Dokumen</th>
-                        <th width="20%">Total Lapis (Step)</th>
-                        <th width="20%">Status</th>
-                        <th width="20%" class="text-center">Aksi</th>
+                        <th width="35%">Jenis Dokumen</th>
+                        <th width="35%">Formasi Persetujuan</th>
+                        <th width="15%">Status</th>
+                        <th width="15%" class="text-center">Aksi</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -36,7 +36,7 @@
                         <td>
                             <span class="fw-bold text-dark">{{ $wf->name }}</span><br>
                             <span class="small text-muted">{{ $wf->document_type }}</span>
-                            <div class="mt-1">
+                            <div class="mt-2">
                                 @if($wf->department_id)
                                     <span class="badge bg-info text-dark"><i class="bi bi-tag-fill me-1"></i>Spesifik: {{ $wf->department->name }}</span>
                                 @else
@@ -44,7 +44,31 @@
                                 @endif
                             </div>
                         </td>
-                        <td><span class="badge bg-primary rounded-pill">{{ $wf->steps_count }} Lapis Persetujuan</span></td>
+                        <td>
+                            <div class="mb-2"><span class="badge bg-primary rounded-pill">{{ $wf->steps_count }} Lapis Persetujuan</span></div>
+
+                            {{-- Looping untuk menampilkan step persetujuan --}}
+                            @if($wf->steps && $wf->steps->isNotEmpty())
+                                <div class="gap-1 mt-2 d-flex flex-column">
+                                    @foreach($wf->steps->sortBy('step_order') as $step)
+                                        <div class="small">
+                                            <span class="text-center border badge bg-light text-dark border-secondary rounded-circle me-2" style="display:inline-block; width: 22px; height: 22px; padding-top: 4px;">{{ $step->step_order }}</span>
+
+                                            {{-- Cek apakah ada user spesifik yang dipilih --}}
+                                            @if($step->user_id && $step->user)
+                                                <span class="text-primary fw-bold" title="User Spesifik">
+                                                    <i class="bi bi-person-check-fill me-1"></i> {{ $step->user->name }}
+                                                </span>
+                                            @else
+                                                <span class="text-muted" title="Berdasarkan Jabatan">
+                                                    <i class="bi bi-diagram-2-fill me-1"></i> {{ $step->role->name ?? 'Role' }}
+                                                </span>
+                                            @endif
+                                        </div>
+                                    @endforeach
+                                </div>
+                            @endif
+                        </td>
                         <td>
                             @if($wf->is_active)
                                 <span class="badge bg-success">Aktif</span>

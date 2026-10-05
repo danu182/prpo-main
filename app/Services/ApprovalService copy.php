@@ -59,7 +59,6 @@ class ApprovalService
                     'step_order'           => $step->step_order,
                     'role_id'              => $step->role_id,
                     'target_department_id' => $step->target_department_id,
-                    'user_id'              => $step->user_id, // 🔥 TAMBAHAN: Masukkan user_id spesifik ke antrean
                     'status'               => 'PENDING'
                 ]);
 
@@ -70,50 +69,5 @@ class ApprovalService
         }
 
         return false; // Mengembalikan FALSE (Dokumen bebas melenggang jadi APPROVED)
-    }
-
-    /**
-     * 🔥 FUNGSI HELPER PENGECEKAN HAK AKSES APPROVAL 🔥
-     * Cek apakah user yang sedang login berhak menyetujui dokumen pada step tertentu.
-     *
-     * @param  \App\Models\User  $user (User yang sedang login)
-     * @param  \App\Models\DocumentApproval  $currentStep (Antrean approval yang sedang aktif)
-     * @param  \App\Models\User|null  $documentMaker (User pembuat dokumen)
-     * @return bool
-     */
-    public static function canBeApprovedBy($user, $currentStep, $documentMaker = null)
-    {
-        if (!$user || !$currentStep) {
-            return false;
-        }
-
-        // 1. PRIORITAS UTAMA: Spesifik User
-        if (!is_null($currentStep->user_id)) {
-            return $user->id === $currentStep->user_id;
-        }
-
-        // 2. PENGECEKAN JABATAN (ROLE)
-        $hasRole = $user->roles->contains('id', $currentStep->role_id);
-        if (!$hasRole) {
-            return false;
-        }
-
-        // 3. PENGECEKAN DEPARTEMEN (HYBRID LOGIC)
-
-        // Lintas Batas / Semua Departemen (0)
-        if ($currentStep->target_department_id === 0) {
-            return true;
-        }
-
-        // Atasan Langsung / Departemen Pembuat Dokumen (Null)
-        if (is_null($currentStep->target_department_id)) {
-            if (!$documentMaker) {
-                return false;
-            }
-            return $user->department_id === $documentMaker->department_id;
-        }
-
-        // Departemen Spesifik (Cth: Khusus HRD)
-        return $user->department_id === $currentStep->target_department_id;
     }
 }
