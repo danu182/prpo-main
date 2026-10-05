@@ -160,9 +160,28 @@
                             @foreach($bill->items as $item)
                             <tr class="border-bottom border-light">
                                 <td class="py-3 ps-4">
-                                    <div class="fw-bold text-dark">{{ $item->name }}</div>
+                                    <div class="fw-bold text-dark fs-6">{{ $item->name }}</div>
+
+                                    {{-- 🔥 MENAMPILKAN KODE DAN NAMA MASTER ITEM (JIKA ADA) 🔥 --}}
+                                    @php
+                                        // Cari data item dari database berdasarkan item_id
+                                        $masterItemData = $item->item_id ? \App\Models\Item::find($item->item_id) : null;
+                                    @endphp
+
+                                    @if($masterItemData)
+                                        <div class="mt-2">
+                                            <span class="px-2 py-1 border badge bg-primary bg-opacity-10 text-primary border-primary-subtle text-wrap text-start lh-base">
+                                                <i class="bi bi-box-seam me-1"></i> [{{ $masterItemData->code }}] {{ $masterItemData->name }}
+                                            </span>
+                                        </div>
+                                    @else
+                                        <div class="mt-1 opacity-75 small text-danger fst-italic" style="font-size: 0.75rem;">
+                                            <i class="bi bi-exclamation-circle me-1"></i> Master Item tidak tertaut (Data Manual)
+                                        </div>
+                                    @endif
+
                                     @if($item->description)
-                                        <div class="small text-muted fst-italic">{{ $item->description }}</div>
+                                        <div class="pt-1 mt-2 border-2 small text-muted fst-italic border-start border-secondary ps-2">{{ $item->description }}</div>
                                     @endif
                                 </td>
                                 <td class="py-3 text-center">
