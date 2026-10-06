@@ -12,4 +12,10 @@ class BillItem extends Model
     {
         return $this->belongsTo(BillRequest::class);
     }
+
+    public function item()
+    {
+        return $this->belongsTo(\App\Models\Item::class, 'item_id');
+    }
+
 }

@@ -97,7 +97,6 @@
                                 </div>
                             </div>
 
-                            {{-- 🔥 PERBAIKAN: KOLOM INVOICE & REKENING BERDAMPINGAN 🔥 --}}
                             <div class="col-md-6">
                                 <label class="form-label fw-bold small text-muted text-uppercase">No. Invoice Vendor <span class="text-muted text-lowercase">(Opsional)</span></label>
                                 <input type="text" name="vendor_invoice_number" class="form-control fw-bold text-primary" value="{{ old('vendor_invoice_number') }}" placeholder="Contoh: INV-2026-001">
@@ -206,12 +205,12 @@
                             <tbody id="itemContainer">
                                 <tr class="item-row border-bottom">
                                     <td class="pt-3">
-                                        {{-- 🔥 PERUBAHAN TAMPILAN CUSTOM ITEM 🔥 --}}
+                                        {{-- 🔥 PERUBAHAN TAMPILAN CUSTOM ITEM (MENGGUNAKAN ID UNTUK VALUE) 🔥 --}}
                                         <label class="mb-1 form-label small fw-bold text-dark">Master Item <span class="text-danger">*</span></label>
-                                        <select name="items[0][name]" class="mb-2 form-select select2-item item-select" required onchange="onOpexItemSelect(this, 0)">
+                                        <select name="items[0][item_id]" class="mb-2 form-select select2-item item-select" required onchange="onOpexItemSelect(this, 0)">
                                             <option value="">-- Pilih Item Opex --</option>
                                             @foreach($opexItems as $opx)
-                                                <option value="{{ $opx->name }}">{{ $opx->code }} - {{ $opx->name }}</option>
+                                                <option value="{{ $opx->id }}">{{ $opx->code }} - {{ $opx->name }}</option>
                                             @endforeach
                                         </select>
 
@@ -371,7 +370,7 @@
     <select class="mb-2 form-select select2-item-template item-select" required onchange="onOpexItemSelect(this, 'INDEX_PLACEHOLDER')">
         <option value="">-- Pilih Item Opex --</option>
         @foreach($opexItems as $opx)
-            <option value="{{ $opx->name }}">{{ $opx->code }} - {{ $opx->name }}</option>
+            <option value="{{ $opx->id }}">{{ $opx->code }} - {{ $opx->name }}</option>
         @endforeach
     </select>
 </div>
@@ -428,8 +427,6 @@ $(document).ready(function() {
 
         $(this).val(isPercent ? val : formatNumber(val));
 
-        // Pengecualian: global_tax_val tidak punya sibling input hidden secara langsung di sebelahnya,
-        // jadi hidden-nya dilewati, nilai aslinya diambil langsung pakai unformat saat tombol apply diklik.
         if ($(this).attr('id') !== 'global_tax_val') {
             $(this).siblings('input[type="hidden"]').val(val);
         }
@@ -621,7 +618,7 @@ $(document).ready(function() {
             <td class="pt-3 text-end"><button type="button" class="btn btn-outline-danger btn-sm remove-item rounded-circle" title="Hapus Baris"><i class="bi bi-trash"></i></button></td>
         `;
         container.appendChild(tr);
-        $(tr).find('.select2-item-template').removeClass('select2-item-template').addClass('select2-item').attr('name', `items[${index}][name]`);
+        $(tr).find('.select2-item-template').removeClass('select2-item-template').addClass('select2-item').attr('name', `items[${index}][item_id]`);
         $(tr).find('.select2-item').select2({ theme: 'bootstrap-5', width: '100%' });
         updateSymbols();
     });
@@ -677,27 +674,25 @@ $(document).ready(function() {
     });
 
     $(document).on('click', '.remove-item', function() {
-        if ($('.item-row').length > 1) { $(this).closest('.item-row').remove(); calculate(); }
+        if ($('.item-row').length > 1) {$(this).closest('.item-row').remove(); calculate(); }
         else { Swal.fire('Oops!', 'Minimal harus 1 item.', 'warning'); }
     });
-    $(document).on('click', '.remove-extra', function() {
-        $(this).closest('.charge-row, .discount-row').remove(); calculate();
+    $(document).on('click', '.remove-extra', function() {$(this).closest('.charge-row, .discount-row').remove(); calculate();
     });
 
     $('#addFile').click(function() {
         $('#attachmentContainer').append(`<div class="mb-2 input-group"><input type="file" name="attachments[]" class="form-control" accept=".pdf,.jpg,.jpeg,.png"><button class="btn btn-outline-danger remove-file" type="button"><i class="bi bi-x-lg"></i></button></div>`);
     });
-    $(document).on('click', '.remove-file', function() { $(this).closest('.input-group').remove(); });
+    $(document).on('click', '.remove-file', function() {$(this).closest('.input-group').remove(); });
 
     $('#currency_select').change(updateSymbols);
     function updateSymbols() {
         const symbol = $('#currency_select option:selected').data('symbol');
-        $('.curr-symbol').text(symbol); $('.curr-symbol-display').text(symbol);
-        $('.disc-type option[value="fixed"], .tax-type option[value="fixed"], #global_tax_type option[value="fixed"]').text(symbol);
+        $('.curr-symbol').text(symbol); $('.curr-symbol-display').text(symbol);$('.disc-type option[value="fixed"], .tax-type option[value="fixed"], #global_tax_type option[value="fixed"]').text(symbol);
     }
 
     $('#is_recurring').change(function() {
-        if ($(this).val() == '1') $('#recurring_setup').removeClass('d-none');
+        if ($(this).val() == '1')$('#recurring_setup').removeClass('d-none');
         else $('#recurring_setup').addClass('d-none');
     });
 
@@ -782,4 +777,3 @@ $(document).ready(function() {
 });
 </script>
 @endpush
-baik unutk file edit nya bagimna karena belum di sesuaikan untuk file edit nya sebalumnnya spt in bladenya

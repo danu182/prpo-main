@@ -458,6 +458,9 @@ Route::middleware('auth')->group(function () {
         Route::post('/{slug}/add-attachment', [\App\Http\Controllers\BillRequestController::class, 'addLateAttachment'])->name('add_attachment')->where('slug', '.*');
         Route::post('/{slug}/void-payment', [\App\Http\Controllers\BillRequestController::class, 'voidPayment'])->name('void_payment')->where('slug', '.*');
         Route::post('/{slug}/stop-recurring', [\App\Http\Controllers\BillRequestController::class, 'stopRecurring'])->name('stop_recurring')->where('slug', '.*');
+
+        // 🔥 TAMBAHKAN ROUTE GANTI PIC DI SINI 🔥
+        Route::post('/{slug}/change-pic', [\App\Http\Controllers\BillRequestController::class, 'changePic'])->name('change_pic')->where('slug', '.*');
     });
 
 

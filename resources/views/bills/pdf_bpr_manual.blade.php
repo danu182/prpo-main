@@ -73,7 +73,23 @@
                     <td class="text-center">{{ $index + 1 }}</td>
                     <td class="text-center break-text">@if($index === 0) {{ !empty($bill->vendor_invoice_number) ? wordwrap($bill->vendor_invoice_number, 14, " ", true) : '-' }} @endif</td>
                     <td><strong>{{ $item->name }}</strong> @if(!empty($item->description)) <br><span style="font-size: 9pt;">{!! strip_tags($item->description) !!}</span> @endif</td>
-                    <td class="text-center">{{ $qty }} LS</td>
+                    <td align="center" style="vertical-align: middle;">
+                        @php
+                            // 1. Set default satuan ke 'LS' jika barang tidak punya satuan
+                            $satuan = 'LS'; 
+
+                            // 2. Jika item terkait dengan Master Data Barang, cari tahu satuannya
+                            if ($item->item) {
+                                $namaSatuan = optional($item->item->uom)->name ?? optional($item->item->unit)->name ?? $item->item->uom_code ?? 'LS';
+                                
+                                // 3. Ambil kata terakhirnya saja (Contoh: "PKT - Paket" jadi "Paket")
+                                $pecah = explode(' - ', $namaSatuan);
+                                $satuan = trim(end($pecah));
+                            }
+                        @endphp
+
+                        {{ $item->qty + 0 }} {{ $satuan }}
+                    </td>
                     <td style="padding: 0 4px;">
                         <table class="amount-box"><tr><td class="curr-txt">{{ $currency }}</td><td class="num-txt">{{ number_format($item->amount, 0, ',', '.') }}</td></tr></table>
                     </td>

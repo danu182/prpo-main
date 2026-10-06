@@ -14,6 +14,10 @@
         $statusSlug = optional($bill->status)->slug ?? 'unknown';
         $statusName = optional($bill->status)->name ?? 'UNKNOWN';
         $statusColor = optional($bill->status)->color ?? 'secondary';
+        
+        $userRoleNames = auth()->user()->getRoleNames()->toArray();
+        $userRoleIds = auth()->user()->roles->pluck('id')->toArray();
+        $isSuperAdmin = in_array('Super Administrator', $userRoleNames) || in_array('Super Admin', $userRoleNames) || auth()->id() === 1;
     @endphp
 
     {{-- HEADER & TOMBOL AKSI --}}
@@ -23,7 +27,14 @@
                 Detail Tagihan Opex: <span class="text-primary">{{ $bill->bill_number }}</span>
             </h4>
             <div class="text-muted small">
-                Dibuat oleh: <span class="fw-bold">{{ $bill->user->name ?? 'System' }}</span> pada {{ $bill->created_at->format('d M Y H:i') }}
+                Dibuat oleh: <span class="fw-bold text-primary">{{ $bill->user->name ?? 'System' }}</span> 
+                
+                @if($isSuperAdmin)
+                    <a href="#" class="ms-2 text-warning fw-bold text-decoration-none" data-bs-toggle="modal" data-bs-target="#changePicModal">
+                        <i class="bi bi-pencil-square"></i> Ganti PIC
+                    </a>
+                @endif
+                <br>pada {{ $bill->created_at->format('d M Y H:i') }}
             </div>
         </div>
         <div class="gap-2 d-flex">
@@ -400,6 +411,7 @@
                                             'UPDATED'  => 'warning',
                                             'APPROVED' => 'success',
                                             'REJECTED' => 'danger',
+                                            'GANTI PIC' => 'info',
                                             default    => 'secondary'
                                         };
                                         $icon = match($history->action) {
@@ -407,6 +419,7 @@
                                             'UPDATED'  => 'bi-pencil',
                                             'APPROVED' => 'bi-check-lg',
                                             'REJECTED' => 'bi-x-lg',
+                                            'GANTI PIC' => 'bi-person-lines-fill',
                                             default    => 'bi-circle'
                                         };
                                     @endphp
@@ -428,8 +441,13 @@
                                         {!! nl2br(e($history->note ?? 'Tidak ada catatan.')) !!}
                                     </div>
                                     <div class="mt-1 d-flex align-items-center">
-                                        <i class="bi bi-person-circle text-primary me-1 small"></i>
-                                        <span class="text-primary small fw-bold">{{ $history->user->name ?? 'Sistem Robot' }}</span>
+                                        @if($history->user_id)
+                                            <i class="bi bi-person-circle text-primary me-1 small"></i>
+                                            <span class="text-primary small fw-bold">{{ optional($history->user)->name ?? 'User Tidak Diketahui' }}</span>
+                                        @else
+                                            <i class="bi bi-robot text-info me-1 small"></i>
+                                            <span class="text-info small fw-bold">Sistem Robot</span>
+                                        @endif
                                     </div>
                                 </div>
                             </div>
@@ -737,6 +755,45 @@
         </div>
     </div>
 </div>
+
+{{-- MODAL GANTI PIC --}}
+@if($isSuperAdmin)
+<div class="modal fade" id="changePicModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="border-0 shadow-lg modal-content rounded-4">
+            <form action="{{ route('bills.change_pic', $bill->bill_number) }}" method="POST">
+                @csrf
+                <div class="pb-0 border-0 modal-header">
+                    <h5 class="modal-title fw-bold text-dark"><i class="bi bi-person-lines-fill me-2 text-primary"></i>Alihkan Kepemilikan (Ganti PIC)</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="p-4 modal-body">
+                    <div class="mb-4 border-0 alert alert-info small rounded-3">
+                        Jika pegawai sebelumnya *resign* atau mutasi, Anda dapat mengalihkan dokumen tagihan berulang ini ke pegawai baru.
+                    </div>
+                    <div class="mb-2">
+                        <label class="form-label small fw-bold text-muted">PILIH PENANGGUNG JAWAB BARU <span class="text-danger">*</span></label>
+                        <select name="new_user_id" class="form-select rounded-3" required>
+                            <option value="" disabled selected>-- Pilih Pegawai --</option>
+                            @foreach($usersList as $usr)
+                                <option value="{{ $usr->id }}" {{ $bill->user_id == $usr->id ? 'selected' : '' }}>
+                                    {{ $usr->name }} ({{ optional($usr->department)->name ?? 'Tanpa Departemen' }})
+                                </option>
+                            @endforeach
+                        </select>
+                    </div>
+                </div>
+                <div class="px-4 pt-0 pb-4 border-0 modal-footer">
+                    <button type="button" class="px-4 btn btn-light rounded-pill fw-bold" data-bs-dismiss="modal">Batal</button>
+                    <button type="submit" class="px-4 shadow-sm btn btn-primary rounded-pill fw-bold">
+                        <i class="bi bi-save me-1"></i> Simpan PIC Baru
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+@endif
 
 @endsection
 
