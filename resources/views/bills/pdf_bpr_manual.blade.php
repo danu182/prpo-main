@@ -29,14 +29,22 @@
     </style>
 </head>
 <body>
-    <footer>* Dokumen ini dicetak otomatis oleh sistem pada {{ \Carbon\Carbon::now()->translatedFormat('d F Y H:i:s') }} WIB</footer>
+    <footer>* Dokumen cetak ini digenerate otomatis oleh sistem pada {{ \Carbon\Carbon::now()->translatedFormat('d F Y H:i:s') }} WIB - (Manual Signature)</footer>
 
     @php
         $companyName = optional($bill->company)->name ?? 'HITAWASANA';
-        $currency = $bill->currency ?? 'IDR';
+
+        // Ambil kode mata uang dari tagihan (misal: 'IDR')
+        $currencyCode = $bill->currency ?? 'IDR';
+
+        // Cari data mata uang di database berdasarkan kode tersebut
+        $currencyData = \App\Models\Currency::where('code', $currencyCode)->first();
+
+        // Jika ketemu, gunakan simbolnya (misal 'Rp'). Jika tidak, fallback ke kodenya.
+        $currency = $currencyData ? $currencyData->symbol : $currencyCode;
     @endphp
     <div class="company-name">{{ $companyName }}</div>
-    <div class="doc-title">Bank Payment Request Form</div>
+    <div class="doc-title">Bank Payment Request Form <span style="font-size: 9pt; color:#666;"></span></div>
 
     {{-- KOTAK INFORMASI --}}
     <table class="info-table">
@@ -52,11 +60,14 @@
     </tr>
     <tr>
         <td style="padding-bottom: 8px;">Request Date</td><td style="padding-bottom: 8px;">:</td>
-        <td style="padding-bottom: 8px;">{{ date('d-M-y', strtotime($bill->created_at)) }}</td>
+
+        {{-- 🔥 PERBAIKAN DI SINI: Menggunakan invoice_date agar sama dengan inputan form 🔥 --}}
+        <td style="padding-bottom: 8px;">{{ $bill->invoice_date ? date('d-M-y', strtotime($bill->invoice_date)) : '-' }}</td>
+
         <td style="padding-left: 12px; padding-bottom: 8px;">Due Date</td><td style="padding-bottom: 8px;">:</td>
         <td style="padding-bottom: 8px;">{{ $bill->due_date ? date('d-M-y', strtotime($bill->due_date)) : '-' }}</td>
     </tr>
-</table>
+    </table>
 
     {{-- TABEL ITEM DETAIL --}}
     <table class="main-table">
@@ -72,22 +83,25 @@
                 <tr>
                     <td class="text-center">{{ $index + 1 }}</td>
                     <td class="text-center break-text">@if($index === 0) {{ !empty($bill->vendor_invoice_number) ? wordwrap($bill->vendor_invoice_number, 14, " ", true) : '-' }} @endif</td>
-                    <td><strong>{{ $item->name }}</strong> @if(!empty($item->description)) <br><span style="font-size: 9pt;">{!! strip_tags($item->description) !!}</span> @endif</td>
+                    <td>
+                        <strong>{{ $item->name }}</strong>
+                        <br>
+                        <span style="font-size: 9pt; color: #444;">
+                            <em>(Periode: {{ \Carbon\Carbon::parse($bill->invoice_date)->translatedFormat('F Y') }})</em>
+                        </span>
+                        @if(!empty($item->description))
+                            <br><span style="font-size: 9pt;">{!! strip_tags($item->description) !!}</span>
+                        @endif
+                    </td>
                     <td align="center" style="vertical-align: middle;">
                         @php
-                            // 1. Set default satuan ke 'LS' jika barang tidak punya satuan
-                            $satuan = 'LS'; 
-
-                            // 2. Jika item terkait dengan Master Data Barang, cari tahu satuannya
+                            $satuan = 'LS';
                             if ($item->item) {
                                 $namaSatuan = optional($item->item->uom)->name ?? optional($item->item->unit)->name ?? $item->item->uom_code ?? 'LS';
-                                
-                                // 3. Ambil kata terakhirnya saja (Contoh: "PKT - Paket" jadi "Paket")
                                 $pecah = explode(' - ', $namaSatuan);
                                 $satuan = trim(end($pecah));
                             }
                         @endphp
-
                         {{ $item->qty + 0 }} {{ $satuan }}
                     </td>
                     <td style="padding: 0 4px;">
@@ -107,45 +121,116 @@
         </tbody>
     </table>
 
-    {{-- KOTAK TANDA TANGAN (MANUAL/BASAH) --}}
+    {{-- KOTAK TANDA TANGAN (MANUAL) --}}
     @php
-        $approvals = \App\Models\DocumentApproval::with('role')->where('document_id', $bill->id)->whereIn('document_type', ['App\Models\BillRequest', 'OPEX', 'BillRequest', get_class($bill)])->orderBy('step_order', 'asc')->get();
+        $approvals = \App\Models\DocumentApproval::with(['role'])
+            ->where('document_id', $bill->id)
+            ->whereIn('document_type', ['App\Models\BillRequest', 'OPEX', 'BillRequest', get_class($bill)])
+            ->orderBy('step_order', 'asc')
+            ->get();
+
         $totalCols = 1 + $approvals->count();
+
         $prepSigBase64 = null;
         if ($bill->user && $bill->user->signature) {
             $path = public_path('storage/' . $bill->user->signature);
             if (file_exists($path)) { $prepSigBase64 = 'data:image/' . pathinfo($path, PATHINFO_EXTENSION) . ';base64,' . base64_encode(file_get_contents($path)); }
         }
     @endphp
+
+    {{-- KOTAK TANDA TANGAN (MANUAL) --}}
+    @php
+        $approvals = \App\Models\DocumentApproval::with(['role'])
+            ->where('document_id', $bill->id)
+            ->whereIn('document_type', ['App\Models\BillRequest', 'OPEX', 'BillRequest', get_class($bill)])
+            ->orderBy('step_order', 'asc')
+            ->get();
+
+        $totalCols = 1 + $approvals->count();
+
+        $prepSigBase64 = null;
+        if ($bill->user && $bill->user->signature) {
+            $path = public_path('storage/' . $bill->user->signature);
+            if (file_exists($path)) { $prepSigBase64 = 'data:image/' . pathinfo($path, PATHINFO_EXTENSION) . ';base64,' . base64_encode(file_get_contents($path)); }
+        }
+    @endphp
+
     <table class="signature-table">
         <tr>
+            {{-- KOLOM PEMOHON (Sistem tempel TTD digital pembuat jika ada) --}}
             <td style="width: {{ 100 / ($totalCols > 0 ? $totalCols : 1) }}%;">
                 <div style="margin-bottom: 5px;">Prepared by :</div>
                 <div style="height: 60px; text-align: center;">
-                    @if($prepSigBase64) <img src="{{ $prepSigBase64 }}" style="max-height: 60px; max-width: 140px; object-fit: contain;"> @endif
+                    @if($prepSigBase64)
+                        <img src="{{ $prepSigBase64 }}" style="max-height: 60px; max-width: 140px; object-fit: contain;">
+                    @endif
                 </div>
+
+                {{-- Nama Pembuat dengan Tanggal --}}
                 <div style="text-align: center; position: absolute; bottom: 10px; width: 100%; left: 0;">
-                    <span class="fw-bold" style="text-decoration: underline;">{{ $bill->user->name ?? 'Requester' }}</span>
+                    <strong><u>{{ $bill->user->name ?? 'Requester' }}</u></strong><br>
+                    <span style="font-size: 7pt; color: #666;">{{ $bill->created_at ? $bill->created_at->format('d/m/y H:i') : '-' }}</span>
                 </div>
             </td>
-            @foreach($approvals as $idx => $approval)
-                @php
-                    $roleName = optional($approval->role)->name ?? 'Manager';
-                    $approverName = $roleName;
-                    if ($approval->approved_by) {
-                        $userAcc = \App\Models\User::find($approval->approved_by);
-                        if ($userAcc) $approverName = $userAcc->name;
-                    } else {
-                        $potentialUsers = \App\Models\User::role($roleName);
-                        if (!empty($approval->target_department_id) && $approval->target_department_id !== 'all') { $potentialUsers->where('department_id', $approval->target_department_id); }
-                        $firstUser = $potentialUsers->first();
-                        if ($firstUser) $approverName = $firstUser->name;
-                    }
-                @endphp
-                <td style="width: {{ 100 / $totalCols }}%;">
-                    <div>{{ $loop->last ? 'Approved by :' : 'Checked by :' }}</div>
+
+            {{-- KOLOM PERSETUJUAN (Dikosongkan untuk Tanda Tangan Basah) --}}
+            @foreach($approvals as $approval)
+                <td style="width: {{ 100 / ($totalCols > 0 ? $totalCols : 1) }}%;">
+
+                    {{-- 🔥 LOGIKA LABEL KIRI ATAS 🔥 --}}
+                    <div style="margin-bottom: 5px; text-align: left;">
+                        @if($loop->last)
+                            Approved by :
+                        @else
+                            @if($approvals->count() > 2)
+                                Checked by {{ $loop->iteration }} :
+                            @else
+                                Checked by :
+                            @endif
+                        @endif
+                    </div>
+
+                    {{-- Ruang Kosong untuk Tanda Tangan Basah --}}
+                    <div style="height: 60px; text-align: center;"></div>
+
+                    {{-- Nama & Jabatan --}}
                     <div style="text-align: center; position: absolute; bottom: 10px; width: 100%; left: 0;">
-                        <span class="fw-bold" style="text-decoration: underline;">{{ $approverName }}</span>
+                        @php
+                            $namaTtd = "";
+                            $uid = $approval->user_id ?? $approval->approver_id ?? $approval->specific_user_id ?? null;
+
+                            if (!empty($uid)) {
+                                $userTtd = \App\Models\User::find($uid);
+                                $namaTtd = $userTtd ? $userTtd->name : '';
+                            }
+
+                            $roleName = optional($approval->role)->name ?? 'Manager';
+                            $deptName = '';
+                            if (!empty($approval->target_department_id)) {
+                                $dept = \DB::table('departments')->where('id', $approval->target_department_id)->first();
+                                $deptName = $dept ? $dept->name : '';
+                            } else {
+                                $deptName = optional(optional($bill->user)->department)->name ?? '';
+                            }
+
+                            $jabatanLengkap = trim($roleName . ' ' . $deptName);
+
+                            if (empty($namaTtd)) {
+                                $namaTtd = $jabatanLengkap;
+                                $jabatanLengkap = '';
+                            }
+                        @endphp
+
+                        <strong><u>{{ $namaTtd }}</u></strong><br>
+
+                        {{-- 🔥 TRIK PENYEIMBANG: Memastikan tinggi sama dengan kolom pemohon 🔥 --}}
+                        @if(!empty($jabatanLengkap))
+                            <span style="font-size: 7pt; color: #fff;">{{ $jabatanLengkap }}</span>
+                            {{-- <span style="font-size: 7pt; color: #fff;"> - </span> --}}
+
+                        @else
+                            <span style="font-size: 7pt; color: transparent;">-</span>
+                        @endif
                     </div>
                 </td>
             @endforeach

@@ -11,7 +11,7 @@ use App\Services\GoogleSheetService;
 class GenerateRecurringBills extends Command
 {
     protected $signature = 'bills:generate-recurring {--start= : Tarikh Mula (YYYY-MM-DD)} {--end= : Tarikh Akhir (YYYY-MM-DD)}';
-    
+
     protected $description = 'Mengecek dan meng-generate tagihan berulang (OPEX) berdasarkan tarikh tertentu, lalu mengirimkannya ke Google Sheet.';
 
     public function handle()
@@ -64,7 +64,7 @@ class GenerateRecurringBills extends Command
             // 🔥 KUNCI UTAMA: LOOPING "WHILE" 🔥
             // Selagi tanggal tagihan berikutnya masih di bawah atau sama dengan Limit Date, terus Generate!
             while (Carbon::parse($masterBill->next_generation_date)->lte($limitDate) && $loopCount < 60) {
-                
+
                 DB::beginTransaction();
                 try {
                     $companyCode = $masterBill->company ? ($masterBill->company->code ?? 'GEN') : 'GEN';
@@ -96,7 +96,7 @@ class GenerateRecurringBills extends Command
                     // 🔥 OTOMATIS REPLACE BULAN PADA CATATAN GLOBAL 🔥
                     $oldMonthYear = Carbon::parse($masterBill->invoice_date)->translatedFormat('F Y');
                     $periodeBaru = Carbon::parse($newBill->invoice_date)->translatedFormat('F Y');
-                    
+
                     if (!empty($masterBill->description)) {
                         $newBill->description = str_ireplace($oldMonthYear, $periodeBaru, $masterBill->description);
                     }
@@ -198,9 +198,16 @@ class GenerateRecurringBills extends Command
                         if ($workflow && $workflow->steps->count() > 0) {
                             foreach ($workflow->steps as $step) {
                                 \App\Models\DocumentApproval::create([
-                                    'document_id' => $newBill->id, 'document_type' => get_class($newBill), 'role_id' => $step->role_id,
+                                    'document_id' => $newBill->id,
+                                    'document_type' => get_class($newBill),
+                                    'role_id' => $step->role_id,
+
+                                    // 🔥 INI PENYELAMATNYA: Copy ID User Spesifik ke Tagihan Baru 🔥
+                                    'user_id' => $step->user_id ?? $step->specific_user_id ?? null,
+
                                     'target_department_id' => $step->target_department_id ?? $step->department_id ?? null,
-                                    'step_order' => $step->step_order, 'status' => 'PENDING'
+                                    'step_order' => $step->step_order,
+                                    'status' => 'PENDING'
                                 ]);
                             }
                             $needsApproval = true;
@@ -261,14 +268,14 @@ class GenerateRecurringBills extends Command
                         foreach ($googleSheetRows as $rowData) {
                             $sheetService->appendRow($tabName, $rowData);
                         }
-                    } catch (\Exception $e) { 
+                    } catch (\Exception $e) {
                         \Log::error("Google Sheet Sync Error pada Auto-Recurring {$newBillNumber}: " . $e->getMessage());
                     }
 
                     DB::commit();
                     $countSuccess++;
                     $loopCount++; // Tambah angka putaran
-                    
+
                     $this->info("Berhasil meng-generate tagihan & sync Sheet: {$newBillNumber}");
 
                 } catch (\Exception $e) {
