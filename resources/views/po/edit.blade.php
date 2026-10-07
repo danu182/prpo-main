@@ -77,7 +77,13 @@
                             <div class="p-2 border rounded bg-light fw-bold text-primary"><i class="bi bi-shop me-1"></i> {{ optional($po->vendor)->name ?? 'Vendor Tidak Ditemukan' }}</div>
                             <div class="mt-1 form-text text-danger" style="font-size: 0.65rem;">*Vendor tidak bisa diubah. Jika ganti vendor, silakan Batalkan PO ini.</div>
                         </div>
-                        <div class="col-md-3">
+                        <!-- 🔥 INPUT NAMA TOKO SPESIFIK 🔥 -->
+                        <div class="col-md-5">
+                            <label>Nama Toko Spesifik (Opsional)</label>
+                            <input type="text" name="vendor_sub_name" class="form-control" value="{{ old('vendor_sub_name', $po->vendor_sub_name) }}" placeholder="Contoh: Vortexindo.Computer">
+                            <small class="text-muted">Gunakan ini jika Anda memilih vendor berupa Marketplace.</small>
+                        </div>
+                        <div class="col-md-5">
                             <label class="form-label small fw-bold text-dark">Mata Uang <span class="text-danger">*</span></label>
                             <select name="currency" id="currencySelect" class="form-select bg-light fw-bold text-primary form-input-custom" required onchange="updateCurrencySymbol()">
                                 @foreach($currencies as $curr)
@@ -85,7 +91,7 @@
                                 @endforeach
                             </select>
                         </div>
-                        <div class="col-md-4">
+                        <div class="col-md-5">
                             <label class="form-label small fw-bold text-dark">Tagihan Ke (Bill To) <span class="text-danger">*</span></label>
                             <select name="billing_company_id" id="billToSelect" class="form-select select2-init" required onchange="updateShippingAddress()">
                                 @foreach($companies as $c)
@@ -94,11 +100,11 @@
                             </select>
                         </div>
                         {{-- 🔥 KOLOM INVOICE & REKENING (BARU) 🔥 --}}
-                        <div class="col-md-6">
+                        <div class="col-md-5">
                             <label class="form-label small fw-bold text-dark">No. Invoice (Opsional)</label>
                             <input type="text" name="invoice_number" class="form-control form-input-custom fw-bold text-primary" value="{{ $po->invoice_number }}" placeholder="Bisa dikosongkan & diisi menyusul...">
                         </div>
-                        <div class="col-md-6">
+                        <div class="col-md-5">
                             <label class="form-label small fw-bold text-dark">No. Rekening (Account No)</label>
                             <input type="text" name="account_number" class="form-control form-input-custom fw-bold text-success" value="{{ $po->account_number }}" placeholder="Bisa dikosongkan & diisi menyusul...">
                         </div>

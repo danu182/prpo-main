@@ -58,65 +58,73 @@ class GoogleSheetService
     }
 
     // 🔥 FITUR BARU: PENGHAPUS BARIS OTOMATIS 🔥
-    public function deleteRowsByBillNumber($tabName, $billNumber)
+    public function deleteRowsByBillNumber(string $range, string $billNumber)
     {
-        try {
-            $response = $this->service->spreadsheets_values->get($this->spreadsheetId, $tabName);
-            $values = $response->getValues();
+        // 1. Ambil semua data baris yang ada di tab
+        $response = $this->service->spreadsheets_values->get($this->spreadsheetId, $range);
+        $rows = $response->getValues();
 
-            if (empty($values)) return;
+        if (empty($rows)) {
+            return;
+        }
 
-            $rowsToDelete = [];
+        // 2. 🔥 PERBAIKAN: Cari Sheet ID secara otomatis berdasarkan nama tab 🔥
+        $spreadsheet = $this->service->spreadsheets->get($this->spreadsheetId);
+        $sheetId = null;
+        foreach ($spreadsheet->getSheets() as $sheet) {
+            if ($sheet->getProperties()->getTitle() == $range) {
+                $sheetId = $sheet->getProperties()->getSheetId();
+                break;
+            }
+        }
 
-            // PENCARIAN SUPER DINAMIS: Cari nomor PO di seluruh kolom!
-            foreach ($values as $index => $row) {
-                foreach ($row as $colValue) {
-                    if (trim((string)$colValue) === (string)$billNumber) {
-                        $rowsToDelete[] = $index;
-                        break; // Jika ketemu, hentikan pencarian di baris ini, lanjut baris bawahnya
-                    }
-                }
+        if ($sheetId === null) {
+            throw new \Exception("Sheet dengan nama '$range' tidak ditemukan.");
+        }
+
+        $requests = [];
+
+        // 3. Loop dari bawah ke atas agar indeks baris tidak bergeser saat ada yang dihapus
+        for ($i = count($rows) - 1; $i >= 0; $i--) {
+            $row = $rows[$i];
+
+            $foundMatch = false;
+
+            // Cek Kolom K (Indeks 10) - Biasanya di sinilah No BPR/PO berada
+            if (isset($row[10]) && trim($row[10]) === $billNumber) {
+                $foundMatch = true;
+            }
+            // Cek Kolom L (Indeks 11) - Berjaga-jaga jika letaknya bergeser
+            elseif (isset($row[11]) && trim($row[11]) === $billNumber) {
+                $foundMatch = true;
+            }
+            // Cek Kolom J (Indeks 9) - Berjaga-jaga
+            elseif (isset($row[9]) && trim($row[9]) === $billNumber) {
+                $foundMatch = true;
             }
 
-            // Jika nomor PO tidak ditemukan di Sheet, tidak usah proses hapus
-            if (empty($rowsToDelete)) return;
-
-            // WAJIB DIURUTKAN DARI BAWAH KE ATAS (DESCENDING) AGAR BARIS TIDAK BERGESER SAAT DIHAPUS
-            rsort($rowsToDelete);
-
-            // Cari ID Sheet (Berupa Angka)
-            $sheetId = 0;
-            $spreadsheet = $this->service->spreadsheets->get($this->spreadsheetId);
-            foreach ($spreadsheet->getSheets() as $sheet) {
-                if ($sheet->getProperties()->getTitle() == $tabName) {
-                    $sheetId = $sheet->getProperties()->getSheetId();
-                    break;
-                }
-            }
-
-            $requests = [];
-            foreach ($rowsToDelete as $rowIndex) {
+            // Jika ada yang cocok, masukkan ke dalam antrean perintah penghapusan
+            if ($foundMatch) {
                 $requests[] = new \Google_Service_Sheets_Request([
                     'deleteDimension' => [
                         'range' => [
                             'sheetId' => $sheetId,
                             'dimension' => 'ROWS',
-                            'startIndex' => $rowIndex,
-                            'endIndex' => $rowIndex + 1
+                            'startIndex' => $i,
+                            'endIndex' => $i + 1
                         ]
                     ]
                 ]);
             }
+        }
 
+        // 4. Eksekusi penghapusan massal sekaligus ke Google Sheet
+        if (!empty($requests)) {
             $batchUpdateRequest = new \Google_Service_Sheets_BatchUpdateSpreadsheetRequest([
                 'requests' => $requests
             ]);
 
-            // Eksekusi Hapus!
             $this->service->spreadsheets->batchUpdate($this->spreadsheetId, $batchUpdateRequest);
-
-        } catch (\Exception $e) {
-            \Log::error("Gagal Hapus Baris Google Sheet untuk {$billNumber}: " . $e->getMessage());
         }
     }
 

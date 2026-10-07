@@ -255,6 +255,13 @@
                                     </div>
                                 </div>
 
+                                <!-- 🔥 INPUT NAMA TOKO SPESIFIK 🔥 -->
+                                <div class="mb-3 form-group">
+                                    <label>Nama Toko Spesifik (Opsional)</label>
+                                    <input type="text" name="vendor_sub_name" class="form-control" placeholder="Contoh: Vortexindo.Computer (Jika beli di Tokopedia)">
+                                    <small class="text-muted">Gunakan ini jika Anda memilih vendor berupa Marketplace.</small>
+                                </div>
+
                                 <div class="col-md-7">
                                     <div class="row">
                                         <div class="col-md-7">

@@ -66,13 +66,19 @@
                                 @foreach($vendors as $v) <option value="{{ $v->id }}">{{ $v->name }}</option> @endforeach
                             </select>
                         </div>
-                        <div class="col-md-3">
+                        <!-- 🔥 INPUT NAMA TOKO SPESIFIK 🔥 -->
+                        <div class="col-md-5">
+                            <label>Nama Toko Spesifik (Opsional)</label>
+                            <input type="text" name="vendor_sub_name" class="form-control" placeholder="Contoh: Vortexindo.Computer (Jika beli di Tokopedia)">
+                            <small class="text-muted">Gunakan ini jika Anda memilih vendor berupa Marketplace.</small>
+                        </div>
+                        <div class="col-md-5">
                             <label class="form-label small fw-bold text-dark">Mata Uang <span class="text-danger">*</span></label>
                             <select name="currency" id="currencySelect" class="form-select bg-light fw-bold text-primary form-input-custom" required onchange="updateCurrencySymbol()">
                                 @foreach($currencies as $curr) <option value="{{ $curr->code }}" {{ $curr->code == 'IDR' ? 'selected' : '' }}>{{ $curr->code }}</option> @endforeach
                             </select>
                         </div>
-                        <div class="col-md-4">
+                        <div class="col-md-5">
                             <label class="form-label small fw-bold text-dark">Tagihan Ke (Bill To) <span class="text-danger">*</span></label>
                             <select name="billing_company_id" id="billToSelect" class="form-select select2-init" required onchange="updateShippingAddress()">
                                 <option value="">-- Pilih PT --</option>
@@ -81,11 +87,11 @@
                         </div>
 
                         {{-- 🔥 KOLOM BARU: INVOICE & REKENING 🔥 --}}
-                        <div class="col-md-6">
+                        <div class="col-md-5">
                             <label class="form-label small fw-bold text-dark">No. Invoice (Opsional)</label>
                             <input type="text" name="invoice_number" class="form-control form-input-custom fw-bold text-primary" placeholder="Bisa dikosongkan & diisi menyusul...">
                         </div>
-                        <div class="col-md-6">
+                        <div class="col-md-5">
                             <label class="form-label small fw-bold text-dark">No. Rekening (Account No)</label>
                             <input type="text" name="account_number" class="form-control form-input-custom fw-bold text-success" placeholder="Bisa dikosongkan & diisi menyusul...">
                         </div>

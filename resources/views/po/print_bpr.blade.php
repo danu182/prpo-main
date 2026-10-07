@@ -2,7 +2,7 @@
 <html lang="id">
 <head>
     <meta charset="UTF-8">
-    <title>Bank Payment Request (Standar) - {{ $po->po_number }}</title>
+    <title>Bank Payment Request (Detail) - {{ $po->po_number }}</title>
     <style>
         @page { margin: 40px 40px 60px 40px; }
         body { font-family: Arial, Helvetica, sans-serif; font-size: 10pt; color: #000; margin: 0; padding: 0; }
@@ -20,17 +20,12 @@
         table.grid tr:last-child td { border-bottom: none; }
 
         table.sign-table { width: 100%; border-collapse: collapse; border-top: 1px solid #000; page-break-inside: avoid; }
-        table.sign-table td { border: none; padding: 5px; vertical-align: middle; text-align: center; }
-
-        .stamp { display: inline-block; padding: 4px 10px; font-weight: bold; font-size: 10pt; letter-spacing: 1px; text-transform: uppercase; border: 2px solid; }
-        .stamp-issued { color: #198754; border-color: #198754; }
-        .stamp-approved { color: #0d6efd; border-color: #0d6efd; }
-        .stamp-rejected { color: #dc3545; border-color: #dc3545; }
-        .stamp-pending { color: #aaa; border-color: #aaa; border-style: dashed; }
+        table.sign-table td { border: none; padding: 10px; vertical-align: top; text-align: left; height: 110px; position: relative; }
 
         .break-text { word-wrap: break-word; word-break: break-all; }
         table.amount-box { width: 100%; border: none !important; margin: 0; padding: 0; }
         table.amount-box td { border: none !important; padding: 0 !important; margin: 0 !important; vertical-align: middle; }
+
         .curr-txt { text-align: left; width: 1%; padding-right: 5px !important; color: #555; font-size: 9pt; }
         .curr-txt-red { text-align: left; width: 1%; padding-right: 5px !important; color: red; font-size: 9pt; }
         .num-txt { text-align: right; font-size: 10pt; }
@@ -44,8 +39,13 @@
     @php
         $isDigital = (!isset($type) || $type === 'digital' || $type === 'hybrid');
         $printType = $type ?? 'digital';
-        $currency = $po->currency ?? 'IDR';
-        $companyName = optional($po->company)->name ?? optional(optional($po->purchaseRequest)->company)->name ?? 'PT. KANTOR PUSAT';
+
+        // 🔥 LOGIKA PENCARIAN SIMBOL MATA UANG 🔥
+        $currencyCode = $po->currency ?? 'IDR';
+        $currencyData = \App\Models\Currency::where('code', $currencyCode)->first();
+        $currency = $currencyData ? $currencyData->symbol : $currencyCode;
+
+        $companyName = optional($po->company)->name ?? optional(optional($po->purchaseRequest)->company)->name ?? 'HITAWASANA';
 
         // 🔥 LOGIKA MATEMATIKA ANTI-RANCU (Distribusikan Grand Total ke setiap baris item secara proporsional) 🔥
         $grandTotal = (float) ($po->grand_total ?? 0);
@@ -66,7 +66,7 @@
     <div class="company-name">{{ $companyName }}</div>
     <div class="doc-title">
         Bank Payment Request Form
-        @if($isDigital) <span style="font-size: 9pt; color:#666;">(Digital Signature)</span> @endif
+        @if($isDigital) <span style="font-size: 9pt; color:#666;">(Digital Signature)</span> @else <span style="font-size: 9pt; color:#666;">(Manual Signature)</span> @endif
     </div>
 
     {{-- BUNGKUSAN KOTAK SEAMLESS --}}
@@ -84,8 +84,17 @@
                 </td>
                 <td width="50%" style="padding: 0; border-left: 1px solid #000;">
                     <table style="width: 100%; border-collapse: collapse;">
-                        <tr><td style="padding: 6px; width: 120px;">Title</td><td style="padding: 6px;">: Pembayaran PO - {{ optional($po->vendor)->name ?? $po->vendor_name }}</td></tr>
+                        <tr><td style="padding: 6px; width: 120px;">Title</td><td style="padding: 6px;">: Pembayaran PO</td></tr>
                         <tr><td style="padding: 6px;">Bill Ref.</td><td style="padding: 6px; font-weight: bold;">: {{ $po->po_number }}</td></tr>
+                        <tr>
+                            <td style="padding: 6px;">Supplier</td>
+                            <td style="padding: 6px;">
+                                : {{ optional($po->vendor)->name ?? $po->vendor_name }}
+                                @if(!empty($po->vendor_sub_name))
+                                    - {{ $po->vendor_sub_name }}
+                                @endif
+                            </td>
+                        </tr>
                         <tr><td style="padding: 6px;">Due Date</td><td style="padding: 6px;">: {{ $po->due_date ? date('d-M-y', strtotime($po->due_date)) : ($po->delivery_date ? date('d-M-y', strtotime($po->delivery_date)) : '-') }}</td></tr>
                     </table>
                 </td>
@@ -166,6 +175,9 @@
                         <td style="text-align: center;">{{ $index + 1 }}</td>
                         <td style="text-align: center; color: #0d6efd;" class="break-text">@if($index === 0) {{ !empty($po->invoice_number) ? wordwrap($po->invoice_number, 14, " ", true) : '-' }} @endif</td>
                         <td>
+                            @if(!empty($po->vendor_sub_name))
+                                <u>{{ optional($po->vendor)->name }} - {{ $po->vendor_sub_name }}</u><br>
+                            @endif
                             <strong style="font-size: 13px;">{{ $item->item_name ?? optional($item->item)->name }}</strong>
                             @if(!empty($item->description) && $item->description !== '-') <br><span style="font-size: 10px; color: #555;">{!! strip_tags($item->description) !!}</span> @endif
                         </td>
@@ -247,74 +259,109 @@
             </tbody>
         </table>
 
-        {{-- KOTAK TANDA TANGAN (DIGITAL / MANUAL / HYBRID) --}}
+        {{-- KOTAK TANDA TANGAN --}}
         @php
-            $approvals = \App\Models\DocumentApproval::with('role')->where('document_id', $po->id)->where('document_type', get_class($po))->orderBy('step_order', 'asc')->get();
+            // 🔥 PERBAIKAN: HANYA LOAD 'role', JANGAN 'user' KARENA NAMA RELASINYA BEDA DI MODEL 🔥
+            $approvals = \App\Models\DocumentApproval::with(['role'])
+                ->where('document_id', $po->id)
+                ->whereIn('document_type', ['App\Models\PurchaseOrder', 'PO', 'PurchaseOrder', get_class($po)])
+                ->orderBy('step_order', 'asc')
+                ->get();
+
             $totalCols = 1 + $approvals->count();
 
-            $prepUser = $po->user; $prepSigBase64 = null;
-            if ($prepUser && $prepUser->signature) {
-                $path = public_path('storage/' . $prepUser->signature);
+            $prepSigBase64 = null;
+            if ($po->user && $po->user->signature) {
+                $path = public_path('storage/' . $po->user->signature);
                 if (file_exists($path)) { $prepSigBase64 = 'data:image/' . pathinfo($path, PATHINFO_EXTENSION) . ';base64,' . base64_encode(file_get_contents($path)); }
             }
         @endphp
 
         <table class="sign-table">
             <tr>
-                <td style="text-align: left; padding: 10px 10px 0 10px; width: {{ 100 / $totalCols }}%;">Prepared by :</td>
-                @foreach($approvals as $app)
-                    <td style="text-align: left; padding: 10px 10px 0 10px; width: {{ 100 / $totalCols }}%;">{{ $loop->last ? 'Approved by :' : 'Checked by :' }}</td>
-                @endforeach
-            </tr>
-            <tr>
-                <td style="height: 70px;">
-                    @if($printType == 'digital')
-                        @if($prepSigBase64) <img src="{{ $prepSigBase64 }}" style="max-height: 60px; max-width: 130px; object-fit: contain;"> @else <div class="stamp stamp-issued">ISSUED</div> @endif
-                    @elseif($printType == 'hybrid')
-                        @if($prepSigBase64) <img src="{{ $prepSigBase64 }}" style="max-height: 60px; max-width: 130px; object-fit: contain;"> @endif
-                    @endif
-                </td>
-                @foreach($approvals as $app)
-                    @php
-                        $apprSigBase64 = null;
-                        if ($app->status == 'APPROVED' && optional($app->approver)->signature) {
-                            $path = public_path('storage/' . $app->approver->signature);
-                            if (file_exists($path)) { $apprSigBase64 = 'data:image/' . pathinfo($path, PATHINFO_EXTENSION) . ';base64,' . base64_encode(file_get_contents($path)); }
-                        }
-                    @endphp
-                    <td style="height: 70px;">
-                        @if($printType == 'digital')
-                            @if($app->status == 'APPROVED')
-                                @if($apprSigBase64) <img src="{{ $apprSigBase64 }}" style="max-height: 60px; max-width: 130px; object-fit: contain;"> @else <div class="stamp stamp-approved">APPROVED</div> @endif
-                            @elseif($app->status == 'REJECTED')
-                                <div class="stamp stamp-rejected">REJECTED</div>
-                            @else
-                                <div class="stamp stamp-pending">PENDING</div>
-                            @endif
-                        @elseif($printType == 'hybrid')
-                            @if($app->status == 'APPROVED' && $apprSigBase64)
-                                <img src="{{ $apprSigBase64 }}" style="max-height: 60px; max-width: 130px; object-fit: contain;">
-                            @endif
+                <td style="width: {{ 100 / ($totalCols > 0 ? $totalCols : 1) }}%;">
+                    <div style="margin-bottom: 5px;">Prepared by :</div>
+                    <div style="height: 60px; text-align: center;">
+                        @if($isDigital && $prepSigBase64)
+                            <img src="{{ $prepSigBase64 }}" style="max-height: 60px; max-width: 140px; object-fit: contain;">
+                        @elseif($isDigital && !$prepSigBase64)
+                            <div style="display: inline-block; padding: 5px 10px; font-weight: bold; font-size: 10pt; border: 2px solid #198754; color: #198754; margin-top: 15px;">DIAJUKAN</div>
                         @endif
+                    </div>
+                    <div style="text-align: center; position: absolute; bottom: 10px; width: 100%; left: 0;">
+                        <span class="fw-bold" style="text-decoration: underline;">{{ $po->user->name ?? 'Requester' }}</span><br>
+                        <span style="font-size: 7pt; color: #666;">{{ $po->created_at ? $po->created_at->format('d/m/y H:i') : '' }}</span>
+                    </div>
+                </td>
+
+                {{-- Loop Persetujuan --}}
+                @foreach($approvals as $approval)
+                    <td style="width: {{ 100 / ($totalCols > 0 ? $totalCols : 1) }}%;">
+
+                        {{-- 🔥 LOGIKA LABEL KIRI ATAS 🔥 --}}
+                        <div style="margin-bottom: 5px; text-align: left;">
+                            @if($loop->last)
+                                Approved by :
+                            @else
+                                @if($approvals->count() > 2)
+                                    Checked by {{ $loop->iteration }} :
+                                @else
+                                    Checked by :
+                                @endif
+                            @endif
+                        </div>
+
+                        {{-- Status Digital --}}
+                        <div style="height: 60px; text-align: center;">
+                            @if($isDigital)
+                                @if($approval->status == 'APPROVED')
+                                    <div style="color: green; font-size: 10px; margin-top: 15px;">[ APPROVED ]</div>
+                                @elseif($approval->status == 'REJECTED')
+                                    <div style="color: red; font-size: 10px; margin-top: 15px;">[ REJECTED ]</div>
+                                @else
+                                    <div style="color: gray; font-size: 10px; margin-top: 15px;">[ PENDING ]</div>
+                                @endif
+                            @endif
+                        </div>
+
+                        {{-- Nama & Jabatan --}}
+                        <div style="text-align: center; position: absolute; bottom: 10px; width: 100%; left: 0;">
+                            @php
+                                $namaTtd = "";
+                                $uid = $approval->user_id ?? $approval->approver_id ?? $approval->specific_user_id ?? null;
+
+                                if (!empty($uid)) {
+                                    $userTtd = \App\Models\User::find($uid);
+                                    $namaTtd = $userTtd ? $userTtd->name : '';
+                                }
+
+                                $roleName = optional($approval->role)->name ?? 'Manager';
+                                $deptName = '';
+                                if (!empty($approval->target_department_id)) {
+                                    $dept = \DB::table('departments')->where('id', $approval->target_department_id)->first();
+                                    $deptName = $dept ? $dept->name : '';
+                                } else {
+                                    $deptName = optional(optional($po->user)->department)->name ?? '';
+                                }
+
+                                $jabatanLengkap = trim($roleName . ' ' . $deptName);
+
+                                if (empty($namaTtd)) {
+                                    $namaTtd = $jabatanLengkap;
+                                    $jabatanLengkap = '';
+                                }
+                            @endphp
+
+                            <strong><u>{{ $namaTtd }}</u></strong>
+                            @if(!empty($jabatanLengkap))
+                                <br>
+                                <span style="font-size: 8pt; color: #555;">{{ $jabatanLengkap }}</span>
+                            @else
+                                <br>
+                                <span style="font-size: 8pt; color: transparent;">-</span>
+                            @endif
+                        </div>
                     </td>
-                @endforeach
-            </tr>
-            <tr>
-                <td style="padding: 0 10px 15px 10px;"><u><strong>{{ $po->user->name ?? 'Tim Purchasing' }}</strong></u></td>
-                @foreach($approvals as $app)
-                    @php
-                        $approverName = '<span style="color:#fff;">_</span>';
-                        if ($app->status == 'APPROVED' || $app->status == 'REJECTED') {
-                            $approverName = optional($app->approver)->name ?? optional($app->role)->name;
-                        } else {
-                            $roleName = optional($app->role)->name;
-                            $potentialUsers = \App\Models\User::role($roleName);
-                            if (!empty($app->target_department_id) && $app->target_department_id !== 'all') { $potentialUsers->where('department_id', $app->target_department_id); }
-                            $firstUser = $potentialUsers->first();
-                            if ($firstUser) $approverName = $firstUser->name;
-                        }
-                    @endphp
-                    <td style="padding: 0 10px 15px 10px;"><u><strong>{!! $approverName !!}</strong></u></td>
                 @endforeach
             </tr>
         </table>
