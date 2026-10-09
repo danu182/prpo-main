@@ -2,45 +2,41 @@
 <html lang="id">
 <head>
     <meta charset="UTF-8">
-    <title>BPR - {{ $po->po_number }}</title>
+    <title>Bank Payment Request (Detail) - {{ $po->po_number }}</title>
     <style>
         @page { margin: 40px 40px 60px 40px; }
-        body { font-family: 'Helvetica', 'Arial', sans-serif; font-size: 10pt; color: #000; margin: 0; }
+        body { font-family: 'Helvetica', 'Arial', sans-serif; font-size: 10pt; color: #000; margin: 0; padding: 0; }
         .company-name { font-size: 16pt; font-weight: bold; margin: 0; text-transform: uppercase; }
-        .doc-title { font-size: 12pt; margin: 2px 0 15px 0; }
+        .doc-title { font-size: 12pt; margin: 5px 0 15px 0; }
+
+        /* CSS STANDAR (Sebagai Backup) */
         table { width: 100%; border-collapse: collapse; margin: 0; padding: 0; }
+        .break-text { word-wrap: break-word; word-break: break-all; }
 
-        table.info-table { border: 1px solid #000; border-bottom: none; }
-        table.info-table td { padding: 4px 8px; vertical-align: top; border: none; }
-        .td-divider { border-right: 1px solid #000 !important; }
-
-        table.main-table { border: 1px solid #000; }
-        table.main-table th, table.main-table td { border: 1px solid #000; padding: 6px 8px; vertical-align: middle; }
-        table.main-table th { text-align: center; font-weight: bold; background-color: #fff; }
-
-        table.signature-table { border: 1px solid #000; border-top: none; page-break-inside: avoid; }
-        table.signature-table td { border: none; padding: 10px; vertical-align: top; text-align: left; height: 110px; position: relative; }
-
-        .text-center { text-align: center; } .fw-bold { font-weight: bold; } .break-text { word-wrap: break-word; word-break: break-all; }
         table.amount-box { width: 100%; border: none !important; margin: 0; padding: 0; }
         table.amount-box td { border: none !important; padding: 0 !important; margin: 0 !important; vertical-align: middle; }
-        .curr-txt { text-align: left; width: 1%; padding-right: 5px !important; } .num-txt { text-align: right; }
+        .curr-txt { text-align: left; width: 1%; padding-right: 5px !important; color: #555; font-size: 9pt; }
+        .curr-txt-red { text-align: left; width: 1%; padding-right: 5px !important; color: red; font-size: 9pt; }
+        .num-txt { text-align: right; font-size: 10pt; }
+        .num-txt-red { text-align: right; font-size: 10pt; color: red; }
+
         footer { position: fixed; bottom: -30px; left: 0px; right: 0px; height: 30px; font-size: 8pt; color: #555; font-style: italic; }
     </style>
 </head>
 <body>
+
     @php
         $isDigital = (!isset($type) || $type === 'digital' || $type === 'hybrid');
         $printType = $type ?? 'digital';
-
-        $companyName = optional($po->company)->name ?? optional(optional($po->purchaseRequest)->company)->name ?? 'HITAWASANA';
 
         // 🔥 LOGIKA PENCARIAN SIMBOL MATA UANG 🔥
         $currencyCode = $po->currency ?? 'IDR';
         $currencyData = \App\Models\Currency::where('code', $currencyCode)->first();
         $currency = $currencyData ? $currencyData->symbol : $currencyCode;
 
-        // Distribusi Grand Total (Anti-Rancu)
+        $companyName = optional($po->company)->name ?? optional(optional($po->purchaseRequest)->company)->name ?? 'PT. KANTOR PUSAT';
+
+        // Distribusi Grand Total
         $grandTotal = (float) ($po->grand_total ?? 0);
         $totalGrossAll = 0;
         foreach($po->items as $i) {
@@ -52,7 +48,7 @@
         $runningTotal = 0;
     @endphp
 
-    <footer>* Dokumen ini dicetak otomatis oleh sistem pada {{ \Carbon\Carbon::now()->translatedFormat('d F Y H:i:s') }} WIB</footer>
+    <footer>* Dokumen {{ $isDigital ? 'elektronik' : 'fisik' }} ini diterbitkan oleh sistem ProcureApp pada {{ \Carbon\Carbon::now()->translatedFormat('d M Y H:i:s') }} WIB</footer>
 
     <div class="company-name">{{ $companyName }}</div>
     <div class="doc-title">
@@ -61,44 +57,65 @@
     </div>
 
     {{-- KOTAK INFORMASI --}}
-    <table class="info-table">
+    <table style="width: 100%; border-collapse: collapse; border: 1px solid #000; border-bottom: none;">
         <tr>
-            <td width="13%" style="padding-top: 8px;">Requester</td><td width="2%" style="padding-top: 8px;">:</td>
-            <td width="35%" style="padding-top: 8px;">{{ $po->user->name ?? 'System' }}</td>
-            <td width="13%" style="padding-left: 12px; padding-top: 8px;">Title</td><td width="2%" style="padding-top: 8px;">:</td>
-            <td width="35%" style="padding-top: 8px;">Pembayaran PO</td>
-        </tr>
-        <tr>
-            <td>Department</td><td>:</td><td>{{ optional($po->user->department)->name ?? 'Purchasing' }}</td>
-            <td style="padding-left: 12px;">Bill Ref.</td><td>:</td><td class="fw-bold">{{ $po->po_number }}</td>
-        </tr>
-
-        {{-- 🔥 BARIS BARU UNTUK VENDOR / SUPPLIER 🔥 --}}
-        <tr>
-            <td>Supplier</td><td>:</td>
-            <td>
-                {{ optional($po->vendor)->name ?? 'Vendor' }}
-                @if(!empty($po->vendor_sub_name))
-                    - {{ $po->vendor_sub_name }}
-                @endif
+            <td width="50%" style="padding: 0; vertical-align: top;">
+                <table style="width: 100%; border-collapse: collapse;">
+                    <tr><td style="padding: 6px 8px; width: 100px;">Requester</td><td style="padding: 6px 8px;">: {{ $po->user->name ?? 'Sistem' }}</td></tr>
+                    <tr><td style="padding: 6px 8px;">Department</td><td style="padding: 6px 8px;">: {{ optional($po->user->department)->name ?? 'Purchasing' }}</td></tr>
+                    <tr><td style="padding: 6px 8px;">Request Date</td><td style="padding: 6px 8px;">: {{ date('d-M-y', strtotime($po->po_date ?? $po->created_at)) }}</td></tr>
+                </table>
             </td>
-            <td style="padding-left: 12px;">Payment Due</td><td>:</td><td>{{ $po->due_date ? date('d-M-y', strtotime($po->due_date)) : ($po->delivery_date ? date('d-M-y', strtotime($po->delivery_date)) : '-') }}</td>
-        </tr>
-
-        <tr>
-            <td style="padding-bottom: 8px;">Request Date</td><td style="padding-bottom: 8px;">:</td>
-            <td style="padding-bottom: 8px;">{{ date('d-M-y', strtotime($po->po_date ?? $po->created_at)) }}</td>
-            <td style="padding-left: 12px; padding-bottom: 8px;"></td><td style="padding-bottom: 8px;"></td>
-            <td style="padding-bottom: 8px;"></td>
+            <td width="50%" style="padding: 0; vertical-align: top;">
+                <table style="width: 100%; border-collapse: collapse;">
+                    <tr><td style="padding: 6px 8px; width: 120px;">Title</td><td style="padding: 6px 8px;">: Pembayaran PO</td></tr>
+                    <tr><td style="padding: 6px 8px;">Bill Ref.</td><td style="padding: 6px 8px; font-weight: bold;">: {{ $po->po_number }}</td></tr>
+                    <tr>
+                        <td style="padding: 6px 8px;">Supplier</td>
+                        <td style="padding: 6px 8px;">
+                            : {{ optional($po->vendor)->name ?? $po->vendor_name }}
+                            @if(!empty($po->vendor_sub_name))
+                                - {{ $po->vendor_sub_name }}
+                            @endif
+                        </td>
+                    </tr>
+                    <tr><td style="padding: 6px 8px;">Due Date</td><td style="padding: 6px 8px;">: {{ $po->due_date ? date('d-M-y', strtotime($po->due_date)) : ($po->delivery_date ? date('d-M-y', strtotime($po->delivery_date)) : '-') }}</td></tr>
+                </table>
+            </td>
         </tr>
     </table>
 
-    {{-- TABEL ITEM DETAIL --}}
-    <table class="main-table">
+    {{-- 🔥 TABEL ITEM DETAIL 🔥 --}}
+    @php
+        // PERBAIKAN: Tambahkan +1 agar Account No memanjang sampai menutupi baris Total Amount
+        $rowspanCount = $po->items->count() + 1;
+
+        foreach($po->items as $item) {
+            if((float)($item->discount_amount ?? 0) > 0) $rowspanCount++;
+            if((float)($item->tax_amount ?? 0) > 0) $rowspanCount++;
+        }
+        $sumItemDisc = $po->items->sum('discount_amount');
+        $actualGlobalDisc = (float)($po->discount_total ?? 0) - $sumItemDisc;
+        if($actualGlobalDisc > 0) $rowspanCount++;
+
+        $sumItemTax = $po->items->sum('tax_amount');
+        $actualGlobalTax = (float)($po->tax_total ?? 0) - $sumItemTax;
+        if($actualGlobalTax > 0) $rowspanCount++;
+
+        if(isset($extraDiscounts)) $rowspanCount += count($extraDiscounts);
+        if(isset($charges)) $rowspanCount += count($charges);
+    @endphp
+
+    <table style="width: 100%; border-collapse: collapse; border: 1px solid #000;">
         <thead>
             <tr>
-                <th width="5%">No</th><th width="15%">Invoices No.</th><th width="35%">Description</th>
-                <th width="10%">Reference</th><th width="20%">Total Amount</th><th width="15%">Account No</th>
+                <th style="border: 1px solid #000; padding: 6px 4px; text-align: center; width: 4%;">No</th>
+                <th style="border: 1px solid #000; padding: 6px 4px; text-align: center; width: 13%;">Invoices No.</th>
+                <th style="border: 1px solid #000; padding: 6px 4px; text-align: center; width: 29%;">Description</th>
+                <th style="border: 1px solid #000; padding: 6px 4px; text-align: center; width: 10%;">Qty & Satuan</th>
+                <th style="border: 1px solid #000; padding: 6px 4px; text-align: center; width: 16%;">Unit Price</th>
+                <th style="border: 1px solid #000; padding: 6px 4px; text-align: center; width: 16%;">Total Amount</th>
+                <th style="border: 1px solid #000; padding: 6px 4px; text-align: center; width: 12%;">Account No</th>
             </tr>
         </thead>
         <tbody>
@@ -107,6 +124,8 @@
                     $qty = (float) ($item->qty ?? $item->qty_ordered ?? 1);
                     $price = (float) ($item->unit_price ?? $item->price ?? 0);
                     $gross = $qty * $price;
+                    $discAmt = (float) ($item->discount_amount ?? 0);
+                    $taxAmt = (float) ($item->tax_amount ?? 0);
 
                     if ($loop->last) {
                         $itemFinalNet = $grandTotal - $runningTotal;
@@ -115,7 +134,6 @@
                         $runningTotal += $itemFinalNet;
                     }
 
-                    // Native UOM Extractor
                     $masterItem = $item->item;
                     $baseUomName = strtoupper(optional(optional($masterItem)->uom)->name ?? 'PCS');
                     $rawUom = $item->getRawOriginal('uom');
@@ -138,37 +156,112 @@
                     $cleanUomDisplay = trim(preg_replace('/ \[PO\]| \[PR\]| \[GR\]/i', '', $rawUom));
                 @endphp
                 <tr>
-                    <td class="text-center">{{ $index + 1 }}</td>
-                    <td class="text-center break-text">@if($index === 0) {{ !empty($po->invoice_number) ? wordwrap($po->invoice_number, 14, " ", true) : '-' }} @endif</td>
-                    <td>
-                        <strong>{{ $item->item_name ?? optional($item->item)->name }}</strong>
-                        @if(!empty($item->description) && $item->description !== '-')
-                            <br><span style="font-size: 9pt;">{!! strip_tags($item->description) !!}</span>
-                        @endif
+                    <td style="border: 1px solid #000; padding: 6px 4px; text-align: center;">{{ $index + 1 }}</td>
+                    <td style="border: 1px solid #000; padding: 6px 4px; text-align: center; color: #0d6efd;" class="break-text">@if($index === 0) {{ !empty($po->invoice_number) ? wordwrap($po->invoice_number, 14, " ", true) : '-' }} @endif</td>
+                    <td style="border: 1px solid #000; padding: 6px 4px;">
+                        @if(!empty($po->vendor_sub_name)) <u>{{ optional($po->vendor)->name }} - {{ $po->vendor_sub_name }}</u><br> @endif
+                        <strong style="font-size: 13px;">{{ $item->item_name ?? optional($item->item)->name }}</strong>
+                        @if(!empty($item->description) && $item->description !== '-') <br><span style="font-size: 10px; color: #555;">{!! strip_tags($item->description) !!}</span> @endif
                     </td>
-                    <td align="center" style="vertical-align: middle;">
-                        {{ $qty + 0 }} {{ $cleanUomDisplay }}
+                    <td style="border: 1px solid #000; padding: 6px 4px; text-align: center;">
+                        <strong>{{ $qty }}</strong><br><span style="font-size: 7.5pt; color: #0d6efd; font-weight: bold;">{{ $cleanUomDisplay }}</span>
                     </td>
-                    <td style="padding: 0 4px;">
-                        <table class="amount-box"><tr><td class="curr-txt">{{ $currency }}</td><td class="num-txt">{{ number_format($itemFinalNet, 0, ',', '.') }}</td></tr></table>
+                    {{-- UNIT PRICE --}}
+                    <td style="border: 1px solid #000; padding: 6px 4px; vertical-align: middle;">
+                        <table style="width: 100%; border: none; border-collapse: collapse; margin: 0; padding: 0;">
+                            <tr>
+                                <td style="border: none; padding: 0; text-align: left; width: 1%; white-space: nowrap; color: #555;">-</td>
+                                {{-- <td style="border: none; padding: 0; text-align: left; width: 1%; white-space: nowrap; color: #555;">{{ $currency }}</td>
+                                <td style="border: none; padding: 0; text-align: right; white-space: nowrap;">{{ number_format($price, 0, ',', '.') }}</td> --}}
+                            </tr>
+                        </table>
                     </td>
+
+                    {{-- TOTAL AMOUNT ITEM --}}
+                    <td style="border: 1px solid #000; padding: 6px 4px; vertical-align: middle;">
+                        <table style="width: 100%; border: none; border-collapse: collapse; margin: 0; padding: 0;">
+                            <tr>
+                                <td style="border: none; padding: 0; text-align: left; width: 1%; white-space: nowrap; color: #555;">{{ $currency }}</td>
+                                <td style="border: none; padding: 0; text-align: right; white-space: nowrap;">{{ number_format($itemFinalNet, 0, ',', '.') }}</td>
+                            </tr>
+                        </table>
+                    </td>
+
+                    {{-- ACCOUNT NO DI-SET 'TOP' DENGAN PADDING AGAR SEJAJAR DENGAN BARIS PERTAMA --}}
                     @if($index === 0)
-                    <td rowspan="{{ $po->items->count() + 1 }}" class="text-center break-text fw-bold" style="vertical-align: top; padding-top: 15px; color: #198754;">
-                        {{ !empty($po->account_number) ? wordwrap($po->account_number, 14, " ", true) : '-' }}
+                    <td rowspan="{{ $rowspanCount }}" style="border: 1px solid #000; padding-top: 35px; padding-bottom: 6px; padding-left: 4px; padding-right: 4px; text-align: center; vertical-align: top; font-weight: bold; color: #198754;" class="break-text">
+                        {{ !empty($po->account_number) ? wordwrap($po->account_number, 12, " ", true) : '-' }}
                     </td>
                     @endif
                 </tr>
+
+                @if($discAmt > 0)
+                <tr>
+                    <td style="border: 1px solid #000; border-right: none;"></td><td style="border: 1px solid #000; border-right: none; border-left: none;"></td>
+                    <td style="border: 1px solid #000; color: red; border-left: none;">Diskon Item: {{ $item->item_name ?? optional($item->item)->name }}</td><td style="border: 1px solid #000; text-align: center;">1</td><td style="border: 1px solid #000; text-align: center;">-</td>
+                    <td style="border: 1px solid #000; padding: 6px 4px;"><table class="amount-box"><tr><td class="curr-txt-red">{{ $currency }}</td><td class="num-txt-red">-{{ number_format($discAmt, 0, ',', '.') }}</td></tr></table></td>
+                </tr>
+                @endif
+
+                @if($taxAmt > 0)
+                <tr>
+                    <td style="border: 1px solid #000; border-right: none;"></td><td style="border: 1px solid #000; border-right: none; border-left: none;"></td>
+                    <td style="border: 1px solid #000; border-left: none;">Pajak Item (VAT/PPN)</td><td style="border: 1px solid #000; text-align: center;">1</td><td style="border: 1px solid #000; text-align: center;">-</td>
+                    <td style="border: 1px solid #000; padding: 6px 4px;"><table class="amount-box"><tr><td class="curr-txt">{{ $currency }}</td><td class="num-txt">{{ number_format($taxAmt, 0, ',', '.') }}</td></tr></table></td>
+                </tr>
+                @endif
             @endforeach
+
+            @if($actualGlobalDisc > 0)
             <tr>
-                <td colspan="4" class="text-center fw-bold">Total Amount</td>
-                <td style="padding: 0 4px;"><table class="amount-box fw-bold"><tr><td class="curr-txt">{{ $currency }}</td><td class="num-txt">{{ number_format($po->grand_total, 0, ',', '.') }}</td></tr></table></td>
+                <td style="border: 1px solid #000; border-right: none;"></td><td style="border: 1px solid #000; border-right: none; border-left: none;"></td>
+                <td style="border: 1px solid #000; color: red; border-left: none;">Diskon Header (Global)</td><td style="border: 1px solid #000; text-align: center;">1</td><td style="border: 1px solid #000; text-align: center;">-</td>
+                <td style="border: 1px solid #000; padding: 6px 4px;"><table class="amount-box"><tr><td class="curr-txt-red">{{ $currency }}</td><td class="num-txt-red">-{{ number_format($actualGlobalDisc, 0, ',', '.') }}</td></tr></table></td>
+            </tr>
+            @endif
+
+            @if(isset($extraDiscounts)) @foreach($extraDiscounts as $disc)
+            <tr>
+                <td style="border: 1px solid #000; border-right: none;"></td><td style="border: 1px solid #000; border-right: none; border-left: none;"></td>
+                <td style="border: 1px solid #000; color: red; border-left: none;">{{ $disc->name ?? 'Potongan Tambahan' }}</td><td style="border: 1px solid #000; text-align: center;">1</td><td style="border: 1px solid #000; text-align: center;">-</td>
+                <td style="border: 1px solid #000; padding: 6px 4px;"><table class="amount-box"><tr><td class="curr-txt-red">{{ $currency }}</td><td class="num-txt-red">-{{ number_format($disc->amount, 0, ',', '.') }}</td></tr></table></td>
+            </tr>
+            @endforeach @endif
+
+            @if(isset($charges)) @foreach($charges as $charge)
+            <tr>
+                <td style="border: 1px solid #000; border-right: none;"></td><td style="border: 1px solid #000; border-right: none; border-left: none;"></td>
+                <td style="border: 1px solid #000; border-left: none;">{{ $charge->name ?? 'Biaya Tambahan' }}</td><td style="border: 1px solid #000; text-align: center;">1</td><td style="border: 1px solid #000; text-align: center;">-</td>
+                <td style="border: 1px solid #000; padding: 6px 4px;"><table class="amount-box"><tr><td class="curr-txt">{{ $currency }}</td><td class="num-txt">{{ number_format($charge->amount, 0, ',', '.') }}</td></tr></table></td>
+            </tr>
+            @endforeach @endif
+
+            @if($actualGlobalTax > 0)
+            <tr>
+                <td style="border: 1px solid #000; border-right: none;"></td><td style="border: 1px solid #000; border-right: none; border-left: none;"></td>
+                <td style="border: 1px solid #000; border-left: none;">Pajak Header (VAT/PPN)</td><td style="border: 1px solid #000; text-align: center;">1</td><td style="border: 1px solid #000; text-align: center;">-</td>
+                <td style="border: 1px solid #000; padding: 6px 4px;"><table class="amount-box"><tr><td class="curr-txt">{{ $currency }}</td><td class="num-txt">{{ number_format($actualGlobalTax, 0, ',', '.') }}</td></tr></table></td>
+            </tr>
+            @endif
+
+            {{-- 🔥 PERBAIKAN: PENYESUAIAN PADDING & FONT AGAR AMAN UNTUK NOMINAL PULUHAN/RATUSAN JUTA 🔥 --}}
+            {{-- GRAND TOTAL AMOUNT --}}
+            <tr>
+                <td style="border: 1px solid #000; padding: 10px; text-align: right; font-weight: bold;" colspan="5">Total Amount</td>
+                <td style="border: 1px solid #000; padding: 10px 4px; vertical-align: middle;">
+                    <table style="width: 100%; border: none; border-collapse: collapse; margin: 0; padding: 0;">
+                        <tr>
+                            <td style="border: none; padding: 0; text-align: left; width: 1%; white-space: nowrap; font-weight: normal; font-size: 10pt;">{{ $currency }}</td>
+                            <td style="border: none; padding: 0; text-align: right; white-space: nowrap; font-weight: bold; font-size: 11pt;">{{ number_format($po->grand_total, 0, ',', '.') }}</td>
+                        </tr>
+                    </table>
+                </td>
             </tr>
         </tbody>
     </table>
 
-    {{-- KOTAK TANDA TANGAN --}}
+    {{-- KOTAK TANDA TANGAN (SMART LOOKUP) --}}
     @php
-        // 🔥 PERBAIKAN: Hanya me-load 'role', karena pencarian user sudah kita tangani otomatis di bawah 🔥
         $approvals = \App\Models\DocumentApproval::with(['role'])
             ->where('document_id', $po->id)
             ->whereIn('document_type', ['App\Models\PurchaseOrder', 'PO', 'PurchaseOrder', get_class($po)])
@@ -184,30 +277,28 @@
         }
     @endphp
 
-    <table class="signature-table">
+    <table style="width: 100%; border-collapse: collapse; border: 1px solid #000; border-top: none; table-layout: fixed; page-break-inside: avoid;">
         <tr>
             {{-- KOLOM PEMOHON --}}
-            <td style="width: {{ 100 / ($totalCols > 0 ? $totalCols : 1) }}%;">
-                <div style="margin-bottom: 5px;">Prepared by :</div>
+            <td style="border: none; padding: 10px; vertical-align: top; text-align: center; height: 120px; position: relative;">
+                <div style="text-align: left; margin-bottom: 5px;">Prepared by :</div>
                 <div style="height: 60px; text-align: center;">
-                    @if($isDigital && $prepSigBase64)
+                    @if($prepSigBase64)
                         <img src="{{ $prepSigBase64 }}" style="max-height: 60px; max-width: 140px; object-fit: contain;">
-                    @elseif($isDigital && !$prepSigBase64)
+                    @elseif($isDigital)
                         <div style="display: inline-block; padding: 5px 10px; font-weight: bold; font-size: 10pt; border: 2px solid #198754; color: #198754; margin-top: 15px;">DIAJUKAN</div>
                     @endif
                 </div>
                 <div style="text-align: center; position: absolute; bottom: 10px; width: 100%; left: 0;">
-                    <span class="fw-bold" style="text-decoration: underline;">{{ $po->user->name ?? 'Requester' }}</span><br>
+                    <span style="font-weight: bold; text-decoration: underline;">{{ $po->user->name ?? 'Requester' }}</span><br>
                     <span style="font-size: 7pt; color: #666;">{{ $po->created_at ? $po->created_at->format('d/m/y H:i') : '' }}</span>
                 </div>
             </td>
 
             {{-- KOLOM PERSETUJUAN --}}
             @foreach($approvals as $approval)
-                <td style="width: {{ 100 / ($totalCols > 0 ? $totalCols : 1) }}%;">
-
-                    {{-- LABEL KIRI ATAS --}}
-                    <div style="margin-bottom: 5px; text-align: left;">
+                <td style="border: none; padding: 10px; vertical-align: top; text-align: center; height: 120px; position: relative;">
+                    <div style="text-align: left; margin-bottom: 5px;">
                         @if($loop->last)
                             Approved by :
                         @else
@@ -218,8 +309,6 @@
                             @endif
                         @endif
                     </div>
-
-                    {{-- STATUS DIGITAL ATAU RUANG KOSONG MANUAL --}}
                     <div style="height: 60px; text-align: center;">
                         @if($isDigital)
                             @if($approval->status == 'APPROVED')
@@ -231,8 +320,6 @@
                             @endif
                         @endif
                     </div>
-
-                    {{-- LOGIKA CERDAS PENENTUAN NAMA TANDA TANGAN --}}
                     <div style="text-align: center; position: absolute; bottom: 10px; width: 100%; left: 0;">
                         @php
                             $namaTtd = "";
@@ -245,7 +332,7 @@
 
                             $roleName = optional($approval->role)->name ?? 'Manager';
                             $deptName = '';
-                            if (!empty($approval->target_department_id)) {
+                            if (!empty($approval->target_department_id) && $approval->target_department_id !== 'all') {
                                 $dept = \DB::table('departments')->where('id', $approval->target_department_id)->first();
                                 $deptName = $dept ? $dept->name : '';
                             } else {
@@ -254,24 +341,33 @@
 
                             $jabatanLengkap = trim($roleName . ' ' . $deptName);
 
+                            if (empty($namaTtd) && !empty($roleName)) {
+                                $potentialUsers = \App\Models\User::role($roleName);
+                                if (!empty($approval->target_department_id) && $approval->target_department_id !== 'all') {
+                                    $potentialUsers->where('department_id', $approval->target_department_id);
+                                } elseif (empty($approval->target_department_id)) {
+                                    $potentialUsers->where('department_id', optional($po->user)->department_id);
+                                }
+                                $firstUser = $potentialUsers->first();
+                                if ($firstUser) { $namaTtd = $firstUser->name; }
+                            }
+
                             if (empty($namaTtd)) {
                                 $namaTtd = $jabatanLengkap;
                                 $jabatanLengkap = '';
                             }
                         @endphp
-
-                        <strong><u>{{ $namaTtd }}</u></strong><br>
-
-                        {{-- TRIK PENYEIMBANG: Memastikan tinggi sama dengan kolom pemohon --}}
+                        <span style="font-weight: bold; text-decoration: underline;">{{ $namaTtd }}</span>
                         @if(!empty($jabatanLengkap))
-                            <span style="font-size: 7pt; color: #555;">{{ $jabatanLengkap }}</span>
+                            <br><span style="font-size: 8pt; color: #555;">{{ $jabatanLengkap }}</span>
                         @else
-                            <span style="font-size: 7pt; color: transparent;">-</span>
+                            <br><span style="font-size: 8pt; color: transparent;">-</span>
                         @endif
                     </div>
                 </td>
             @endforeach
         </tr>
     </table>
+
 </body>
 </html>
