@@ -48,12 +48,12 @@
         $runningTotal = 0;
     @endphp
 
-    <footer>* Dokumen {{ $isDigital ? 'elektronik' : 'fisik' }} ini diterbitkan oleh sistem ProcureApp pada {{ \Carbon\Carbon::now()->translatedFormat('d M Y H:i:s') }} WIB</footer>
+    <footer>* Dokumen {{ $isDigital ? 'elektronik' : 'fisik' }} ini diterbitkan oleh sistem ProcureApp pada {{ \Carbon\Carbon::now()->translatedFormat('d M Y H:i:s') }} WIB - @if($isDigital) <span style="font-size: 9pt; color:#666;">(Digital Signature)</span> @else <span style="font-size: 9pt; color:#666;">(Manual Signature)</span> @endif</footer>
 
     <div class="company-name">{{ $companyName }}</div>
     <div class="doc-title">
         Bank Payment Request Form
-        @if($isDigital) <span style="font-size: 9pt; color:#666;">(Digital Signature)</span> @else <span style="font-size: 9pt; color:#666;">(Manual Signature)</span> @endif
+        {{-- @if($isDigital) <span style="font-size: 9pt; color:#666;">(Digital Signature)</span> @else <span style="font-size: 9pt; color:#666;">(Manual Signature)</span> @endif --}}
     </div>
 
     {{-- KOTAK INFORMASI --}}
@@ -170,7 +170,8 @@
                     <td style="border: 1px solid #000; padding: 6px 4px; vertical-align: middle;">
                         <table style="width: 100%; border: none; border-collapse: collapse; margin: 0; padding: 0;">
                             <tr>
-                                <td style="border: none; padding: 0; text-align: left; width: 1%; white-space: nowrap; color: #555;">-</td>
+                                <td style="text-align: center;">-</td>
+                                {{-- <td style="border: none; padding: 0; text-align: left; width: 1%; white-space: nowrap; color: #555;"></td> --}}
                                 {{-- <td style="border: none; padding: 0; text-align: left; width: 1%; white-space: nowrap; color: #555;">{{ $currency }}</td>
                                 <td style="border: none; padding: 0; text-align: right; white-space: nowrap;">{{ number_format($price, 0, ',', '.') }}</td> --}}
                             </tr>

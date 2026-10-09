@@ -609,7 +609,7 @@ class PurchaseOrderController extends Controller
                 $poGrandTotal = $dppAfterGlobalDisc + $poGlobalTax + $poChargeTotal - $poExtraDiscountTotal;
 
                 $po->update([
-                    'vendor_sub_name'       => $request->vendor_sub_name, // 🔥 TAMBAHKAN INI UNTUK UPDATE NAMA TOKO 🔥
+                    'vendor_sub_name'       => $request->vendor_sub_name,
                     'bill_to_company_id'    => $request->billing_company_id,
                     'shipping_address'      => $request->shipping_address,
                     'payment_terms'         => \App\Models\PaymentTerm::find($request->payment_term_id)->name ?? null,
@@ -641,6 +641,7 @@ class PurchaseOrderController extends Controller
                 $customWorkflowId = $request->input('custom_workflow_id');
                 $needsApproval = false;
 
+                // Bersihkan Approval Lama
                 \App\Models\DocumentApproval::where('document_id', $po->id)
                     ->whereIn('document_type', [get_class($po), 'App\Models\PurchaseOrder', 'PO', 'PurchaseOrder'])
                     ->delete();
@@ -656,6 +657,7 @@ class PurchaseOrderController extends Controller
                                 'document_type'        => get_class($po),
                                 'role_id'              => $step->role_id,
                                 'target_department_id' => $targetDept,
+                                'user_id'              => $step->user_id, // 🔥 TAMBAHAN PENTING UNTUK CUSTOM WORKFLOW
                                 'step_order'           => $step->step_order,
                                 'status'               => 'PENDING',
                                 'created_at'           => now(),
@@ -696,99 +698,60 @@ class PurchaseOrderController extends Controller
 
 
     // =========================================================================
-    // 6. EDIT PO PAGE
+    // 3. EDIT (FORM EDIT PO BERBASIS SLUG)
     // =========================================================================
     public function edit($slug)
     {
-        $po = \App\Models\PurchaseOrder::with(['items.item.itemUoms', 'vendor', 'status', 'attachments'])->where('po_number',$slug)->firstOrFail();
+        $po = \App\Models\PurchaseOrder::with(['items', 'status', 'charges'])->where('po_number', $slug)->firstOrFail();
 
         if (!in_array(strtolower(optional($po->status)->slug ?? ''), ['draft', 'pending_approval', 'pending', 'rejected', ''])) {
-            return redirect()->route('po.index')->with('error', 'Gagal: PO ini sudah tidak dapat diedit karena statusnya ' . optional($po->status)->name);
+            return back()->with('error', 'Gagal: PO ini sudah tidak dapat diedit karena statusnya ' . optional($po->status)->name);
         }
 
-        $vendors = \App\Models\Vendor::all();
-        $companies = \App\Models\Company::all();
-        $paymentTerms = \App\Models\PaymentTerm::all();
-        $taxes = \App\Models\Tax::all();
-        $chargeTypes = \App\Models\ChargeType::where('is_active', 1)->get();
-        $currencies = \App\Models\Currency::all();
-        $discountTypes = \App\Models\DiscountType::where('is_active', 1)->get();
-        $charges = \Illuminate\Support\Facades\DB::table('purchase_order_charges')->where('purchase_order_id',$po->id)->get();
-        $extraDiscounts = \Illuminate\Support\Facades\DB::table('purchase_order_discounts')->where('purchase_order_id',$po->id)->get();
+        $companies     = \App\Models\Company::orderBy('name')->get();
+        $vendors       = \App\Models\Vendor::orderBy('name')->get();
+        $paymentTerms  = \App\Models\PaymentTerm::orderBy('name')->get();
+        $currencies    = \App\Models\Currency::where('is_active', true)->orderBy('name')->get();
+        $taxes         = \App\Models\Tax::where('is_active', true)->orderBy('name')->get();
+        $chargeTypes   = \App\Models\ChargeType::where('is_active', true)->orderBy('name')->get();
+        $discountTypes = \App\Models\DiscountType::where('is_active', true)->orderBy('name')->get();
+        $uoms          = \App\Models\Uom::orderBy('name')->get();
+        $masterItems   = \App\Models\Item::with(['uom', 'itemUoms'])->orderBy('name')->get();
 
-        $poItemIds =$po->items->pluck('id')->toArray();
-        $itemAttachments = \Illuminate\Support\Facades\DB::table('purchase_order_item_attachments')->whereIn('purchase_order_item_id',$poItemIds)->get();
-        foreach ($po->items as $item) {
-            $item->raw_attachments = $itemAttachments->where('purchase_order_item_id',$item->id)->values();
-        }
+        $charges        = $po->charges ?? collect([]);
+        $extraDiscounts = \Illuminate\Support\Facades\DB::table('purchase_order_discounts')->where('purchase_order_id', $po->id)->get();
+        $attachments    = \Illuminate\Support\Facades\DB::table('purchase_order_attachments')->where('purchase_order_id', $po->id)->get();
 
         $customWorkflows = [];
         $selectedWorkflowId = null;
 
+        // 🔥 PERBAIKAN: Membatasi agar pilihan Workflow yang muncul hanyalah untuk dokumen PO
         if (class_exists('\App\Models\ApprovalWorkflow')) {
             $customWorkflows = \App\Models\ApprovalWorkflow::with('steps')
                 ->where('is_active', true)
-                ->whereIn('document_type', ['PO', 'App\Models\PurchaseOrder', 'PurchaseOrder'])
+                ->whereIn('document_type', ['PurchaseOrder', 'PO', 'App\Models\PurchaseOrder'])
                 ->get();
 
             $historyLog = \App\Models\History::where('record_id', $po->id)
                 ->whereIn('record_type', [get_class($po), 'App\Models\PurchaseOrder', 'PO', 'PurchaseOrder'])
                 ->where('action', 'SYSTEM')
-                ->where(function($q) {
-                    $q->where('note', 'like', 'Menggunakan Rute Persetujuan Khusus:%')
-                      ->orWhere('note', 'like', 'Menggunakan Rute Persetujuan Khusus (Update):%');
-                })
-                ->orderBy('id', 'desc')
-                ->first();
-
-            if (!$historyLog && class_exists('\App\Models\PurchaseOrderHistory')) {
-                $historyLog = \App\Models\PurchaseOrderHistory::where('purchase_order_id', $po->id)
-                    ->where('action', 'SYSTEM')
-                    ->where(function($q) {
-                        $q->where('note', 'like', 'Menggunakan Rute Persetujuan Khusus:%')
-                          ->orWhere('note', 'like', 'Menggunakan Rute Persetujuan Khusus (Update):%');
-                    })
-                    ->orderBy('id', 'desc')
-                    ->first();
-            }
+                ->where('note', 'like', 'Menggunakan Rute Persetujuan Khusus%')
+                ->orderBy('id', 'desc')->first();
 
             if ($historyLog) {
-                $workflowName = trim(str_replace(['Menggunakan Rute Persetujuan Khusus:', 'Menggunakan Rute Persetujuan Khusus (Update):'], '', $historyLog->note));
+                $workflowName = trim(str_replace(['Menggunakan Rute Persetujuan Khusus (Update):', 'Menggunakan Rute Persetujuan Khusus:'], '', $historyLog->note));
                 $matchedWorkflow = $customWorkflows->where('name', $workflowName)->first();
                 if ($matchedWorkflow) {
                     $selectedWorkflowId = $matchedWorkflow->id;
                 }
             }
-
-            if (!$selectedWorkflowId) {
-                $currentApprovals = \App\Models\DocumentApproval::where('document_id', $po->id)
-                    ->whereIn('document_type', [get_class($po), 'App\Models\PurchaseOrder', 'PO', 'PurchaseOrder'])
-                    ->orderBy('step_order', 'asc')
-                    ->get();
-
-                if ($currentApprovals->count() > 0 && $customWorkflows->count() > 0) {
-                    foreach ($customWorkflows as $cw) {
-                        $cwSteps = $cw->steps->sortBy('step_order')->values();
-                        if ($cwSteps->count() === $currentApprovals->count() && $cwSteps->count() > 0) {
-                            $isMatch = true;
-                            foreach ($cwSteps as $index => $step) {
-                                if ($step->role_id != $currentApprovals[$index]->role_id) {
-                                    $isMatch = false; break;
-                                }
-                            }
-                            if ($isMatch) {
-                                $selectedWorkflowId = $cw->id; break;
-                            }
-                        }
-                    }
-                }
-            }
         }
 
         return view('po.edit', compact(
-            'po', 'vendors', 'companies', 'paymentTerms', 'taxes', 'chargeTypes',
-            'currencies', 'charges', 'discountTypes', 'extraDiscounts',
-            'customWorkflows', 'selectedWorkflowId'
+            'po', 'companies', 'vendors', 'paymentTerms', 'currencies',
+            'masterItems', 'uoms', 'taxes', 'chargeTypes', 'discountTypes',
+            'customWorkflows', 'selectedWorkflowId',
+            'charges', 'extraDiscounts', 'attachments'
         ));
     }
 
@@ -2349,8 +2312,6 @@ class PurchaseOrderController extends Controller
                     $po->po_number, // K: Nomer Dokumen (PO Number)
                     $po->user->name ?? 'System', // L: Create by
                     '-', // M: Keterangan BPR/PO (Kosong untuk anak)
-
-                    // 🔥 BERSIHKAN HTML DARI SPESIFIKASI 🔥
                     html_entity_decode(strip_tags($item->description ?? '-')) // N: Spesifikasi Detail
                 ];
             }
@@ -2366,7 +2327,7 @@ class PurchaseOrderController extends Controller
                 ];
             }
 
-            // 3. LOOPING POTONGAN/DISKON PO
+            // 3. LOOPING POTONGAN/DISKON TAMBAHAN PO
             $discounts = \DB::table('purchase_order_discounts')->where('purchase_order_id', $po->id)->get();
             foreach ($discounts as $discount) {
                 $childRows[] = [
@@ -2376,6 +2337,49 @@ class PurchaseOrderController extends Controller
                     $po->invoice_number ?? '-', $po->account_number ?? '-', $po->po_number, $po->user->name ?? 'System', '-', '-'
                 ];
             }
+
+            // =========================================================================
+            // 🔥 3.5. LOGIKA BARU: SINKRONISASI DISKON GLOBAL & PAJAK GLOBAL 🔥
+            // =========================================================================
+
+            // A. HITUNG DISKON GLOBAL (Komersial) MURNI DARI HEADER
+            $sumItemDisc = $po->items->sum('discount_amount');
+            $actualGlobalDisc = (float)($po->discount_total ?? 0) - $sumItemDisc;
+
+            if ($actualGlobalDisc > 0) {
+                // Buat label persentasenya jika tipe persen
+                $labelDiskonGlobal = "Diskon Komersial (Global)";
+                if (isset($po->global_discount_type) && strtoupper($po->global_discount_type) === 'PERCENT') {
+                    $labelDiskonGlobal = "Diskon Komersial {$po->global_discount_value}%";
+                }
+
+                $childRows[] = [
+                    $poDate, $companyName, $vendorName,
+                    "  ↳ [-] " . $labelDiskonGlobal, 'Potongan / Diskon',
+                    -$actualGlobalDisc, 0, -$actualGlobalDisc,
+                    $po->invoice_number ?? '-', $po->account_number ?? '-', $po->po_number, $po->user->name ?? 'System', '-', '-'
+                ];
+            }
+
+            // B. HITUNG PAJAK GLOBAL (VAT/PPN) MURNI DARI HEADER
+            $sumItemTax = $po->items->sum('tax_amount');
+            $actualGlobalTax = (float)($po->tax_total ?? 0) - $sumItemTax;
+
+            if ($actualGlobalTax > 0) {
+                // Buat label persentasenya jika tipe persen
+                $labelPajakGlobal = "Pajak Header (VAT/PPN)";
+                if (isset($po->global_tax_type) && strtoupper($po->global_tax_type) === 'PERCENT') {
+                    $labelPajakGlobal = "Pajak (VAT/PPN) {$po->global_tax_value}%";
+                }
+
+                $childRows[] = [
+                    $poDate, $companyName, $vendorName,
+                    "  ↳ [+] " . $labelPajakGlobal, 'Pajak',
+                    $actualGlobalTax, 0, $actualGlobalTax,
+                    $po->invoice_number ?? '-', $po->account_number ?? '-', $po->po_number, $po->user->name ?? 'System', '-', '-'
+                ];
+            }
+            // =========================================================================
 
             // 4. FORMAT BARIS INDUK (PARENT SUMMARY)
             $globalDiscLabel = "";
@@ -2433,4 +2437,7 @@ class PurchaseOrderController extends Controller
             \Log::error("Gagal Sync PO ke Sheet: " . $e->getMessage());
         }
     }
+
+
+
 }
