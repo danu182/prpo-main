@@ -11,7 +11,6 @@
 
         .wrapper { width: 100%; }
 
-        /* 🔥 CSS BORDER SUPER CLEAN (Mencegah Garis Tebal/Dobel di DomPDF) 🔥 */
         table.info-table { width: 100%; border-collapse: collapse; border: 1px solid #000; border-bottom: none; }
         table.info-table .inner-table td { padding: 6px 8px; border: none; vertical-align: top; }
 
@@ -46,6 +45,13 @@
         $currency = $currencyData ? $currencyData->symbol : $currencyCode;
 
         $companyName = optional($po->company)->name ?? optional(optional($po->purchaseRequest)->company)->name ?? 'PT. KANTOR PUSAT';
+
+        // ==============================================================================
+        // 🔥 SOLUSI ANTI-BADAI: PAKSA PDF UNTUK QUERY SENDIRI BIAYA & POTONGAN TAMBAHAN
+        // JIKA CONTROLLER LUPA MENGIRIMKANNYA 🔥
+        // ==============================================================================
+        $charges = \Illuminate\Support\Facades\DB::table('purchase_order_charges')->where('purchase_order_id', $po->id)->get();
+        $extraDiscounts = \Illuminate\Support\Facades\DB::table('purchase_order_discounts')->where('purchase_order_id', $po->id)->get();
     @endphp
 
     <footer>Dokumen {{ $isDigital ? 'elektronik' : 'fisik' }} ini diterbitkan oleh sistem ProcureApp pada {{ \Carbon\Carbon::now()->translatedFormat('d M Y H:i:s') }} WIB</footer>
@@ -84,12 +90,17 @@
         </table>
 
         @php
-            $rowspanCount = $po->items->count() + 1;
+            // PERHITUNGAN PANJANG KOLOM AKUN
+            $rowspanCount = $po->items->count() + 1; // +1 untuk GRAND TOTAL
+
             foreach($po->items as $item) {
                 if((float)($item->discount_amount ?? 0) > 0) $rowspanCount++;
                 if((float)($item->tax_amount ?? 0) > 0) $rowspanCount++;
             }
-            if(isset($charges)) $rowspanCount += count($charges);
+
+            // Tambahkan baris Biaya Tambahan & Potongan Tambahan
+            $rowspanCount += count($charges);
+            $rowspanCount += count($extraDiscounts);
 
             $sumItemDisc = $po->items->sum('discount_amount');
             $actualGlobalDisc = (float)($po->discount_total ?? 0) - $sumItemDisc;
@@ -98,8 +109,6 @@
             $sumItemTax = $po->items->sum('tax_amount');
             $actualGlobalTax = (float)($po->tax_total ?? 0) - $sumItemTax;
             if($actualGlobalTax > 0) $rowspanCount++;
-
-            if(isset($extraDiscounts)) $rowspanCount += count($extraDiscounts);
         @endphp
 
         {{-- TABEL GRID ITEM DETAIL --}}
@@ -167,7 +176,7 @@
                             <span style="font-size: 7.5pt; color: #0d6efd; font-weight: bold;">{{ $cleanUomDisplay }}</span>
                         </td>
 
-                        <td>
+                        <td style="padding: 6px 4px;">
                             <table class="amount-box">
                                 <tr>
                                     <td class="curr-txt">{{ $currency }}</td>
@@ -175,7 +184,7 @@
                                 </tr>
                             </table>
                         </td>
-                        <td>
+                        <td style="padding: 6px 4px;">
                             <table class="amount-box">
                                 <tr>
                                     <td class="curr-txt">{{ $currency }}</td>
@@ -191,7 +200,6 @@
                         @endif
                     </tr>
 
-                    {{-- GABUNGAN COLSPAN UNTUK MENGHILANGKAN BORDER BERANTAKAN DI BARIS TAMBAHAN --}}
                     @if($discAmt > 0)
                     <tr>
                         <td colspan="2" style="border-right: none;"></td>
@@ -218,6 +226,39 @@
                     @endif
                 @endforeach
 
+                {{-- =============================================== --}}
+                {{-- BIAYA TAMBAHAN --}}
+                {{-- =============================================== --}}
+                @foreach($charges as $charge)
+                <tr>
+                    <td colspan="2" style="border-right: none;"></td>
+                    <td style="border-left: none;">{{ $charge->name ?? 'Biaya Tambahan' }}</td>
+                    <td style="text-align: center;">1</td><td style="text-align: center;">-</td>
+                    <td>
+                        <table class="amount-box">
+                            <tr><td class="curr-txt">{{ $currency }}</td><td class="num-txt">{{ number_format($charge->amount, 0, ',', '.') }}</td></tr>
+                        </table>
+                    </td>
+                </tr>
+                @endforeach
+
+                {{-- =============================================== --}}
+                {{-- POTONGAN TAMBAHAN (VOUCHER/CASHBACK) --}}
+                {{-- =============================================== --}}
+                @foreach($extraDiscounts as $disc)
+                <tr>
+                    <td colspan="2" style="border-right: none;"></td>
+                    <td style="color: red; border-left: none;">{{ $disc->name ?? 'Potongan Tambahan' }}</td>
+                    <td style="text-align: center;">1</td><td style="text-align: center;">-</td>
+                    <td>
+                        <table class="amount-box">
+                            <tr><td class="curr-txt" style="color: red;">{{ $currency }}</td><td class="num-txt" style="color: red;">-{{ number_format($disc->amount, 0, ',', '.') }}</td></tr>
+                        </table>
+                    </td>
+                </tr>
+                @endforeach
+
+                {{-- DISKON GLOBAL --}}
                 @if($actualGlobalDisc > 0)
                 <tr>
                     <td colspan="2" style="border-right: none;"></td>
@@ -231,32 +272,7 @@
                 </tr>
                 @endif
 
-                @if(isset($extraDiscounts)) @foreach($extraDiscounts as $disc)
-                <tr>
-                    <td colspan="2" style="border-right: none;"></td>
-                    <td style="color: red; border-left: none;">{{ $disc->name ?? 'Potongan Tambahan' }}</td>
-                    <td style="text-align: center;">1</td><td style="text-align: center;">-</td>
-                    <td>
-                        <table class="amount-box">
-                            <tr><td class="curr-txt" style="color: red;">{{ $currency }}</td><td class="num-txt" style="color: red;">-{{ number_format($disc->amount, 0, ',', '.') }}</td></tr>
-                        </table>
-                    </td>
-                </tr>
-                @endforeach @endif
-
-                @if(isset($charges)) @foreach($charges as $charge)
-                <tr>
-                    <td colspan="2" style="border-right: none;"></td>
-                    <td style="border-left: none;">{{ $charge->name ?? 'Biaya Tambahan' }}</td>
-                    <td style="text-align: center;">1</td><td style="text-align: center;">-</td>
-                    <td>
-                        <table class="amount-box">
-                            <tr><td class="curr-txt">{{ $currency }}</td><td class="num-txt">{{ number_format($charge->amount, 0, ',', '.') }}</td></tr>
-                        </table>
-                    </td>
-                </tr>
-                @endforeach @endif
-
+                {{-- PAJAK GLOBAL --}}
                 @if($actualGlobalTax > 0)
                 <tr>
                     <td colspan="2" style="border-right: none;"></td>
@@ -270,6 +286,7 @@
                 </tr>
                 @endif
 
+                {{-- GRAND TOTAL --}}
                 <tr>
                     <td colspan="5" style="padding: 10px; text-align: right; font-weight: bold; vertical-align: middle;">GRAND TOTAL</td>
                     <td style="padding: 10px 4px; vertical-align: middle;">

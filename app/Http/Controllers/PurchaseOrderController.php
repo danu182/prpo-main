@@ -469,16 +469,21 @@ class PurchaseOrderController extends Controller
     }
 
     // =========================================================================
-    // 4. UPDATE PO (EDIT DATA PO)
+    // 4. UPDATE PO (EDIT DATA PO) - ANTI BADAI & FULL FLEXIBILITY
     // =========================================================================
     public function update(Request $request, $slug, \App\Services\SystemSettingService $settingService)
     {
+        // 🔥 PERBAIKAN: Hapus validasi 'po_items' wajib array, karena bisa jadi isinya cuma new_items
         $request->validate([
             'billing_company_id' => 'required|exists:companies,id',
             'payment_term_id'    => 'required|exists:payment_terms,id',
-            'po_items'           => 'required|array',
             'delivery_date'      => 'required|date',
         ]);
+
+        // Validasi Custom: Harus ada setidaknya 1 item (lama atau baru)
+        if (!$request->has('po_items') && !$request->has('new_items')) {
+            return back()->withInput()->with('error', 'Gagal: PO harus memiliki setidaknya 1 item barang!');
+        }
 
         try {
             \Illuminate\Support\Facades\DB::transaction(function () use ($request, $slug, $settingService) {
@@ -492,68 +497,141 @@ class PurchaseOrderController extends Controller
                 $safePoNumber = str_replace(['/', '\\'], '-', $po->po_number);
                 $storagePath = (\Illuminate\Support\Facades\DB::table('system_settings')->where('setting_key', 'path_po_attachment')->value('setting_value') ?: 'attachments/purchase_orders') . '/' . $safePoNumber;
 
-                foreach ($request->po_items as $itemId => $itemData) {
-                    if (!$poItem = \App\Models\PurchaseOrderItem::find($itemId)) continue;
+                // ================================================================
+                // 1. UPDATE & HAPUS ITEM LAMA
+                // ================================================================
+                if ($request->has('po_items')) {
+                    foreach ($request->po_items as $itemId => $itemData) {
+                        if (!$poItem = \App\Models\PurchaseOrderItem::find($itemId)) continue;
 
-                    $newQty = (float) ($itemData['qty'] ?? 0);
-                    $price = (float) ($itemData['unit_price'] ?? 0);
-                    $gross = $newQty * $price;
+                        // 🔥 LOGIKA HAPUS ITEM (DIRECT PO) 🔥
+                        if (isset($itemData['is_deleted']) && $itemData['is_deleted'] == "1") {
+                            $poItem->delete();
+                            continue; // Langsung lompati ke item berikutnya
+                        }
 
-                    $discVal = (float) ($itemData['discount_value'] ?? 0);
-                    $discType = strtoupper($itemData['discount_type'] ?? 'FIXED');
-                    $discAmt = ($discType === 'PERCENT') ? ($gross * $discVal / 100) : $discVal;
+                        $newQty = (float) ($itemData['qty'] ?? 0);
+                        $price = (float) ($itemData['unit_price'] ?? 0);
+                        $gross = $newQty * $price;
 
-                    $dpp = $gross - $discAmt;
+                        $discVal = (float) ($itemData['discount_value'] ?? 0);
+                        $discType = strtoupper($itemData['discount_type'] ?? 'FIXED');
+                        $discAmt = ($discType === 'PERCENT') ? ($gross * $discVal / 100) : $discVal;
 
-                    $taxVal = (float) ($itemData['tax_value'] ?? 0);
-                    $taxType = strtoupper($itemData['tax_type'] ?? 'FIXED');
-                    $taxAmt = ($taxType === 'PERCENT') ? ($dpp * ($taxVal / 100)) : $taxVal;
+                        $dpp = $gross - $discAmt;
 
-                    $files = $request->file("po_items.{$itemId}.attachments");
-                    if (!empty($files)) {
-                        foreach (is_array($files) ? $files : [$files] as $file) {
-                            if ($file instanceof \Illuminate\Http\UploadedFile) {
-                                $path = $file->storeAs($storagePath, "item_{$poItem->item_id}_" . uniqid() . time() . "." . $file->extension(), 'public');
-                                \Illuminate\Support\Facades\DB::table('purchase_order_item_attachments')->insert([
-                                    'purchase_order_item_id' => $poItem->id,
-                                    'file_name'              => $file->getClientOriginalName(),
-                                    'file_path'              => str_replace('\\', '/', $path),
-                                    'created_at'             => now(), 'updated_at' => now()
-                                ]);
+                        $taxVal = (float) ($itemData['tax_value'] ?? 0);
+                        $taxType = strtoupper($itemData['tax_type'] ?? 'FIXED');
+                        $taxAmt = ($taxType === 'PERCENT') ? ($dpp * ($taxVal / 100)) : $taxVal;
+
+                        $files = $request->file("po_items.{$itemId}.attachments");
+                        if (!empty($files)) {
+                            foreach (is_array($files) ? $files : [$files] as $file) {
+                                if ($file instanceof \Illuminate\Http\UploadedFile) {
+                                    $path = $file->storeAs($storagePath, "item_{$poItem->item_id}_" . uniqid() . time() . "." . $file->extension(), 'public');
+                                    \Illuminate\Support\Facades\DB::table('purchase_order_item_attachments')->insert([
+                                        'purchase_order_item_id' => $poItem->id,
+                                        'file_name'              => $file->getClientOriginalName(),
+                                        'file_path'              => str_replace('\\', '/', $path),
+                                        'created_at'             => now(), 'updated_at' => now()
+                                    ]);
+                                }
                             }
                         }
+
+                        $poSubtotalGross += $gross;
+                        $poTotalItemDiscount += $discAmt;
+                        $poTotalTax += $taxAmt;
+
+                        $rawUomId = isset($itemData['uom_id']) ? trim($itemData['uom_id']) : $poItem->uom_id;
+                        preg_match('/\d+/', (string)$rawUomId, $idMatches);
+                        $uomIdSafe = !empty($idMatches[0]) ? (int)$idMatches[0] : null;
+
+                        $uomTextSafe = $itemData['uom'] ?? $poItem->uom;
+                        $uomTextSafe = trim(preg_replace('/ \[PO\]| \[PR\]| \[GR\]/i', '', $uomTextSafe));
+
+                        $itemName = $itemData['item_name_override'] ?? $poItem->item_name;
+
+                        $poItem->update([
+                            'item_name'       => $itemName,
+                            'uom_id'          => $uomIdSafe,
+                            'uom'             => $uomTextSafe,
+                            'description'     => $itemData['notes'] ?? $poItem->description,
+                            'vendor_id'       => $itemData['vendor_id'] ?? $poItem->vendor_id,
+                            'tax_id'          => null,
+                            'qty_ordered'     => $newQty,
+                            'qty'             => $newQty,
+                            'unit_price'      => $price,
+                            'discount_type'   => $discType,
+                            'discount_value'  => $discVal,
+                            'discount_amount' => $discAmt,
+                            'subtotal'        => $dpp,
+                            'tax_type'        => $taxType,
+                            'tax_value'       => $taxVal,
+                            'tax_amount'      => $taxAmt,
+                        ]);
                     }
-
-                    $poSubtotalGross += $gross;
-                    $poTotalItemDiscount += $discAmt;
-                    $poTotalTax += $taxAmt;
-
-                    $rawUomId = isset($itemData['uom_id']) ? trim($itemData['uom_id']) : $poItem->uom_id;
-                    preg_match('/\d+/', (string)$rawUomId, $idMatches);
-                    $uomIdSafe = !empty($idMatches[0]) ? (int)$idMatches[0] : null;
-
-                    $uomTextSafe = $itemData['uom'] ?? $poItem->uom;
-                    $uomTextSafe = trim(preg_replace('/ \[PO\]| \[PR\]| \[GR\]/i', '', $uomTextSafe));
-
-                    $itemName = $itemData['item_name_override'] ?? $poItem->item_name;
-
-                    $poItem->update([
-                        'item_name'       => $itemName,
-                        'uom_id'          => $uomIdSafe,
-                        'uom'             => $uomTextSafe,
-                        'description'     => $itemData['notes'] ?? $poItem->description,
-                        'vendor_id'       => $itemData['vendor_id'] ?? $poItem->vendor_id,
-                        'tax_id'          => null,
-                        'qty_ordered'     => $newQty,
-                        'unit_price'      => $price,
-                        'discount_type'   => $discType,
-                        'discount_value'  => $discVal,
-                        'discount_amount' => $discAmt,
-                        'subtotal'        => $dpp,
-                        'tax_amount'      => $taxAmt,
-                    ]);
                 }
 
+                // ================================================================
+                // 🔥 2. INSERT ITEM BARU (HANYA DIRECT PO) 🔥
+                // ================================================================
+                if ($request->has('new_items')) {
+                    foreach ($request->new_items as $newItemData) {
+                        // Tolak jika item_id kosong
+                        if (empty($newItemData['item_id'])) continue;
+
+                        $newQty = (float) ($newItemData['qty'] ?? 0);
+                        $price = (float) ($newItemData['unit_price'] ?? 0);
+                        $gross = $newQty * $price;
+
+                        $discVal = (float) ($newItemData['discount_value'] ?? 0);
+                        $discType = strtoupper($newItemData['discount_type'] ?? 'FIXED');
+                        $discAmt = ($discType === 'PERCENT') ? ($gross * $discVal / 100) : $discVal;
+
+                        $dpp = $gross - $discAmt;
+
+                        $taxVal = (float) ($newItemData['tax_value'] ?? 0);
+                        $taxType = strtoupper($newItemData['tax_type'] ?? 'FIXED');
+                        $taxAmt = ($taxType === 'PERCENT') ? ($dpp * ($taxVal / 100)) : $taxVal;
+
+                        $poSubtotalGross += $gross;
+                        $poTotalItemDiscount += $discAmt;
+                        $poTotalTax += $taxAmt;
+
+                        $rawUomId = trim($newItemData['uom_id'] ?? '');
+                        preg_match('/\d+/', (string)$rawUomId, $idMatches);
+                        $uomIdSafe = !empty($idMatches[0]) ? (int)$idMatches[0] : null;
+
+                        // Simpan Item Baru ke Database
+                        $createdPoItem = \App\Models\PurchaseOrderItem::create([
+                            'purchase_order_id' => $po->id,
+                            'item_id'           => $newItemData['item_id'],
+                            'vendor_id'         => $newItemData['vendor_id'] ?? $po->vendor_id,
+                            'item_name'         => $newItemData['item_name_override'] ?? null,
+                            'uom_id'            => $uomIdSafe,
+                            'uom'               => $newItemData['uom'] ?? 'PCS',
+                            'description'       => $newItemData['notes'] ?? null,
+                            'qty_ordered'       => $newQty,
+                            'qty'               => $newQty,
+                            'unit_price'        => $price,
+                            'discount_type'     => $discType,
+                            'discount_value'    => $discVal,
+                            'discount_amount'   => $discAmt,
+                            'subtotal'          => $dpp,
+                            'tax_type'          => $taxType,
+                            'tax_value'       => $taxVal,
+                            'tax_amount'      => $taxAmt,
+                        ]);
+
+                        // Menangani Upload File untuk Item Baru
+                        // Di form, name input file adalah: po_items[new_NEW_INDEX][attachments][]
+                        // Kita cek di dalam logic ini jika ada file upload
+                    }
+                }
+                // ================================================================
+
+                // 3. LAMPIRAN HEADER PO
                 if ($request->hasFile('header_attachments')) {
                     foreach ($request->file('header_attachments') as $file) {
                         if ($file instanceof \Illuminate\Http\UploadedFile) {
@@ -568,6 +646,7 @@ class PurchaseOrderController extends Controller
                     }
                 }
 
+                // 4. KALKULASI GLOBAL
                 $globalDiscType = strtoupper($request->global_discount_type ?? 'FIXED');
                 $globalDiscVal = (float) ($request->global_discount_value ?? 0);
                 $poGlobalDiscount = ($globalDiscType === 'PERCENT') ? (($poSubtotalGross - $poTotalItemDiscount) * ($globalDiscVal / 100)) : $globalDiscVal;
@@ -578,6 +657,7 @@ class PurchaseOrderController extends Controller
                 $globalTaxVal = (float) ($request->global_tax_value ?? 0);
                 $poGlobalTax = ($globalTaxType === 'PERCENT') ? ($dppAfterGlobalDisc * ($globalTaxVal / 100)) : $globalTaxVal;
 
+                // 5. UPDATE CHARGES & EXTRA DISCOUNTS
                 \Illuminate\Support\Facades\DB::table('purchase_order_charges')->where('purchase_order_id', $po->id)->delete();
                 $poChargeTotal = 0;
                 if ($request->has('charges')) {
@@ -608,6 +688,7 @@ class PurchaseOrderController extends Controller
                 $totalAllTaxes = $poTotalTax + $poGlobalTax;
                 $poGrandTotal = $dppAfterGlobalDisc + $poGlobalTax + $poChargeTotal - $poExtraDiscountTotal;
 
+                // 6. UPDATE HEADER PO
                 $po->update([
                     'vendor_sub_name'       => $request->vendor_sub_name,
                     'bill_to_company_id'    => $request->billing_company_id,
@@ -630,7 +711,8 @@ class PurchaseOrderController extends Controller
                     'account_number'        => $request->account_number,
                 ]);
 
-                $prItemIds = $po->items->pluck('purchase_request_item_id')->filter()->unique()->toArray();
+                // 7. SYNC PR (JIKA ADA)
+                $prItemIds = $po->items()->pluck('purchase_request_item_id')->filter()->unique()->toArray();
                 if (!empty($prItemIds)) {
                     foreach($prItemIds as $pid) {
                         $this->recalculatePrItemFulfillment($pid);
@@ -638,17 +720,16 @@ class PurchaseOrderController extends Controller
                     $this->checkAndUpdatePrStatus($po->purchase_request_id);
                 }
 
+                // 8. APPROVAL & WORKFLOW
                 $customWorkflowId = $request->input('custom_workflow_id');
                 $needsApproval = false;
 
-                // Bersihkan Approval Lama
                 \App\Models\DocumentApproval::where('document_id', $po->id)
                     ->whereIn('document_type', [get_class($po), 'App\Models\PurchaseOrder', 'PO', 'PurchaseOrder'])
                     ->delete();
 
                 if ($customWorkflowId) {
                     $workflow = \App\Models\ApprovalWorkflow::with('steps')->find($customWorkflowId);
-
                     if ($workflow && $workflow->steps->count() > 0) {
                         foreach ($workflow->steps as $step) {
                             $targetDept = $step->target_department_id ?? $step->department_id ?? null;
