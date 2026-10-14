@@ -24,14 +24,16 @@
         {{-- 2. MASTER DATA --}}
         @canany(['view_companies', 'view_vendors', 'view_inventory', 'manage_items', 'view_assets'])
         <div class="sidebar-dropdown">
-            <a href="#menuMaster" class="sidebar-link {{ request()->routeIs('companies.*', 'vendors.*', 'warehouses.*', 'items.*', 'uoms.*', 'asset-categories.*', 'departments.*') ? 'active' : '' }}" data-bs-toggle="collapse" aria-expanded="{{ request()->routeIs('companies.*', 'vendors.*', 'warehouses.*', 'items.*', 'uoms.*', 'asset-categories.*', 'departments.*') ? 'true' : 'false' }}" data-bs-toggle="tooltip" data-bs-placement="right" title="Master Data">
+            <a href="#menuMaster" class="sidebar-link {{ request()->routeIs('companies.*', 'vendors.*', 'warehouses.*', 'items.*', 'categories.*', 'uoms.*', 'asset-categories.*', 'departments.*') ? 'active' : '' }}" data-bs-toggle="collapse" aria-expanded="{{ request()->routeIs('companies.*', 'vendors.*', 'warehouses.*', 'items.*', 'categories.*', 'uoms.*', 'asset-categories.*', 'departments.*') ? 'true' : 'false' }}" data-bs-toggle="tooltip" data-bs-placement="right" title="Master Data">
                 <i class="bi bi-database-fill menu-icon text-info"></i>
                 <span class="menu-text">Master Data</span>
                 <i class="bi bi-chevron-down dropdown-chevron"></i>
             </a>
-            <div class="collapse {{ request()->routeIs('companies.*', 'vendors.*', 'warehouses.*', 'items.*', 'uoms.*', 'asset-categories.*', 'departments.*') ? 'show' : '' }}" id="menuMaster">
+            <div class="collapse {{ request()->routeIs('companies.*', 'vendors.*', 'warehouses.*', 'items.*', 'categories.*', 'uoms.*', 'asset-categories.*', 'departments.*') ? 'show' : '' }}" id="menuMaster">
                 @can('manage_items')
                     <a href="{{ route('items.index') }}" class="sidebar-sublink {{ request()->routeIs('items.*') ? 'active' : '' }}">Master Barang & Jasa</a>
+                    {{-- 🔥 TAMBAHAN MENU MASTER KATEGORI 🔥 --}}
+                    <a href="{{ url('/categories') }}" class="sidebar-sublink {{ request()->is('categories*') ? 'active' : '' }}">Master Kategori</a>
                 @endcan
                 @can('view_inventory')
                     <a href="{{ route('uoms.index') }}" class="sidebar-sublink {{ request()->routeIs('uoms.*') ? 'active' : '' }}">Master Satuan (UOM)</a>

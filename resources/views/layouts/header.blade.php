@@ -24,33 +24,48 @@
                         if (auth()->check()) {
                             $user = auth()->user();
                             $userRoles = $user->roles->pluck('id')->toArray();
-                            $isSuperAdmin = $user->hasAnyRole(['Super Administrator', 'Super Admin']) || $user->id === 1;
 
-                            // 1. Cek Antrean Purchase Request (PR)
+                            // 1. Cek Antrean PR (HIRARKI MURNI: TANPA BYPASS SUPER ADMIN)
                             if (class_exists('\App\Models\PurchaseRequest')) {
-                                $prQuery = \App\Models\PurchaseRequest::whereHas('approvals', function($q) use ($userRoles, $isSuperAdmin) {
-                                    $q->whereIn('status', ['PENDING', 'pending']);
-                                    if (!$isSuperAdmin) { $q->whereIn('role_id', $userRoles); }
+                                $prQuery = \App\Models\PurchaseRequest::whereHas('approvals', function($q) use ($userRoles, $user) {
+                                    $q->whereIn('status', ['PENDING', 'pending'])
+                                      ->where(function($subQ) use ($userRoles, $user) {
+                                          $subQ->where('user_id', $user->id) // A. Wajib cocok dengan Nama Spesifik
+                                               ->orWhere(function($roleQ) use ($userRoles) {
+                                                   // B. ATAU Cocok dengan Jabatan (TAPI pastikan user_id-nya kosong)
+                                                   $roleQ->whereNull('user_id')->whereIn('role_id', $userRoles);
+                                               });
+                                      });
                                 });
                                 $totalNotif += $prQuery->count();
                                 $pendingPRs = $prQuery->latest()->take(3)->get();
                             }
 
-                            // 2. Cek Antrean Purchase Order (PO)
+                            // 2. Cek Antrean PO (HIRARKI MURNI)
                             if (class_exists('\App\Models\PurchaseOrder')) {
-                                $poQuery = \App\Models\PurchaseOrder::whereHas('approvals', function($q) use ($userRoles, $isSuperAdmin) {
-                                    $q->whereIn('status', ['PENDING', 'pending']);
-                                    if (!$isSuperAdmin) { $q->whereIn('role_id', $userRoles); }
+                                $poQuery = \App\Models\PurchaseOrder::whereHas('approvals', function($q) use ($userRoles, $user) {
+                                    $q->whereIn('status', ['PENDING', 'pending'])
+                                      ->where(function($subQ) use ($userRoles, $user) {
+                                          $subQ->where('user_id', $user->id)
+                                               ->orWhere(function($roleQ) use ($userRoles) {
+                                                   $roleQ->whereNull('user_id')->whereIn('role_id', $userRoles);
+                                               });
+                                      });
                                 });
                                 $totalNotif += $poQuery->count();
                                 $pendingPOs = $poQuery->latest()->take(3)->get();
                             }
 
-                            // 3. Cek Antrean Stock Opname (SO)
+                            // 3. Cek Antrean SO (HIRARKI MURNI)
                             if (class_exists('\App\Models\StockOpname')) {
-                                $soQuery = \App\Models\StockOpname::whereHas('approvals', function($q) use ($userRoles, $isSuperAdmin) {
-                                    $q->whereIn('status', ['PENDING', 'pending']);
-                                    if (!$isSuperAdmin) { $q->whereIn('role_id', $userRoles); }
+                                $soQuery = \App\Models\StockOpname::whereHas('approvals', function($q) use ($userRoles, $user) {
+                                    $q->whereIn('status', ['PENDING', 'pending'])
+                                      ->where(function($subQ) use ($userRoles, $user) {
+                                          $subQ->where('user_id', $user->id)
+                                               ->orWhere(function($roleQ) use ($userRoles) {
+                                                   $roleQ->whereNull('user_id')->whereIn('role_id', $userRoles);
+                                               });
+                                      });
                                 });
                                 $totalNotif += $soQuery->count();
                                 $pendingSOs = $soQuery->latest()->take(3)->get();

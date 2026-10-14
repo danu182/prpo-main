@@ -28,7 +28,7 @@ class PurchaseRequestController extends Controller
     use InteractsWithMedia;
 
     // =========================================================================
-    // DAFTAR PR (DENGAN GEMBOK PRIVASI & SMART LOOKUP APPROVAL)
+    // DAFTAR PR (DENGAN GEMBOK PRIVASI, SMART LOOKUP & SEQUENTIAL APPROVAL)
     // =========================================================================
     public function index(\Illuminate\Http\Request $request)
     {
@@ -48,24 +48,38 @@ class PurchaseRequestController extends Controller
                 $q->where('purchase_requests.user_id', $user->id);
 
                 // 2. Hak Akses: Bisa melihat jika dia ditugaskan sebagai Approver
-                $q->orWhereHas('approvals', function ($apprQ) use ($user, $userRoleIds) {
-                    $apprQ->where(function ($subQ) use ($user, $userRoleIds) {
-                        // A. 🔥 SMART LOOKUP: Langsung lolos jika ditunjuk lewat Nama Spesifik (Anwar) 🔥
-                        $subQ->where('user_id', $user->id);
+                $q->orWhereExists(function ($subQuery) use ($user, $userRoleIds) {
+                    $subQuery->select(\DB::raw(1))
+                             ->from('document_approvals')
+                             ->join('users as pembuat', 'pembuat.id', '=', 'purchase_requests.user_id')
+                             ->whereColumn('document_approvals.document_id', 'purchase_requests.id')
+                             ->whereIn('document_approvals.document_type', [\App\Models\PurchaseRequest::class, 'PR', 'PurchaseRequest'])
+                             // 🔥 KUNCI SEQUENTIAL: Sembunyikan dari antrean jika status approver masih 'WAITING' 🔥
+                             ->whereIn('document_approvals.status', ['PENDING', 'APPROVED', 'REJECTED'])
+                             ->where(function($apprQ) use ($user, $userRoleIds) {
+                                 
+                                 // A. SMART LOOKUP: Lolos jika ditunjuk secara spesifik (Nama Orang)
+                                 $apprQ->where('document_approvals.user_id', $user->id);
 
-                        // B. Lolos jika berdasarkan Jabatan & Departemen
-                        if (!empty($userRoleIds)) {
-                            $subQ->orWhere(function ($roleQ) use ($user, $userRoleIds) {
-                                $roleQ->whereIn('role_id', $userRoleIds)
-                                      ->where(function ($deptQ) use ($user) {
-                                          $deptQ->where('target_department_id', $user->department_id)
-                                                ->orWhere('target_department_id', 'all')
-                                                ->orWhereNull('target_department_id')
-                                                ->orWhere('target_department_id', '');
-                                      });
-                            });
-                        }
-                    });
+                                 // B. JIKA BUKAN SPESIFIK USER: Cek Jabatan & Departemen Lintas Tabel
+                                 if (!empty($userRoleIds)) {
+                                     $apprQ->orWhere(function($roleQ) use ($user, $userRoleIds) {
+                                         // Anti-bocor: Hanya cek role jika user_id spesifiknya kosong
+                                         $roleQ->whereNull('document_approvals.user_id') 
+                                               ->whereIn('document_approvals.role_id', $userRoleIds)
+                                               ->where(function ($deptQ) use ($user) {
+                                                   $deptQ->where('document_approvals.target_department_id', $user->department_id)
+                                                         ->orWhere('document_approvals.target_department_id', 'all')
+                                                         ->orWhere(function ($emptyDeptQ) use ($user) {
+                                                             $emptyDeptQ->where(function($qNull) {
+                                                                  $qNull->whereNull('document_approvals.target_department_id')
+                                                                        ->orWhere('document_approvals.target_department_id', '');
+                                                             })->where('pembuat.department_id', $user->department_id);
+                                                         });
+                                               });
+                                     });
+                                 }
+                             });
                 });
             });
         }
@@ -349,7 +363,9 @@ class PurchaseRequestController extends Controller
                     $workflow = \App\Models\ApprovalWorkflow::with('steps')->find($customWorkflowId);
 
                     if ($workflow && $workflow->steps->count() > 0) {
-                        foreach ($workflow->steps as $step) {
+                        $isFirstStep = true; // 🔥 KUNCI UTAMA HIRARKI BERURUTAN 🔥
+
+                        foreach ($workflow->steps->sortBy('step_order') as $step) {
                             $targetDept = $step->target_department_id ?? $step->department_id ?? null;
                             $specificUserId = $step->user_id ?? $step->specific_user_id ?? $step->approver_id ?? null;
 
@@ -358,10 +374,13 @@ class PurchaseRequestController extends Controller
                                 'document_type'        => get_class($pr),
                                 'role_id'              => $step->role_id,
                                 'target_department_id' => $targetDept,
-                                'user_id'              => $specificUserId, // 🔥 PENYELAMAT: TANGKAP USER SPESIFIK 🔥
+                                'user_id'              => $specificUserId, 
                                 'step_order'           => $step->step_order,
-                                'status'               => 'PENDING'
+                                // 🔥 Lapis 1 = PENDING. Lapis 2, 3 dst = LANGSUNG WAITING! 🔥
+                                'status'               => $isFirstStep ? 'PENDING' : 'WAITING' 
                             ]);
+                            
+                            $isFirstStep = false; // Matikan PENDING untuk lapis berikutnya
                         }
                         $needsApproval = true;
                         $this->logHistory($pr->id, 'SYSTEM', "Menggunakan Rute Persetujuan Khusus: " . $workflow->name);
@@ -372,18 +391,35 @@ class PurchaseRequestController extends Controller
                     unset($pr->amount);
 
                     if ($needsApproval) {
+                        // Kunci Berurutan Untuk Workflow Standar
+                        $allAppr = \App\Models\DocumentApproval::where('document_id', $pr->id)
+                            ->whereIn('document_type', [get_class($pr), 'PR', 'PurchaseRequest'])
+                            ->orderBy('step_order', 'asc')->get();
+                        
+                        $isFirstStep = true;
+                        foreach($allAppr as $ap) {
+                            $ap->update(['status' => $isFirstStep ? 'PENDING' : 'WAITING']);
+                            $isFirstStep = false;
+                        }
                         $this->logHistory($pr->id, 'SYSTEM', "Rute persetujuan standar (Departemen) berhasil di-generate.");
                     }
                 }
 
+                
+
+                // 🔥 KUNCI KEDUA: JADIKAN LAPIS 1 'PENDING', LAPIS 2 DST MENJADI 'WAITING' 🔥
                 if ($needsApproval) {
-                    $pendingStatus = \App\Models\Status::where('type', 'PR')->where('slug', 'pending_approval')->first();
-                    $pr->update(['status_id' => $pendingStatus ? $pendingStatus->id : 1]);
-                } else {
-                    $approvedStatus = \App\Models\Status::where('type', 'PR')->where('slug', 'approved')->first();
-                    $pr->update(['status_id' => $approvedStatus ? $approvedStatus->id : 3]);
-                    $this->logHistory($pr->id, 'AUTO-APPROVED', "PR {$newPrNumber} disetujui otomatis karena tidak ada aturan aktif atau nominal di bawah batas.");
+                    $allApprovals = \App\Models\DocumentApproval::where('document_id', $pr->id)
+                        ->whereIn('document_type', [get_class($pr), 'PR', 'PurchaseRequest'])
+                        ->orderBy('step_order', 'asc')->get();
+                    
+                    $isFirst = true;
+                    foreach($allApprovals as $appr) {
+                        $appr->update(['status' => $isFirst ? 'PENDING' : 'WAITING']);
+                        $isFirst = false; // Lapis berikutnya dan seterusnya akan jadi WAITING
+                    }
                 }
+                // (Lanjut ke kode: if ($needsApproval) { $pendingStatus = ... )
 
             });
 
@@ -570,13 +606,17 @@ class PurchaseRequestController extends Controller
 
                 \App\Models\DocumentApproval::where('document_id', $pr->id)->whereIn('document_type', [get_class($pr), 'PR', 'PurchaseRequest'])->delete();
 
+                // ... (Kode di atasnya tetap sama)
                 $customWorkflowId = $request->input('custom_workflow_id');
                 $needsApproval = false;
 
                 if ($customWorkflowId) {
                     $workflow = \App\Models\ApprovalWorkflow::with('steps')->find($customWorkflowId);
+
                     if ($workflow && $workflow->steps->count() > 0) {
-                        foreach ($workflow->steps as $step) {
+                        $isFirstStep = true; // 🔥 KUNCI UTAMA HIRARKI BERURUTAN 🔥
+
+                        foreach ($workflow->steps->sortBy('step_order') as $step) {
                             $targetDept = $step->target_department_id ?? $step->department_id ?? null;
                             $specificUserId = $step->user_id ?? $step->specific_user_id ?? $step->approver_id ?? null;
 
@@ -585,13 +625,16 @@ class PurchaseRequestController extends Controller
                                 'document_type'        => get_class($pr),
                                 'role_id'              => $step->role_id,
                                 'target_department_id' => $targetDept,
-                                'user_id'              => $specificUserId, // 🔥 PENYELAMAT REVISI: TANGKAP USER SPESIFIK 🔥
+                                'user_id'              => $specificUserId, 
                                 'step_order'           => $step->step_order,
-                                'status'               => 'PENDING'
+                                // 🔥 Lapis 1 = PENDING. Lapis 2, 3 dst = LANGSUNG WAITING! 🔥
+                                'status'               => $isFirstStep ? 'PENDING' : 'WAITING' 
                             ]);
+                            
+                            $isFirstStep = false; // Matikan PENDING untuk lapis berikutnya
                         }
                         $needsApproval = true;
-                        $this->logHistory($pr->id, 'SYSTEM', "Revisi menggunakan Rute Persetujuan Khusus: " . $workflow->name);
+                        $this->logHistory($pr->id, 'SYSTEM', "Menggunakan Rute Persetujuan Khusus: " . $workflow->name);
                     }
                 } else {
                     $pr->amount = $estimasiGrandTotal;
@@ -599,9 +642,20 @@ class PurchaseRequestController extends Controller
                     unset($pr->amount);
 
                     if ($needsApproval) {
-                        $this->logHistory($pr->id, 'SYSTEM', 'Rute persetujuan (Workflow) PR telah di-reset menyesuaikan data revisi.');
+                        // Kunci Berurutan Untuk Workflow Standar
+                        $allAppr = \App\Models\DocumentApproval::where('document_id', $pr->id)
+                            ->whereIn('document_type', [get_class($pr), 'PR', 'PurchaseRequest'])
+                            ->orderBy('step_order', 'asc')->get();
+                        
+                        $isFirstStep = true;
+                        foreach($allAppr as $ap) {
+                            $ap->update(['status' => $isFirstStep ? 'PENDING' : 'WAITING']);
+                            $isFirstStep = false;
+                        }
+                        $this->logHistory($pr->id, 'SYSTEM', "Rute persetujuan standar (Departemen) berhasil di-generate.");
                     }
                 }
+                // ... (Lanjut ke kode $pendingStatus = ...)
 
                 if ($needsApproval) {
                     $pendingStatus = \App\Models\Status::where('type', 'PR')->where('slug', 'pending_approval')->first();
@@ -903,9 +957,10 @@ class PurchaseRequestController extends Controller
         $currentApproval->update(['status' => 'APPROVED', 'approved_by' => auth()->id(), 'approved_at' => now()]);
         $pr->update(['current_approval_level' => $currentApproval->step_order]);
 
+        // 🔥 KUNCI KETIGA: CARI APPROVER BERIKUTNYA YANG STATUSNYA 'WAITING' 🔥
         $nextApproval = \App\Models\DocumentApproval::where('document_id', $pr->id)
             ->where('document_type', get_class($pr))
-            ->where('status', 'PENDING')
+            ->where('status', 'WAITING') // <-- Ini yang diganti dari PENDING jadi WAITING
             ->orderBy('step_order', 'asc')
             ->first();
 
@@ -913,9 +968,11 @@ class PurchaseRequestController extends Controller
         $catatan = "Dokumen disetujui pada tahap ini.\n";
 
         if ($nextApproval) {
+            // 🔥 AKTIFKAN STATUSNYA JADI PENDING AGAR MUNCUL DI NOTIFIKASI RADIT! 🔥
+            $nextApproval->update(['status' => 'PENDING']);
+
             $nextRoleName = optional($nextApproval->role)->name ?? 'Lapis Lanjutan';
             
-            // Logika cerdas untuk notifikasi ke lapis berikutnya
             $nextUid = $nextApproval->user_id ?? $nextApproval->approver_id ?? $nextApproval->specific_user_id ?? null;
             if (!empty($nextUid)) {
                 $nextApproverUser = \App\Models\User::find($nextUid);
