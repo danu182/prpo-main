@@ -80,7 +80,8 @@
 
                                         {{-- List Notif PR --}}
                                         @foreach($pendingPRs as $pr)
-                                            <a href="{{ route('pr.show', $pr->id) }}" class="list-group-item list-group-item-action py-3 border-bottom">
+                                            {{-- 🔥 PERBAIKAN: Gunakan $pr->pr_number BUKAN $pr->id 🔥 --}}
+                                            <a href="{{ route('pr.show', $pr->pr_number) }}" class="list-group-item list-group-item-action py-3 border-bottom">
                                                 <div class="d-flex justify-content-between align-items-center mb-1">
                                                     <span class="badge bg-primary-subtle text-primary border-primary-subtle small px-2">PR Request</span>
                                                     <small class="text-muted" style="font-size: 0.65rem;">{{ \Carbon\Carbon::parse($pr->created_at)->diffForHumans() }}</small>
@@ -92,7 +93,8 @@
 
                                         {{-- List Notif PO --}}
                                         @foreach($pendingPOs as $po)
-                                            <a href="{{ route('po.show', $po->id) }}" class="list-group-item list-group-item-action py-3 border-bottom">
+                                            {{-- 🔥 PERBAIKAN: Gunakan $po->po_number BUKAN $po->id 🔥 --}}
+                                            <a href="{{ route('po.show', $po->po_number) }}" class="list-group-item list-group-item-action py-3 border-bottom">
                                                 <div class="d-flex justify-content-between align-items-center mb-1">
                                                     <span class="badge bg-success-subtle text-success border-success-subtle small px-2">Purchase Order</span>
                                                     <small class="text-muted" style="font-size: 0.65rem;">{{ \Carbon\Carbon::parse($po->created_at)->diffForHumans() }}</small>
@@ -104,7 +106,7 @@
 
                                         {{-- List Notif Stock Opname --}}
                                         @foreach($pendingSOs as $so)
-                                            <a href="{{ route('stock-opnames.show', $so->id) }}" class="list-group-item list-group-item-action py-3 border-bottom">
+                                            <a href="{{ route('stock-opnames.show', $so->document_number ?? $so->id) }}" class="list-group-item list-group-item-action py-3 border-bottom">
                                                 <div class="d-flex justify-content-between align-items-center mb-1">
                                                     <span class="badge bg-warning-subtle text-warning border-warning-subtle small px-2">Stock Opname</span>
                                                     <small class="text-muted" style="font-size: 0.65rem;">{{ \Carbon\Carbon::parse($so->created_at)->diffForHumans() }}</small>

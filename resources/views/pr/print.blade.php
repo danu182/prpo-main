@@ -179,7 +179,7 @@
 
                     @if($approval->status === 'APPROVED' || $approval->status === 'REJECTED')
                         <div><u><strong>{{ optional($approval->approver)->name ?? '...........................' }}</strong></u></div>
-                        <div>{{ optional($approval->role)->name ?? '...........................' }}</div>
+                        {{-- <div>{{ optional($approval->role)->name ?? '...........................' }}</div> --}}
                         <div>Tgl: {{ \Carbon\Carbon::parse($approval->approved_at)->format('d/m/Y') }}</div>
                     @else
                         <div><u><strong>....................................</strong></u></div>

@@ -28,7 +28,7 @@ class PurchaseRequestController extends Controller
     use InteractsWithMedia;
 
     // =========================================================================
-    // DAFTAR PR (DENGAN GEMBOK PRIVASI & BYPASS SUPER ADMIN)
+    // DAFTAR PR (DENGAN GEMBOK PRIVASI & SMART LOOKUP APPROVAL)
     // =========================================================================
     public function index(\Illuminate\Http\Request $request)
     {
@@ -37,36 +37,36 @@ class PurchaseRequestController extends Controller
         $departmentFilter = $request->input('department');
 
         $user = auth()->user();
-        $userRoleNames = $user->getRoleNames()->toArray();
-        $isSuperAdmin = in_array('Super Admin', $userRoleNames) || in_array('Super Administrator', $userRoleNames) || $user->id === 1;
         $userRoleIds = $user->roles->pluck('id')->toArray();
+        $isSuperAdmin = $user->hasAnyRole(['Super Admin', 'Super Administrator', 'super-admin']) || $user->id === 1;
 
         $query = \App\Models\PurchaseRequest::with(['user', 'status', 'company', 'purchaseOrders']);
 
         if (!$isSuperAdmin) {
             $query->where(function ($q) use ($user, $userRoleIds) {
+                // 1. Hak Akses: Bisa melihat jika dia adalah Pembuat PR
                 $q->where('purchase_requests.user_id', $user->id);
 
-                if (!empty($userRoleIds)) {
-                    $q->orWhereExists(function ($subQuery) use ($user, $userRoleIds) {
-                        $subQuery->select(\DB::raw(1))
-                                 ->from('document_approvals')
-                                 ->join('users as pembuat', 'pembuat.id', '=', 'purchase_requests.user_id')
-                                 ->whereColumn('document_approvals.document_id', 'purchase_requests.id')
-                                 ->whereIn('document_approvals.document_type', [\App\Models\PurchaseRequest::class, 'PR', 'PurchaseRequest'])
-                                 ->whereIn('document_approvals.role_id', $userRoleIds)
-                                 ->where(function ($deptQ) use ($user) {
-                                     $deptQ->where('document_approvals.target_department_id', $user->department_id)
-                                           ->orWhere('document_approvals.target_department_id', 'all')
-                                           ->orWhere(function ($emptyDeptQ) use ($user) {
-                                               $emptyDeptQ->where(function($qNull) {
-                                                    $qNull->whereNull('document_approvals.target_department_id')
-                                                          ->orWhere('document_approvals.target_department_id', '');
-                                               })->where('pembuat.department_id', $user->department_id);
-                                           });
-                                 });
+                // 2. Hak Akses: Bisa melihat jika dia ditugaskan sebagai Approver
+                $q->orWhereHas('approvals', function ($apprQ) use ($user, $userRoleIds) {
+                    $apprQ->where(function ($subQ) use ($user, $userRoleIds) {
+                        // A. 🔥 SMART LOOKUP: Langsung lolos jika ditunjuk lewat Nama Spesifik (Anwar) 🔥
+                        $subQ->where('user_id', $user->id);
+
+                        // B. Lolos jika berdasarkan Jabatan & Departemen
+                        if (!empty($userRoleIds)) {
+                            $subQ->orWhere(function ($roleQ) use ($user, $userRoleIds) {
+                                $roleQ->whereIn('role_id', $userRoleIds)
+                                      ->where(function ($deptQ) use ($user) {
+                                          $deptQ->where('target_department_id', $user->department_id)
+                                                ->orWhere('target_department_id', 'all')
+                                                ->orWhereNull('target_department_id')
+                                                ->orWhere('target_department_id', '');
+                                      });
+                            });
+                        }
                     });
-                }
+                });
             });
         }
 
@@ -200,11 +200,10 @@ class PurchaseRequestController extends Controller
     }
 
     // =========================================================================
-    // 🔥 STORE PR (MENGANDUNG AUTO-HEAL DATABASE & ANTI-TABRAKAN UOM) 🔥
+    // 🔥 STORE PR (MENGANDUNG AUTO-HEAL DATABASE, ANTI-TABRAKAN UOM & SMART LOOKUP) 🔥
     // =========================================================================
     public function store(Request $request, \App\Services\SystemSettingService $settingService)
     {
-        // 🔥 AUTO-HEAL DATABASE: Jika kolom uom belum ada, sistem akan otomatis membuatnya! 🔥
         if (!Schema::hasColumn('purchase_request_items', 'uom')) {
             Schema::table('purchase_request_items', function (Blueprint $table) {
                 $table->string('uom')->nullable()->after('uom_id');
@@ -256,12 +255,11 @@ class PurchaseRequestController extends Controller
 
                 foreach ($request->items as $itemIndex => $itemData) {
                     $masterItem = \App\Models\Item::with('uom', 'itemUoms')->find($itemData['item_id']);
-                    $baseUomName = strtoupper(optional($masterItem->uom)->name ?? 'PCS');
+                    $baseUomName = strtoupper(optional(optional($masterItem)->uom)->name ?? 'PCS');
 
                     $uomName = $baseUomName;
                     $finalUomId = null;
 
-                    // 🔥 LOGIKA CERDAS DEKODE UOM 🔥
                     if ($masterItem) {
                         $rawUomId = $itemData['uom_id'];
 
@@ -296,7 +294,7 @@ class PurchaseRequestController extends Controller
                         'specification'       => $itemData['specification'] ?? null,
                         'qty'                 => $itemData['qty'],
                         'uom_id'              => $finalUomId,
-                        'uom'                 => $uomName, // INI SEKARANG DIJAMIN MASUK KE DATABASE KARENA KOLOM UOM SUDAH DIBIKIN!
+                        'uom'                 => $uomName,
                         'estimated_price'     => 0,
                         'status'              => 'PENDING'
                     ]);
@@ -319,11 +317,7 @@ class PurchaseRequestController extends Controller
 
                                 if ($request->hasFile("items.$itemIndex.vendors.$vendorIndex.files")) {
                                     $safePrNumber = str_replace(['/', '\\'], '-', $newPrNumber);
-
-                                    $settingPath = \Illuminate\Support\Facades\DB::table('system_settings')
-                                                        ->where('setting_key', 'path_pr_attachment')
-                                                        ->value('setting_value');
-
+                                    $settingPath = \Illuminate\Support\Facades\DB::table('system_settings')->where('setting_key', 'path_pr_attachment')->value('setting_value');
                                     $basePath = $settingPath ? $settingPath : 'attachments/purchase_requests';
                                     $targetFolder = $basePath . '/' . $safePrNumber;
 
@@ -357,12 +351,14 @@ class PurchaseRequestController extends Controller
                     if ($workflow && $workflow->steps->count() > 0) {
                         foreach ($workflow->steps as $step) {
                             $targetDept = $step->target_department_id ?? $step->department_id ?? null;
+                            $specificUserId = $step->user_id ?? $step->specific_user_id ?? $step->approver_id ?? null;
 
                             \App\Models\DocumentApproval::create([
                                 'document_id'          => $pr->id,
                                 'document_type'        => get_class($pr),
                                 'role_id'              => $step->role_id,
                                 'target_department_id' => $targetDept,
+                                'user_id'              => $specificUserId, // 🔥 PENYELAMAT: TANGKAP USER SPESIFIK 🔥
                                 'step_order'           => $step->step_order,
                                 'status'               => 'PENDING'
                             ]);
@@ -397,55 +393,11 @@ class PurchaseRequestController extends Controller
         }
     }
 
-
-    public function edit($slug)
-    {
-        $pr = \App\Models\PurchaseRequest::with([
-            'items.item.uom',
-            'items.item.itemUoms',
-            'items.vendorQuotes.attachments'
-        ])->where('pr_number', $slug)->firstOrFail();
-
-        $companies = \App\Models\Company::all();
-        $currencies = \App\Models\Currency::where('is_active', true)->get();
-        $vendors = \App\Models\Vendor::where('is_active', true)->get();
-        $users = \App\Models\User::orderBy('name')->get();
-
-        $customWorkflows = [];
-        $selectedWorkflowId = null;
-
-        if (class_exists('\App\Models\ApprovalWorkflow')) {
-            $customWorkflows = \App\Models\ApprovalWorkflow::with('steps')
-                ->where('is_active', true)
-                ->where(function($q) {
-                    $q->where('document_type', 'App\Models\PurchaseRequest')
-                      ->orWhere('document_type', 'PR')
-                      ->orWhere('document_type', 'PurchaseRequest');
-                })->get();
-
-            $historyLog = \App\Models\PurchaseRequestHistory::where('purchase_request_id', $pr->id)
-                ->where('action', 'SYSTEM')
-                ->where('note', 'like', 'Menggunakan Rute Persetujuan Khusus:%')
-                ->orderBy('id', 'desc')->first();
-
-            if ($historyLog) {
-                $workflowName = trim(str_replace('Menggunakan Rute Persetujuan Khusus:', '', $historyLog->note));
-                $matchedWorkflow = $customWorkflows->where('name', $workflowName)->first();
-                if ($matchedWorkflow) {
-                    $selectedWorkflowId = $matchedWorkflow->id;
-                }
-            }
-        }
-
-        return view('pr.edit', compact('pr', 'companies', 'currencies', 'vendors', 'users', 'customWorkflows', 'selectedWorkflowId'));
-    }
-
     // =========================================================================
     // 6. UPDATE (SIMPAN REVISI + OVERRIDE WORKFLOW)
     // =========================================================================
     public function update(Request $request, $slug, \App\Services\SystemSettingService $settingService)
     {
-        // 🔥 AUTO-HEAL DATABASE
         if (!Schema::hasColumn('purchase_request_items', 'uom')) {
             Schema::table('purchase_request_items', function (Blueprint $table) {
                 $table->string('uom')->nullable()->after('uom_id');
@@ -520,7 +472,7 @@ class PurchaseRequestController extends Controller
 
                 foreach ($request->items as $itemIndex => $itemData) {
                     $masterItem = \App\Models\Item::with('uom', 'itemUoms')->find($itemData['item_id']);
-                    $baseUomName = strtoupper(optional($masterItem->uom)->name ?? 'PCS');
+                    $baseUomName = strtoupper(optional(optional($masterItem)->uom)->name ?? 'PCS');
 
                     $uomName = $baseUomName;
                     $finalUomId = null;
@@ -559,7 +511,7 @@ class PurchaseRequestController extends Controller
                         'specification'       => $itemData['specification'] ?? null,
                         'qty'                 => $itemData['qty'],
                         'uom_id'              => $finalUomId,
-                        'uom'                 => $uomName, // MASUK KE DB DENGAN AMAN!
+                        'uom'                 => $uomName, 
                         'status'              => 'PENDING'
                     ]);
 
@@ -626,11 +578,14 @@ class PurchaseRequestController extends Controller
                     if ($workflow && $workflow->steps->count() > 0) {
                         foreach ($workflow->steps as $step) {
                             $targetDept = $step->target_department_id ?? $step->department_id ?? null;
+                            $specificUserId = $step->user_id ?? $step->specific_user_id ?? $step->approver_id ?? null;
+
                             \App\Models\DocumentApproval::create([
                                 'document_id'          => $pr->id,
                                 'document_type'        => get_class($pr),
                                 'role_id'              => $step->role_id,
                                 'target_department_id' => $targetDept,
+                                'user_id'              => $specificUserId, // 🔥 PENYELAMAT REVISI: TANGKAP USER SPESIFIK 🔥
                                 'step_order'           => $step->step_order,
                                 'status'               => 'PENDING'
                             ]);
@@ -664,6 +619,80 @@ class PurchaseRequestController extends Controller
         }
     }
 
+    // =========================================================================
+    // 7. EDIT (DENGAN KECERDASAN REVERSE ENGINEER WORKFLOW)
+    // =========================================================================
+    public function edit($slug)
+    {
+        $pr = \App\Models\PurchaseRequest::with([
+            'items.item.uom',
+            'items.item.itemUoms',
+            'items.vendorQuotes.attachments'
+        ])->where('pr_number', $slug)->firstOrFail();
+
+        $companies = \App\Models\Company::all();
+        $currencies = \App\Models\Currency::where('is_active', true)->get();
+        $vendors = \App\Models\Vendor::where('is_active', true)->get();
+        $users = \App\Models\User::orderBy('name')->get();
+
+        $customWorkflows = [];
+        $selectedWorkflowId = null;
+
+        if (class_exists('\App\Models\ApprovalWorkflow')) {
+            $customWorkflows = \App\Models\ApprovalWorkflow::with('steps')
+                ->where('is_active', true)
+                ->where(function($q) {
+                    $q->where('document_type', 'App\Models\PurchaseRequest')
+                      ->orWhere('document_type', 'PR')
+                      ->orWhere('document_type', 'PurchaseRequest');
+                })->get();
+
+            // 🔥 STRATEGI 1: BACA DARI TABEL DOCUMENT_APPROVALS (REVERSE ENGINEER CERDAS) 🔥
+            $currentApprovals = \App\Models\DocumentApproval::where('document_id', $pr->id)
+                ->whereIn('document_type', [get_class($pr), 'App\Models\PurchaseRequest', 'PR', 'PurchaseRequest'])
+                ->orderBy('step_order', 'asc')
+                ->get();
+
+            if ($currentApprovals->count() > 0) {
+                $prRoles = $currentApprovals->pluck('role_id')->toArray();
+                $prUsers = $currentApprovals->pluck('user_id')->toArray(); // Lacak juga spesifik usernya
+
+                foreach ($customWorkflows as $cw) {
+                    if ($cw->steps && $cw->steps->count() === count($prRoles)) {
+                        $cwRoles = $cw->steps->sortBy('step_order')->pluck('role_id')->toArray();
+                        $cwUsers = $cw->steps->sortBy('step_order')->map(function($step) {
+                            return $step->user_id ?? $step->specific_user_id ?? $step->approver_id ?? null;
+                        })->toArray();
+
+                        // Jika kombinasi Role DAN User Spesifik-nya persis sama
+                        if ($prRoles === $cwRoles && $prUsers === $cwUsers) {
+                            $selectedWorkflowId = $cw->id;
+                            break;
+                        }
+                    }
+                }
+            }
+
+            // 🔥 STRATEGI 2: BACA DARI HISTORY LOG JIKA STRATEGI 1 GAGAL 🔥
+            if (!$selectedWorkflowId) {
+                $historyLog = \App\Models\PurchaseRequestHistory::where('purchase_request_id', $pr->id)
+                    ->where('action', 'SYSTEM')
+                    ->where('note', 'like', '%Menggunakan Rute Persetujuan Khusus:%')
+                    ->orderBy('id', 'desc')->first();
+
+                if ($historyLog) {
+                    $workflowName = trim(str_replace(['Menggunakan Rute Persetujuan Khusus:', 'Revisi menggunakan Rute Persetujuan Khusus:'], '', $historyLog->note));
+                    $matchedWorkflow = $customWorkflows->where('name', $workflowName)->first();
+                    if ($matchedWorkflow) {
+                        $selectedWorkflowId = $matchedWorkflow->id;
+                    }
+                }
+            }
+        }
+
+        return view('pr.edit', compact('pr', 'companies', 'currencies', 'vendors', 'users', 'customWorkflows', 'selectedWorkflowId'));
+    }
+
 
     public function show(string $slug)
     {
@@ -672,7 +701,7 @@ class PurchaseRequestController extends Controller
                     'items.vendorQuotes.attachments',
                     'items.item.uom',
                     'items.item.itemUoms',
-                    'user.department', // 🔥 Ditambahkan agar department user terbaca
+                    'user.department',
                     'company',
                     'histories.user',
                     'status'
@@ -684,59 +713,71 @@ class PurchaseRequestController extends Controller
         $isEditable = in_array(optional($pr->status)->slug, ['pending_approval', 'draft']);
 
         $user = auth()->user();
+        $isSuperAdmin = $user->hasAnyRole(['Super Admin', 'Super Administrator', 'super-admin']) || $user->id === 1;
 
-        // 🔥 AMBIL SELURUH APPROVAL UNTUK TIMELINE TRACKING (SAMA SEPERTI OPEX/PO) 🔥
         $approvals = \App\Models\DocumentApproval::with(['role'])
             ->where('document_id', $pr->id)
             ->whereIn('document_type', [get_class($pr), 'App\Models\PurchaseRequest', 'PR', 'PurchaseRequest'])
             ->orderBy('step_order', 'asc')
             ->get();
 
-        // Ambil approval yang sedang aktif (PENDING) untuk logika tombol
         $currentApproval = $approvals->where('status', 'PENDING')->first();
 
         $canApprove = false;
         $roleDisplay = null;
 
         if ($currentApproval) {
-            $currentRoleName = $currentApproval->role->name;
+            $uid = $currentApproval->user_id ?? $currentApproval->approver_id ?? $currentApproval->specific_user_id ?? null;
 
-            $targetDeptId = $currentApproval->target_department_id;
-            $deptName = '';
-            if (!empty($targetDeptId) && $targetDeptId !== 'all') {
-                $dept = \App\Models\Department::find($targetDeptId);
-                if ($dept) $deptName = ' - ' . $dept->name;
-            } elseif (empty($targetDeptId)) {
-                $deptName = ' - Atasan Langsung';
-            }
-            $roleDisplay = $currentRoleName . $deptName;
-
-            if ($user->hasRole('Super Admin') || $user->hasRole('Super Administrator')) {
-                $canApprove = true;
-            } elseif ($user->hasRole($currentRoleName)) {
+            // 🔥 LOGIKA SMART LOOKUP (CEK SPESIFIK USER DULU) 🔥
+            if (!empty($uid)) {
+                $specificUser = \App\Models\User::find($uid);
+                $roleDisplay = $specificUser ? $specificUser->name : 'User Spesifik';
+                
+                if ($isSuperAdmin || $user->id == $uid) {
+                    $canApprove = true;
+                }
+            } else {
+                // LOGIKA JABATAN STANDAR
+                $currentRoleName = optional($currentApproval->role)->name ?? 'Atasan';
+                $targetDeptId = $currentApproval->target_department_id;
+                
+                $deptName = '';
                 if (!empty($targetDeptId) && $targetDeptId !== 'all') {
-                    if ($user->department_id == $targetDeptId) {
-                        $canApprove = true;
-                    }
-                } else {
-                    $pembuatPR = \App\Models\User::find($pr->user_id);
-                    if ($pembuatPR && $user->department_id == $pembuatPR->department_id) {
-                        $canApprove = true;
-                    } elseif ($targetDeptId === 'all') {
-                        $canApprove = true;
+                    $dept = \App\Models\Department::find($targetDeptId);
+                    if ($dept) $deptName = ' - ' . $dept->name;
+                } elseif (empty($targetDeptId)) {
+                    $deptName = ' - Atasan Langsung';
+                }
+                $roleDisplay = $currentRoleName . $deptName;
+
+                if ($isSuperAdmin) {
+                    $canApprove = true;
+                } elseif ($user->hasRole($currentRoleName)) {
+                    if (!empty($targetDeptId) && $targetDeptId !== 'all') {
+                        if ($user->department_id == $targetDeptId) {
+                            $canApprove = true;
+                        }
+                    } else {
+                        $pembuatPR = \App\Models\User::find($pr->user_id);
+                        if ($pembuatPR && $user->department_id == $pembuatPR->department_id) {
+                            $canApprove = true;
+                        } elseif ($targetDeptId === 'all') {
+                            $canApprove = true;
+                        }
                     }
                 }
             }
         }
 
-        // 🔥 LEMPAR VARIABEL $approvals KE VIEW 🔥
         return view('pr.show', compact('pr', 'currencySymbols', 'isEditable', 'canApprove', 'roleDisplay', 'approvals'));
     }
 
+
     public function decide(Request $request, string $slug)
     {
-        $pr = PurchaseRequest::where('pr_number', $slug)->firstOrFail();
-        $pembuatPR = User::find($pr->user_id);
+        $pr = \App\Models\PurchaseRequest::where('pr_number', $slug)->firstOrFail();
+        $pembuatPR = \App\Models\User::find($pr->user_id);
 
         foreach(auth()->user()->unreadNotifications as $notification) {
             if(isset($notification->data['url']) && str_contains($notification->data['url'], route('pr.show', $pr->id))) {
@@ -744,9 +785,10 @@ class PurchaseRequestController extends Controller
             }
         }
 
+        // 1. Cari antrean persetujuan saat ini
         $currentApproval = \App\Models\DocumentApproval::with('role')
             ->where('document_id', $pr->id)
-            ->where('document_type', get_class($pr))
+            ->whereIn('document_type', [get_class($pr), 'App\Models\PurchaseRequest', 'PR', 'PurchaseRequest'])
             ->where('status', 'PENDING')
             ->orderBy('step_order', 'asc')
             ->first();
@@ -755,31 +797,47 @@ class PurchaseRequestController extends Controller
             return redirect()->back()->with('error', 'Dokumen ini tidak sedang menunggu persetujuan Anda.');
         }
 
+        // 🔥 2. LOGIKA SMART LOOKUP (SATPAM CERDAS BACKEND) 🔥
         $user = auth()->user();
+        $isSuperAdmin = $user->hasAnyRole(['Super Admin', 'Super Administrator', 'super-admin']) || $user->id === 1;
         $isAuthorized = false;
-
+        $approverRoleName = 'Atasan';
+        
         if ($currentApproval) {
-            if ($user->hasRole('Super Admin') || $user->hasRole('Super Administrator')) {
-                $isAuthorized = true;
-            } elseif ($user->hasRole($currentApproval->role->name)) {
+            $approverRoleName = optional($currentApproval->role)->name ?? 'Atasan Spesifik';
+            $uid = $currentApproval->user_id ?? $currentApproval->approver_id ?? $currentApproval->specific_user_id ?? null;
+
+            if (!empty($uid)) {
+                // A. Jika jalur diarahkan ke spesifik user (Misal: Anwar)
+                if ($isSuperAdmin || $user->id == $uid) {
+                    $isAuthorized = true;
+                }
+            } else {
+                // B. Jika jalur menggunakan Jabatan Standar
+                $reqRoleName = optional($currentApproval->role)->name;
                 $targetDeptId = $currentApproval->target_department_id;
-                if (!empty($targetDeptId) && $targetDeptId !== 'all') {
-                    if ($user->department_id == $targetDeptId) $isAuthorized = true;
-                } else {
-                    if ($pembuatPR && $user->department_id == $pembuatPR->department_id) {
+
+                if ($isSuperAdmin) {
+                    $isAuthorized = true;
+                } elseif ($reqRoleName && $user->hasRole($reqRoleName)) {
+                    if (empty($targetDeptId) || $targetDeptId === 'all' || $targetDeptId == 0) {
                         $isAuthorized = true;
-                    } elseif ($targetDeptId === 'all') {
+                    } elseif ($user->department_id == $targetDeptId) {
                         $isAuthorized = true;
+                    } else {
+                        if ($pembuatPR && $user->department_id == $pembuatPR->department_id) {
+                            $isAuthorized = true;
+                        }
                     }
                 }
             }
         }
 
+        // 3. Eksekusi Penolakan Jika Gagal Lewat Satpam Cerdas
         if ($currentApproval && !$isAuthorized) {
-            return redirect()->back()->with('error', 'AKSES DITOLAK: Giliran persetujuan saat ini adalah wewenang ' . $currentApproval->role->name . ' dari departemen terkait. Anda tidak memiliki hak akses!');
+            return redirect()->back()->with('error', "AKSES DITOLAK: Giliran persetujuan saat ini adalah wewenang {$approverRoleName} dari departemen terkait. Anda tidak memiliki hak akses!");
         }
 
-        $approverRoleName = $currentApproval ? $currentApproval->role->name : 'Atasan';
 
         if ($request->global_action === 'REJECT') {
             if ($currentApproval) {
@@ -795,7 +853,7 @@ class PurchaseRequestController extends Controller
             $this->logHistory($pr->id, 'Ditolak', "Dokumen PR ditolak secara keseluruhan oleh " . auth()->user()->name . " ($approverRoleName)");
 
             if ($pembuatPR) {
-                $pembuatPR->notify(new DocumentApprovalNotification('PR Ditolak ❌', "Mohon maaf, PR Nomor {$pr->pr_number} ditolak secara global oleh {$approverRoleName}.", route('pr.show', $pr->id)));
+                $pembuatPR->notify(new \App\Notifications\DocumentApprovalNotification('PR Ditolak ❌', "Mohon maaf, PR Nomor {$pr->pr_number} ditolak secara global oleh {$approverRoleName}.", route('pr.show', $pr->id)));
             }
 
             return redirect()->route('pr.index')->with('error', 'Purchase Request ditolak secara keseluruhan.');
@@ -837,7 +895,7 @@ class PurchaseRequestController extends Controller
 
             $this->logHistory($pr->id, 'Ditolak (Otomatis)', "PR ditolak otomatis karena semua item ditolak oleh " . auth()->user()->name . " ($approverRoleName)");
 
-            if ($pembuatPR) $pembuatPR->notify(new DocumentApprovalNotification('PR Ditolak ❌', "Semua item pada PR Nomor {$pr->pr_number} telah ditolak.", route('pr.show', $pr->id)));
+            if ($pembuatPR) $pembuatPR->notify(new \App\Notifications\DocumentApprovalNotification('PR Ditolak ❌', "Semua item pada PR Nomor {$pr->pr_number} telah ditolak.", route('pr.show', $pr->id)));
 
             return redirect()->route('pr.index')->with('error', 'PR ditolak karena semua item di dalamnya ditolak.');
         }
@@ -855,12 +913,23 @@ class PurchaseRequestController extends Controller
         $catatan = "Dokumen disetujui pada tahap ini.\n";
 
         if ($nextApproval) {
-            $nextRoleName = $nextApproval->role->name;
-            $nextApprovers = \App\Models\User::role($nextRoleName)->get();
-
-            foreach ($nextApprovers as $approver) {
-                $approver->notify(new DocumentApprovalNotification('PR Butuh Persetujuan Lapis Lanjutan 📝', "PR Nomor {$pr->pr_number} telah disetujui lapis sebelumnya dan kini butuh persetujuan Anda sebagai {$nextRoleName}.", route('pr.show', $pr->id)));
+            $nextRoleName = optional($nextApproval->role)->name ?? 'Lapis Lanjutan';
+            
+            // Logika cerdas untuk notifikasi ke lapis berikutnya
+            $nextUid = $nextApproval->user_id ?? $nextApproval->approver_id ?? $nextApproval->specific_user_id ?? null;
+            if (!empty($nextUid)) {
+                $nextApproverUser = \App\Models\User::find($nextUid);
+                if($nextApproverUser){
+                    $nextApproverUser->notify(new \App\Notifications\DocumentApprovalNotification('PR Butuh Persetujuan Lapis Lanjutan 📝', "PR Nomor {$pr->pr_number} telah disetujui lapis sebelumnya dan kini butuh persetujuan khusus Anda.", route('pr.show', $pr->id)));
+                    $nextRoleName = $nextApproverUser->name;
+                }
+            } else {
+                $nextApprovers = \App\Models\User::role($nextRoleName)->get();
+                foreach ($nextApprovers as $approver) {
+                    $approver->notify(new \App\Notifications\DocumentApprovalNotification('PR Butuh Persetujuan Lapis Lanjutan 📝', "PR Nomor {$pr->pr_number} telah disetujui lapis sebelumnya dan kini butuh persetujuan Anda sebagai {$nextRoleName}.", route('pr.show', $pr->id)));
+                }
             }
+
             $catatan .= "Diteruskan ke Lapis Berikutnya: **" . strtoupper($nextRoleName) . "**\n";
             $successMsg = "Disetujui! Dokumen telah diteruskan ke $nextRoleName.";
         } else {
@@ -871,11 +940,11 @@ class PurchaseRequestController extends Controller
             $catatan .= "Persetujuan Matriks telah SELESAI. Dokumen Siap di-PO-kan.\n";
             $successMsg = "Hore! Dokumen ini telah disetujui secara FINAL!";
 
-            if ($pembuatPR) $pembuatPR->notify(new DocumentApprovalNotification('PR Disetujui ✅', "Hore! PR Nomor {$pr->pr_number} telah disetujui Final.", route('pr.show', $pr->id)));
+            if ($pembuatPR) $pembuatPR->notify(new \App\Notifications\DocumentApprovalNotification('PR Disetujui ✅', "Hore! PR Nomor {$pr->pr_number} telah disetujui Final.", route('pr.show', $pr->id)));
 
-            $timPurchasing = User::role(['Super Admin', 'Purchasing'])->get();
+            $timPurchasing = \App\Models\User::role(['Super Admin', 'Purchasing'])->get();
             foreach($timPurchasing as $purchasing) {
-                $purchasing->notify(new DocumentApprovalNotification('PR Baru Siap Di-PO 🛒', "PR Nomor {$pr->pr_number} telah disetujui final dan siap dibuatkan PO.", route('pr.show', $pr->id)));
+                $purchasing->notify(new \App\Notifications\DocumentApprovalNotification('PR Baru Siap Di-PO 🛒', "PR Nomor {$pr->pr_number} telah disetujui final dan siap dibuatkan PO.", route('pr.show', $pr->id)));
             }
         }
 

@@ -41,7 +41,7 @@ class UomController extends Controller
 
     public function update(Request $request, $id)
     {
-        $uom = Uom::findOrFail($id);
+        $uom = \App\Models\Uom::findOrFail($id);
 
         $request->validate([
             'code' => 'required|string|max:50|unique:uoms,code,' . $uom->id,
@@ -55,6 +55,7 @@ class UomController extends Controller
             'description' => $request->description
         ]);
 
+        // 🔥 HAPUS TANDA // AGAR SISTEM BISA KEMBALI KE HALAMAN SEBELUMNYA 🔥
         return back()->with('success', 'Data Satuan (UOM) berhasil diperbarui!');
     }
 

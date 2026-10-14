@@ -511,11 +511,11 @@ Route::middleware('auth')->group(function () {
     Route::resource('users', UserController::class)->middleware('can:manage_roles');
 
 
-    // ====================================================
+   // ====================================================
     // X. MODUL MASTER SATUAN (UOM)
     // ====================================================
-    Route::prefix('uoms')->name('uoms.')->middleware(['can:view_inventory'])->group(function () {
-        Route::resource('/', \App\Http\Controllers\UomController::class)->except(['create', 'show', 'edit']);
+    Route::middleware(['can:view_inventory'])->group(function () {
+        Route::resource('uoms', \App\Http\Controllers\UomController::class)->except(['create', 'show', 'edit']);
     });
 
     Route::prefix('asset-capitalizations')->name('asset-capitalizations.')->middleware(['can:view_assets'])->group(function () {
