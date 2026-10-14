@@ -46,7 +46,7 @@
     <footer>Dokumen {{ $isDigital ? 'elektronik' : 'fisik' }} ini diterbitkan oleh sistem pada {{ \Carbon\Carbon::now()->translatedFormat('d M Y H:i:s') }} WIB</footer>
 
 
-    <h1>PurchaseOrder</h1>
+    <h1>Purchase <span style="font-weight: normal;">Order</span></h1>
 
     <table class="grid" style="border-bottom: none;">
         <tr>
@@ -62,24 +62,28 @@
             <td style="width: 50%; padding: 0; vertical-align: top; border-bottom: none;">
                 <table style="width: 100%; border-collapse: collapse; border: none; margin: 0;">
                     <tr>
-                        <td style="border: none; padding: 6px 10px; width: 45%;">PO Number</td>
-                        <td style="border: none; padding: 6px 10px; text-align: right; font-weight: bold; width: 55%;">{{ $po->po_number }}</td>
+                        <td style="border: none; padding: 6px 0 6px 10px; white-space: nowrap;">Purchase Order No.</td>
+                        <td style="border: none; padding: 6px 5px; width: 1%;">:</td>
+                        <td style="border: none; padding: 6px 10px; text-align: right; font-weight: bold; width: 50%;">{{ $po->po_number }}</td>
                     </tr>
                     <tr>
-                        <td style="border: none; padding: 6px 10px;">PO Date</td>
+                        <td style="border: none; padding: 6px 0 6px 10px; white-space: nowrap;">Purchase Order Date</td>
+                        <td style="border: none; padding: 6px 5px; width: 1%;">:</td>
                         <td style="border: none; padding: 6px 10px; text-align: right;">{{ date('d-M-y', strtotime($po->po_date ?? $po->created_at)) }}</td>
                     </tr>
 
                     <tr>
-                        <td colspan="2" style="border: none; padding: 6px 10px;">&nbsp;</td>
+                        <td colspan="3" style="border: none; padding: 6px 10px;">&nbsp;</td>
                     </tr>
 
                     <tr>
-                        <td style="border: none; padding: 6px 10px;">Purchase Req. No.</td>
+                        <td style="border: none; padding: 6px 0 6px 10px; white-space: nowrap;">Purchase Req. No.</td>
+                        <td style="border: none; padding: 6px 5px; width: 1%;">:</td>
                         <td style="border: none; padding: 6px 10px; text-align: right;">{{ $po->purchase_request_id ? optional($po->purchaseRequest)->pr_number : '-' }}</td>
                     </tr>
                     <tr>
-                        <td style="border: none; padding: 6px 10px;">PR Date</td>
+                        <td style="border: none; padding: 6px 0 6px 10px; white-space: nowrap;">Purchase Req. Date</td>
+                        <td style="border: none; padding: 6px 5px; width: 1%;">:</td>
                         <td style="border: none; padding: 6px 10px; text-align: right;">{{ $po->purchase_request_id ? date('d-M-y', strtotime($po->purchaseRequest->pr_date ?? $po->purchaseRequest->created_at)) : '-' }}</td>
                     </tr>
                 </table>
@@ -300,22 +304,38 @@
         </tr>
 
         <tr>
-            <td style="border-top: none; border-bottom: none; height: 70px; text-align: center;">
+            <td style="border-top: none; border-bottom: none; height: 70px; text-align: center; vertical-align: bottom;">
                 @if($prepSigBase64)
-                    <img src="{{ $prepSigBase64 }}" style="max-height: 60px; max-width: 140px; object-fit: contain;">
-                @elseif($isDigital)
-                    <div class="stamp stamp-issued">DIAJUKAN</div>
+                    <img src="{{ $prepSigBase64 }}" style="max-height: 60px; max-width: 140px; object-fit: contain; margin-bottom: 5px;">
+                @elseif(isset($isDigital) && $isDigital)
+                    <div class="stamp stamp-issued" style="margin-bottom: 15px;">DIAJUKAN</div>
                 @endif
             </td>
             @foreach($approvals as $approval)
-                <td style="border-top: none; border-bottom: none; height: 70px; text-align: center;">
-                    @if($isDigital)
-                        @if($approval->status == 'APPROVED')
-                            <div style="color: green; font-size: 10px; margin-top: 15px;">[ APPROVED ]</div>
+                <td style="border-top: none; border-bottom: none; height: 70px; text-align: center; vertical-align: bottom;">
+                    @php
+                        // 🔥 LOGIKA PENCARIAN TANDA TANGAN APPROVER 🔥
+                        $apprSigBase64 = null;
+                        if ($approval->status == 'APPROVED' && $approval->approved_by) {
+                            $apprUser = \App\Models\User::find($approval->approved_by);
+                            if ($apprUser && $apprUser->signature) {
+                                $path = public_path('storage/' . $apprUser->signature);
+                                if (file_exists($path)) {
+                                    $apprSigBase64 = 'data:image/' . pathinfo($path, PATHINFO_EXTENSION) . ';base64,' . base64_encode(file_get_contents($path));
+                                }
+                            }
+                        }
+                    @endphp
+
+                    @if(!isset($isDigital) || $isDigital)
+                        @if($apprSigBase64)
+                            <img src="{{ $apprSigBase64 }}" style="max-height: 60px; max-width: 140px; object-fit: contain; margin-bottom: 5px;">
+                        @elseif($approval->status == 'APPROVED')
+                            <div style="color: green; font-size: 10px; margin-bottom: 15px;">[ APPROVED ]</div>
                         @elseif($approval->status == 'REJECTED')
-                            <div style="color: red; font-size: 10px; margin-top: 15px;">[ REJECTED ]</div>
+                            <div style="color: red; font-size: 10px; margin-bottom: 15px;">[ REJECTED ]</div>
                         @else
-                            <div style="color: gray; font-size: 10px; margin-top: 15px;">[ PENDING ]</div>
+                            <div style="color: gray; font-size: 10px; margin-bottom: 15px;">[ PENDING ]</div>
                         @endif
                     @endif
                 </td>
@@ -372,7 +392,7 @@
                     <strong><u>{{ $namaTtd }}</u></strong>
                     @if(!empty($jabatanLengkap))
                         <br>
-                        <span style="font-size: 8pt; color: #555;">{{ $jabatanLengkap }}</span>
+                        {{-- <span style="font-size: 8pt; color: #555;">{{ $jabatanLengkap }}</span> --}}
                     @else
                         <br>
                         <span style="font-size: 8pt; color: transparent;">-</span>

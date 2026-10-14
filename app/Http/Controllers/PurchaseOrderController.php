@@ -421,26 +421,30 @@ class PurchaseOrderController extends Controller
                     $needsApproval = false;
 
                     if ($customWorkflowId) {
-                        $workflow = \App\Models\ApprovalWorkflow::with('steps')->find($customWorkflowId);
+                    $workflow = \App\Models\ApprovalWorkflow::with('steps')->find($customWorkflowId);
+                    if ($workflow && $workflow->steps->count() > 0) {
+                        foreach ($workflow->steps as $step) {
+                            $targetDept = $step->target_department_id ?? $step->department_id ?? null;
 
-                        if ($workflow && $workflow->steps->count() > 0) {
-                            foreach ($workflow->steps as $step) {
-                                $targetDept = $step->target_department_id ?? $step->department_id ?? null;
-                                \Illuminate\Support\Facades\DB::table('document_approvals')->insert([
-                                    'document_id'          => $po->id,
-                                    'document_type'        => get_class($po),
-                                    'role_id'              => $step->role_id,
-                                    'target_department_id' => $targetDept,
-                                    'step_order'           => $step->step_order,
-                                    'status'               => 'PENDING',
-                                    'created_at'           => now(),
-                                    'updated_at'           => now()
-                                ]);
-                            }
-                            $needsApproval = true;
-                            $this->logHistory($po->id, 'SYSTEM', "Menggunakan Rute Persetujuan Khusus: " . $workflow->name);
+                            // 🔥 KODE ANTI-GAGAL: TANGKAP SPESIFIK USER DARI BERBAGAI KEMUNGKINAN NAMA KOLOM 🔥
+                            $specificUserId = $step->user_id ?? $step->specific_user_id ?? $step->approver_id ?? null;
+
+                            \Illuminate\Support\Facades\DB::table('document_approvals')->insert([
+                                'document_id'          => $po->id,
+                                'document_type'        => get_class($po),
+                                'role_id'              => $step->role_id,
+                                'target_department_id' => $targetDept,
+                                'user_id'              => $specificUserId, // 🔥 SIMPAN DATANYA DI SINI 🔥
+                                'step_order'           => $step->step_order,
+                                'status'               => 'PENDING',
+                                'created_at'           => now(),
+                                'updated_at'           => now()
+                            ]);
                         }
-                    } else {
+                        $needsApproval = true;
+                        $this->logHistory($po->id, 'SYSTEM', "Menggunakan Rute Persetujuan Khusus: " . $workflow->name);
+                    }
+                } else {
                         $needsApproval = \App\Services\ApprovalService::generateWorkflow($po);
                         if ($needsApproval) {
                             $this->logHistory($po->id, 'SYSTEM', 'PO diterbitkan dari PR dan masuk antrean persetujuan (Workflow Standar).');
@@ -739,12 +743,16 @@ class PurchaseOrderController extends Controller
                     if ($workflow && $workflow->steps->count() > 0) {
                         foreach ($workflow->steps as $step) {
                             $targetDept = $step->target_department_id ?? $step->department_id ?? null;
+
+                            // 🔥 KODE ANTI-GAGAL: TANGKAP SPESIFIK USER DARI BERBAGAI KEMUNGKINAN NAMA KOLOM 🔥
+                            $specificUserId = $step->user_id ?? $step->specific_user_id ?? $step->approver_id ?? null;
+
                             \Illuminate\Support\Facades\DB::table('document_approvals')->insert([
                                 'document_id'          => $po->id,
                                 'document_type'        => get_class($po),
                                 'role_id'              => $step->role_id,
                                 'target_department_id' => $targetDept,
-                                'user_id'              => $step->user_id, // 🔥 TAMBAHAN PENTING UNTUK CUSTOM WORKFLOW
+                                'user_id'              => $specificUserId, // 🔥 SIMPAN DATANYA DI SINI 🔥
                                 'step_order'           => $step->step_order,
                                 'status'               => 'PENDING',
                                 'created_at'           => now(),
@@ -752,7 +760,7 @@ class PurchaseOrderController extends Controller
                             ]);
                         }
                         $needsApproval = true;
-                        $this->logHistory($po->id, 'SYSTEM', "Menggunakan Rute Persetujuan Khusus (Update): " . $workflow->name);
+                        $this->logHistory($po->id, 'SYSTEM', "Menggunakan Rute Persetujuan Khusus: " . $workflow->name);
                     }
                 } else {
                     $needsApproval = \App\Services\ApprovalService::generateWorkflow($po);
@@ -1681,15 +1689,19 @@ class PurchaseOrderController extends Controller
 
                 if ($customWorkflowId) {
                     $workflow = \App\Models\ApprovalWorkflow::with('steps')->find($customWorkflowId);
-
                     if ($workflow && $workflow->steps->count() > 0) {
                         foreach ($workflow->steps as $step) {
                             $targetDept = $step->target_department_id ?? $step->department_id ?? null;
+
+                            // 🔥 KODE ANTI-GAGAL: TANGKAP SPESIFIK USER DARI BERBAGAI KEMUNGKINAN NAMA KOLOM 🔥
+                            $specificUserId = $step->user_id ?? $step->specific_user_id ?? $step->approver_id ?? null;
+
                             \Illuminate\Support\Facades\DB::table('document_approvals')->insert([
                                 'document_id'          => $po->id,
                                 'document_type'        => get_class($po),
                                 'role_id'              => $step->role_id,
                                 'target_department_id' => $targetDept,
+                                'user_id'              => $specificUserId, // 🔥 SIMPAN DATANYA DI SINI 🔥
                                 'step_order'           => $step->step_order,
                                 'status'               => 'PENDING',
                                 'created_at'           => now(),
@@ -1699,6 +1711,7 @@ class PurchaseOrderController extends Controller
                         $needsApproval = true;
                         $this->logHistory($po->id, 'SYSTEM', "Menggunakan Rute Persetujuan Khusus: " . $workflow->name);
                     }
+
                 } else {
                     $needsApproval = \App\Services\ApprovalService::generateWorkflow($po);
                     if ($needsApproval) {

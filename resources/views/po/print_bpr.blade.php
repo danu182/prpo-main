@@ -294,122 +294,138 @@
         </table>
 
         {{-- KOTAK TANDA TANGAN (SMART LOOKUP) --}}
-        @php
-            $approvals = \App\Models\DocumentApproval::with(['role'])
-                ->where('document_id', $po->id)
-                ->whereIn('document_type', ['App\Models\PurchaseOrder', 'PO', 'PurchaseOrder', get_class($po)])
-                ->orderBy('step_order', 'asc')
-                ->get();
+    @php
+        $approvals = \App\Models\DocumentApproval::with(['role'])
+            ->where('document_id', $po->id)
+            ->whereIn('document_type', ['App\Models\PurchaseOrder', 'PO', 'PurchaseOrder', get_class($po)])
+            ->orderBy('step_order', 'asc')
+            ->get();
 
-            $totalCols = 1 + $approvals->count();
+        $totalCols = 1 + $approvals->count();
 
-            $prepSigBase64 = null;
-            if ($po->user && $po->user->signature) {
-                $path = public_path('storage/' . $po->user->signature);
-                if (file_exists($path)) { $prepSigBase64 = 'data:image/' . pathinfo($path, PATHINFO_EXTENSION) . ';base64,' . base64_encode(file_get_contents($path)); }
-            }
-        @endphp
+        $prepSigBase64 = null;
+        if ($po->user && $po->user->signature) {
+            $path = public_path('storage/' . $po->user->signature);
+            if (file_exists($path)) { $prepSigBase64 = 'data:image/' . pathinfo($path, PATHINFO_EXTENSION) . ';base64,' . base64_encode(file_get_contents($path)); }
+        }
+    @endphp
 
-        <table class="sign-table">
-            <tr>
-                <td style="text-align: left; padding: 10px 10px 0 10px; width: {{ 100 / ($totalCols > 0 ? $totalCols : 1) }}%;">Prepared by :</td>
-                @foreach($approvals as $approval)
-                    <td style="text-align: left; padding: 10px 10px 0 10px; width: {{ 100 / ($totalCols > 0 ? $totalCols : 1) }}%;">
-                        @if($loop->last)
-                            Approved by :
+    <table class="sign-table">
+        <tr>
+            <td style="border-bottom: none; text-align: left; padding: 10px 10px 0 10px; width: {{ 100 / ($totalCols > 0 ? $totalCols : 1) }}%;">Prepared by :</td>
+            @foreach($approvals as $approval)
+                <td style="border-bottom: none; text-align: left; padding: 10px 10px 0 10px; width: {{ 100 / ($totalCols > 0 ? $totalCols : 1) }}%;">
+                    @if($loop->last)
+                        Approved by :
+                    @else
+                        @if($approvals->count() > 2)
+                            Checked by {{ $loop->iteration }} :
                         @else
-                            @if($approvals->count() > 2)
-                                Checked by {{ $loop->iteration }} :
-                            @else
-                                Checked by :
-                            @endif
+                            Checked by :
                         @endif
-                    </td>
-                @endforeach
-            </tr>
-
-            <tr>
-                <td style="height: 70px; text-align: center;">
-                    @if($prepSigBase64)
-                        <img src="{{ $prepSigBase64 }}" style="max-height: 60px; max-width: 140px; object-fit: contain;">
-                    @elseif($isDigital)
-                        <div class="stamp stamp-issued">DIAJUKAN</div>
                     @endif
                 </td>
-                @foreach($approvals as $approval)
-                    <td style="height: 70px; text-align: center;">
-                        @if($isDigital)
-                            @if($approval->status == 'APPROVED')
-                                <div style="color: green; font-size: 10px; margin-top: 15px;">[ APPROVED ]</div>
-                            @elseif($approval->status == 'REJECTED')
-                                <div style="color: red; font-size: 10px; margin-top: 15px;">[ REJECTED ]</div>
-                            @else
-                                <div style="color: gray; font-size: 10px; margin-top: 15px;">[ PENDING ]</div>
-                            @endif
-                        @endif
-                    </td>
-                @endforeach
-            </tr>
+            @endforeach
+        </tr>
 
-            <tr>
-                <td style="padding: 0 10px 15px 10px; text-align: center;">
-                    <strong><u>{{ $po->user->name ?? 'Requester' }}</u></strong><br>
-                    <span style="font-size: 7pt; color: #666;">{{ $po->created_at ? $po->created_at->format('d/m/y H:i') : '' }}</span>
-                </td>
-                @foreach($approvals as $approval)
+        <tr>
+            <td style="border-top: none; border-bottom: none; height: 70px; text-align: center; vertical-align: bottom;">
+                @if($prepSigBase64)
+                    <img src="{{ $prepSigBase64 }}" style="max-height: 60px; max-width: 140px; object-fit: contain; margin-bottom: 5px;">
+                @elseif(isset($isDigital) && $isDigital)
+                    <div class="stamp stamp-issued" style="margin-bottom: 15px;">DIAJUKAN</div>
+                @endif
+            </td>
+            @foreach($approvals as $approval)
+                <td style="border-top: none; border-bottom: none; height: 70px; text-align: center; vertical-align: bottom;">
                     @php
-                        $namaTtd = "";
-                        $uid = $approval->user_id ?? $approval->approver_id ?? $approval->specific_user_id ?? null;
-
-                        if (!empty($uid)) {
-                            $userTtd = \App\Models\User::find($uid);
-                            $namaTtd = $userTtd ? $userTtd->name : '';
-                        }
-
-                        $roleName = optional($approval->role)->name ?? 'Manager';
-                        $deptName = '';
-                        if (!empty($approval->target_department_id) && $approval->target_department_id !== 'all') {
-                            $dept = \DB::table('departments')->where('id', $approval->target_department_id)->first();
-                            $deptName = $dept ? $dept->name : '';
-                        } else {
-                            $deptName = optional(optional($po->user)->department)->name ?? '';
-                        }
-
-                        $jabatanLengkap = trim($roleName . ' ' . $deptName);
-
-                        if (empty($namaTtd) && !empty($roleName)) {
-                            $potentialUsers = \App\Models\User::role($roleName);
-
-                            if (!empty($approval->target_department_id) && $approval->target_department_id !== 'all') {
-                                $potentialUsers->where('department_id', $approval->target_department_id);
-                            } elseif (empty($approval->target_department_id)) {
-                                $potentialUsers->where('department_id', optional($po->user)->department_id);
+                        // 🔥 LOGIKA PENCARIAN TANDA TANGAN APPROVER 🔥
+                        $apprSigBase64 = null;
+                        if ($approval->status == 'APPROVED' && $approval->approved_by) {
+                            $apprUser = \App\Models\User::find($approval->approved_by);
+                            if ($apprUser && $apprUser->signature) {
+                                $path = public_path('storage/' . $apprUser->signature);
+                                if (file_exists($path)) {
+                                    $apprSigBase64 = 'data:image/' . pathinfo($path, PATHINFO_EXTENSION) . ';base64,' . base64_encode(file_get_contents($path));
+                                }
                             }
-
-                            $firstUser = $potentialUsers->first();
-                            if ($firstUser) {
-                                $namaTtd = $firstUser->name;
-                            }
-                        }
-
-                        if (empty($namaTtd)) {
-                            $namaTtd = $jabatanLengkap;
-                            $jabatanLengkap = '';
                         }
                     @endphp
-                    <td style="padding: 0 10px 15px 10px; text-align: center;">
-                        <strong><u>{{ $namaTtd }}</u></strong>
-                        @if(!empty($jabatanLengkap))
-                            <br>
-                            <span style="font-size: 8pt; color: #555;">{{ $jabatanLengkap }}</span>
+
+                    @if(!isset($isDigital) || $isDigital)
+                        @if($apprSigBase64)
+                            <img src="{{ $apprSigBase64 }}" style="max-height: 60px; max-width: 140px; object-fit: contain; margin-bottom: 5px;">
+                        @elseif($approval->status == 'APPROVED')
+                            <div style="color: green; font-size: 10px; margin-bottom: 15px;">[ APPROVED ]</div>
+                        @elseif($approval->status == 'REJECTED')
+                            <div style="color: red; font-size: 10px; margin-bottom: 15px;">[ REJECTED ]</div>
                         @else
-                            <br>
-                            <span style="font-size: 8pt; color: transparent;">-</span>
+                            <div style="color: gray; font-size: 10px; margin-bottom: 15px;">[ PENDING ]</div>
                         @endif
-                    </td>
-                @endforeach
-            </tr>
-        </table>
+                    @endif
+                </td>
+            @endforeach
+        </tr>
+
+        <tr>
+            <td style="border-top: none; padding: 0 10px 15px 10px; text-align: center;">
+                <strong><u>{{ $po->user->name ?? 'Requester' }}</u></strong><br>
+                <span style="font-size: 7pt; color: #666;">{{ $po->created_at ? $po->created_at->format('d/m/y H:i') : '' }}</span>
+            </td>
+            @foreach($approvals as $approval)
+                @php
+                    $namaTtd = "";
+                    $uid = $approval->user_id ?? $approval->approver_id ?? $approval->specific_user_id ?? null;
+
+                    if (!empty($uid)) {
+                        $userTtd = \App\Models\User::find($uid);
+                        $namaTtd = $userTtd ? $userTtd->name : '';
+                    }
+
+                    $roleName = optional($approval->role)->name ?? 'Manager';
+                    $deptName = '';
+                    if (!empty($approval->target_department_id) && $approval->target_department_id !== 'all') {
+                        $dept = \DB::table('departments')->where('id', $approval->target_department_id)->first();
+                        $deptName = $dept ? $dept->name : '';
+                    } else {
+                        $deptName = optional(optional($po->user)->department)->name ?? '';
+                    }
+
+                    $jabatanLengkap = trim($roleName . ' ' . $deptName);
+
+                    if (empty($namaTtd) && !empty($roleName)) {
+                        $potentialUsers = \App\Models\User::role($roleName);
+
+                        if (!empty($approval->target_department_id) && $approval->target_department_id !== 'all') {
+                            $potentialUsers->where('department_id', $approval->target_department_id);
+                        } elseif (empty($approval->target_department_id)) {
+                            $potentialUsers->where('department_id', optional($po->user)->department_id);
+                        }
+
+                        $firstUser = $potentialUsers->first();
+                        if ($firstUser) {
+                            $namaTtd = $firstUser->name;
+                        }
+                    }
+
+                    if (empty($namaTtd)) {
+                        $namaTtd = $jabatanLengkap;
+                        $jabatanLengkap = '';
+                    }
+                @endphp
+                <td style="border-top: none; padding: 0 10px 15px 10px; text-align: center;">
+                    <strong><u>{{ $namaTtd }}</u></strong>
+                    @if(!empty($jabatanLengkap))
+                        <br>
+                        {{-- <span style="font-size: 8pt; color: #555;">{{ $jabatanLengkap }}</span> --}}
+                    @else
+                        <br>
+                        <span style="font-size: 8pt; color: transparent;">-</span>
+                    @endif
+                </td>
+            @endforeach
+        </tr>
+    </table>
 
     </div>
 

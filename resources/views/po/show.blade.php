@@ -96,6 +96,8 @@
                 </div>
             @endif
 
+
+
             {{-- 2. TOMBOL EDIT PO (Hanya untuk Pembuat PO / Super Admin & Belum Ada Persetujuan Masuk) --}}
             @if(in_array($statusSlug, ['draft', '', 'pending_approval', 'rejected']))
                 @if(auth()->id() == $po->created_by || auth()->user()->hasAnyRole(['Super Admin', 'Super Administrator', 'super-admin']))
@@ -126,10 +128,11 @@
             {{-- 4. LOGIKA SMART APPROVAL BERGILIRAN --}}
             @php
                 $canApprove = false;
+                $approverText = 'Atasan';
 
                 $currentPendingApproval = \App\Models\DocumentApproval::with('role')
                     ->where('document_id', $po->id)
-                    ->where('document_type', get_class($po))
+                    ->whereIn('document_type', [get_class($po), 'App\Models\PurchaseOrder', 'PO', 'PurchaseOrder'])
                     ->where('status', 'PENDING')
                     ->orderBy('step_order', 'asc')
                     ->first();
@@ -138,23 +141,39 @@
                     $user = auth()->user();
                     $isSuperAdmin = $user->hasAnyRole(['Super Admin', 'Super Administrator', 'super-admin']);
 
-                    $reqRoleName = optional($currentPendingApproval->role)->name;
-                    $hasRequiredRole = $reqRoleName ? $user->roles()->where('name', $reqRoleName)->exists() : false;
+                    // Cek apakah ada spesifik user (seperti Anwar)
+                    $uid = $currentPendingApproval->user_id ?? $currentPendingApproval->approver_id ?? $currentPendingApproval->specific_user_id ?? null;
 
-                    $targetDeptId = $currentPendingApproval->target_department_id;
-                    $hasRequiredDept = false;
+                    if (!empty($uid)) {
+                        // JIKA ADA USER SPESIFIK
+                        $specificUser = \App\Models\User::find($uid);
+                        $approverText = $specificUser ? $specificUser->name : 'User Spesifik';
 
-                    if (empty($targetDeptId)) {
-                        $pembuatPo = \App\Models\User::find($po->created_by);
-                        $hasRequiredDept = ($pembuatPo && (int) $user->department_id === (int) $pembuatPo->department_id);
-                    } elseif ($targetDeptId === 'all' || $targetDeptId == 0) {
-                        $hasRequiredDept = true;
+                        // Hanya user tersebut (atau Super Admin) yang bisa approve
+                        if ($isSuperAdmin || $user->id == $uid) {
+                            $canApprove = true;
+                        }
                     } else {
-                        $hasRequiredDept = ((int) $user->department_id === (int) $targetDeptId);
-                    }
+                        // JIKA TIDAK ADA USER SPESIFIK (KEMBALI KE LOGIKA JABATAN/ROLE)
+                        $reqRoleName = optional($currentPendingApproval->role)->name;
+                        $approverText = $reqRoleName ?? 'Manager';
+                        $hasRequiredRole = $reqRoleName ? $user->roles()->where('name', $reqRoleName)->exists() : false;
 
-                    if ($isSuperAdmin || ($hasRequiredRole && $hasRequiredDept)) {
-                        $canApprove = true;
+                        $targetDeptId = $currentPendingApproval->target_department_id;
+                        $hasRequiredDept = false;
+
+                        if (empty($targetDeptId)) {
+                            $pembuatPo = \App\Models\User::find($po->created_by);
+                            $hasRequiredDept = ($pembuatPo && (int) $user->department_id === (int) $pembuatPo->department_id);
+                        } elseif ($targetDeptId === 'all' || $targetDeptId == 0) {
+                            $hasRequiredDept = true;
+                        } else {
+                            $hasRequiredDept = ((int) $user->department_id === (int) $targetDeptId);
+                        }
+
+                        if ($isSuperAdmin || ($hasRequiredRole && $hasRequiredDept)) {
+                            $canApprove = true;
+                        }
                     }
                 }
             @endphp
@@ -181,9 +200,10 @@
             @elseif($currentPendingApproval)
                 {{-- Mode Menunggu Persetujuan --}}
                 <div class="px-4 py-2 border shadow-sm rounded-pill bg-light text-muted fw-bold d-inline-block">
-                    <i class="bi bi-hourglass-split me-1"></i> Menunggu Persetujuan: {{ $currentPendingApproval->role->name ?? 'Atasan' }}
+                    <i class="bi bi-hourglass-split me-1"></i> Menunggu Persetujuan: {{ $approverText }}
                 </div>
             @endif
+
 
             {{-- 5. TOMBOL TERIMA BARANG (GOODS RECEIPT) --}}
             @if(in_array($statusSlug, ['issued', 'approved', 'partial_receipt', 'partial_received']))
