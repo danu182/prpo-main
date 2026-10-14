@@ -4,148 +4,124 @@
     <meta charset="UTF-8">
     <title>Purchase Order - {{ $po->po_number }}</title>
     <style>
-        body { font-family: 'Helvetica', Arial, sans-serif; font-size: 10pt; color: #333; margin: 0; padding: 0; }
-        .header-table { width: 100%; margin-bottom: 20px; border-bottom: 2px solid #000; padding-bottom: 10px; }
-        .company-name { font-size: 16pt; font-weight: bold; color: #0d6efd; text-transform: uppercase; margin: 0; }
-        .company-address { font-size: 9pt; color: #555; margin-top: 5px; }
-        .doc-title { font-size: 18pt; font-weight: bold; text-align: right; color: #333; margin: 0; }
+        @page { margin: 30px 40px; }
+        body { font-family: 'Helvetica', 'Arial', sans-serif; font-size: 10pt; color: #000; margin: 0; padding: 0; }
 
-        .info-table { width: 100%; margin-bottom: 20px; }
-        .info-table td { vertical-align: top; width: 33.33%; padding-right: 15px; }
-        .box-title { font-weight: bold; background-color: #f8f9fa; padding: 5px; border: 1px solid #ddd; font-size: 9pt; text-transform: uppercase;}
-        .box-content { border: 1px solid #ddd; border-top: none; padding: 8px; font-size: 9pt; min-height: 80px;}
+        h1 { text-align: center; font-size: 28pt; font-weight: bold; margin: 0 0 20px 0; letter-spacing: 1px; }
 
-        .item-table { width: 100%; border-collapse: collapse; margin-bottom: 20px; }
-        .item-table th { background-color: #0d6efd; color: white; padding: 8px; font-size: 9pt; border: 1px solid #0d6efd; }
-        .item-table td { padding: 6px 8px; border: 1px solid #ddd; font-size: 9pt; vertical-align: top; }
-        .item-table .text-right { text-align: right; }
-        .item-table .text-center { text-align: center; }
+        table.grid { width: 100%; border-collapse: collapse; border: 1px solid #000; }
+        table.grid th, table.grid td { border: 1px solid #000; padding: 5px 6px; vertical-align: top; }
 
-        .summary-table { width: 45%; float: right; border-collapse: collapse; }
-        .summary-table td { padding: 5px 8px; border: 1px solid #ddd; font-size: 9pt; }
-        .summary-table .bold { font-weight: bold; }
-        .summary-table .bg-light { background-color: #f8f9fa; }
+        table.grid th { text-align: center; font-weight: bold; background-color: #d9d9d9; vertical-align: middle; text-transform: uppercase; font-size: 9.5pt; }
 
-        .notes-section { width: 50%; float: left; font-size: 9pt; margin-top: 5px; }
-        .notes-box { border: 1px dashed #aaa; padding: 10px; background-color: #fdfdfd; min-height: 50px; }
+        table.sign-table { width: 100%; border-collapse: collapse; border: 1px solid #000; border-top: none; page-break-inside: avoid; table-layout: fixed; }
+        table.sign-table td { border: 1px solid #000; vertical-align: top; padding: 0; }
 
-        .clear { clear: both; }
+        table.amount-box { width: 100%; border: none !important; border-collapse: collapse; margin: 0; padding: 0; }
+        table.amount-box td { border: none !important; padding: 0 !important; margin: 0 !important; vertical-align: top; white-space: nowrap; }
+        .curr-txt { text-align: left; width: 1%; padding-right: 5px; color: #333; font-size: 9.5pt; }
+        .num-txt { text-align: right; letter-spacing: -0.3px; white-space: nowrap; }
 
-        .signature-table { width: 100%; margin-top: 50px; text-align: center; font-size: 9pt; page-break-inside: avoid; }
-        .signature-table td { width: 33.33%; }
-        .sign-area { height: 80px; }
+        .stamp { display: inline-block; padding: 4px 10px; font-weight: bold; font-size: 10pt; letter-spacing: 1px; text-transform: uppercase; border: 2px solid; margin: auto; }
+        .stamp-issued { color: #198754; border-color: #198754; }
+        footer { position: fixed; bottom: -30px; left: 0px; right: 0px; height: 30px; font-size: 8pt; color: #555; font-style: italic; }
 
-        .signature-img { max-height: 55px; max-width: 110px; object-fit: contain; margin-top: 5px; }
-
-        @page { margin: 15mm 15mm 20mm 15mm; }
-
-        footer {
-            position: fixed;
-            bottom: -15mm;
-            left: 0;
-            right: 0;
-            height: 15mm;
-            text-align: center;
-            font-size: 8pt;
-            color: #777;
-        }
     </style>
 </head>
 <body>
 
     @php
-        $isDigital = (!isset($type) || $type === 'digital');
+        $isDigital = (!isset($type) || $type === 'digital' || $type === 'hybrid');
+
+        $currencyCode = $po->currency ?? 'IDR';
+        $currencyData = \App\Models\Currency::where('code', $currencyCode)->first();
+        $currency = $currencyData ? $currencyData->symbol : $currencyCode;
+
+        $companyName = optional($po->company)->name ?? optional(optional($po->purchaseRequest)->company)->name ?? 'PT. PANDU DEWANATA';
+        $companyAddress = optional($po->company)->address ?? 'Menara Batavia, 11th Floor, Jl. K.H. Mas Mansyur, Kav. 126, Jakarta 10220, INDONESIA, tel. 62-21 573 7070, fax. 574 7733';
+
+        $companyNpwp = optional($po->company)->tax_id;
     @endphp
 
-    <footer>
-        @if($isDigital)
-            <em>Dokumen digital ini diterbitkan secara elektronik oleh sistem ProcureApp pada {{ \Carbon\Carbon::now()->translatedFormat('d F Y H:i') }} WIB dan sah sebagai bukti pemesanan barang.</em>
-        @else
-            <em>Dokumen ini dicetak dari sistem ProcureApp pada {{ \Carbon\Carbon::now()->translatedFormat('d F Y H:i') }} WIB untuk ditandatangani secara manual.</em>
-        @endif
-    </footer>
+    <footer>Dokumen {{ $isDigital ? 'elektronik' : 'fisik' }} ini diterbitkan oleh sistem pada {{ \Carbon\Carbon::now()->translatedFormat('d M Y H:i:s') }} WIB</footer>
 
-    <table class="header-table">
+
+    <h1>PurchaseOrder</h1>
+
+    <table class="grid" style="border-bottom: none;">
         <tr>
-            <td width="60%">
-                <h1 class="company-name">{{ optional($po->company)->name ?? 'PT PERUSAHAAN KOMANDAN JAYA' }}</h1>
-                <div class="company-address">{{ optional($po->company)->address ?? 'Gedung Pusat, Lt. 5, Jl. Sudirman No. 1, Jakarta' }}</div>
+            <td style="width: 5%; border-right: none; border-bottom: none; padding-bottom: 10px;">To :</td>
+            <td style="width: 45%; border-left: none; border-bottom: none; line-height: 1.4; padding-bottom: 10px;">
+                <strong style="font-size: 11pt;">
+                    {{ optional($po->vendor)->name ?? $po->vendor_name }}
+                    @if(!empty($po->vendor_sub_name)) - {{ $po->vendor_sub_name }} @endif
+                </strong><br><br>
+                {{ optional($po->vendor)->address ?? '-' }}<br>
+                Telp. {{ optional($po->vendor)->phone ?? '-' }}
             </td>
-            <td width="40%" style="text-align: right; vertical-align: bottom;">
-                <h2 class="doc-title">PURCHASE ORDER</h2>
-                <div style="font-size: 10pt; margin-top: 5px;">
-                    <strong>No. PO:</strong> {{ $po->po_number }}<br>
-                    <strong>Tanggal:</strong> {{ \Carbon\Carbon::parse($po->po_date)->format('d F Y') }}<br>
-                    <strong>Ref PR:</strong> {{ optional($po->purchaseRequest)->pr_number ?? '-' }}
-                </div>
+            <td style="width: 50%; padding: 0; vertical-align: top; border-bottom: none;">
+                <table style="width: 100%; border-collapse: collapse; border: none; margin: 0;">
+                    <tr>
+                        <td style="border: none; padding: 6px 10px; width: 45%;">PO Number</td>
+                        <td style="border: none; padding: 6px 10px; text-align: right; font-weight: bold; width: 55%;">{{ $po->po_number }}</td>
+                    </tr>
+                    <tr>
+                        <td style="border: none; padding: 6px 10px;">PO Date</td>
+                        <td style="border: none; padding: 6px 10px; text-align: right;">{{ date('d-M-y', strtotime($po->po_date ?? $po->created_at)) }}</td>
+                    </tr>
+
+                    <tr>
+                        <td colspan="2" style="border: none; padding: 6px 10px;">&nbsp;</td>
+                    </tr>
+
+                    <tr>
+                        <td style="border: none; padding: 6px 10px;">Purchase Req. No.</td>
+                        <td style="border: none; padding: 6px 10px; text-align: right;">{{ $po->purchase_request_id ? optional($po->purchaseRequest)->pr_number : '-' }}</td>
+                    </tr>
+                    <tr>
+                        <td style="border: none; padding: 6px 10px;">PR Date</td>
+                        <td style="border: none; padding: 6px 10px; text-align: right;">{{ $po->purchase_request_id ? date('d-M-y', strtotime($po->purchaseRequest->pr_date ?? $po->purchaseRequest->created_at)) : '-' }}</td>
+                    </tr>
+                </table>
             </td>
         </tr>
     </table>
 
-    <table class="info-table">
-        <tr>
-            <td>
-                <div class="box-title">KEPADA (VENDOR):</div>
-                <div class="box-content">
-                    <strong>{{ optional($po->vendor)->name ?? 'Vendor Tidak Diketahui' }}</strong><br>
-                    {{ optional($po->vendor)->address ?? '-' }}<br>
-                    PIC: {{ optional($po->vendor)->pic_name ?? '-' }}<br>
-                    Telp: {{ optional($po->vendor)->phone ?? '-' }}<br>
-                    Email: {{ optional($po->vendor)->email ?? '-' }}
-                </div>
-            </td>
-            <td>
-                <div class="box-title">KIRIM KE (SHIP TO):</div>
-                <div class="box-content">
-                    <strong>{{ optional($po->company)->name ?? 'Gudang Pusat' }}</strong><br>
-                    {{ $po->shipping_address ?? optional($po->company)->address ?? 'Alamat tidak tersedia' }}
-                </div>
-            </td>
-            <td>
-                <div class="box-title">DETAIL PEMBAYARAN:</div>
-                <div class="box-content">
-                    Mata Uang: <strong>{{ $po->currency ?? 'IDR' }}</strong><br>
-                    Termin Pembayaran: <strong>{{ $po->payment_terms ?? 'Cash On Delivery' }}</strong><br>
-                    Estimasi Tiba: <strong>{{ $po->delivery_date ? \Carbon\Carbon::parse($po->delivery_date)->format('d M Y') : '-' }}</strong>
-                </div>
-            </td>
-        </tr>
-    </table>
-
-    <table class="item-table">
+    <table class="grid">
         <thead>
             <tr>
-                <th width="5%">No</th>
-                <th width="30%">Deskripsi Barang</th>
-                <th width="15%">Qty & Satuan</th>
-                <th width="20%">Harga Satuan</th>
-                <th width="10%">Disc/Tax</th>
-                <th width="20%">Subtotal</th>
+                <th rowspan="2" style="width: 4%;">NO.</th>
+                <th rowspan="2" style="width: 31%;">DESCRIPTION</th>
+                <th rowspan="2" style="width: 5%;">QTY</th>
+                <th rowspan="2" style="width: 7%;">SAT</th>
+                <th colspan="2" style="width: 35%;">PRICE</th>
+                <th rowspan="2" style="width: 18%;">R E M A R K</th>
+            </tr>
+            <tr>
+                <th style="width: 15%;">UNIT</th>
+                <th style="width: 20%;">TOTAL</th>
             </tr>
         </thead>
         <tbody>
             @foreach($po->items as $index => $item)
                 @php
-                    // =========================================================================
-                    // 🔥 NATIVE UOM EXTRACTOR (MENGHINDARI BUG ELOQUENT & NULL) 🔥
-                    // =========================================================================
+                    $qty = (float) ($item->qty ?? $item->qty_ordered ?? 1);
+                    $price = (float) ($item->unit_price ?? $item->price ?? 0);
+                    $gross = $qty * $price;
+
                     $masterItem = $item->item;
                     $baseUomName = strtoupper(optional(optional($masterItem)->uom)->name ?? 'PCS');
-
-                    // Tarik murni dari database tanpa campur tangan Model Relasi
                     $rawUom = $item->getRawOriginal('uom');
+                    $convQty = 1;
 
-                    // Fallback jika database sempat menyimpan NULL di masa lalu
                     if (empty($rawUom) && !empty($item->uom_id) && $masterItem) {
                         $altDb = \Illuminate\Support\Facades\DB::table('item_uoms')->where('id', $item->uom_id)->first();
                         if ($altDb) {
-                            $rawUom = strtoupper($altDb->uom_name) . " (Isi: " . (float)$altDb->conversion_qty . " " . $baseUomName . ")";
+                            $rawUom = strtoupper($altDb->uom_name);
                         }
                     }
-
                     if (empty($rawUom)) $rawUom = $baseUomName;
 
-                    // Bersihkan JSON jika ada sisa data kotor
                     if (is_string($rawUom) && str_starts_with(trim($rawUom), '{')) {
                         $uomObj = json_decode($rawUom, true);
                         if ($uomObj) {
@@ -155,177 +131,266 @@
                     }
 
                     $cleanUomDisplay = trim(preg_replace('/ \[PO\]| \[PR\]| \[GR\]/i', '', $rawUom));
+
+                    // 🔥 MENGAMBIL NILAI KONVERSI (ISI) DARI DATABASE 🔥
+                    if (!empty($item->uom_id)) {
+                        $checkDb = \Illuminate\Support\Facades\DB::table('item_uoms')->where('id', $item->uom_id)->first();
+                        if ($checkDb) $convQty = (float) $checkDb->conversion_qty;
+                    }
+
+                    $uomHtml = strtoupper($cleanUomDisplay);
+
+                    // 🔥 JIKA ISI LEBIH DARI 1, TAMPILKAN SEBAGAI INFO TAMBAHAN 🔥
+                    if ($convQty > 1 && stripos($uomHtml, 'ISI') === false) {
+                        $uomHtml .= "<br><span style='font-size: 7pt; color: #555; white-space: nowrap;'>(Isi: " . $convQty . " " . $baseUomName . ")</span>";
+                    }
+
+                    $utamaName = !empty(trim($item->item_name ?? '')) ? $item->item_name : optional($item->item)->name;
+                    $cleanDescription = trim(strip_tags($item->description ?? ''));
                 @endphp
                 <tr>
-                    <td class="text-center">{{ $index + 1 }}</td>
+                    <td style="text-align: center;">{{ $index + 1 }}</td>
                     <td>
-                        <strong>{{ optional($item->item)->code ?? '' }} - {{ optional($item->item)->name ?? 'Item Tidak Diketahui' }}</strong><br>
-                        <span style="font-size: 8pt; color: #555;">{!! strip_tags($item->description) !!}</span>
-                    </td>
-                    <td class="text-center">
-                        <strong style="font-size: 11pt;">{{ (float)$item->qty_ordered }}</strong><br>
-                        <span style="font-size: 7.5pt; font-weight: bold; color: #0d6efd;">{{ $cleanUomDisplay }}</span>
-                    </td>
-                    <td class="text-right">{{ number_format($item->unit_price, 0, ',', '.') }}</td>
-                    <td class="text-right" style="font-size: 8pt; white-space: nowrap;">
-                        @if($item->discount_amount > 0)
-                            <span style="color: red;">D: {{ number_format($item->discount_amount, 0, ',', '.') }}</span><br>
-                        @endif
-                        @if($item->tax_amount > 0)
-                            <span style="color: blue;">T: {{ number_format($item->tax_amount, 0, ',', '.') }}</span>
-                        @endif
-                        @if($item->discount_amount == 0 && $item->tax_amount == 0)
-                            <div class="text-center">-</div>
+                        {{ $utamaName }}
+                        @if(!empty($cleanDescription) && $cleanDescription !== '-')
+                            <br>
+                            <span style="font-size: 8.5pt; color: #444;">
+                                <em>Spesifikasi / Rincian :</em><br>
+                                {!! $item->description !!}
+                            </span>
                         @endif
                     </td>
-                    <td class="text-right">{{ number_format($item->subtotal + $item->tax_amount, 0, ',', '.') }}</td>
+                    <td style="text-align: center;">{{ $qty }}</td>
+                    <td style="text-align: center;">{!! $uomHtml !!}</td>
+                    <td style="padding: 6px 4px;">
+                        <table class="amount-box">
+                            <tr><td class="curr-txt">{{ $currency }}</td><td class="num-txt">{{ number_format($price, 0, ',', '.') }}</td></tr>
+                        </table>
+                    </td>
+                    <td style="padding: 6px 4px;">
+                        <table class="amount-box">
+                            <tr><td class="curr-txt">{{ $currency }}</td><td class="num-txt">{{ number_format($gross, 0, ',', '.') }}</td></tr>
+                        </table>
+                    </td>
+                    <td style="padding: 6px 4px;">{{ $item->remark ?? '' }}</td>
                 </tr>
+
+                @if((float)$item->discount_amount > 0)
+                <tr>
+                    <td colspan="4" style="text-align: right; color: red;">Diskon Item (-)</td>
+                    <td style="background-color: #f9f9f9;"></td>
+                    <td style="padding: 6px 4px;">
+                        <table class="amount-box"><tr><td class="curr-txt" style="color: red;">{{ $currency }}</td><td class="num-txt" style="color: red;">-{{ number_format($item->discount_amount, 0, ',', '.') }}</td></tr></table>
+                    </td>
+                    <td></td>
+                </tr>
+                @endif
+                @if((float)$item->tax_amount > 0)
+                <tr>
+                    <td colspan="4" style="text-align: right;">Pajak Item (+)</td>
+                    <td style="background-color: #f9f9f9;"></td>
+                    <td style="padding: 6px 4px;">
+                        <table class="amount-box"><tr><td class="curr-txt">{{ $currency }}</td><td class="num-txt">{{ number_format($item->tax_amount, 0, ',', '.') }}</td></tr></table>
+                    </td>
+                    <td></td>
+                </tr>
+                @endif
             @endforeach
+
+            @if(isset($charges)) @foreach($charges as $charge)
+            <tr>
+                <td colspan="4" style="text-align: right;">{{ $charge->name ?? 'Biaya Tambahan' }} (+)</td>
+                <td style="background-color: #f9f9f9;"></td>
+                <td style="padding: 6px 4px;">
+                    <table class="amount-box"><tr><td class="curr-txt">{{ $currency }}</td><td class="num-txt">{{ number_format($charge->amount, 0, ',', '.') }}</td></tr></table>
+                </td>
+                <td></td>
+            </tr>
+            @endforeach @endif
+
+            @if(isset($extraDiscounts)) @foreach($extraDiscounts as $disc)
+            <tr>
+                <td colspan="4" style="text-align: right; color: red;">{{ $disc->name ?? 'Potongan Tambahan' }} (-)</td>
+                <td style="background-color: #f9f9f9;"></td>
+                <td style="padding: 6px 4px;">
+                    <table class="amount-box"><tr><td class="curr-txt" style="color: red;">{{ $currency }}</td><td class="num-txt" style="color: red;">-{{ number_format($disc->amount, 0, ',', '.') }}</td></tr></table>
+                </td>
+                <td></td>
+            </tr>
+            @endforeach @endif
+
+            @php
+                $sumItemDisc = $po->items->sum('discount_amount');
+                $actualGlobalDisc = (float)($po->discount_total ?? 0) - $sumItemDisc;
+            @endphp
+            @if($actualGlobalDisc > 0)
+            <tr>
+                <td colspan="4" style="text-align: right; color: red;">Diskon Global (-)</td>
+                <td style="background-color: #f9f9f9;"></td>
+                <td style="padding: 6px 4px;">
+                    <table class="amount-box"><tr><td class="curr-txt" style="color: red;">{{ $currency }}</td><td class="num-txt" style="color: red;">-{{ number_format($actualGlobalDisc, 0, ',', '.') }}</td></tr></table>
+                </td>
+                <td></td>
+            </tr>
+            @endif
+
+            @php
+                $sumItemTax = $po->items->sum('tax_amount');
+                $actualGlobalTax = (float)($po->tax_total ?? 0) - $sumItemTax;
+            @endphp
+            @if($actualGlobalTax > 0)
+            <tr>
+                <td colspan="4" style="text-align: right;">Pajak Global (+)</td>
+                <td style="background-color: #f9f9f9;"></td>
+                <td style="padding: 6px 4px;">
+                    <table class="amount-box"><tr><td class="curr-txt">{{ $currency }}</td><td class="num-txt">{{ number_format($actualGlobalTax, 0, ',', '.') }}</td></tr></table>
+                </td>
+                <td></td>
+            </tr>
+            @endif
+
+            <tr>
+                <td colspan="4" style="border-right: none;"></td>
+                <td style="text-align: right; font-weight: normal; border-left: none; padding-right: 10px;">Grand Total</td>
+                <td style="padding: 6px 4px; vertical-align: middle;">
+                    <table class="amount-box">
+                        <tr>
+                            <td class="curr-txt" style="vertical-align: middle;">{{ $currency }}</td>
+                            <td class="num-txt" style="vertical-align: middle; font-weight: bold;">{{ number_format($po->grand_total, 0, ',', '.') }}</td>
+                        </tr>
+                    </table>
+                </td>
+                <td></td>
+            </tr>
         </tbody>
     </table>
 
-    <div class="notes-section">
-        <div style="font-weight: bold; margin-bottom: 5px;">Instruksi / Catatan:</div>
-        <div class="notes-box">
-            {!! $po->notes ? nl2br(e($po->notes)) : '<em>Tidak ada instruksi khusus.</em>' !!}
-        </div>
-    </div>
-
-    <table class="summary-table">
-        <tr>
-            <td>Subtotal DPP</td>
-            <td class="text-right">{{ $po->currency }} {{ number_format($po->subtotal, 0, ',', '.') }}</td>
-        </tr>
-
-        @if($po->discount_total > 0)
-        <tr>
-            <td>Total Diskon</td>
-            <td class="text-right" style="color: red;">- {{ $po->currency }} {{ number_format($po->discount_total, 0, ',', '.') }}</td>
-        </tr>
-        @endif
-
-        @if($po->tax_total > 0)
-        <tr>
-            <td>Total Pajak</td>
-            <td class="text-right">{{ $po->currency }} {{ number_format($po->tax_total, 0, ',', '.') }}</td>
-        </tr>
-        @endif
-
-        @if($charges->count() > 0)
-            @foreach($charges as $charge)
-                <tr>
-                    <td>Biaya Tambahan: {{ $charge->name }}</td>
-                    <td class="text-right">{{ $po->currency }} {{ number_format($charge->amount, 0, ',', '.') }}</td>
-                </tr>
-            @endforeach
-        @endif
-
-        @if($extraDiscounts->count() > 0)
-            @foreach($extraDiscounts as $ed)
-                <tr>
-                    <td>Potongan Ekstra: {{ $ed->name }}</td>
-                    <td class="text-right" style="color: red;">- {{ $po->currency }} {{ number_format($ed->amount, 0, ',', '.') }}</td>
-                </tr>
-            @endforeach
-        @endif
-
-        <tr class="bg-light">
-            <td class="bold">GRAND TOTAL</td>
-            <td class="text-right bold" style="font-size: 11pt;">{{ $po->currency }} {{ number_format($po->grand_total, 0, ',', '.') }}</td>
-        </tr>
-    </table>
-
-    <div class="clear"></div>
-
-    {{-- KOTAK TANDA TANGAN HYBRID (PO) --}}
     @php
-        $printType = $type ?? 'digital';
-        $approvals = $po->approvals->sortBy('step_order');
-        $totalColumns = 2 + $approvals->count();
-        $tdWidth = (100 / $totalColumns) . '%';
+        $approvals = \App\Models\DocumentApproval::with(['role'])
+            ->where('document_id', $po->id)
+            ->whereIn('document_type', ['App\Models\PurchaseOrder', 'PO', 'PurchaseOrder', get_class($po)])
+            ->orderBy('step_order', 'asc')
+            ->get();
+
+        $totalCols = 1 + $approvals->count();
 
         $prepSigBase64 = null;
-        if (optional($po->user)->signature) {
+        if ($po->user && $po->user->signature) {
             $path = public_path('storage/' . $po->user->signature);
-            if (file_exists($path)) {
-                $ext = pathinfo($path, PATHINFO_EXTENSION);
-                $prepSigBase64 = 'data:image/' . $ext . ';base64,' . base64_encode(file_get_contents($path));
-            }
+            if (file_exists($path)) { $prepSigBase64 = 'data:image/' . pathinfo($path, PATHINFO_EXTENSION) . ';base64,' . base64_encode(file_get_contents($path)); }
         }
     @endphp
 
-    <table class="signature-table" style="width: 100%; margin-top: 50px; text-align: center; font-size: 9pt; page-break-inside: avoid;">
+    <table class="sign-table">
         <tr>
-            {{-- 1. KOLOM PEMBUAT PO --}}
-            <td style="width: {{ $tdWidth }}; vertical-align: bottom;">
-                <div style="margin-bottom: 5px;"><strong>Dibuat Oleh,</strong></div>
-                <div style="height: 65px; padding-top: 5px;">
-                    @if($printType == 'digital')
-                        @if($prepSigBase64) <img src="{{ $prepSigBase64 }}" class="signature-img"> @else <span style="color: #198754; border: 2px solid #198754; padding: 3px 8px; font-weight: bold; display: inline-block; margin-top: 15px; letter-spacing: 1px;">ISSUED</span> @endif
-                    @elseif($printType == 'hybrid')
-                        @if($prepSigBase64) <img src="{{ $prepSigBase64 }}" class="signature-img"> @endif
+            <td style="border-bottom: none; text-align: left; padding: 10px 10px 0 10px; width: {{ 100 / ($totalCols > 0 ? $totalCols : 1) }}%;">Prepared by :</td>
+            @foreach($approvals as $approval)
+                <td style="border-bottom: none; text-align: left; padding: 10px 10px 0 10px; width: {{ 100 / ($totalCols > 0 ? $totalCols : 1) }}%;">
+                    @if($loop->last)
+                        Approved by :
+                    @else
+                        @if($approvals->count() > 2)
+                            Checked by {{ $loop->iteration }} :
+                        @else
+                            Checked by :
+                        @endif
                     @endif
-                </div>
-                <div style="margin-bottom: 2px;"><u><strong>{{ optional($po->user)->name ?? 'Purchasing Staff' }}</strong></u></div>
-                <div style="font-size: 8pt; color: #555;">Purchasing Dept.</div>
-                <div style="font-size: 7pt; color: #555;">{{ ($printType == 'digital' || ($printType == 'hybrid' && $prepSigBase64)) ? \Carbon\Carbon::parse($po->created_at)->format('d/m/Y') : 'Tgl: .....................' }}</div>
-            </td>
+                </td>
+            @endforeach
+        </tr>
 
-            {{-- 2. KOLOM ATASAN (LOOPING DINAMIS) --}}
-            @foreach($approvals as $app)
+        <tr>
+            <td style="border-top: none; border-bottom: none; height: 70px; text-align: center;">
+                @if($prepSigBase64)
+                    <img src="{{ $prepSigBase64 }}" style="max-height: 60px; max-width: 140px; object-fit: contain;">
+                @elseif($isDigital)
+                    <div class="stamp stamp-issued">DIAJUKAN</div>
+                @endif
+            </td>
+            @foreach($approvals as $approval)
+                <td style="border-top: none; border-bottom: none; height: 70px; text-align: center;">
+                    @if($isDigital)
+                        @if($approval->status == 'APPROVED')
+                            <div style="color: green; font-size: 10px; margin-top: 15px;">[ APPROVED ]</div>
+                        @elseif($approval->status == 'REJECTED')
+                            <div style="color: red; font-size: 10px; margin-top: 15px;">[ REJECTED ]</div>
+                        @else
+                            <div style="color: gray; font-size: 10px; margin-top: 15px;">[ PENDING ]</div>
+                        @endif
+                    @endif
+                </td>
+            @endforeach
+        </tr>
+
+        <tr>
+            <td style="border-top: none; padding: 0 10px 15px 10px; text-align: center;">
+                <strong><u>{{ $po->user->name ?? 'Requester' }}</u></strong><br>
+                <span style="font-size: 7pt; color: #666;">{{ $po->created_at ? $po->created_at->format('d/m/y H:i') : '' }}</span>
+            </td>
+            @foreach($approvals as $approval)
                 @php
-                    $apprSigBase64 = null;
-                    if (optional($app->approver)->signature) {
-                        $path = public_path('storage/' . $app->approver->signature);
-                        if (file_exists($path)) {
-                            $ext = pathinfo($path, PATHINFO_EXTENSION);
-                            $apprSigBase64 = 'data:image/' . $ext . ';base64,' . base64_encode(file_get_contents($path));
+                    $namaTtd = "";
+                    $uid = $approval->user_id ?? $approval->approver_id ?? $approval->specific_user_id ?? null;
+
+                    if (!empty($uid)) {
+                        $userTtd = \App\Models\User::find($uid);
+                        $namaTtd = $userTtd ? $userTtd->name : '';
+                    }
+
+                    $roleName = optional($approval->role)->name ?? 'Manager';
+                    $deptName = '';
+                    if (!empty($approval->target_department_id) && $approval->target_department_id !== 'all') {
+                        $dept = \DB::table('departments')->where('id', $approval->target_department_id)->first();
+                        $deptName = $dept ? $dept->name : '';
+                    } else {
+                        $deptName = optional(optional($po->user)->department)->name ?? '';
+                    }
+
+                    $jabatanLengkap = trim($roleName . ' ' . $deptName);
+
+                    if (empty($namaTtd) && !empty($roleName)) {
+                        $potentialUsers = \App\Models\User::role($roleName);
+
+                        if (!empty($approval->target_department_id) && $approval->target_department_id !== 'all') {
+                            $potentialUsers->where('department_id', $approval->target_department_id);
+                        } elseif (empty($approval->target_department_id)) {
+                            $potentialUsers->where('department_id', optional($po->user)->department_id);
+                        }
+
+                        $firstUser = $potentialUsers->first();
+                        if ($firstUser) {
+                            $namaTtd = $firstUser->name;
                         }
                     }
 
-                    $roleName = optional($app->role)->name ?? 'Atasan';
-                    $approverName = '.................................';
-                    if ($app->status == 'APPROVED' || $app->status == 'REJECTED') {
-                        $approverName = optional($app->approver)->name ?? 'Nama Tidak Terdata';
-                    } else {
-                        $potentialUsers = \App\Models\User::role($roleName);
-                        if (!empty($app->target_department_id) && $app->target_department_id !== 'all') { $potentialUsers->where('department_id', $app->target_department_id); }
-                        $firstUser = $potentialUsers->first();
-                        if ($firstUser) $approverName = $firstUser->name;
+                    if (empty($namaTtd)) {
+                        $namaTtd = $jabatanLengkap;
+                        $jabatanLengkap = '';
                     }
                 @endphp
-                <td style="width: {{ $tdWidth }}; vertical-align: bottom;">
-                    <div style="margin-bottom: 5px;"><strong>Disetujui Oleh,</strong></div>
-                    <div style="height: 65px; padding-top: 5px;">
-                        @if($printType == 'digital')
-                            @if(in_array(strtolower(optional($po->status)->slug), ['canceled', 'cancelled']))
-                                <span style="color: #dc3545; border: 2px solid #dc3545; padding: 3px 8px; font-weight: bold; display: inline-block; margin-top: 15px; letter-spacing: 1px;">VOID</span>
-                            @elseif($app->status === 'APPROVED')
-                                @if($apprSigBase64) <img src="{{ $apprSigBase64 }}" class="signature-img"> @else <span style="color: #0d6efd; border: 2px solid #0d6efd; padding: 3px 8px; font-weight: bold; display: inline-block; margin-top: 15px; letter-spacing: 1px;">APPROVED</span> @endif
-                            @elseif($app->status === 'REJECTED')
-                                <span style="color: #dc3545; border: 2px solid #dc3545; padding: 3px 8px; font-weight: bold; display: inline-block; margin-top: 15px; letter-spacing: 1px;">REJECTED</span>
-                            @else
-                                <span style="color: #aaa; border: 2px dashed #aaa; padding: 3px 8px; font-weight: bold; display: inline-block; margin-top: 15px; letter-spacing: 1px;">PENDING</span>
-                            @endif
-                        @elseif($printType == 'hybrid')
-                            @if($app->status === 'APPROVED' && $apprSigBase64)
-                                <img src="{{ $apprSigBase64 }}" class="signature-img">
-                            @endif
-                        @endif
-                    </div>
-                    <div style="margin-bottom: 2px;"><u><strong>{{ $approverName }}</strong></u></div>
-                    <div style="font-size: 8pt; color: #555;">{{ $roleName }}</div>
-                    <div style="font-size: 7pt; color: #555;">{{ ($printType == 'digital' && in_array($app->status, ['APPROVED', 'REJECTED'])) || ($printType == 'hybrid' && $app->status === 'APPROVED' && $apprSigBase64) ? \Carbon\Carbon::parse($app->approved_at)->format('d/m/Y') : 'Tgl: .....................' }}</div>
+                <td style="border-top: none; padding: 0 10px 15px 10px; text-align: center;">
+                    <strong><u>{{ $namaTtd }}</u></strong>
+                    @if(!empty($jabatanLengkap))
+                        <br>
+                        <span style="font-size: 8pt; color: #555;">{{ $jabatanLengkap }}</span>
+                    @else
+                        <br>
+                        <span style="font-size: 8pt; color: transparent;">-</span>
+                    @endif
                 </td>
             @endforeach
+        </tr>
+    </table>
 
-            {{-- 3. KOLOM VENDOR --}}
-            <td style="width: {{ $tdWidth }}; vertical-align: bottom;">
-                <div style="margin-bottom: 5px;"><strong>Dikonfirmasi Oleh,</strong></div>
-                <div style="height: 65px; padding-top: 5px;"></div>
-                <div style="margin-bottom: 2px;"><u><strong>.................................</strong></u></div>
-                <div style="font-size: 8pt; color: #555;">Vendor Representative</div>
-                <div style="font-size: 7pt; color: #555;">Tgl: .....................</div>
+    <table style="width: 100%; border-collapse: collapse; border: none; margin-top: 20px;">
+        <tr>
+            <td style="padding: 15px 5px; border: none;">
+                <div style="font-weight: bold; margin-bottom: 12px; font-size: 10.5pt;">{{ $companyName }}</div>
+                <div style="font-size: 9.5pt; line-height: 1.4;">{{ $companyAddress }}</div>
+
+                @if(!empty($companyNpwp))
+                    <div style="font-size: 9.5pt; margin-top: 12px;">NPWP : {{ $companyNpwp }}</div>
+                @endif
             </td>
         </tr>
     </table>

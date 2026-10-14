@@ -325,6 +325,13 @@
                     </div>
                     <label class="form-label small fw-bold text-dark">Spesifikasi Detail (Catatan)</label>
                     <textarea name="po_items[INDEX][notes]" class="form-control form-input-custom" rows="3" placeholder="Ketik catatan spek..."></textarea>
+
+                    {{-- 🔥 TAMBAHKAN KOTAK REMARK DI SINI 🔥 --}}
+                    <div class="mt-3">
+                        <label class="form-label small fw-bold text-dark">Remark (Opsional)</label>
+                        <input type="text" name="new_items[NEW_INDEX][remark]" class="form-control form-input-custom" placeholder="Ketik remark di sini...">
+                    </div>
+
                 </div>
                 <div class="col-md-5">
                     <label class="form-label small fw-bold text-dark"><i class="bi bi-paperclip text-primary"></i> Dokumen Pendukung Item</label>

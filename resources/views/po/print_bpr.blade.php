@@ -51,7 +51,7 @@
         $extraDiscounts = \Illuminate\Support\Facades\DB::table('purchase_order_discounts')->where('purchase_order_id', $po->id)->get();
     @endphp
 
-    <footer>Dokumen {{ $isDigital ? 'elektronik' : 'fisik' }} ini diterbitkan oleh sistem ProcureApp pada {{ \Carbon\Carbon::now()->translatedFormat('d M Y H:i:s') }} WIB</footer>
+    <footer>Dokumen {{ $isDigital ? 'elektronik' : 'fisik' }} ini diterbitkan oleh sistem pada {{ \Carbon\Carbon::now()->translatedFormat('d M Y H:i:s') }} WIB</footer>
 
     <div class="company-name">{{ $companyName }}</div>
     <div class="doc-title">Bank Payment Request Form @if($isDigital) <span style="font-size: 9pt; color:#666;">(Digital Signature)</span> @else <span style="font-size: 9pt; color:#666;">(Manual Signature)</span> @endif</div>
@@ -410,6 +410,7 @@
                 @endforeach
             </tr>
         </table>
+
     </div>
 
 </body>

@@ -203,6 +203,12 @@
                                     </div>
                                     <label class="form-label small fw-bold text-dark">Spesifikasi Detail (Bisa diedit)</label>
                                     <textarea name="po_items[{{ $item->id }}][notes]" id="spec_{{ $item->id }}" class="form-control ckeditor-spec">{!! $item->description !!}</textarea>
+
+                                    {{-- 🔥 TAMBAHKAN KOTAK REMARK DI SINI 🔥 --}}
+                                    <div class="mt-3">
+                                        <label class="form-label small fw-bold text-dark">Remark (Opsional)</label>
+                                        <input type="text" name="po_items[{{ $item->id }}][remark]" class="form-control form-input-custom" value="{{ $item->remark ?? '' }}" placeholder="Ketik remark di sini...">
+                                    </div>
                                 </div>
                                 <div class="col-md-5">
                                     <label class="form-label small fw-bold text-dark"><i class="bi bi-paperclip text-primary"></i> Dokumen Pendukung Item</label>
@@ -391,7 +397,7 @@
                                     @foreach($po->attachments as $file)
                                         <div class="p-2 mb-1 border rounded d-flex justify-content-between bg-light">
                                             <a href="{{ asset('storage/' . $file->file_path) }}" target="_blank" class="small text-decoration-none fw-bold"><i class="bi bi-search text-success me-1"></i> {{ $file->file_name }}</a>
-                                            <a href="{{ route('po.po.delete_header_attachment', $file->id) }}" class="small text-danger" onclick="return confirm('Hapus file master ini secara permanen?')"><i class="bi bi-trash"></i></a>
+                                            <a href="{{ route('po.delete_header_attachment', $file->id) }}" class="small text-danger" onclick="return confirm('Hapus file master ini secara permanen?')"><i class="bi bi-trash"></i></a>
                                         </div>
                                     @endforeach
                                 </div>
@@ -419,13 +425,66 @@
                         <option value="">-- Ikuti Standar Departemen (Default) --</option>
                         @if(isset($customWorkflows) && count($customWorkflows) > 0)
                             @foreach($customWorkflows as $cw)
-                                <option value="{{ $cw->id }}" {{ (isset($selectedWorkflowId) && $selectedWorkflowId == $cw->id) ? 'selected' : '' }}>{{ $cw->name }}</option>
+                                <option value="{{ $cw->id }}" {{ (isset($selectedWorkflowId) && $selectedWorkflowId == $cw->id) ? 'selected' : '' }}>
+                                    {{ $cw->name }}
+                                </option>
                             @endforeach
                         @endif
                     </select>
                     <div class="mt-2 form-text text-muted" style="font-size: 0.75rem;">
                         <i class="bi bi-info-circle me-1"></i> Biarkan kosong jika ingin menggunakan rute standar departemen. <strong class="text-danger">Perhatian: Mengubah rute di sini saat Edit akan me-reset persetujuan atasan dari awal!</strong>
                     </div>
+
+                    {{-- MENAMPILKAN STATUS APPROVER SAAT INI --}}
+                    @php
+                        $currentApprovals = \App\Models\DocumentApproval::with(['role'])
+                            ->where('document_id', $po->id)
+                            ->whereIn('document_type', ['App\Models\PurchaseOrder', 'PO', 'PurchaseOrder', get_class($po)])
+                            ->orderBy('step_order', 'asc')
+                            ->get();
+                    @endphp
+
+                    @if($currentApprovals->count() > 0)
+                    <div class="p-3 mt-4 bg-white border rounded-3 shadow-sm border-info-subtle">
+                        <div class="mb-2 fw-bold text-dark" style="font-size: 0.85rem;">
+                            <i class="bi bi-people-fill text-info me-1"></i> Status Persetujuan Saat Ini:
+                        </div>
+                        <div class="d-flex align-items-center flex-wrap gap-2 mt-2">
+                            @foreach($currentApprovals as $appr)
+                                @php
+                                    $namaTtd = "";
+                                    $uid = $appr->user_id ?? $appr->approver_id ?? $appr->specific_user_id ?? null;
+                                    if (!empty($uid)) {
+                                        $userTtd = \App\Models\User::find($uid);
+                                        $namaTtd = $userTtd ? $userTtd->name : '';
+                                    }
+
+                                    if (empty($namaTtd)) {
+                                        $roleName = optional($appr->role)->name ?? 'Manager';
+                                        $potentialUsers = \App\Models\User::role($roleName);
+                                        if (!empty($appr->target_department_id) && $appr->target_department_id !== 'all') {
+                                            $potentialUsers->where('department_id', $appr->target_department_id);
+                                        } elseif (empty($appr->target_department_id)) {
+                                            $potentialUsers->where('department_id', optional($po->user)->department_id);
+                                        }
+                                        $firstUser = $potentialUsers->first();
+                                        $namaTtd = $firstUser ? $firstUser->name : $roleName;
+                                    }
+
+                                    $statusColor = $appr->status == 'APPROVED' ? 'success' : ($appr->status == 'REJECTED' ? 'danger' : 'secondary');
+                                @endphp
+
+                                <span class="badge border border-{{ $statusColor }} text-{{ $statusColor }} bg-{{ $statusColor }} bg-opacity-10 py-2 px-3 fs-7">
+                                    {{ $loop->iteration }}. {{ $namaTtd }} ({{ $appr->status }})
+                                </span>
+
+                                @if(!$loop->last)
+                                    <i class="bi bi-chevron-right text-muted" style="font-size: 0.8rem;"></i>
+                                @endif
+                            @endforeach
+                        </div>
+                    </div>
+                    @endif
                 </div>
             </div>
 
@@ -551,6 +610,7 @@
 </template>
 
 @if(empty($po->purchase_request_id))
+
 <template id="newItemTemplate">
     <div class="mb-4 border-0 shadow-sm card item-row new-item-row" style="border-radius: 12px; overflow: hidden;">
         <div class="px-4 py-3 bg-light border-bottom card-header d-flex justify-content-between align-items-center">
@@ -559,7 +619,26 @@
                     <option value="">-- Cari Barang --</option>
                     @if(isset($masterItems))
                         @foreach($masterItems as $mItem)
-                            <option value="{{ $mItem->id }}" data-name="{{ $mItem->name }}" data-uom="{{ optional($mItem->uom)->name }}" data-uom-id="{{ $mItem->uom_id }}">{{ $mItem->name }} ({{ $mItem->code }})</option>
+                            @php
+                                // 🔥 KUMPULKAN SEMUA SATUAN ALTERNATIF DARI MASTER DATA 🔥
+                                $altUoms = [];
+                                if(isset($mItem->itemUoms) && count($mItem->itemUoms) > 0) {
+                                    foreach($mItem->itemUoms as $alt) {
+                                        $altUoms[] = [
+                                            'id' => $alt->uom_id ?? $alt->id,
+                                            'name' => $alt->uom_name,
+                                            'conv' => (float)$alt->conversion_qty
+                                        ];
+                                    }
+                                }
+                            @endphp
+                            <option value="{{ $mItem->id }}"
+                                data-name="{{ $mItem->name }}"
+                                data-uom="{{ optional($mItem->uom)->name }}"
+                                data-uom-id="{{ $mItem->uom_id }}"
+                                data-alt-uoms="{{ json_encode($altUoms) }}"> {{-- 🔥 KIRIM KE JAVASCRIPT 🔥 --}}
+                                {{ $mItem->name }} ({{ $mItem->code }})
+                            </option>
                         @endforeach
                     @endif
                 </select>
@@ -585,6 +664,13 @@
                     </div>
                     <label class="form-label small fw-bold text-dark">Spesifikasi Detail</label>
                     <textarea name="new_items[NEW_INDEX][notes]" id="new_spec_NEW_INDEX" class="form-control new-ckeditor-spec"></textarea>
+
+                    {{-- 🔥 TAMBAHKAN KOTAK REMARK DI SINI 🔥 --}}
+                    <div class="mt-4">
+                        <label class="form-label small fw-bold text-dark">Remark (Opsional)</label>
+                        <input type="text" name="new_items[NEW_INDEX][remark]" class="form-control form-input-custom" value="" placeholder="Ketik remark di sini...">
+                    </div>
+
                 </div>
 
                 {{-- 🔥 KOTAK UPLOAD FILE DITAMBAHKAN KEMBALI 🔥 --}}
@@ -653,6 +739,7 @@
         </div>
     </div>
 </template>
+
 @endif
 
 @endsection
@@ -738,25 +825,52 @@
         calculateRow(row.querySelector('.qty-input'));
     }
 
-    // 🔥 LOGIKA UNTUK MENYALIN NAMA BARANG OTOMATIS KE KOTAK INPUT 🔥
+    // 🔥 LOGIKA UNTUK MENYALIN NAMA BARANG OTOMATIS & MENARIK MULTI-UOM 🔥
     function populateNewItemData(selectEl, index) {
         var selected = selectEl.options[selectEl.selectedIndex];
+
+        // Jika user memilih opsi "-- Cari Barang --" (kosong)
+        if(!selected || !selected.value) {
+            document.getElementById('new_uom_select_' + index).innerHTML = '<option value="">Satuan Dasar</option>';
+            return;
+        }
 
         // Ambil data dari tag HTML <option> yang dipilih
         var baseUomName = selected.getAttribute('data-uom') || 'PCS';
         var baseUomId = selected.getAttribute('data-uom-id') || '';
         var rawItemName = selected.getAttribute('data-name') || '';
+        var altUomsRaw = selected.getAttribute('data-alt-uoms') || '[]';
 
-        // Set Satuan (UOM)
+        // Set Nama Satuan Dasar
         document.getElementById('uom-name-' + index).value = baseUomName;
+
         var uomSelect = document.getElementById('new_uom_select_' + index);
-        uomSelect.innerHTML = '<option value="' + baseUomId + '" data-name="' + baseUomName + '" data-conv="1">' + baseUomName + ' (Dasar)</option>';
+        var optionsHtml = '<option value="' + baseUomId + '" data-name="' + baseUomName + '" data-conv="1">' + baseUomName + ' (Dasar)</option>';
+
+        // 🔥 LOGIKA BARU: BACA DAN TAMBAHKAN SATUAN KEMASAN DARI DATABASE 🔥
+        try {
+            var altUoms = JSON.parse(altUomsRaw);
+            altUoms.forEach(function(alt, idx) {
+                // Jangan masukkan jika konversinya 1 (sama dengan dasar)
+                if (alt.conv !== 1) {
+                    var safeAltVal = alt.id + " ".repeat(idx + 1); // Anti tabrakan id
+                    optionsHtml += '<option value="' + safeAltVal + '" data-name="' + alt.name + ' (Isi: ' + alt.conv + ' ' + baseUomName + ')" data-conv="' + alt.conv + '">' + alt.name + ' (Isi: ' + alt.conv + ')</option>';
+                }
+            });
+        } catch (e) {
+            console.error("Gagal membaca kemasan alternatif", e);
+        }
+
+        uomSelect.innerHTML = optionsHtml;
 
         // Set Override Nama Barang (Agar otomatis terisi)
         var overrideInput = document.getElementById('new_item_name_override_' + index);
         if(overrideInput) {
             overrideInput.value = rawItemName;
         }
+
+        // Jalankan fungsi update perhitungan harga/qty otomatis setelah UOM diubah
+        updateRowUom(uomSelect, index);
     }
 
     function updateRowUom(selectEl, index) {

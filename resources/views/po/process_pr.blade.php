@@ -271,6 +271,13 @@
                                             </div>
                                             <label class="form-label small fw-bold text-dark">Spesifikasi Detail (Bisa diedit)</label>
                                             <textarea name="po_items[{{ $index }}][notes]" id="spec_{{ $index }}" class="form-control form-input-custom ckeditor-spec" placeholder="Ketik spesifikasi detail di sini...">{!! $item->specification ?? $item->notes !!}</textarea>
+
+                                            {{-- 🔥 TAMBAHKAN KOTAK REMARK DI SINI 🔥 --}}
+                                            <div class="mt-3">
+                                                <label class="form-label small fw-bold text-dark">Remark (Opsional)</label>
+                                                <input type="text" name="new_items[NEW_INDEX][remark]" class="form-control form-input-custom" placeholder="Ketik remark di sini...">
+                                            </div>
+
                                         </div>
                                         <div class="col-md-5">
                                             <label class="form-label small fw-bold text-dark"><i class="bi bi-paperclip text-primary"></i> Dokumen Pendukung Item</label>

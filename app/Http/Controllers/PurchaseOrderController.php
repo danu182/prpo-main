@@ -95,6 +95,8 @@ class PurchaseOrderController extends Controller
                 'currency'           => $request->currency,
                 'created_by'         => auth()->id(),
                 'shipping_address'   => $shippingAddress,
+                // 🔥 TAMBAHKAN BARIS INI 🔥
+                'custom_workflow_id'  => $request->custom_workflow_id,
             ]);
 
             $vendorName = \App\Models\Vendor::find($request->vendor_id)->name ?? 'Vendor';
@@ -140,6 +142,7 @@ class PurchaseOrderController extends Controller
                     'uom_id'                   => $itemData['uom_id'] ?? null,
                     'uom'                      => $itemData['uom'] ?? ($masterItem->unit ?? 'Unit'),
                     'description'              => $itemData['notes'] ?? ($masterItem->name ?? '-'),
+                    'remark'            => $newItemData['remark'] ?? null, // 🔥 TAMBAHKAN INI
                     'discount_amount'          => $discAmt,
                     'tax_amount'               => $taxAmt,
                     'tax_id'                   => $taxId,
@@ -337,6 +340,8 @@ class PurchaseOrderController extends Controller
                         'grand_total'           => $poGrandTotal,
                         'invoice_number'        => $request->invoice_number,
                         'account_number'        => $request->account_number,
+                        // 🔥 TAMBAHKAN BARIS INI 🔥
+                        'custom_workflow_id'  => $request->custom_workflow_id,
                     ]);
 
                     foreach ($appliedCharges as $charge) {
@@ -383,6 +388,7 @@ class PurchaseOrderController extends Controller
                             'uom_id'                   => $uomIdSafe,
                             'uom'                      => $uomTextSafe,
                             'description'              => $itemData['notes'] ?? (\App\Models\Item::find($itemData['item_id'])->name ?? '-'),
+                            'remark'            => $newItemData['remark'] ?? null, // 🔥 TAMBAHKAN INI
                             'tax_id'                   => null,
                             'qty_ordered'              => $line['qty'],
                             'unit_price'               => $line['price'],
@@ -467,6 +473,8 @@ class PurchaseOrderController extends Controller
             return back()->withInput()->with('error', 'Gagal memproses pembuatan PO: ' . $e->getMessage());
         }
     }
+
+
 
     // =========================================================================
     // 4. UPDATE PO (EDIT DATA PO) - ANTI BADAI & FULL FLEXIBILITY
@@ -557,6 +565,7 @@ class PurchaseOrderController extends Controller
                             'uom_id'          => $uomIdSafe,
                             'uom'             => $uomTextSafe,
                             'description'     => $itemData['notes'] ?? $poItem->description,
+                            'remark'          => $itemData['remark'] ?? $poItem->remark, // 🔥 TAMBAHKAN INI
                             'vendor_id'       => $itemData['vendor_id'] ?? $poItem->vendor_id,
                             'tax_id'          => null,
                             'qty_ordered'     => $newQty,
@@ -612,6 +621,7 @@ class PurchaseOrderController extends Controller
                             'uom_id'            => $uomIdSafe,
                             'uom'               => $newItemData['uom'] ?? 'PCS',
                             'description'       => $newItemData['notes'] ?? null,
+                            'remark'            => $newItemData['remark'] ?? null, // 🔥 TAMBAHKAN INI JUGA 🔥
                             'qty_ordered'       => $newQty,
                             'qty'               => $newQty,
                             'unit_price'        => $price,
@@ -620,13 +630,9 @@ class PurchaseOrderController extends Controller
                             'discount_amount'   => $discAmt,
                             'subtotal'          => $dpp,
                             'tax_type'          => $taxType,
-                            'tax_value'       => $taxVal,
-                            'tax_amount'      => $taxAmt,
+                            'tax_value'         => $taxVal,
+                            'tax_amount'        => $taxAmt,
                         ]);
-
-                        // Menangani Upload File untuk Item Baru
-                        // Di form, name input file adalah: po_items[new_NEW_INDEX][attachments][]
-                        // Kita cek di dalam logic ini jika ada file upload
                     }
                 }
                 // ================================================================
@@ -638,9 +644,9 @@ class PurchaseOrderController extends Controller
                             $path = $file->storeAs($storagePath, time() . '_' . uniqid() . '_' . str_replace(' ', '_', $file->getClientOriginalName()), 'public');
                             \Illuminate\Support\Facades\DB::table('purchase_order_attachments')->insert([
                                 'purchase_order_id' => $po->id,
-                                'file_name'          => $file->getClientOriginalName(),
-                                'file_path'          => str_replace('\\', '/', $path),
-                                'created_at'         => now(), 'updated_at' => now()
+                                'file_name'         => $file->getClientOriginalName(),
+                                'file_path'         => str_replace('\\', '/', $path),
+                                'created_at'        => now(), 'updated_at' => now()
                             ]);
                         }
                     }
@@ -777,9 +783,8 @@ class PurchaseOrderController extends Controller
         }
     }
 
-
     // =========================================================================
-    // 3. EDIT (FORM EDIT PO BERBASIS SLUG)
+    // 3. EDIT (FORM EDIT PO BERBASIS SLUG) - DENGAN REVERSE ENGINEER WORKFLOW
     // =========================================================================
     public function edit($slug)
     {
@@ -806,24 +811,45 @@ class PurchaseOrderController extends Controller
         $customWorkflows = [];
         $selectedWorkflowId = null;
 
-        // 🔥 PERBAIKAN: Membatasi agar pilihan Workflow yang muncul hanyalah untuk dokumen PO
         if (class_exists('\App\Models\ApprovalWorkflow')) {
             $customWorkflows = \App\Models\ApprovalWorkflow::with('steps')
                 ->where('is_active', true)
                 ->whereIn('document_type', ['PurchaseOrder', 'PO', 'App\Models\PurchaseOrder'])
                 ->get();
 
-            $historyLog = \App\Models\History::where('record_id', $po->id)
-                ->whereIn('record_type', [get_class($po), 'App\Models\PurchaseOrder', 'PO', 'PurchaseOrder'])
-                ->where('action', 'SYSTEM')
-                ->where('note', 'like', 'Menggunakan Rute Persetujuan Khusus%')
-                ->orderBy('id', 'desc')->first();
+            // 🔥 STRATEGI 1: BACA DARI TABEL DOCUMENT_APPROVALS (REVERSE ENGINEER) 🔥
+            $currentApprovals = \App\Models\DocumentApproval::where('document_id', $po->id)
+                ->whereIn('document_type', [get_class($po), 'App\Models\PurchaseOrder', 'PO', 'PurchaseOrder'])
+                ->orderBy('step_order', 'asc')
+                ->get();
 
-            if ($historyLog) {
-                $workflowName = trim(str_replace(['Menggunakan Rute Persetujuan Khusus (Update):', 'Menggunakan Rute Persetujuan Khusus:'], '', $historyLog->note));
-                $matchedWorkflow = $customWorkflows->where('name', $workflowName)->first();
-                if ($matchedWorkflow) {
-                    $selectedWorkflowId = $matchedWorkflow->id;
+            if ($currentApprovals->count() > 0) {
+                $poRoles = $currentApprovals->pluck('role_id')->toArray();
+                foreach ($customWorkflows as $cw) {
+                    if ($cw->steps && $cw->steps->count() === count($poRoles)) {
+                        $cwRoles = $cw->steps->sortBy('step_order')->pluck('role_id')->toArray();
+                        if ($poRoles === $cwRoles) {
+                            $selectedWorkflowId = $cw->id;
+                            break;
+                        }
+                    }
+                }
+            }
+
+            // 🔥 STRATEGI 2: BACA DARI HISTORY LOG JIKA STRATEGI 1 GAGAL 🔥
+            if (!$selectedWorkflowId) {
+                $historyLog = \App\Models\History::where('record_id', $po->id)
+                    ->whereIn('record_type', [get_class($po), 'App\Models\PurchaseOrder', 'PO', 'PurchaseOrder'])
+                    ->where('action', 'SYSTEM')
+                    ->where('note', 'like', '%Menggunakan Rute Persetujuan Khusus%')
+                    ->orderBy('id', 'desc')->first();
+
+                if ($historyLog) {
+                    $workflowName = trim(str_replace(['Menggunakan Rute Persetujuan Khusus (Update):', 'Menggunakan Rute Persetujuan Khusus:'], '', $historyLog->note));
+                    $matchedWorkflow = $customWorkflows->where('name', $workflowName)->first();
+                    if ($matchedWorkflow) {
+                        $selectedWorkflowId = $matchedWorkflow->id;
+                    }
                 }
             }
         }
@@ -835,6 +861,9 @@ class PurchaseOrderController extends Controller
             'charges', 'extraDiscounts', 'attachments'
         ));
     }
+
+
+
 
     // =========================================================================
     // 7. SHOW PO DETAIL
@@ -1616,6 +1645,7 @@ class PurchaseOrderController extends Controller
                         'uom_id'                   => $uomIdSafe,
                         'uom'                      => $uomTextSafe,
                         'description'              => $itemData['notes'] ?? '-',
+                        'remark'                   => $newItemData['remark'] ?? null, // 🔥 TAMBAHKAN INI
                         'tax_id'                   => null,
                         'qty_ordered'              => $line['qty'],
                         'unit_price'               => $line['price'],
