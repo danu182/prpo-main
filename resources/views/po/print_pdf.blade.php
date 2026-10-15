@@ -9,18 +9,19 @@
 
         h1 { text-align: center; font-size: 28pt; font-weight: bold; margin: 0 0 20px 0; letter-spacing: 1px; }
 
-        table.grid { width: 100%; border-collapse: collapse; border: 1px solid #000; }
-        table.grid th, table.grid td { border: 1px solid #000; padding: 5px 6px; vertical-align: top; }
+        table.grid { width: 100%; border-collapse: collapse; border: 1px solid #000; table-layout: fixed; }
+        table.grid th, table.grid td { border: 1px solid #000; padding: 5px 6px; vertical-align: top; word-wrap: break-word; }
 
         table.grid th { text-align: center; font-weight: bold; background-color: #d9d9d9; vertical-align: middle; text-transform: uppercase; font-size: 9.5pt; }
 
         table.sign-table { width: 100%; border-collapse: collapse; border: 1px solid #000; border-top: none; page-break-inside: avoid; table-layout: fixed; }
-        table.sign-table td { border: 1px solid #000; vertical-align: top; padding: 0; }
+        table.sign-table td { border: 1px solid #000; vertical-align: top; padding: 0; word-wrap: break-word; }
 
-        table.amount-box { width: 100%; border: none !important; border-collapse: collapse; margin: 0; padding: 0; }
-        table.amount-box td { border: none !important; padding: 0 !important; margin: 0 !important; vertical-align: top; white-space: nowrap; }
-        .curr-txt { text-align: left; width: 1%; padding-right: 5px; color: #333; font-size: 9.5pt; }
-        .num-txt { text-align: right; letter-spacing: -0.3px; white-space: nowrap; }
+        table.amount-box { width: 100%; border: none !important; border-collapse: collapse; margin: 0; padding: 0; table-layout: fixed; }
+        table.amount-box td { border: none !important; padding: 0 !important; margin: 0 !important; vertical-align: middle; white-space: nowrap; }
+
+        .curr-txt { text-align: left; width: 25px; color: #333; font-size: 9.5pt; }
+        .num-txt { text-align: right; letter-spacing: -0.3px; }
 
         .stamp { display: inline-block; padding: 4px 10px; font-weight: bold; font-size: 10pt; letter-spacing: 1px; text-transform: uppercase; border: 2px solid; margin: auto; }
         .stamp-issued { color: #198754; border-color: #198754; }
@@ -45,46 +46,47 @@
 
     <footer>Dokumen {{ $isDigital ? 'elektronik' : 'fisik' }} ini diterbitkan oleh sistem pada {{ \Carbon\Carbon::now()->translatedFormat('d M Y H:i:s') }} WIB</footer>
 
-
     <h1>Purchase <span style="font-weight: normal;">Order</span></h1>
 
+    <!-- HEADER: DIBELAH PERSIS 50% KIRI & 50% KANAN -->
     <table class="grid" style="border-bottom: none;">
         <tr>
-            <td style="width: 5%; border-right: none; border-bottom: none; padding-bottom: 10px;">To :</td>
-            <td style="width: 45%; border-left: none; border-bottom: none; line-height: 1.4; padding-bottom: 10px;">
-                <strong style="font-size: 11pt;">
-                    {{ optional($po->vendor)->name ?? $po->vendor_name }}
-                    @if(!empty($po->vendor_sub_name)) - {{ $po->vendor_sub_name }} @endif
-                </strong><br><br>
-                {{ optional($po->vendor)->address ?? '-' }}<br>
-                Telp. {{ optional($po->vendor)->phone ?? '-' }}
+            <td style="width: 50%; border-right: 1px solid #000; border-bottom: none; padding-bottom: 10px;">
+                <div style="float: left; width: 12%;">To :</div>
+                <div style="float: left; width: 88%; line-height: 1.4;">
+                    <strong style="font-size: 11pt;">
+                        {{ optional($po->vendor)->name ?? $po->vendor_name }}
+                        @if(!empty($po->vendor_sub_name)) - {{ $po->vendor_sub_name }} @endif
+                    </strong><br><br>
+                    {{ optional($po->vendor)->address ?? '-' }}<br>
+                    Telp. {{ optional($po->vendor)->phone ?? '-' }}
+                </div>
+                <div style="clear: both;"></div>
             </td>
             <td style="width: 50%; padding: 0; vertical-align: top; border-bottom: none;">
-                <table style="width: 100%; border-collapse: collapse; border: none; margin: 0;">
+                <table style="width: 100%; border-collapse: collapse; border: none; margin: 0; table-layout: fixed;">
                     <tr>
-                        <td style="border: none; padding: 6px 0 6px 10px; white-space: nowrap;">Purchase Order No.</td>
-                        <td style="border: none; padding: 6px 5px; width: 1%;">:</td>
-                        <td style="border: none; padding: 6px 10px; text-align: right; font-weight: bold; width: 50%;">{{ $po->po_number }}</td>
+                        <td style="border: none; padding: 6px 0 6px 10px; width: 40%; white-space: nowrap;">Purchase Order No.</td>
+                        <td style="border: none; padding: 6px 5px; width: 5%;">:</td>
+                        <td style="border: none; padding: 6px 10px; text-align: right; font-weight: bold; width: 55%; white-space: nowrap; overflow: hidden;">{{ $po->po_number }}</td>
                     </tr>
                     <tr>
                         <td style="border: none; padding: 6px 0 6px 10px; white-space: nowrap;">Purchase Order Date</td>
-                        <td style="border: none; padding: 6px 5px; width: 1%;">:</td>
-                        <td style="border: none; padding: 6px 10px; text-align: right;">{{ date('d-M-y', strtotime($po->po_date ?? $po->created_at)) }}</td>
+                        <td style="border: none; padding: 6px 5px; width: 5%;">:</td>
+                        <td style="border: none; padding: 6px 10px; text-align: right; white-space: nowrap;">{{ date('d-M-y', strtotime($po->po_date ?? $po->created_at)) }}</td>
                     </tr>
-
                     <tr>
                         <td colspan="3" style="border: none; padding: 6px 10px;">&nbsp;</td>
                     </tr>
-
                     <tr>
                         <td style="border: none; padding: 6px 0 6px 10px; white-space: nowrap;">Purchase Req. No.</td>
-                        <td style="border: none; padding: 6px 5px; width: 1%;">:</td>
-                        <td style="border: none; padding: 6px 10px; text-align: right;">{{ $po->purchase_request_id ? optional($po->purchaseRequest)->pr_number : '-' }}</td>
+                        <td style="border: none; padding: 6px 5px; width: 5%;">:</td>
+                        <td style="border: none; padding: 6px 10px; text-align: right; white-space: nowrap; overflow: hidden;">{{ $po->purchase_request_id ? optional($po->purchaseRequest)->pr_number : '-' }}</td>
                     </tr>
                     <tr>
                         <td style="border: none; padding: 6px 0 6px 10px; white-space: nowrap;">Purchase Req. Date</td>
-                        <td style="border: none; padding: 6px 5px; width: 1%;">:</td>
-                        <td style="border: none; padding: 6px 10px; text-align: right;">{{ $po->purchase_request_id ? date('d-M-y', strtotime($po->purchaseRequest->pr_date ?? $po->purchaseRequest->created_at)) : '-' }}</td>
+                        <td style="border: none; padding: 6px 5px; width: 5%;">:</td>
+                        <td style="border: none; padding: 6px 10px; text-align: right; white-space: nowrap;">{{ $po->purchase_request_id ? date('d-M-y', strtotime($po->purchaseRequest->pr_date ?? $po->purchaseRequest->created_at)) : '-' }}</td>
                     </tr>
                 </table>
             </td>
@@ -94,16 +96,16 @@
     <table class="grid">
         <thead>
             <tr>
-                <th rowspan="2" style="width: 4%;">NO.</th>
-                <th rowspan="2" style="width: 31%;">DESCRIPTION</th>
+                <th rowspan="2" style="width: 5%;">NO.</th>
+                <th rowspan="2" style="width: 32%;">DESCRIPTION</th>
                 <th rowspan="2" style="width: 5%;">QTY</th>
-                <th rowspan="2" style="width: 7%;">SAT</th>
-                <th colspan="2" style="width: 35%;">PRICE</th>
+                <th rowspan="2" style="width: 8%;">SAT</th>
+                <th colspan="2" style="width: 32%;">PRICE</th>
                 <th rowspan="2" style="width: 18%;">R E M A R K</th>
             </tr>
             <tr>
-                <th style="width: 15%;">UNIT</th>
-                <th style="width: 20%;">TOTAL</th>
+                <th style="width: 14%;">UNIT</th>
+                <th style="width: 18%;">TOTAL</th>
             </tr>
         </thead>
         <tbody>
@@ -136,7 +138,6 @@
 
                     $cleanUomDisplay = trim(preg_replace('/ \[PO\]| \[PR\]| \[GR\]/i', '', $rawUom));
 
-                    // 🔥 MENGAMBIL NILAI KONVERSI (ISI) DARI DATABASE 🔥
                     if (!empty($item->uom_id)) {
                         $checkDb = \Illuminate\Support\Facades\DB::table('item_uoms')->where('id', $item->uom_id)->first();
                         if ($checkDb) $convQty = (float) $checkDb->conversion_qty;
@@ -144,7 +145,6 @@
 
                     $uomHtml = strtoupper($cleanUomDisplay);
 
-                    // 🔥 JIKA ISI LEBIH DARI 1, TAMPILKAN SEBAGAI INFO TAMBAHAN 🔥
                     if ($convQty > 1 && stripos($uomHtml, 'ISI') === false) {
                         $uomHtml .= "<br><span style='font-size: 7pt; color: #555; white-space: nowrap;'>(Isi: " . $convQty . " " . $baseUomName . ")</span>";
                     }
@@ -277,6 +277,8 @@
             ->get();
 
         $totalCols = 1 + $approvals->count();
+        // Membagi lebar kotak secara merata berdasarkan jumlah total kotak (Prepared + Approver)
+        $equalWidth = 100 / ($totalCols > 0 ? $totalCols : 1);
 
         $prepSigBase64 = null;
         if ($po->user && $po->user->signature) {
@@ -287,9 +289,9 @@
 
     <table class="sign-table">
         <tr>
-            <td style="border-bottom: none; text-align: left; padding: 10px 10px 0 10px; width: {{ 100 / ($totalCols > 0 ? $totalCols : 1) }}%;">Prepared by :</td>
+            <td style="border-bottom: none; text-align: left; padding: 10px 10px 0 10px; width: {{ $equalWidth }}%;">Prepared by :</td>
             @foreach($approvals as $approval)
-                <td style="border-bottom: none; text-align: left; padding: 10px 10px 0 10px; width: {{ 100 / ($totalCols > 0 ? $totalCols : 1) }}%;">
+                <td style="border-bottom: none; text-align: left; padding: 10px 10px 0 10px; width: {{ $equalWidth }}%;">
                     @if($loop->last)
                         Approved by :
                     @else
@@ -329,13 +331,15 @@
 
                     @if(!isset($isDigital) || $isDigital)
                         @if($apprSigBase64)
+                            <!-- Jika sudah disetujui & ada TTD di profile, tempel gambarnya -->
                             <img src="{{ $apprSigBase64 }}" style="max-height: 60px; max-width: 140px; object-fit: contain; margin-bottom: 5px;">
                         @elseif($approval->status == 'APPROVED')
                             <div style="color: green; font-size: 10px; margin-bottom: 15px;">[ APPROVED ]</div>
                         @elseif($approval->status == 'REJECTED')
                             <div style="color: red; font-size: 10px; margin-bottom: 15px;">[ REJECTED ]</div>
                         @else
-                            <div style="color: gray; font-size: 10px; margin-bottom: 15px;">[ PENDING ]</div>
+                            <!-- 🔥 TULISAN PENDING DIHILANGKAN, DIBIARKAN KOSONG UNTUK TANDA TANGAN BASAH 🔥 -->
+                            <div style="height: 15px; margin-bottom: 15px;"></div>
                         @endif
                     @endif
                 </td>
@@ -392,7 +396,6 @@
                     <strong><u>{{ $namaTtd }}</u></strong>
                     @if(!empty($jabatanLengkap))
                         <br>
-                        {{-- <span style="font-size: 8pt; color: #555;">{{ $jabatanLengkap }}</span> --}}
                     @else
                         <br>
                         <span style="font-size: 8pt; color: transparent;">-</span>
