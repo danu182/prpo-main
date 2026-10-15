@@ -213,7 +213,7 @@ class PurchaseOrderController extends Controller
         ]);
 
         try {
-            DB::transaction(function () use ($request, $slug, $settingService) {
+            \Illuminate\Support\Facades\DB::transaction(function () use ($request, $slug, $settingService) {
                 $prRecord = \App\Models\PurchaseRequest::with('items')->where('pr_number', $slug)->firstOrFail();
 
                 $itemsByVendor = [];
@@ -340,7 +340,6 @@ class PurchaseOrderController extends Controller
                         'grand_total'           => $poGrandTotal,
                         'invoice_number'        => $request->invoice_number,
                         'account_number'        => $request->account_number,
-                        // 🔥 TAMBAHKAN BARIS INI 🔥
                         'custom_workflow_id'  => $request->custom_workflow_id,
                     ]);
 
@@ -388,7 +387,7 @@ class PurchaseOrderController extends Controller
                             'uom_id'                   => $uomIdSafe,
                             'uom'                      => $uomTextSafe,
                             'description'              => $itemData['notes'] ?? (\App\Models\Item::find($itemData['item_id'])->name ?? '-'),
-                            'remark'            => $newItemData['remark'] ?? null, // 🔥 TAMBAHKAN INI
+                            'remark'                   => $itemData['remark'] ?? null,
                             'tax_id'                   => null,
                             'qty_ordered'              => $line['qty'],
                             'unit_price'               => $line['price'],
@@ -421,32 +420,44 @@ class PurchaseOrderController extends Controller
                     $needsApproval = false;
 
                     if ($customWorkflowId) {
-                    $workflow = \App\Models\ApprovalWorkflow::with('steps')->find($customWorkflowId);
-                    if ($workflow && $workflow->steps->count() > 0) {
-                        foreach ($workflow->steps as $step) {
-                            $targetDept = $step->target_department_id ?? $step->department_id ?? null;
+                        $workflow = \App\Models\ApprovalWorkflow::with('steps')->find($customWorkflowId);
+                        if ($workflow && $workflow->steps->count() > 0) {
+                            $isFirstStep = true; // 🔥 KUNCI SEQUENTIAL APPROVAL 🔥
 
-                            // 🔥 KODE ANTI-GAGAL: TANGKAP SPESIFIK USER DARI BERBAGAI KEMUNGKINAN NAMA KOLOM 🔥
-                            $specificUserId = $step->user_id ?? $step->specific_user_id ?? $step->approver_id ?? null;
+                            foreach ($workflow->steps->sortBy('step_order') as $step) {
+                                $targetDept = $step->target_department_id ?? $step->department_id ?? null;
+                                $specificUserId = $step->user_id ?? $step->specific_user_id ?? $step->approver_id ?? null;
 
-                            \Illuminate\Support\Facades\DB::table('document_approvals')->insert([
-                                'document_id'          => $po->id,
-                                'document_type'        => get_class($po),
-                                'role_id'              => $step->role_id,
-                                'target_department_id' => $targetDept,
-                                'user_id'              => $specificUserId, // 🔥 SIMPAN DATANYA DI SINI 🔥
-                                'step_order'           => $step->step_order,
-                                'status'               => 'PENDING',
-                                'created_at'           => now(),
-                                'updated_at'           => now()
-                            ]);
+                                \Illuminate\Support\Facades\DB::table('document_approvals')->insert([
+                                    'document_id'          => $po->id,
+                                    'document_type'        => get_class($po),
+                                    'role_id'              => $step->role_id,
+                                    'target_department_id' => $targetDept,
+                                    'user_id'              => $specificUserId,
+                                    'step_order'           => $step->step_order,
+                                    // 🔥 LAPIS 1 = PENDING, LAPIS 2 DST = WAITING 🔥
+                                    'status'               => $isFirstStep ? 'PENDING' : 'WAITING',
+                                    'created_at'           => now(),
+                                    'updated_at'           => now()
+                                ]);
+                                $isFirstStep = false;
+                            }
+                            $needsApproval = true;
+                            $this->logHistory($po->id, 'SYSTEM', "Menggunakan Rute Persetujuan Khusus: " . $workflow->name);
                         }
-                        $needsApproval = true;
-                        $this->logHistory($po->id, 'SYSTEM', "Menggunakan Rute Persetujuan Khusus: " . $workflow->name);
-                    }
-                } else {
+                    } else {
                         $needsApproval = \App\Services\ApprovalService::generateWorkflow($po);
                         if ($needsApproval) {
+                            // Kunci Berurutan Untuk Workflow Standar
+                            $allAppr = \App\Models\DocumentApproval::where('document_id', $po->id)
+                                ->whereIn('document_type', [get_class($po), 'PO', 'PurchaseOrder'])
+                                ->orderBy('step_order', 'asc')->get();
+
+                            $isFirstStep = true;
+                            foreach($allAppr as $ap) {
+                                $ap->update(['status' => $isFirstStep ? 'PENDING' : 'WAITING']);
+                                $isFirstStep = false;
+                            }
                             $this->logHistory($po->id, 'SYSTEM', 'PO diterbitkan dari PR dan masuk antrean persetujuan (Workflow Standar).');
                         }
                     }
@@ -472,16 +483,16 @@ class PurchaseOrderController extends Controller
                 }
             });
 
-            return redirect()->route('po.index')->with('success', 'Purchase Order berhasil diterbitkan!');
+            return redirect()->route('po.index')->with('success', 'Purchase Order berhasil diterbitkan dari PR!');
         } catch (\Exception $e) {
-            return back()->withInput()->with('error', 'Gagal memproses pembuatan PO: ' . $e->getMessage());
+            return back()->withInput()->with('error', 'Gagal memproses pembuatan PO dari PR: ' . $e->getMessage());
         }
     }
 
 
 
     // =========================================================================
-    // 4. UPDATE PO (EDIT DATA PO) - ANTI BADAI & FULL FLEXIBILITY
+    // 4. UPDATE PO (EDIT DATA PO) - ANTI BADAI, FULL FLEXIBILITY & SEQUENTIAL APPROVAL
     // =========================================================================
     public function update(Request $request, $slug, \App\Services\SystemSettingService $settingService)
     {
@@ -569,7 +580,7 @@ class PurchaseOrderController extends Controller
                             'uom_id'          => $uomIdSafe,
                             'uom'             => $uomTextSafe,
                             'description'     => $itemData['notes'] ?? $poItem->description,
-                            'remark'          => $itemData['remark'] ?? $poItem->remark, // 🔥 TAMBAHKAN INI
+                            'remark'          => $itemData['remark'] ?? $poItem->remark,
                             'vendor_id'       => $itemData['vendor_id'] ?? $poItem->vendor_id,
                             'tax_id'          => null,
                             'qty_ordered'     => $newQty,
@@ -625,7 +636,7 @@ class PurchaseOrderController extends Controller
                             'uom_id'            => $uomIdSafe,
                             'uom'               => $newItemData['uom'] ?? 'PCS',
                             'description'       => $newItemData['notes'] ?? null,
-                            'remark'            => $newItemData['remark'] ?? null, // 🔥 TAMBAHKAN INI JUGA 🔥
+                            'remark'            => $newItemData['remark'] ?? null,
                             'qty_ordered'       => $newQty,
                             'qty'               => $newQty,
                             'unit_price'        => $price,
@@ -730,7 +741,9 @@ class PurchaseOrderController extends Controller
                     $this->checkAndUpdatePrStatus($po->purchase_request_id);
                 }
 
-                // 8. APPROVAL & WORKFLOW
+                // =====================================================================
+                // 🔥 8. APPROVAL & WORKFLOW (SEQUENTIAL APPROVAL MURNI) 🔥
+                // =====================================================================
                 $customWorkflowId = $request->input('custom_workflow_id');
                 $needsApproval = false;
 
@@ -741,10 +754,10 @@ class PurchaseOrderController extends Controller
                 if ($customWorkflowId) {
                     $workflow = \App\Models\ApprovalWorkflow::with('steps')->find($customWorkflowId);
                     if ($workflow && $workflow->steps->count() > 0) {
-                        foreach ($workflow->steps as $step) {
-                            $targetDept = $step->target_department_id ?? $step->department_id ?? null;
+                        $isFirstStep = true; // KUNCI SEQUENTIAL APPROVAL
 
-                            // 🔥 KODE ANTI-GAGAL: TANGKAP SPESIFIK USER DARI BERBAGAI KEMUNGKINAN NAMA KOLOM 🔥
+                        foreach ($workflow->steps->sortBy('step_order') as $step) {
+                            $targetDept = $step->target_department_id ?? $step->department_id ?? null;
                             $specificUserId = $step->user_id ?? $step->specific_user_id ?? $step->approver_id ?? null;
 
                             \Illuminate\Support\Facades\DB::table('document_approvals')->insert([
@@ -752,12 +765,14 @@ class PurchaseOrderController extends Controller
                                 'document_type'        => get_class($po),
                                 'role_id'              => $step->role_id,
                                 'target_department_id' => $targetDept,
-                                'user_id'              => $specificUserId, // 🔥 SIMPAN DATANYA DI SINI 🔥
+                                'user_id'              => $specificUserId,
                                 'step_order'           => $step->step_order,
-                                'status'               => 'PENDING',
+                                // LAPIS 1 = PENDING, LAPIS 2 DST = WAITING
+                                'status'               => $isFirstStep ? 'PENDING' : 'WAITING',
                                 'created_at'           => now(),
                                 'updated_at'           => now()
                             ]);
+                            $isFirstStep = false;
                         }
                         $needsApproval = true;
                         $this->logHistory($po->id, 'SYSTEM', "Menggunakan Rute Persetujuan Khusus: " . $workflow->name);
@@ -765,6 +780,16 @@ class PurchaseOrderController extends Controller
                 } else {
                     $needsApproval = \App\Services\ApprovalService::generateWorkflow($po);
                     if ($needsApproval) {
+                        // Kunci Berurutan Untuk Workflow Standar
+                        $allAppr = \App\Models\DocumentApproval::where('document_id', $po->id)
+                            ->whereIn('document_type', [get_class($po), 'PO', 'PurchaseOrder'])
+                            ->orderBy('step_order', 'asc')->get();
+
+                        $isFirstStep = true;
+                        foreach($allAppr as $ap) {
+                            $ap->update(['status' => $isFirstStep ? 'PENDING' : 'WAITING']);
+                            $isFirstStep = false;
+                        }
                         $this->logHistory($po->id, 'SYSTEM', 'Rute persetujuan (Workflow) PO telah di-reset menyesuaikan data revisi (Standar Departemen).');
                     }
                 }
@@ -916,7 +941,7 @@ class PurchaseOrderController extends Controller
 
 
 
-    // =========================================================================
+// =========================================================================
     // 8. HALAMAN INDEX PO & 🔥 VISIBILITAS APPROVAL (STRICT PRIVACY PO) 🔥
     // =========================================================================
     public function index(\Illuminate\Http\Request $request)
@@ -958,18 +983,38 @@ class PurchaseOrderController extends Controller
 
         if (!$user->hasAnyRole(['Super Admin', 'super-admin', 'Super Administrator'])) {
             $poQuery->where(function ($q) use ($user, $userRoleIds) {
+                // 1. Lolos jika dia Pembuat PO
                 $q->where('created_by', $user->id)
-                  ->orWhereHas('approvals', function ($qApprovals) use ($user, $userRoleIds) {
-                      $qApprovals->where('status', 'PENDING')
-                                 ->whereIn('role_id', $userRoleIds)
-                                 ->where(function($qDept) use ($user) {
-                                     $qDept->where('target_department_id', $user->department_id)
-                                           ->orWhere('target_department_id', 'all')
-                                           ->orWhereNull('target_department_id');
-                                 });
-                  })
+
+                // 2. Lolos jika dia sudah menyetujui di masa lalu
                   ->orWhereHas('approvals', function ($qApprovals) use ($user) {
                       $qApprovals->where('approved_by', $user->id);
+                  })
+
+                // 3. Lolos jika dia adalah Approver AKTIF (PENDING) - Anti Bocor
+                  ->orWhereHas('approvals', function ($qApprovals) use ($user, $userRoleIds) {
+                      // 🔥 KUNCI UTAMA 1: WAJIB BERSTATUS PENDING/APPROVED/REJECTED (TOLAK WAITING!) 🔥
+                      $qApprovals->whereIn('status', ['PENDING', 'APPROVED', 'REJECTED'])
+                                 ->where(function ($subQ) use ($user, $userRoleIds) {
+
+                                     // A. Cek Nama Spesifik Dulu
+                                     $subQ->where('user_id', $user->id);
+
+                                     // B. JIKA TIDAK ADA NAMA SPESIFIK, BARU CEK JABATAN
+                                     if (!empty($userRoleIds)) {
+                                         $subQ->orWhere(function($roleQ) use ($user, $userRoleIds) {
+                                             // 🔥 KUNCI UTAMA 2: Abaikan baris ini jika punya target nama spesifik orang lain 🔥
+                                             $roleQ->whereNull('user_id')
+                                                   ->whereIn('role_id', $userRoleIds)
+                                                   ->where(function($qDept) use ($user) {
+                                                       $qDept->where('target_department_id', $user->department_id)
+                                                             ->orWhere('target_department_id', 'all')
+                                                             ->orWhereNull('target_department_id')
+                                                             ->orWhere('target_department_id', '');
+                                                   });
+                                         });
+                                     }
+                                 });
                   });
             });
         }
@@ -978,7 +1023,6 @@ class PurchaseOrderController extends Controller
 
         return view('po.index', compact('readyPrs', 'purchaseOrders', 'search'));
     }
-
 
 
     // =========================================================================
@@ -1182,6 +1226,7 @@ class PurchaseOrderController extends Controller
         DB::beginTransaction();
         try {
             $po = \App\Models\PurchaseOrder::where('po_number', $slug)->firstOrFail();
+            $pembuatPo = \App\Models\User::find($po->created_by);
 
             foreach(auth()->user()->unreadNotifications as $notification) {
                 if(isset($notification->data['url']) && str_contains($notification->data['url'], route('po.show', $po->po_number))) {
@@ -1189,6 +1234,7 @@ class PurchaseOrderController extends Controller
                 }
             }
 
+            // 1. Cari antrean persetujuan saat ini
             $currentApproval = \App\Models\DocumentApproval::with('role')
                 ->where('document_id', $po->id)
                 ->where('document_type', get_class($po))
@@ -1200,18 +1246,54 @@ class PurchaseOrderController extends Controller
 
             if (!$currentApproval && $action !== 'REJECT') {
                 DB::rollBack();
-                return redirect()->back()->with('error', 'Dokumen ini tidak menunggu persetujuan apapun saat ini.');
+                return redirect()->back()->with('error', 'Dokumen ini tidak sedang menunggu persetujuan Anda.');
             }
 
-            if ($currentApproval && !auth()->user()->hasRole($currentApproval->role->name) && !auth()->user()->hasRole(['Super Admin', 'super-admin', 'Super Administrator'])) {
+            // 🔥 2. LOGIKA SMART LOOKUP (SATPAM CERDAS BACKEND) 🔥
+            $user = auth()->user();
+            $isSuperAdmin = $user->hasAnyRole(['Super Admin', 'Super Administrator', 'super-admin']) || $user->id === 1;
+            $isAuthorized = false;
+            $approverRoleName = 'Atasan';
+
+            if ($currentApproval) {
+                $approverRoleName = optional($currentApproval->role)->name ?? 'Atasan Spesifik';
+                $uid = $currentApproval->user_id ?? $currentApproval->approver_id ?? $currentApproval->specific_user_id ?? null;
+
+                if (!empty($uid)) {
+                    if ($isSuperAdmin || $user->id == $uid) {
+                        $isAuthorized = true;
+                    }
+                } else {
+                    $reqRoleName = optional($currentApproval->role)->name;
+                    $targetDeptId = $currentApproval->target_department_id;
+
+                    if ($isSuperAdmin) {
+                        $isAuthorized = true;
+                    } elseif ($reqRoleName && $user->hasRole($reqRoleName)) {
+                        if (empty($targetDeptId) || $targetDeptId === 'all' || $targetDeptId == 0) {
+                            $isAuthorized = true;
+                        } elseif ($user->department_id == $targetDeptId) {
+                            $isAuthorized = true;
+                        } else {
+                            if ($pembuatPo && $user->department_id == $pembuatPo->department_id) {
+                                $isAuthorized = true;
+                            }
+                        }
+                    }
+                }
+            }
+
+            if ($currentApproval && !$isAuthorized) {
                 DB::rollBack();
-                return redirect()->back()->with('error', 'AKSES DITOLAK: Giliran persetujuan saat ini adalah wewenang ' . $currentApproval->role->name . '. Anda tidak memiliki hak!');
+                return redirect()->back()->with('error', "AKSES DITOLAK: Giliran persetujuan saat ini adalah wewenang {$approverRoleName} dari departemen terkait. Anda tidak memiliki hak akses!");
             }
 
-            $approverRoleName = $currentApproval && $currentApproval->role ? $currentApproval->role->name : 'Atasan';
-
+            // ==========================================
+            // EKSEKUSI REJECT
+            // ==========================================
             if ($action === 'REJECT') {
                 if ($currentApproval) $currentApproval->update(['status' => 'REJECTED', 'approved_by' => auth()->id(), 'approved_at' => now()]);
+
                 $statusRejected = \App\Models\Status::where('type', 'PO')->whereIn('slug', ['draft', 'rejected'])->first();
                 if ($statusRejected) $po->update(['status_id' => $statusRejected->id]);
                 if (\Schema::hasColumn('purchase_orders', 'current_approval_level')) $po->update(['current_approval_level' => 0]);
@@ -1219,26 +1301,34 @@ class PurchaseOrderController extends Controller
                 $reason = $request->input('note', 'Ditolak secara global');
                 $this->logHistory($po->id, 'Ditolak', "Dokumen ditolak oleh " . auth()->user()->name . " (Sebagai $approverRoleName). Alasan: $reason");
 
-                // 🔥 HAPUS DATA DARI GOOGLE SHEET SAAT DI-REJECT 🔥
+                // Hapus dari Google Sheet jika rejected
                 try {
                     $sheetService = new \App\Services\GoogleSheetService();
                     $tabName = env('GOOGLE_SHEET_OPEX_TAB_NAME', 'Sheet1');
                     $sheetService->deleteRowsByBillNumber($tabName, $po->po_number);
-                } catch (\Exception $e) {
-                    \Log::error("Gagal hapus Google Sheet PO Reject {$po->po_number}: " . $e->getMessage());
+                } catch (\Exception $e) { }
+
+                if ($pembuatPo) {
+                    if (class_exists('\App\Notifications\DocumentApprovalNotification')) {
+                        $pembuatPo->notify(new \App\Notifications\DocumentApprovalNotification('PO Ditolak ❌', "Mohon maaf, PO Nomor {$po->po_number} ditolak. Alasan: {$reason}", route('po.show', $po->po_number)));
+                    }
                 }
 
                 DB::commit();
-                return redirect()->route('po.show', $po->po_number)->with('error', 'PO ditolak dan dikembalikan ke Draft.');
+                return redirect()->route('po.index')->with('error', 'Purchase Order ditolak dan dikembalikan ke Draft.');
             }
 
+            // ==========================================
+            // EKSEKUSI APPROVE
+            // ==========================================
             $currentApproval->update(['status' => 'APPROVED', 'approved_by' => auth()->id(), 'approved_at' => now()]);
             if (\Schema::hasColumn('purchase_orders', 'current_approval_level')) $po->update(['current_approval_level' => $currentApproval->step_order]);
 
+            // 🔥 KUNCI PERBAIKAN: CARI APPROVER BERIKUTNYA YANG STATUSNYA 'WAITING' 🔥
             $nextApproval = \App\Models\DocumentApproval::with('role')
                 ->where('document_id', $po->id)
                 ->where('document_type', get_class($po))
-                ->where('status', 'PENDING')
+                ->where('status', 'WAITING') // <-- INI DIA PENYAKITNYA, KITA UBAH JADI WAITING!
                 ->orderBy('step_order', 'asc')
                 ->first();
 
@@ -1246,44 +1336,49 @@ class PurchaseOrderController extends Controller
             $catatan = "Dokumen disetujui pada tahap ini oleh " . auth()->user()->name . ".\n";
 
             if ($nextApproval) {
+                // 🔥 AKTIFKAN STATUSNYA JADI PENDING AGAR MUNCUL DI NOTIFIKASI RADIT! 🔥
+                $nextApproval->update(['status' => 'PENDING']);
+
                 $nextRoleName = $nextApproval->role ? $nextApproval->role->name : 'Atasan Berikutnya';
+
+                $nextUid = $nextApproval->user_id ?? $nextApproval->approver_id ?? $nextApproval->specific_user_id ?? null;
+                if (!empty($nextUid)) {
+                    $nextApproverUser = \App\Models\User::find($nextUid);
+                    if($nextApproverUser){
+                        if (class_exists('\App\Notifications\DocumentApprovalNotification')) {
+                            $nextApproverUser->notify(new \App\Notifications\DocumentApprovalNotification('PO Butuh Persetujuan 📝', "PO Nomor {$po->po_number} telah disetujui lapis sebelumnya dan kini butuh persetujuan khusus Anda.", route('po.show', $po->po_number)));
+                        }
+                        $nextRoleName = $nextApproverUser->name;
+                    }
+                } else {
+                    $nextApprovers = \App\Models\User::role($nextRoleName)->get();
+                    foreach ($nextApprovers as $approver) {
+                        if (class_exists('\App\Notifications\DocumentApprovalNotification')) {
+                            $approver->notify(new \App\Notifications\DocumentApprovalNotification('PO Butuh Persetujuan Lapis Lanjutan 📝', "PO Nomor {$po->po_number} telah disetujui lapis sebelumnya dan kini butuh persetujuan Anda sebagai {$nextRoleName}.", route('po.show', $po->po_number)));
+                        }
+                    }
+                }
+
                 $catatan .= "Diteruskan ke: **" . strtoupper($nextRoleName) . "**\n";
                 $successMsg = "Disetujui! Diteruskan ke $nextRoleName.";
             } else {
                 $statusFinal = \App\Models\Status::where('type', 'PO')->whereIn('slug', ['issued', 'approved'])->first();
                 if ($statusFinal) $po->update(['status_id' => $statusFinal->id]);
+
                 $actionText = 'Disetujui Final';
                 $catatan .= "Persetujuan Matriks telah SELESAI.\n";
                 $successMsg = "Hore! Dokumen PO telah disetujui secara FINAL!";
 
-                $pembuatPo = \App\Models\User::find($po->created_by);
                 if ($pembuatPo) {
-                    $urlPo = route('po.show', $po->po_number);
-                    $pesanNotif = "Hore! PO Nomor {$po->po_number} telah DISETUJUI SECARA FINAL dan siap diproses ke Vendor.";
-
                     if (class_exists('\App\Notifications\DocumentApprovalNotification')) {
-                        $pembuatPo->notify(new \App\Notifications\DocumentApprovalNotification('PO APPROVED', $pesanNotif, $urlPo));
-                    } else {
-                        \Illuminate\Support\Facades\DB::table('notifications')->insert([
-                            'id'              => \Illuminate\Support\Str::uuid(),
-                            'type'            => 'App\Notifications\DocumentApprovalNotification',
-                            'notifiable_type' => 'App\Models\User',
-                            'notifiable_id'   => $pembuatPo->id,
-                            'data'            => json_encode([
-                                'title'   => 'PO Disetujui Final 🎉',
-                                'message' => $pesanNotif,
-                                'url'     => $urlPo
-                            ]),
-                            'read_at'         => null,
-                            'created_at'      => now(),
-                            'updated_at'      => now(),
-                        ]);
+                        $pembuatPo->notify(new \App\Notifications\DocumentApprovalNotification('PO Disetujui Final 🎉', "Hore! PO Nomor {$po->po_number} telah DISETUJUI SECARA FINAL dan siap diproses ke Vendor.", route('po.show', $po->po_number)));
                     }
                 }
             }
 
             $this->logHistory($po->id, $actionText, $catatan);
             DB::commit();
+
             return redirect()->route('po.show', $po->po_number)->with('success', $successMsg);
 
         } catch (\Exception $e) {
@@ -1586,7 +1681,7 @@ class PurchaseOrderController extends Controller
                     'po_number'             => $newPoNumber,
                     'purchase_request_id'   => null,
                     'vendor_id'             => $request->vendor_id,
-                    'vendor_sub_name'       => $request->vendor_sub_name, // 🔥 TANGKAP INPUTAN INI 🔥
+                    'vendor_sub_name'       => $request->vendor_sub_name,
                     'bill_to_company_id'    => $request->billing_company_id,
                     'status_id'             => 1,
                     'po_date'               => $request->po_date ?? now(),
@@ -1653,7 +1748,7 @@ class PurchaseOrderController extends Controller
                         'uom_id'                   => $uomIdSafe,
                         'uom'                      => $uomTextSafe,
                         'description'              => $itemData['notes'] ?? '-',
-                        'remark'                   => $newItemData['remark'] ?? null, // 🔥 TAMBAHKAN INI
+                        'remark'                   => $itemData['remark'] ?? null,
                         'tax_id'                   => null,
                         'qty_ordered'              => $line['qty'],
                         'unit_price'               => $line['price'],
@@ -1690,10 +1785,10 @@ class PurchaseOrderController extends Controller
                 if ($customWorkflowId) {
                     $workflow = \App\Models\ApprovalWorkflow::with('steps')->find($customWorkflowId);
                     if ($workflow && $workflow->steps->count() > 0) {
-                        foreach ($workflow->steps as $step) {
-                            $targetDept = $step->target_department_id ?? $step->department_id ?? null;
+                        $isFirstStep = true;
 
-                            // 🔥 KODE ANTI-GAGAL: TANGKAP SPESIFIK USER DARI BERBAGAI KEMUNGKINAN NAMA KOLOM 🔥
+                        foreach ($workflow->steps->sortBy('step_order') as $step) {
+                            $targetDept = $step->target_department_id ?? $step->department_id ?? null;
                             $specificUserId = $step->user_id ?? $step->specific_user_id ?? $step->approver_id ?? null;
 
                             \Illuminate\Support\Facades\DB::table('document_approvals')->insert([
@@ -1701,12 +1796,13 @@ class PurchaseOrderController extends Controller
                                 'document_type'        => get_class($po),
                                 'role_id'              => $step->role_id,
                                 'target_department_id' => $targetDept,
-                                'user_id'              => $specificUserId, // 🔥 SIMPAN DATANYA DI SINI 🔥
+                                'user_id'              => $specificUserId,
                                 'step_order'           => $step->step_order,
-                                'status'               => 'PENDING',
+                                'status'               => $isFirstStep ? 'PENDING' : 'WAITING',
                                 'created_at'           => now(),
                                 'updated_at'           => now()
                             ]);
+                            $isFirstStep = false;
                         }
                         $needsApproval = true;
                         $this->logHistory($po->id, 'SYSTEM', "Menggunakan Rute Persetujuan Khusus: " . $workflow->name);
@@ -1715,6 +1811,15 @@ class PurchaseOrderController extends Controller
                 } else {
                     $needsApproval = \App\Services\ApprovalService::generateWorkflow($po);
                     if ($needsApproval) {
+                        $allAppr = \App\Models\DocumentApproval::where('document_id', $po->id)
+                            ->whereIn('document_type', [get_class($po), 'PO', 'PurchaseOrder'])
+                            ->orderBy('step_order', 'asc')->get();
+
+                        $isFirstStep = true;
+                        foreach($allAppr as $ap) {
+                            $ap->update(['status' => $isFirstStep ? 'PENDING' : 'WAITING']);
+                            $isFirstStep = false;
+                        }
                         $this->logHistory($po->id, 'SYSTEM', 'Masuk antrean persetujuan (Workflow Standar).');
                     }
                 }
@@ -1728,7 +1833,6 @@ class PurchaseOrderController extends Controller
                     $this->logHistory($po->id, 'APPROVED', 'PO Auto-Approved karena tidak ada aturan matriks aktif.');
                 }
 
-                // 🔥 SYNC GOOGLE SHEET 🔥
                 $this->syncPoToSheet($po->refresh());
 
             });
