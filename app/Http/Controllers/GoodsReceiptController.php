@@ -324,6 +324,9 @@ class GoodsReceiptController extends Controller
         return view('gr.create', compact('po', 'pendingItems', 'conditions', 'warehouses'));
     }
 
+    // =========================================================================
+    // STORE: SIMPAN PENERIMAAN BARANG (ANTI FOREIGN KEY CRASH)
+    // =========================================================================
     public function store(Request $request, $slug, \App\Services\SystemSettingService $settingService)
     {
         $this->healDatabaseColumns();
@@ -343,7 +346,7 @@ class GoodsReceiptController extends Controller
 
         $warehouse = \App\Models\Warehouse::find($request->warehouse_id);
         if ($warehouse && $warehouse->is_frozen) {
-            return back()->withInput()->with('error', "GAGAL: Gudang {$warehouse->name} sedang dalam status DIBEKUKAN (Stock Opname). Anda tidak dapat mengeluarkan barang dari gudang ini sampai proses audit selesai!");
+            return back()->withInput()->with('error', "GAGAL: Gudang {$warehouse->name} sedang dalam status DIBEKUKAN (Stock Opname). Anda tidak dapat mengeluarkan/memasukkan barang dari gudang ini sampai proses audit selesai!");
         }
 
         try {
@@ -408,31 +411,43 @@ class GoodsReceiptController extends Controller
                         }
                         $poConvFactorSafe = $poConvFactor > 0 ? $poConvFactor : 1;
 
+                        // 🔥 KUNCI PERBAIKAN: SATPAM PENYARING UOM ID 🔥
                         $inputConvFactor = 1;
-                        $inputId = isset($data['uom_id']) ? trim($data['uom_id']) : null;
+                        $rawInputId = isset($data['uom_id']) ? trim($data['uom_id']) : null;
+                        $inputId = is_numeric($rawInputId) ? (int)$rawInputId : null;
 
-                        if (!empty($inputId) && $inputId != $baseUomId) {
+                        $validUomId = null;
+                        $finalUomString = $baseUomName;
+
+                        if (!empty($inputId)) {
+                            // Cek apakah ID benar-benar milik tabel alternatif (item_uoms)
                             $uomDb = \Illuminate\Support\Facades\DB::table('item_uoms')
                                         ->where('id', $inputId)
                                         ->where('item_id', $masterItem->id)
                                         ->first();
                             if ($uomDb) {
+                                $validUomId = $uomDb->id; // ID Valid, Lolos!
                                 $inputConvFactor = (float) $uomDb->conversion_qty;
                                 $cleanInputName = strtoupper($uomDb->uom_name);
                                 $finalUomString = $inputConvFactor > 1 ? "{$cleanInputName} (ISI: {$inputConvFactor} {$baseUomName})" : $cleanInputName;
-                            } else {
-                                $finalUomString = $baseUomName;
                             }
-                        } else {
-                            $rawUomStr = $data['uom'] ?? '';
+                        }
+
+                        // Jika gagal diverifikasi, fallback ke string aman dan NULL kan ID nya
+                        if (empty($validUomId)) {
+                            $rawUomStr = $data['uom'] ?? (!is_numeric($rawInputId) && !empty($rawInputId) ? $rawInputId : '');
+                            if (empty($rawUomStr)) $rawUomStr = $nativePoItem->uom ?? $baseUomName;
+
                             if (preg_match('/\(Isi:?\s*([0-9.]+)/i', $rawUomStr, $matches)) {
                                 $inputConvFactor = (float) $matches[1];
                                 $cleanStr = trim(preg_replace('/\(.*\)/i', '', $rawUomStr));
                                 $finalUomString = "{$cleanStr} (ISI: {$inputConvFactor} {$baseUomName})";
                             } else {
-                                $finalUomString = $baseUomName;
+                                $cleanStr = trim(preg_replace('/ \[PO\]| \[PR\]| \[GR\]/i', '', $rawUomStr));
+                                $finalUomString = !empty($cleanStr) ? strtoupper($cleanStr) : $baseUomName;
                             }
                         }
+                        // 🔥 BATAS SATPAM 🔥
 
                         $baseQtyReceived = $inputQty * $inputConvFactor;
                         $qtyYangMemotongPO = $baseQtyReceived / $poConvFactorSafe;
@@ -480,12 +495,13 @@ class GoodsReceiptController extends Controller
 
                         $catatanAsli = $data['notes'] ?? null;
 
+                        // Insert Tervalidasi Anti Crash
                         \Illuminate\Support\Facades\DB::table('goods_receipt_items')->insert([
                             'goods_receipt_id'       => $gr->id,
                             'purchase_order_item_id' => $poItem->id,
                             'item_id'                => $data['item_id'],
                             'qty_received'           => $inputQty,
-                            'uom_id'                 => $inputId ?: null,
+                            'uom_id'                 => $validUomId, // 🔥 ID SUDAH TERFILTER AMAN 🔥
                             'uom'                    => $finalUomString,
                             'condition_id'           => $data['condition_id'],
                             'notes'                  => $catatanAsli,

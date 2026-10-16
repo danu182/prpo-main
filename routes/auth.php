@@ -56,4 +56,9 @@ Route::middleware('auth')->group(function () {
 
     Route::post('logout', [AuthenticatedSessionController::class, 'destroy'])
         ->name('logout');
+
+    
+    // 🔥 TAMBAHKAN INI: Jalur alternatif (GET) Anti Error 419 🔥
+    Route::get('logout', [AuthenticatedSessionController::class, 'destroy']);
+    
 });

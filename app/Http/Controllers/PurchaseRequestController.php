@@ -57,7 +57,7 @@ class PurchaseRequestController extends Controller
                              // 🔥 KUNCI SEQUENTIAL: Sembunyikan dari antrean jika status approver masih 'WAITING' 🔥
                              ->whereIn('document_approvals.status', ['PENDING', 'APPROVED', 'REJECTED'])
                              ->where(function($apprQ) use ($user, $userRoleIds) {
-                                 
+
                                  // A. SMART LOOKUP: Lolos jika ditunjuk secara spesifik (Nama Orang)
                                  $apprQ->where('document_approvals.user_id', $user->id);
 
@@ -65,7 +65,7 @@ class PurchaseRequestController extends Controller
                                  if (!empty($userRoleIds)) {
                                      $apprQ->orWhere(function($roleQ) use ($user, $userRoleIds) {
                                          // Anti-bocor: Hanya cek role jika user_id spesifiknya kosong
-                                         $roleQ->whereNull('document_approvals.user_id') 
+                                         $roleQ->whereNull('document_approvals.user_id')
                                                ->whereIn('document_approvals.role_id', $userRoleIds)
                                                ->where(function ($deptQ) use ($user) {
                                                    $deptQ->where('document_approvals.target_department_id', $user->department_id)
@@ -218,8 +218,8 @@ class PurchaseRequestController extends Controller
     // =========================================================================
     public function store(Request $request, \App\Services\SystemSettingService $settingService)
     {
-        if (!Schema::hasColumn('purchase_request_items', 'uom')) {
-            Schema::table('purchase_request_items', function (Blueprint $table) {
+        if (!\Illuminate\Support\Facades\Schema::hasColumn('purchase_request_items', 'uom')) {
+            \Illuminate\Support\Facades\Schema::table('purchase_request_items', function (\Illuminate\Database\Schema\Blueprint $table) {
                 $table->string('uom')->nullable()->after('uom_id');
             });
         }
@@ -242,7 +242,7 @@ class PurchaseRequestController extends Controller
         ]);
 
         try {
-            DB::transaction(function () use ($request, $settingService) {
+            \Illuminate\Support\Facades\DB::transaction(function () use ($request, $settingService) {
                 $newPrNumber = $this->generatePrNumber($request->company_id);
 
                 $estimasiGrandTotal = 0;
@@ -318,7 +318,7 @@ class PurchaseRequestController extends Controller
                             if (!empty($quoteData['vendor_id'])) {
                                 $currencyObj = \App\Models\Currency::where('code', $quoteData['currency'] ?? 'IDR')->first();
 
-                                $quoteId = DB::table('purchase_request_item_vendors')->insertGetId([
+                                $quoteId = \Illuminate\Support\Facades\DB::table('purchase_request_item_vendors')->insertGetId([
                                     'pr_item_id'     => $prItem->id,
                                     'vendor_id'      => $quoteData['vendor_id'],
                                     'currency_id'    => $currencyObj ? $currencyObj->id : null,
@@ -349,7 +349,7 @@ class PurchaseRequestController extends Controller
                                             'updated_at'        => now(),
                                         ];
                                     }
-                                    DB::table('pr_vendor_attachments')->insert($attachmentsData);
+                                    \Illuminate\Support\Facades\DB::table('pr_vendor_attachments')->insert($attachmentsData);
                                 }
                             }
                         }
@@ -359,11 +359,14 @@ class PurchaseRequestController extends Controller
                 $customWorkflowId = $request->input('custom_workflow_id');
                 $needsApproval = false;
 
+                // =========================================================
+                // 🔥 KUNCI UTAMA HIRARKI BERURUTAN (SEQUENTIAL APPROVAL) 🔥
+                // =========================================================
                 if ($customWorkflowId) {
                     $workflow = \App\Models\ApprovalWorkflow::with('steps')->find($customWorkflowId);
 
                     if ($workflow && $workflow->steps->count() > 0) {
-                        $isFirstStep = true; // 🔥 KUNCI UTAMA HIRARKI BERURUTAN 🔥
+                        $isFirstStep = true;
 
                         foreach ($workflow->steps->sortBy('step_order') as $step) {
                             $targetDept = $step->target_department_id ?? $step->department_id ?? null;
@@ -374,13 +377,12 @@ class PurchaseRequestController extends Controller
                                 'document_type'        => get_class($pr),
                                 'role_id'              => $step->role_id,
                                 'target_department_id' => $targetDept,
-                                'user_id'              => $specificUserId, 
+                                'user_id'              => $specificUserId,
                                 'step_order'           => $step->step_order,
                                 // 🔥 Lapis 1 = PENDING. Lapis 2, 3 dst = LANGSUNG WAITING! 🔥
-                                'status'               => $isFirstStep ? 'PENDING' : 'WAITING' 
+                                'status'               => $isFirstStep ? 'PENDING' : 'WAITING'
                             ]);
-                            
-                            $isFirstStep = false; // Matikan PENDING untuk lapis berikutnya
+                            $isFirstStep = false;
                         }
                         $needsApproval = true;
                         $this->logHistory($pr->id, 'SYSTEM', "Menggunakan Rute Persetujuan Khusus: " . $workflow->name);
@@ -391,11 +393,10 @@ class PurchaseRequestController extends Controller
                     unset($pr->amount);
 
                     if ($needsApproval) {
-                        // Kunci Berurutan Untuk Workflow Standar
                         $allAppr = \App\Models\DocumentApproval::where('document_id', $pr->id)
                             ->whereIn('document_type', [get_class($pr), 'PR', 'PurchaseRequest'])
                             ->orderBy('step_order', 'asc')->get();
-                        
+
                         $isFirstStep = true;
                         foreach($allAppr as $ap) {
                             $ap->update(['status' => $isFirstStep ? 'PENDING' : 'WAITING']);
@@ -405,22 +406,17 @@ class PurchaseRequestController extends Controller
                     }
                 }
 
-                
-
-                // 🔥 KUNCI KEDUA: JADIKAN LAPIS 1 'PENDING', LAPIS 2 DST MENJADI 'WAITING' 🔥
+                // =========================================================
+                // 🔥 KUNCI ROBUST STATUS: UPDATE STATUS PR SECARA AMAN 🔥
+                // =========================================================
                 if ($needsApproval) {
-                    $allApprovals = \App\Models\DocumentApproval::where('document_id', $pr->id)
-                        ->whereIn('document_type', [get_class($pr), 'PR', 'PurchaseRequest'])
-                        ->orderBy('step_order', 'asc')->get();
-                    
-                    $isFirst = true;
-                    foreach($allApprovals as $appr) {
-                        $appr->update(['status' => $isFirst ? 'PENDING' : 'WAITING']);
-                        $isFirst = false; // Lapis berikutnya dan seterusnya akan jadi WAITING
-                    }
+                    $pendingStatus = \App\Models\Status::where('type', 'PR')->whereIn('slug', ['pending_approval', 'pending'])->first();
+                    $pr->update(['status_id' => $pendingStatus ? $pendingStatus->id : 1]);
+                } else {
+                    $approvedStatus = \App\Models\Status::where('type', 'PR')->whereIn('slug', ['approved', 'completed'])->first();
+                    $pr->update(['status_id' => $approvedStatus ? $approvedStatus->id : 3]);
+                    $this->logHistory($pr->id, 'AUTO-APPROVED', 'PR Auto-Approved karena tidak ada aturan aktif atau nominal di bawah batas.');
                 }
-                // (Lanjut ke kode: if ($needsApproval) { $pendingStatus = ... )
-
             });
 
             return redirect()->route('pr.index')->with('success', 'PR Berhasil Diajukan beserta seluruh data Vendor!');
@@ -434,8 +430,8 @@ class PurchaseRequestController extends Controller
     // =========================================================================
     public function update(Request $request, $slug, \App\Services\SystemSettingService $settingService)
     {
-        if (!Schema::hasColumn('purchase_request_items', 'uom')) {
-            Schema::table('purchase_request_items', function (Blueprint $table) {
+        if (!\Illuminate\Support\Facades\Schema::hasColumn('purchase_request_items', 'uom')) {
+            \Illuminate\Support\Facades\Schema::table('purchase_request_items', function (\Illuminate\Database\Schema\Blueprint $table) {
                 $table->string('uom')->nullable()->after('uom_id');
             });
         }
@@ -455,7 +451,7 @@ class PurchaseRequestController extends Controller
         ]);
 
         try {
-            DB::transaction(function () use ($request, $slug, $settingService) {
+            \Illuminate\Support\Facades\DB::transaction(function () use ($request, $slug, $settingService) {
                 $pr = \App\Models\PurchaseRequest::with('items.vendorQuotes')->where('pr_number', $slug)->firstOrFail();
 
                 $pr->update([
@@ -487,12 +483,12 @@ class PurchaseRequestController extends Controller
                     }
                 }
 
-                $savedFilesData = DB::table('pr_vendor_attachments')->whereIn('id', $keptFileIds)->get()->keyBy('id');
+                $savedFilesData = \Illuminate\Support\Facades\DB::table('pr_vendor_attachments')->whereIn('id', $keptFileIds)->get()->keyBy('id');
 
                 foreach($pr->items as $oldItem) {
                     $oldVendors = $oldItem->vendorQuotes ?? $oldItem->vendors ?? [];
                     foreach($oldVendors as $oldVendor) {
-                        $attachments = DB::table('pr_vendor_attachments')->where('pr_item_vendor_id', $oldVendor->id)->get();
+                        $attachments = \Illuminate\Support\Facades\DB::table('pr_vendor_attachments')->where('pr_item_vendor_id', $oldVendor->id)->get();
                         foreach($attachments as $att) {
                             if (!in_array($att->id, $keptFileIds)) {
                                 if (\Illuminate\Support\Facades\Storage::disk('public')->exists($att->file_path)) {
@@ -500,9 +496,9 @@ class PurchaseRequestController extends Controller
                                 }
                             }
                         }
-                        DB::table('pr_vendor_attachments')->where('pr_item_vendor_id', $oldVendor->id)->delete();
+                        \Illuminate\Support\Facades\DB::table('pr_vendor_attachments')->where('pr_item_vendor_id', $oldVendor->id)->delete();
                     }
-                    DB::table('purchase_request_item_vendors')->where('pr_item_id', $oldItem->id)->delete();
+                    \Illuminate\Support\Facades\DB::table('purchase_request_item_vendors')->where('pr_item_id', $oldItem->id)->delete();
                     $oldItem->delete();
                 }
 
@@ -547,7 +543,7 @@ class PurchaseRequestController extends Controller
                         'specification'       => $itemData['specification'] ?? null,
                         'qty'                 => $itemData['qty'],
                         'uom_id'              => $finalUomId,
-                        'uom'                 => $uomName, 
+                        'uom'                 => $uomName,
                         'status'              => 'PENDING'
                     ]);
 
@@ -557,7 +553,7 @@ class PurchaseRequestController extends Controller
 
                             $currencyObj = \App\Models\Currency::where('code', $vData['currency'] ?? 'IDR')->first();
 
-                            $quoteId = DB::table('purchase_request_item_vendors')->insertGetId([
+                            $quoteId = \Illuminate\Support\Facades\DB::table('purchase_request_item_vendors')->insertGetId([
                                 'pr_item_id'     => $prItem->id,
                                 'vendor_id'      => $vData['vendor_id'],
                                 'currency_id'    => $currencyObj->id ?? null,
@@ -571,7 +567,7 @@ class PurchaseRequestController extends Controller
                                 foreach ($vData['existing_files'] as $oldFileId) {
                                     if ($savedFilesData->has($oldFileId)) {
                                         $oldFile = $savedFilesData->get($oldFileId);
-                                        DB::table('pr_vendor_attachments')->insert([
+                                        \Illuminate\Support\Facades\DB::table('pr_vendor_attachments')->insert([
                                             'pr_item_vendor_id' => $quoteId,
                                             'file_name'         => $oldFile->file_name,
                                             'file_path'         => $oldFile->file_path,
@@ -590,7 +586,7 @@ class PurchaseRequestController extends Controller
                                     $fileName = "v_" . $vData['vendor_id'] . "_" . uniqid() . "." . $file->getClientOriginalExtension();
                                     $path = $file->storeAs($targetFolder, $fileName, 'public');
 
-                                    DB::table('pr_vendor_attachments')->insert([
+                                    \Illuminate\Support\Facades\DB::table('pr_vendor_attachments')->insert([
                                         'pr_item_vendor_id' => $quoteId,
                                         'file_name'         => $file->getClientOriginalName(),
                                         'file_path'         => str_replace('\\', '/', $path),
@@ -606,7 +602,6 @@ class PurchaseRequestController extends Controller
 
                 \App\Models\DocumentApproval::where('document_id', $pr->id)->whereIn('document_type', [get_class($pr), 'PR', 'PurchaseRequest'])->delete();
 
-                // ... (Kode di atasnya tetap sama)
                 $customWorkflowId = $request->input('custom_workflow_id');
                 $needsApproval = false;
 
@@ -614,7 +609,7 @@ class PurchaseRequestController extends Controller
                     $workflow = \App\Models\ApprovalWorkflow::with('steps')->find($customWorkflowId);
 
                     if ($workflow && $workflow->steps->count() > 0) {
-                        $isFirstStep = true; // 🔥 KUNCI UTAMA HIRARKI BERURUTAN 🔥
+                        $isFirstStep = true;
 
                         foreach ($workflow->steps->sortBy('step_order') as $step) {
                             $targetDept = $step->target_department_id ?? $step->department_id ?? null;
@@ -625,13 +620,11 @@ class PurchaseRequestController extends Controller
                                 'document_type'        => get_class($pr),
                                 'role_id'              => $step->role_id,
                                 'target_department_id' => $targetDept,
-                                'user_id'              => $specificUserId, 
+                                'user_id'              => $specificUserId,
                                 'step_order'           => $step->step_order,
-                                // 🔥 Lapis 1 = PENDING. Lapis 2, 3 dst = LANGSUNG WAITING! 🔥
-                                'status'               => $isFirstStep ? 'PENDING' : 'WAITING' 
+                                'status'               => $isFirstStep ? 'PENDING' : 'WAITING'
                             ]);
-                            
-                            $isFirstStep = false; // Matikan PENDING untuk lapis berikutnya
+                            $isFirstStep = false;
                         }
                         $needsApproval = true;
                         $this->logHistory($pr->id, 'SYSTEM', "Menggunakan Rute Persetujuan Khusus: " . $workflow->name);
@@ -642,11 +635,10 @@ class PurchaseRequestController extends Controller
                     unset($pr->amount);
 
                     if ($needsApproval) {
-                        // Kunci Berurutan Untuk Workflow Standar
                         $allAppr = \App\Models\DocumentApproval::where('document_id', $pr->id)
                             ->whereIn('document_type', [get_class($pr), 'PR', 'PurchaseRequest'])
                             ->orderBy('step_order', 'asc')->get();
-                        
+
                         $isFirstStep = true;
                         foreach($allAppr as $ap) {
                             $ap->update(['status' => $isFirstStep ? 'PENDING' : 'WAITING']);
@@ -655,13 +647,15 @@ class PurchaseRequestController extends Controller
                         $this->logHistory($pr->id, 'SYSTEM', "Rute persetujuan standar (Departemen) berhasil di-generate.");
                     }
                 }
-                // ... (Lanjut ke kode $pendingStatus = ...)
 
+                // =========================================================
+                // 🔥 KUNCI ROBUST STATUS: UPDATE STATUS PR SECARA AMAN 🔥
+                // =========================================================
                 if ($needsApproval) {
-                    $pendingStatus = \App\Models\Status::where('type', 'PR')->where('slug', 'pending_approval')->first();
+                    $pendingStatus = \App\Models\Status::where('type', 'PR')->whereIn('slug', ['pending_approval', 'pending'])->first();
                     $pr->update(['status_id' => $pendingStatus ? $pendingStatus->id : 1]);
                 } else {
-                    $approvedStatus = \App\Models\Status::where('type', 'PR')->where('slug', 'approved')->first();
+                    $approvedStatus = \App\Models\Status::where('type', 'PR')->whereIn('slug', ['approved', 'completed'])->first();
                     $pr->update(['status_id' => $approvedStatus ? $approvedStatus->id : 3]);
                     $this->logHistory($pr->id, 'AUTO-APPROVED', 'PR Auto-Approved karena tidak ada aturan aktif atau nominal di bawah batas.');
                 }
@@ -787,7 +781,7 @@ class PurchaseRequestController extends Controller
             if (!empty($uid)) {
                 $specificUser = \App\Models\User::find($uid);
                 $roleDisplay = $specificUser ? $specificUser->name : 'User Spesifik';
-                
+
                 if ($isSuperAdmin || $user->id == $uid) {
                     $canApprove = true;
                 }
@@ -795,7 +789,7 @@ class PurchaseRequestController extends Controller
                 // LOGIKA JABATAN STANDAR
                 $currentRoleName = optional($currentApproval->role)->name ?? 'Atasan';
                 $targetDeptId = $currentApproval->target_department_id;
-                
+
                 $deptName = '';
                 if (!empty($targetDeptId) && $targetDeptId !== 'all') {
                     $dept = \App\Models\Department::find($targetDeptId);
@@ -856,7 +850,7 @@ class PurchaseRequestController extends Controller
         $isSuperAdmin = $user->hasAnyRole(['Super Admin', 'Super Administrator', 'super-admin']) || $user->id === 1;
         $isAuthorized = false;
         $approverRoleName = 'Atasan';
-        
+
         if ($currentApproval) {
             $approverRoleName = optional($currentApproval->role)->name ?? 'Atasan Spesifik';
             $uid = $currentApproval->user_id ?? $currentApproval->approver_id ?? $currentApproval->specific_user_id ?? null;
@@ -972,7 +966,7 @@ class PurchaseRequestController extends Controller
             $nextApproval->update(['status' => 'PENDING']);
 
             $nextRoleName = optional($nextApproval->role)->name ?? 'Lapis Lanjutan';
-            
+
             $nextUid = $nextApproval->user_id ?? $nextApproval->approver_id ?? $nextApproval->specific_user_id ?? null;
             if (!empty($nextUid)) {
                 $nextApproverUser = \App\Models\User::find($nextUid);
