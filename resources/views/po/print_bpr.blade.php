@@ -153,6 +153,9 @@
                         }
 
                         $cleanUomDisplay = trim(preg_replace('/ \[PO\]| \[PR\]| \[GR\]/i', '', $rawUom));
+
+                        // 🔥 MEMBERSIHKAN TAG HTML UNTUK PENGECEKAN KOSONG/TIDAKNYA DESKRIPSI 🔥
+                        $cleanDescription = trim(strip_tags($item->description ?? ''));
                     @endphp
                     <tr>
                         <td style="text-align: center;">{{ $index + 1 }}</td>
@@ -162,8 +165,14 @@
                                 <u>{{ optional($po->vendor)->name }} - {{ $po->vendor_sub_name }}</u><br>
                             @endif
                             <strong style="font-size: 13px;">{{ $item->item_name ?? optional($item->item)->name }}</strong>
-                            @if(!empty($item->description) && $item->description !== '-')
-                                <br><span style="font-size: 10px; color: #555;">{!! strip_tags($item->description) !!}</span>
+
+                            <!-- 🔥 PERBAIKAN TAMPILAN SPESIFIKASI SEPERTI PO 🔥 -->
+                            @if(!empty($cleanDescription) && $cleanDescription !== '-')
+                                <br>
+                                <span style="font-size: 8.5pt; color: #444;">
+                                    <em>Spesifikasi / Rincian :</em><br>
+                                    {!! $item->description !!}
+                                </span>
                             @endif
                         </td>
                         <td style="text-align: center;">
@@ -360,7 +369,8 @@
                         @elseif($approval->status == 'REJECTED')
                             <div style="color: red; font-size: 10px; margin-bottom: 15px;">[ REJECTED ]</div>
                         @else
-                            <div style="color: gray; font-size: 10px; margin-bottom: 15px;">[ PENDING ]</div>
+                            <!-- 🔥 DIBIARKAN KOSONG AGAR BISA DITANDATANGANI MANUAL (TIDAK ADA TULISAN PENDING) 🔥 -->
+                            <div style="height: 15px; margin-bottom: 15px;"></div>
                         @endif
                     @endif
                 </td>
