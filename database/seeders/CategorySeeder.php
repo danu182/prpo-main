@@ -29,6 +29,7 @@ class CategorySeeder extends Seeder
             ['name' => 'Hosting',                 'code' => 'HOS', 'parent_id' => $invParent->id],
             ['name' => 'Domain',                  'code' => 'DOM', 'parent_id' => $invParent->id],
             ['name' => 'Internet',                'code' => 'INT', 'parent_id' => $invParent->id],
+            ['name' => 'Telephone',                'code' => 'TLP', 'parent_id' => $invParent->id],
 
 
             // Anak dari Aset Tetap (Sesuaikan dengan TYPE di Excel Anda)

@@ -20,18 +20,16 @@ class FixedAssetController extends Controller
         $warehouseId = $request->input('warehouse_id');
 
         $assets = FixedAsset::with([
-                'item', 'company', 'status', 'assignee.company', 'warehouse', 'goodsReceipt','assetCategory',
+                'item', 'company', 'status', 'assignee.company', 'warehouse', 'assetCategory',
+                // 🔥 KUNCI PERBAIKAN: Tarik relasi PO secara lengkap agar bisa dibaca di Blade 🔥
+                'goodsReceipt.po.items', 'goodsReceipt.purchaseOrder.items',
                 'histories' => function($q) { $q->orderBy('created_at', 'desc'); },
                 'histories.assignee', 'histories.creator'
             ])
-            // =========================================================================
-            // 🔥 BLOK FILTER VOID (Menggunakan SLUG yang dinamis & bersih)
-            // =========================================================================
             ->where('notes', 'not like', '%[DIBATALKAN%')
             ->whereHas('status', function($q) {
                 $q->whereNotIn('slug', ['void', 'batal', 'canceled', 'cancelled']);
             })
-            // =========================================================================
             ->when($warehouseId, function ($query) use ($warehouseId) {
                 $query->where('warehouse_id', $warehouseId);
             })
@@ -53,9 +51,9 @@ class FixedAssetController extends Controller
         $currencies = \App\Models\Currency::where('is_active', 1)->get();
         $assetCategories = \App\Models\AssetCategory::where('is_active', true)->orderBy('useful_life_years', 'asc')->get();
 
+        // 🔥 Catatan: Pencarian Nama PO dipindahkan ke Blade karena $assets adalah Collection (banyak data)
         return view('fixed_assets.index', compact('assets', 'search', 'users', 'items', 'companies', 'statuses', 'warehouses', 'currencies', 'assetCategories'));
     }
-
 
     // =========================================================================
     // 🔥 PROSES SIMPAN ASET MANUAL (CLEAN CODE & SMART MUTATION) 🔥
@@ -214,7 +212,12 @@ class FixedAssetController extends Controller
     // =========================================================================
     public function edit($id)
     {
-        $asset = FixedAsset::with(['photos', 'item', 'company', 'status', 'warehouse', 'assetCategory'])->findOrFail($id);
+        // 🔥 TAMBAHAN: Tarik relasi GR dan PO Items agar nama asli PO terbaca 🔥
+        $asset = FixedAsset::with([
+            'photos', 'item', 'company', 'status', 'warehouse', 'assetCategory',
+            'goodsReceipt.po.items', 'goodsReceipt.purchaseOrder.items'
+        ])->findOrFail($id);
+
         $warehouses = \App\Models\Warehouse::orderBy('name', 'asc')->get();
         $assetCategories = \App\Models\AssetCategory::where('is_active', true)->orderBy('useful_life_years', 'asc')->get();
         $companies = \App\Models\Company::orderBy('name', 'asc')->get();
@@ -222,7 +225,22 @@ class FixedAssetController extends Controller
         $currencies = \App\Models\Currency::where('is_active', 1)->get();
         $users = User::with(['company', 'department'])->orderBy('name', 'asc')->get();
 
-        return view('fixed_assets.edit', compact('asset', 'warehouses', 'assetCategories', 'companies', 'statuses', 'currencies', 'users'));
+        // 🔥 LOGIKA MENCARI NAMA DARI PO 🔥
+        $poItemName = null;
+        if ($asset->goodsReceipt) {
+            $po = $asset->goodsReceipt->po ?? $asset->goodsReceipt->purchaseOrder;
+            if ($po && $po->items) {
+                // Cari item PO yang ID Master-nya sama dengan ID Master Aset ini
+                $poItem = $po->items->where('item_id', $asset->item_id)->first();
+                if ($poItem) {
+                    $poItemName = $poItem->item_name;
+                }
+            }
+        }
+
+        return view('fixed_assets.edit', compact(
+            'asset', 'warehouses', 'assetCategories', 'companies', 'statuses', 'currencies', 'users', 'poItemName'
+        ));
     }
 
 

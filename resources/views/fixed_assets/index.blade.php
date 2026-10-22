@@ -128,8 +128,41 @@
                                 <div class="d-flex align-items-center">
                                     <div class="flex-shrink-0 avatar-circle-modern me-3">{{ strtoupper(substr($ast->name ?? optional($ast->item)->name, 0, 2)) }}</div>
                                     <div>
-                                        <div class="fw-bold text-dark fs-6 mb-1 {{ optional($ast->status)->slug === 'disposed' ? 'text-decoration-line-through text-danger' : '' }}">{{ $ast->name ?? optional($ast->item)->name }}</div>
-                                        <div class="mb-1 text-muted small"><span class="badge-item-code me-1"><i class="bi bi-box me-1"></i>{{ optional($ast->item)->code ?? 'No Code' }}</span> {{ optional($ast->item)->name ?? 'Unknown Master' }}</div>
+                                        {{-- <div class="fw-bold text-dark fs-6 mb-1 {{ optional($ast->status)->slug === 'disposed' ? 'text-decoration-line-through text-danger' : '' }}">{{ $ast->name ?? optional($ast->item)->name }}</div>
+                                        <div class="mb-1 text-muted small"><span class="badge-item-code me-1"><i class="bi bi-box me-1"></i>{{ optional($ast->item)->code ?? 'No Code' }}</span> {{ optional($ast->item)->name ?? 'Unknown Master' }}</div> --}}
+
+                                        
+                                        {{-- 🔥 Logika Cerdas Menemukan Nama PO 🔥 --}}
+                                        @php
+                                            $poItemName = null;
+                                            if ($ast->goodsReceipt) {
+                                                $poData = $ast->goodsReceipt->po ?? $ast->goodsReceipt->purchaseOrder;
+                                                if ($poData && $poData->items) {
+                                                    $foundPoItem = $poData->items->where('item_id', $ast->item_id)->first();
+                                                    if ($foundPoItem) {
+                                                        // 🔥 PERBAIKAN: Gunakan $foundPoItem, bukan $poItem 🔥
+                                                        $poItemName = $foundPoItem->item_name;
+                                                    }
+                                                }
+                                            }
+                                        @endphp
+
+                                        <div class="fw-bold text-dark fs-6 mb-1 {{ optional($ast->status)->slug === 'disposed' ? 'text-decoration-line-through text-danger' : '' }}">
+                                            {{ $ast->name ?? optional($ast->item)->name }}
+                                        </div>
+                                        
+                                        {{-- Indikator Master Sistem --}}
+                                        <div class="mb-1 text-muted small">
+                                            <span class="badge-item-code me-1" title="Kode Master"><i class="bi bi-box me-1"></i>{{ optional($ast->item)->code ?? 'No Code' }}</span> 
+                                            {{ optional($ast->item)->name ?? 'Unknown Master' }}
+                                        </div>
+
+                                        {{-- 🔥 Indikator Nama Asli dari Dokumen PO 🔥 --}}
+                                        @if($poItemName)
+                                            <div class="mb-1 small" style="color: #0284c7; font-weight: 500;">
+                                                <i class="bi bi-cart-check me-1"></i> Asal PO: {{ $poItemName }}
+                                            </div>
+                                        @endif
 
                                         {{-- 🔥 TANGGAL PEROLEHAN & NILAI MUNCUL DI BARIS DEPAN 🔥 --}}
                                         <div class="flex-wrap gap-2 mt-2 d-flex">
@@ -146,6 +179,8 @@
                                                 <span class="border badge-soft bg-light text-secondary border-light" title="Serial Number (S/N)"><i class="bi bi-upc-scan me-1"></i>S/N: {{ $ast->serial_number }}</span>
                                             @endif
                                         </div>
+
+                                        
                                     </div>
                                 </div>
                             </td>
@@ -259,24 +294,36 @@
                                                 </div>
                                             </div>
 
-                                            {{-- 🔥 GALERI FOTO FISIK ASET 🔥 --}}
-                                            <div class="pt-4 mt-3 col-12 border-top">
-                                                <h6 class="mb-3 fw-bold text-dark fs-6"><i class="bi bi-images me-2 text-info"></i>Galeri Foto Fisik Aset</h6>
-                                                @if(isset($ast->photos) && $ast->photos->count() > 0)
-                                                    <div class="flex-wrap gap-3 d-flex">
-                                                        @foreach($ast->photos as $photo)
-                                                            <a href="{{ asset('storage/' . $photo->file_path) }}" target="_blank" class="photo-gallery-item">
-                                                                <img src="{{ asset('storage/' . $photo->file_path) }}" class="rounded-2" style="width: 100px; height: 100px; object-fit: cover;">
-                                                            </a>
-                                                        @endforeach
-                                                    </div>
+                                            <div class="flex-wrap gap-3 d-flex">
+                                            @foreach($ast->photos as $photo)
+                                                @php
+                                                    $extension = strtolower(pathinfo($photo->file_path, PATHINFO_EXTENSION));
+                                                    $isImage = in_array($extension, ['jpg', 'jpeg', 'png', 'gif']);
+                                                @endphp
+
+                                                @if($isImage)
+                                                    <a href="{{ asset('storage/' . $photo->file_path) }}" target="_blank" class="photo-gallery-item">
+                                                        <img src="{{ asset('storage/' . $photo->file_path) }}" class="rounded-2" style="width: 100px; height: 100px; object-fit: cover;">
+                                                    </a>
                                                 @else
-                                                    <div class="p-3 border bg-light rounded-3 border-secondary-subtle">
-                                                        <span class="text-muted small fst-italic"><i class="bi bi-info-circle me-1"></i>Belum ada foto fisik yang dilampirkan untuk aset ini.</span>
-                                                    </div>
+                                                    {{-- Kotak Ikon Dokumen untuk file PDF/Word/Excel di halaman Index --}}
+                                                    <a href="{{ asset('storage/' . $photo->file_path) }}" target="_blank" class="text-decoration-none">
+                                                        <div class="border shadow-sm rounded-2 d-flex flex-column align-items-center justify-content-center bg-light" style="width: 100px; height: 100px;">
+                                                            @if($extension == 'pdf')
+                                                                <i class="bi bi-file-earmark-pdf-fill text-danger fs-1"></i>
+                                                            @elseif(in_array($extension, ['doc', 'docx']))
+                                                                <i class="bi bi-file-earmark-word-fill text-primary fs-1"></i>
+                                                            @elseif(in_array($extension, ['xls', 'xlsx']))
+                                                                <i class="bi bi-file-earmark-excel-fill text-success fs-1"></i>
+                                                            @else
+                                                                <i class="bi bi-file-earmark-zip-fill text-secondary fs-1"></i>
+                                                            @endif
+                                                            <span class="mt-1 small text-dark" style="font-size: 0.65rem;">{{ strtoupper($extension) }}</span>
+                                                        </div>
+                                                    </a>
                                                 @endif
-                                            </div>
-                                            {{-- 🔥 END GALERI FOTO 🔥 --}}
+                                            @endforeach
+                                        </div>
 
                                         </div>
                                     </div>
@@ -459,91 +506,91 @@
     // =========================================================================
     // 🔥 FUNGSI AJAX: MENGAMBIL ITEM GR UNTUK LANGKAH 2 (FILTER VOID AKTIF) 🔥
     // =========================================================================
-    public function getItems($id)
-    {
-        $gr = \App\Models\GoodsReceipt::with(['items.item', 'items.uom', 'warehouse'])->findOrFail($id);
+    // public function getItems($id)
+    // {
+    //     $gr = \App\Models\GoodsReceipt::with(['items.item', 'items.uom', 'warehouse'])->findOrFail($id);
 
-        // 1. Kumpulkan ID Status yang berbau "Void" / "Batal"
-        $voidStatusIds = \App\Models\Status::where('type', 'AST')
-            ->where(function($q) {
-                $q->where('slug', 'like', '%void%')
-                  ->orWhere('slug', 'like', '%batal%')
-                  ->orWhere('name', 'like', '%Void%')
-                  ->orWhere('name', 'like', '%Batal%');
-            })->pluck('id')->toArray();
+    //     // 1. Kumpulkan ID Status yang berbau "Void" / "Batal"
+    //     $voidStatusIds = \App\Models\Status::where('type', 'AST')
+    //         ->where(function($q) {
+    //             $q->where('slug', 'like', '%void%')
+    //               ->orWhere('slug', 'like', '%batal%')
+    //               ->orWhere('name', 'like', '%Void%')
+    //               ->orWhere('name', 'like', '%Batal%');
+    //         })->pluck('id')->toArray();
 
-        $items = [];
+    //     $items = [];
 
-        foreach ($gr->items as $grItem) {
-            // Hitung konversi satuan (UOM)
-            $grConvRate = 1;
-            $rawUom = $grItem->getRawOriginal('uom') ?: '';
-            if (preg_match('/Isi\s*[:=]?\s*([0-9.]+)/i', $rawUom, $matches)) {
-                $grConvRate = (float) $matches[1];
-            } elseif ($grItem->uom_id) {
-                $uomDb = \App\Models\ItemUom::find($grItem->uom_id);
-                if ($uomDb) $grConvRate = (float) $uomDb->conversion_qty;
-            }
+    //     foreach ($gr->items as $grItem) {
+    //         // Hitung konversi satuan (UOM)
+    //         $grConvRate = 1;
+    //         $rawUom = $grItem->getRawOriginal('uom') ?: '';
+    //         if (preg_match('/Isi\s*[:=]?\s*([0-9.]+)/i', $rawUom, $matches)) {
+    //             $grConvRate = (float) $matches[1];
+    //         } elseif ($grItem->uom_id) {
+    //             $uomDb = \App\Models\ItemUom::find($grItem->uom_id);
+    //             if ($uomDb) $grConvRate = (float) $uomDb->conversion_qty;
+    //         }
 
-            $baseQtyReceived = ($grItem->qty_received - ($grItem->qty_returned ?? 0)) * $grConvRate;
+    //         $baseQtyReceived = ($grItem->qty_received - ($grItem->qty_returned ?? 0)) * $grConvRate;
 
-            // =========================================================================
-            // 🔥 HITUNG ASET YANG SUDAH DIKAPITALISASI (ABAIKAN VOID) 🔥
-            // =========================================================================
-            $queryCap = \App\Models\FixedAsset::where('goods_receipt_id', $gr->id)
-                            ->where('item_id', $grItem->item_id);
+    //         // =========================================================================
+    //         // 🔥 HITUNG ASET YANG SUDAH DIKAPITALISASI (ABAIKAN VOID) 🔥
+    //         // =========================================================================
+    //         $queryCap = \App\Models\FixedAsset::where('goods_receipt_id', $gr->id)
+    //                         ->where('item_id', $grItem->item_id);
 
-            // Filter Lapis 1: Tolak ID Status Void
-            if (!empty($voidStatusIds)) {
-                $queryCap->whereNotIn('status_id', $voidStatusIds);
-            }
+    //         // Filter Lapis 1: Tolak ID Status Void
+    //         if (!empty($voidStatusIds)) {
+    //             $queryCap->whereNotIn('status_id', $voidStatusIds);
+    //         }
 
-            // Filter Lapis 2: Tolak yang punya catatan [DIBATALKAN]
-            $queryCap->where(function($q) {
-                $q->whereNull('notes')
-                  ->orWhere('notes', 'NOT LIKE', '%[DIBATALKAN%');
-            });
+    //         // Filter Lapis 2: Tolak yang punya catatan [DIBATALKAN]
+    //         $queryCap->where(function($q) {
+    //             $q->whereNull('notes')
+    //               ->orWhere('notes', 'NOT LIKE', '%[DIBATALKAN%');
+    //         });
 
-            $alreadyCapitalized = $queryCap->count();
-            // =========================================================================
+    //         $alreadyCapitalized = $queryCap->count();
+    //         // =========================================================================
 
-            $maxCapitalizable = $baseQtyReceived - $alreadyCapitalized;
+    //         $maxCapitalizable = $baseQtyReceived - $alreadyCapitalized;
 
-            // Masukkan ke array jika sisa masih ada
-            if ($maxCapitalizable > 0) {
+    //         // Masukkan ke array jika sisa masih ada
+    //         if ($maxCapitalizable > 0) {
 
-                // (Opsional) Jika sistem Komandan memiliki fitur ambil Serial Number yang tersedia
-                $availableSns = [];
-                if (\Schema::hasTable('item_serials')) {
-                    $availableSns = \DB::table('item_serials')
-                        ->where('item_id', $grItem->item_id)
-                        ->where('goods_receipt_id', $gr->id)
-                        ->where('status', 'AVAILABLE') // Pastikan SN yang Void juga ditarik
-                        ->pluck('serial_number')
-                        ->toArray();
-                }
+    //             // (Opsional) Jika sistem Komandan memiliki fitur ambil Serial Number yang tersedia
+    //             $availableSns = [];
+    //             if (\Schema::hasTable('item_serials')) {
+    //                 $availableSns = \DB::table('item_serials')
+    //                     ->where('item_id', $grItem->item_id)
+    //                     ->where('goods_receipt_id', $gr->id)
+    //                     ->where('status', 'AVAILABLE') // Pastikan SN yang Void juga ditarik
+    //                     ->pluck('serial_number')
+    //                     ->toArray();
+    //             }
 
-                $items[] = [
-                    'item_id' => $grItem->item_id,
-                    'item_code' => optional($grItem->item)->code,
-                    'item_name' => optional($grItem->item)->name,
-                    'specific_name' => $grItem->specific_name ?? optional($grItem->item)->name,
-                    'gr_qty' => $baseQtyReceived,
-                    'max_capitalizable' => $maxCapitalizable, // 🔥 INI ANGKA YANG TAMPIL DI LAYAR! 🔥
-                    'base_uom' => optional($grItem->uom)->name ?? 'Pieces',
-                    'default_price' => $grItem->unit_price ?? 0,
-                    'default_date' => date('Y-m-d', strtotime($gr->received_date)),
-                    'default_spec' => $grItem->notes ?? optional($grItem->item)->specification ?? '',
-                    'available_sns' => $availableSns
-                ];
-            }
-        }
+    //             $items[] = [
+    //                 'item_id' => $grItem->item_id,
+    //                 'item_code' => optional($grItem->item)->code,
+    //                 'item_name' => optional($grItem->item)->name,
+    //                 'specific_name' => $grItem->specific_name ?? optional($grItem->item)->name,
+    //                 'gr_qty' => $baseQtyReceived,
+    //                 'max_capitalizable' => $maxCapitalizable, // 🔥 INI ANGKA YANG TAMPIL DI LAYAR! 🔥
+    //                 'base_uom' => optional($grItem->uom)->name ?? 'Pieces',
+    //                 'default_price' => $grItem->unit_price ?? 0,
+    //                 'default_date' => date('Y-m-d', strtotime($gr->received_date)),
+    //                 'default_spec' => $grItem->notes ?? optional($grItem->item)->specification ?? '',
+    //                 'available_sns' => $availableSns
+    //             ];
+    //         }
+    //     }
 
-        return response()->json([
-            'warehouse_id' => $gr->warehouse_id,
-            'items' => $items
-        ]);
-    }
+    //     return response()->json([
+    //         'warehouse_id' => $gr->warehouse_id,
+    //         'items' => $items
+    //     ]);
+    // }
 
 </script>
 @endpush

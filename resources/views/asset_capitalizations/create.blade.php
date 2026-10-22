@@ -27,30 +27,46 @@
 
 @section('content')
 <div class="px-0 container-fluid text-dark px-md-3">
-    <div class="mb-4 d-flex flex-column flex-md-row justify-content-between align-items-md-center gap-3">
+    <div class="gap-3 mb-4 d-flex flex-column flex-md-row justify-content-between align-items-md-center">
         <div>
             <h4 class="mb-0 fw-bold text-dark d-flex align-items-center">
-                <div class="bg-info bg-opacity-10 text-info rounded-3 p-2 me-3 d-inline-flex">
+                <div class="p-2 bg-info bg-opacity-10 text-info rounded-3 me-3 d-inline-flex">
                     <i class="bi bi-magic fs-4"></i>
                 </div>
                 Pengakuan Aset (Capitalization)
             </h4>
             <div class="mt-2 text-muted small">Alur kapitalisasi aset bertahap untuk akurasi data inventaris yang presisi.</div>
         </div>
-        <button type="button" class="btn btn-sm btn-outline-secondary rounded-pill fw-bold bg-white shadow-sm" data-bs-toggle="modal" data-bs-target="#modalAturan">
+        <button type="button" class="bg-white shadow-sm btn btn-sm btn-outline-secondary rounded-pill fw-bold" data-bs-toggle="modal" data-bs-target="#modalAturan">
             <i class="bi bi-info-circle me-1"></i> Dasar Hukum & Akuntansi
         </button>
     </div>
 
     @if(session('success'))
-        <div class="shadow-sm alert alert-success fw-bold rounded-4 border-0 border-start border-4 border-success alert-dismissible fade show">
+        <div class="border-0 border-4 shadow-sm alert alert-success fw-bold rounded-4 border-start border-success alert-dismissible fade show">
             <i class="bi bi-check-circle-fill me-2 text-success"></i>{{ session('success') }}
             <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
         </div>
     @endif
+
     @if(session('error'))
-        <div class="shadow-sm alert alert-danger fw-bold rounded-4 border-0 border-start border-4 border-danger alert-dismissible fade show">
+        <div class="border-0 border-4 shadow-sm alert alert-danger fw-bold rounded-4 border-start border-danger alert-dismissible fade show">
             <i class="bi bi-exclamation-triangle-fill me-2 text-danger"></i>{{ session('error') }}
+            <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+        </div>
+    @endif
+
+    {{-- ========================================================== --}}
+    {{-- PENANGKAP ERROR VALIDASI FORMULIR --}}
+    {{-- ========================================================== --}}
+    @if($errors->any())
+        <div class="border-0 border-4 shadow-sm alert alert-danger fw-bold rounded-4 border-start border-danger alert-dismissible fade show">
+            <i class="bi bi-exclamation-triangle-fill me-2 text-danger"></i> <strong>Gagal Memproses Data:</strong>
+            <ul class="mt-2 mb-0 small fw-normal">
+                @foreach($errors->all() as $error)
+                    <li>{{ $error }}</li>
+                @endforeach
+            </ul>
             <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
         </div>
     @endif
@@ -62,7 +78,7 @@
         <div class="mb-4 border-0 shadow-sm card rounded-4">
             <div class="flex-wrap gap-3 p-4 bg-white card-header border-bottom d-flex justify-content-between align-items-center rounded-top-4">
                 <h5 class="mb-0 fw-bold text-primary"><i class="bi bi-1-circle-fill me-2"></i>Langkah 1: Pilih Dokumen Penerimaan (GR)</h5>
-                <div class="input-group rounded-pill shadow-sm" style="max-width: 350px;">
+                <div class="shadow-sm input-group rounded-pill" style="max-width: 350px;">
                     <span class="bg-white input-group-text border-end-0 text-muted rounded-start-pill ps-3"><i class="bi bi-search"></i></span>
                     <input type="text" id="search-gr" class="form-control border-start-0 rounded-end-pill" placeholder="Cari No GR, PO, atau Vendor...">
                 </div>
@@ -83,26 +99,25 @@
                                 @php
                                     $po = $gr->po ?? $gr->purchaseOrder;
                                     $vendorName = optional($po->vendor)->name ?? 'Vendor Internal';
-                                    $poNumber = $po->po_number ?? '-';
-                                    $poDate = $po->po_date ? date('d M Y', strtotime($po->po_date)) : '-';
+                                    $poNumber =$po->po_number ?? '-';
+                                    $poDate =$po->po_date ? date('d M Y', strtotime($po->po_date)) : '-';
                                 @endphp
                                 <tr class="gr-row">
                                     <td class="px-4 py-3">
                                         <div class="fw-bold text-dark fs-6 searchable">{{ $gr->gr_number }}</div>
-                                        <div class="small text-muted font-monospace mt-1"><i class="bi bi-calendar3 me-1"></i>{{ date('d M Y', strtotime($gr->received_date)) }}</div>
+                                        <div class="mt-1 small text-muted font-monospace"><i class="bi bi-calendar3 me-1"></i>{{ date('d M Y', strtotime($gr->received_date)) }}</div>
                                     </td>
                                     <td class="py-3 searchable">
                                         <div class="fw-bold text-primary">{{ $poNumber }}</div>
-                                        <div class="small text-muted mt-1"><i class="bi bi-building me-1"></i>{{ $vendorName }}</div>
+                                        <div class="mt-1 small text-muted"><i class="bi bi-building me-1"></i>{{ $vendorName }}</div>
                                     </td>
-                                    <!-- Cari bagian ini dan ganti menjadi warehouse_name_display -->
                                     <td class="py-3 searchable">
-                                        <span class="border badge bg-secondary-subtle text-secondary px-2 py-1">
+                                        <span class="px-2 py-1 border badge bg-secondary-subtle text-secondary">
                                             <i class="bi bi-box-seam me-1"></i>{{ $gr->warehouse_name_display ?? 'Gudang Utama' }}
                                         </span>
                                     </td>
                                     <td class="px-4 py-3 text-end">
-                                        <button type="button" class="px-4 shadow-sm btn btn-primary btn-sm rounded-pill fw-bold btn-select-gr" data-id="{{ $gr->id }}" data-gr="{{ $gr->gr_number }}" data-wh="{{ optional($gr->warehouse)->name ?? 'Gudang Utama' }}">
+                                        <button type="button" class="px-4 shadow-sm btn btn-primary btn-sm rounded-pill fw-bold btn-select-gr" data-id="{{ $gr->id }}" data-gr="{{ $gr->gr_number }}">
                                             Pilih Dokumen <i class="bi bi-arrow-right ms-1"></i>
                                         </button>
                                     </td>
@@ -128,18 +143,18 @@
     {{-- ========================================================== --}}
     <div id="step-2" class="step-container">
         <div class="mb-3 d-flex align-items-center">
-            <button type="button" class="px-4 border shadow-sm btn btn-white rounded-pill fw-bold text-secondary bg-white" onclick="goToStep(1)">
+            <button type="button" class="px-4 bg-white border shadow-sm btn btn-white rounded-pill fw-bold text-secondary" onclick="goToStep(1)">
                 <i class="bi bi-arrow-left me-1"></i> Kembali
             </button>
         </div>
-        <div class="mb-4 border-0 shadow-sm card rounded-4 border-top border-4 border-primary">
-            <div class="p-4 bg-white card-header border-bottom rounded-top-4 d-flex justify-content-between align-items-center flex-wrap gap-2">
+        <div class="mb-4 border-0 border-4 shadow-sm card rounded-4 border-top border-primary">
+            <div class="flex-wrap gap-2 p-4 bg-white card-header border-bottom rounded-top-4 d-flex justify-content-between align-items-center">
                 <div>
                     <h5 class="mb-1 fw-bold text-primary"><i class="bi bi-2-circle-fill me-2"></i>Langkah 2: Pilih Item Barang</h5>
-                    <div class="small text-muted">Dari Dokumen: <strong class="text-dark bg-light px-2 py-1 rounded" id="lbl-selected-gr"></strong></div>
+                    <div class="small text-muted">Dari Dokumen: <strong class="px-2 py-1 rounded text-dark bg-light" id="lbl-selected-gr"></strong></div>
                 </div>
                 <div class="text-end">
-                    <span class="badge bg-light text-dark border"><i class="bi bi-geo-alt me-1"></i> <span id="lbl-selected-wh"></span></span>
+                    <span class="border badge bg-light text-dark"><i class="bi bi-geo-alt me-1"></i> <span id="lbl-selected-wh"></span></span>
                 </div>
             </div>
             <div class="p-0 card-body">
@@ -167,7 +182,7 @@
     {{-- ========================================================== --}}
     <div id="step-3" class="step-container">
         <div class="mb-3 d-flex align-items-center">
-            <button type="button" class="px-4 border shadow-sm btn btn-white rounded-pill fw-bold text-secondary bg-white" onclick="goToStep(2)">
+            <button type="button" class="px-4 bg-white border shadow-sm btn btn-white rounded-pill fw-bold text-secondary" onclick="goToStep(2)">
                 <i class="bi bi-arrow-left me-1"></i> Batal
             </button>
         </div>
@@ -183,16 +198,14 @@
                 </div>
 
                 <div class="p-4 card-body" style="background-color: #f8fafc;">
-                    <!-- Master Item Header & Qty Input -->
                     <div class="pb-4 mb-4 row align-items-center border-bottom border-light" id="item-header-container">
                         <!-- Diisi oleh JS -->
                     </div>
 
-                    <!-- Wadah Form Dinamis (Card per Unit) -->
                     <div id="dynamic-spec-container" class="row g-4"></div>
                 </div>
 
-                <div class="p-4 bg-white card-footer d-flex justify-content-end align-items-center border-top rounded-bottom-4 gap-2">
+                <div class="gap-2 p-4 bg-white card-footer d-flex justify-content-end align-items-center border-top rounded-bottom-4">
                     <button type="submit" class="px-5 text-white shadow-sm btn btn-info fw-bold rounded-pill" id="btn-submit" disabled>
                         <i class="bi bi-save me-2"></i> Simpan & Kapitalisasi
                     </button>
@@ -211,9 +224,9 @@
                 <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
             </div>
             <div class="p-4 modal-body text-secondary small bg-light">
-                <h6 class="mb-2 fw-bold text-dark"><i class="bi bi-calculator me-1 text-info"></i> 1. Harga Perolehan (PSAK 16)</h6>
+                <h6 class="mb-2 fw-bold text-dark"><i class="bi bi-calculator me-1 text-info"></i>Harga Perolehan (PSAK 16)</h6>
                 <p>Harga Perolehan adalah seluruh pengeluaran bersih hingga aset siap digunakan sesuai kondisi fungsionalnya.</p>
-                <div class="p-3 mb-0 border shadow-sm rounded-3 bg-white text-dark fw-bold font-monospace text-center fs-6">
+                <div class="p-3 mb-0 text-center bg-white border shadow-sm rounded-3 text-dark fw-bold font-monospace fs-6">
                     DPP - Diskon + Biaya Atribusional = Harga Perolehan
                 </div>
             </div>
@@ -234,21 +247,22 @@
         categoryOptions += `<option value="${cat.id}">${cat.name} (${cat.useful_life_years} Thn)</option>`;
     });
 
+    // 🔥 DATA PT DARI CONTROLLER 🔥
+    let companiesList = @json($companies ?? []);
+    let globalCompanyId = null;
+
     let currentGrItems = [];
     let globalSnData = {};
     let globalSpecData = {};
 
     function goToStep(step) {
-        $('.step-container').removeClass('step-active');
-        $(`#step-${step}`).addClass('step-active');
+        $('.step-container').removeClass('step-active');$('#step-' + step).addClass('step-active');
         window.scrollTo({ top: 0, behavior: 'smooth' });
     }
 
     $('#search-gr').on('keyup', function() {
-        let value = $(this).val().toLowerCase();
-        $("#table-gr tbody tr.gr-row").filter(function() {
-            let text = $(this).find('.searchable').text().toLowerCase();
-            $(this).toggle(text.indexOf(value) > -1);
+        let value = $(this).val().toLowerCase();$("#table-gr tbody tr.gr-row").filter(function() {
+            let text = $(this).find('.searchable').text().toLowerCase();$(this).toggle(text.indexOf(value) > -1);
         });
     });
 
@@ -263,8 +277,6 @@
 
         $('#form_gr_id').val(grId);
         $('#lbl-selected-gr').text(grNum);
-
-        // Pasang indikator loading sementara di label gudang
         $('#lbl-selected-wh').html('<span class="spinner-border spinner-border-sm text-secondary"></span> Mencari Gudang...');
 
         $.ajax({
@@ -274,9 +286,11 @@
             success: function(res) {
                 btn.html(originalText).prop('disabled', false);
 
-                // 🔥 KUNCI PERBAIKAN: TIMPA TEKS GUDANG DENGAN HASIL DARI CONTROLLER 🔥
                 $('#form_warehouse_id').val(res.warehouse_id);
                 $('#lbl-selected-wh').text(res.warehouse_name);
+
+                // 🔥 SIMPAN ID PT DEFAULT DARI PO 🔥
+                globalCompanyId = res.default_company_id;
 
                 let tbody = $('#tbody-items');
                 tbody.empty();
@@ -285,7 +299,7 @@
                 globalSpecData = {};
 
                 if (!res.items || res.items.length === 0) {
-                    tbody.append(`<tr><td colspan="4" class="py-5 text-center text-danger fw-bold"><i class="bi bi-check-circle display-4 d-block mb-3 text-success opacity-50"></i>Semua item di dokumen GR ini sudah dikapitalisasi 100%.</td></tr>`);
+                    tbody.append(`<tr><td colspan="4" class="py-5 text-center text-danger fw-bold"><i class="mb-3 opacity-50 bi bi-check-circle display-4 d-block text-success"></i>Semua item di dokumen GR ini sudah dikapitalisasi 100%.</td></tr>`);
                 } else {
                     res.items.forEach((item, index) => {
                         globalSnData[item.item_id] = item.available_sns || [];
@@ -300,11 +314,11 @@
                                 <td class="px-4 py-3">
                                     <div class="fw-bold text-dark fs-6">${specificName}</div>
                                     ${masterHtml}
-                                    <div class="mt-1 small text-muted">Kode: <span class="badge bg-secondary-subtle text-secondary border border-secondary-subtle">${item.item_code}</span></div>
+                                    <div class="mt-1 small text-muted">Kode: <span class="border badge bg-secondary-subtle text-secondary border-secondary-subtle">${item.item_code}</span></div>
                                 </td>
                                 <td class="py-3 text-center fw-bold text-secondary">${item.gr_qty} ${item.base_uom}</td>
                                 <td class="py-3 text-center">
-                                    <span class="px-3 py-2 badge bg-danger fs-6 rounded-pill shadow-sm">${item.max_capitalizable} ${item.base_uom}</span>
+                                    <span class="px-3 py-2 shadow-sm badge bg-danger fs-6 rounded-pill">${item.max_capitalizable} ${item.base_uom}</span>
                                 </td>
                                 <td class="px-4 py-3 text-end">
                                     <button type="button" class="px-4 btn btn-outline-primary btn-sm rounded-pill fw-bold btn-select-item" data-idx="${index}">
@@ -334,15 +348,15 @@
         $('#btn-submit').prop('disabled', true);
 
         let headerHtml = `
-            <div class="col-md-7 mb-3 mb-md-0">
+            <div class="mb-3 col-md-7 mb-md-0">
                 <div class="fw-bolder fs-4 text-dark text-uppercase">${specificName}</div>
-                <div class="mt-2 text-muted d-flex align-items-center gap-2">
-                    <span class="badge bg-secondary-subtle text-secondary border fs-6"><i class="bi bi-upc-scan"></i> ${item.item_code}</span>
-                    <span class="badge bg-light text-danger border border-danger">Maks: ${item.max_capitalizable} Sisa</span>
+                <div class="gap-2 mt-2 text-muted d-flex align-items-center">
+                    <span class="border badge bg-secondary-subtle text-secondary fs-6"><i class="bi bi-upc-scan"></i> ${item.item_code}</span>
+                    <span class="border badge bg-light text-danger border-danger">Maks: ${item.max_capitalizable} Sisa</span>
                 </div>
             </div>
             <div class="col-md-5">
-                <div class="p-3 bg-white border shadow-sm d-flex align-items-center justify-content-between justify-content-md-end border-info border-2 rounded-4">
+                <div class="p-3 bg-white border border-2 shadow-sm d-flex align-items-center justify-content-between justify-content-md-end border-info rounded-4">
                     <label class="mb-0 fw-bold text-info me-3 text-nowrap"><i class="bi bi-boxes me-1"></i> Jadikan Aset :</label>
                     <div class="input-group input-group-lg" style="width: 200px; flex-wrap: nowrap;">
                         <input type="number" name="items[${item.item_id}][qty]" class="text-center form-control fw-bolder border-info text-dark qty-input fs-4"
@@ -370,7 +384,7 @@
         let defaultDate = $(this).data('date');
         let container = $('#dynamic-spec-container');
         let availableSns = globalSnData[itemId] || [];
-        let defaultSpec = globalSpecData[itemId] || '';
+        let rawSpecHtml = globalSpecData[itemId] || '';
 
         container.empty();
         $('#btn-submit').prop('disabled', qty === 0);
@@ -391,20 +405,22 @@
                 snInputHtml = `<input type="text" name="items[${itemId}][details][${i}][serial_number]" class="form-control form-control-sm bg-warning-subtle text-dark fw-bold border-warning sn-input-select" value="" placeholder="Isi manual (Opsional)...">`;
             }
 
+            // 🔥 BUAT OPSI DROPDOWN PT 🔥
+            let companyOptionsHtml = '<option value="">-- Pilih Kepemilikan PT --</option>';
+            if (typeof companiesList !== 'undefined') {
+                companiesList.forEach(function(c) {
+                    let selected = (c.id == globalCompanyId) ? 'selected' : '';
+                    companyOptionsHtml += `<option value="${c.id}" ${selected}>${c.name}</option>`;
+                });
+            }
+
             container.append(`
                 <div class="col-lg-6">
-                    <div class="shadow-sm card asset-card h-100 rounded-4 border-0 bg-white">
-                        <div class="py-3 px-4 bg-transparent border-bottom card-header d-flex justify-content-between align-items-center">
+                    <div class="bg-white border-0 shadow-sm card asset-card h-100 rounded-4">
+                        <div class="px-4 py-3 bg-transparent border-bottom card-header d-flex justify-content-between align-items-center">
                             <span class="fw-bolder text-info fs-6"><i class="bi bi-pc-display me-1"></i> Registrasi Unit #${i+1}</span>
                         </div>
                         <div class="p-4 card-body d-flex flex-column">
-
-                            <div class="px-3 py-2 mb-3 border bg-info-subtle text-info-emphasis border-info-subtle rounded-3 small">
-                                <div class="d-flex justify-content-between align-items-center">
-                                    <span><i class="bi bi-tag-fill me-1"></i> <strong>Nilai Buku / Perolehan:</strong></span>
-                                    <span class="fw-bolder fs-6 text-dark">Rp ${defaultPrice.toLocaleString('id-ID')}</span>
-                                </div>
-                            </div>
 
                             <div class="mb-3">
                                 <label class="mb-1 small text-muted fw-bold">Penamaan Spesifik Unit Aset <span class="text-danger">*</span></label>
@@ -420,20 +436,32 @@
                                     ${snInputHtml}
                                 </div>
                             </div>
+                            
                             <div class="pt-3 mt-1 mb-3 row g-3 border-top">
-                                <div class="col-md-4">
-                                    <label class="mb-1 small text-primary-emphasis fw-bold" style="font-size:0.75rem;">Tgl Perolehan</label>
-                                    <input type="date" name="items[${itemId}][details][${i}][acquisition_date]" class="form-control form-control-sm border-primary-subtle" value="${defaultDate}" required>
+                                <div class="col-md-6">
+                                    <label class="mb-1 small text-primary-emphasis fw-bold" style="font-size:0.75rem;">Kepemilikan PT <span class="text-danger">*</span></label>
+                                    <select name="items[${itemId}][details][${i}][company_id]" class="form-select form-select-sm border-primary-subtle fw-bold text-primary" required>
+                                        ${companyOptionsHtml}
+                                    </select>
                                 </div>
-                                <div class="col-md-4">
-                                    <label class="mb-1 small text-primary-emphasis fw-bold" style="font-size:0.75rem;">Harga Satuan (Rp)</label>
-                                    <input type="number" name="items[${itemId}][details][${i}][accounting_value]" class="form-control form-control-sm border-primary-subtle" value="${defaultPrice}">
-                                </div>
-                                <div class="col-md-4">
-                                    <label class="mb-1 small text-primary-emphasis fw-bold" style="font-size:0.75rem;">Kategori Pajak</label>
+                                <div class="col-md-6">
+                                    <label class="mb-1 small text-primary-emphasis fw-bold" style="font-size:0.75rem;">Kategori Penyusutan <span class="text-danger">*</span></label>
                                     <select name="items[${itemId}][details][${i}][asset_category_id]" class="form-select form-select-sm border-primary-subtle" required>
                                         ${categoryOptions}
                                     </select>
+                                </div>
+                                <div class="col-md-6">
+                                    <label class="mb-1 small text-primary-emphasis fw-bold" style="font-size:0.75rem;">Tgl Perolehan <span class="text-danger">*</span></label>
+                                    <input type="date" name="items[${itemId}][details][${i}][acquisition_date]" class="form-control form-control-sm border-primary-subtle" value="${defaultDate}" required>
+                                </div>
+                                <div class="col-md-6">
+                                    <label class="mb-1 small text-primary-emphasis fw-bold" style="font-size:0.75rem;">Harga Satuan (Rp) <span class="text-danger">*</span></label>
+                                    {{-- 🔥 INPUT VISUAL DENGAN PEMISAH RIBUAN 🔥 --}}
+                                    <input type="text" class="form-control form-control-sm border-primary-subtle price-format-input fw-bold" 
+                                           value="${parseFloat(defaultPrice || 0).toLocaleString('id-ID')}" 
+                                           data-target="hidden-price-${itemId}-${i}">
+                                    {{-- 🔥 INPUT HIDDEN UNTUK MENYIMPAN NILAI MURNI KE DATABASE 🔥 --}}
+                                    <input type="hidden" name="items[${itemId}][details][${i}][accounting_value]" id="hidden-price-${itemId}-${i}" value="${defaultPrice || 0}">
                                 </div>
                             </div>
 
@@ -445,19 +473,19 @@
 
                             <div class="p-3 mt-auto bg-white border rounded-3 border-primary-subtle">
                                 <label class="pb-2 mb-3 d-block text-primary fw-bold border-bottom" style="font-size:0.85rem;">
-                                    <i class="bi bi-images me-1"></i> Lampiran Foto Fisik Aset
+                                    <i class="bi bi-paperclip me-1"></i> Lampiran Bukti / Foto Aset
                                 </label>
                                 <div id="photo-inputs-container-${itemId}-${i}" class="gap-2 mb-3 d-flex flex-column">
                                     <div class="shadow-sm input-group input-group-sm photo-input-row">
-                                        <input type="file" name="items[${itemId}][details][${i}][photos][]" class="form-control border-primary-subtle single-photo-input" accept="image/*">
+                                        <input type="file" name="items[${itemId}][details][${i}][photos][]" class="form-control border-primary-subtle single-photo-input" accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.zip,.rar">
                                         <button type="button" class="btn btn-danger remove-photo-row" title="Hapus"><i class="bi bi-trash"></i></button>
                                     </div>
                                 </div>
                                 <button type="button" class="btn btn-sm btn-light border-primary text-primary w-100 fw-bold add-photo-btn btn-dashed" data-item="${itemId}" data-unit="${i}">
-                                    <i class="bi bi-plus-circle me-1"></i> Tambah Foto Lainnya
+                                    <i class="bi bi-plus-circle me-1"></i> Tambah Dokumen Lain
                                 </button>
                                 <div id="preview-${itemId}-${i}" class="flex-wrap gap-2 p-3 mt-3 border rounded bg-light d-flex empty-preview align-items-center justify-content-center" style="min-height: 90px;">
-                                    <span class="text-muted small fst-italic"><i class="bi bi-camera me-1"></i> Preview foto muncul di sini...</span>
+                                    <span class="text-muted small fst-italic"><i class="bi bi-file-earmark-text me-1"></i> Preview gambar/dokumen muncul di sini...</span>
                                 </div>
                             </div>
 
@@ -466,10 +494,20 @@
                 </div>
             `);
 
-            var quill = new Quill(`#editor-${itemId}-${i}`, { theme: 'snow', modules: { toolbar: [ ['bold', 'italic', 'underline'], [{ 'list': 'ordered'}, { 'list': 'bullet' }], [{ 'color': [] }] ] } });
-            if (defaultSpec) quill.clipboard.dangerouslyPasteHTML(defaultSpec);
+            var quill = new Quill(`#editor-${itemId}-${i}`, { 
+                theme: 'snow', 
+                modules: { toolbar: [ ['bold', 'italic', 'underline'], [{ 'list': 'ordered'}, { 'list': 'bullet' }], [{ 'color': [] }] ] } 
+            });
+            
+            if (rawSpecHtml) {
+                let formattedHtml = rawSpecHtml.replace(/(?:\r\n|\r|\n)/g, '<br>');
+                quill.clipboard.dangerouslyPasteHTML(formattedHtml);
+            }
+
             document.getElementById(`hidden-notes-${itemId}-${i}`).value = document.querySelector(`#editor-${itemId}-${i} .ql-editor`).innerHTML;
-            quill.on('text-change', function() { document.getElementById(`hidden-notes-${itemId}-${i}`).value = document.querySelector(`#editor-${itemId}-${i} .ql-editor`).innerHTML; });
+            quill.on('text-change', function() { 
+                document.getElementById(`hidden-notes-${itemId}-${i}`).value = document.querySelector(`#editor-${itemId}-${i} .ql-editor`).innerHTML; 
+            });
         }
 
         refreshSnDropdowns();
@@ -483,17 +521,14 @@
         });
 
         $('.sn-input-select').each(function() {
-            let currentSelectValue = $(this).val();
-            $(this).find('option').each(function() {
+            let currentSelectValue = $(this).val();$(this).find('option').each(function() {
                 let optionValue = $(this).val();
                 if (!optionValue) return;
 
                 if (selectedSns.includes(optionValue) && optionValue !== currentSelectValue) {
-                    $(this).prop('disabled', true);
-                    $(this).text(optionValue + " (Terpakai)");
+                    $(this).prop('disabled', true);$(this).text(optionValue + " (Terpakai)");
                 } else {
-                    $(this).prop('disabled', false);
-                    $(this).text(optionValue);
+                    $(this).prop('disabled', false);$(this).text(optionValue);
                 }
             });
         });
@@ -508,7 +543,7 @@
 
         container.append(`
         <div class="shadow-sm input-group input-group-sm photo-input-row">
-            <input type="file" name="items[${itemId}][details][${unitIdx}][photos][]" class="form-control border-primary-subtle single-photo-input" accept="image/*">
+            <input type="file" name="items[${itemId}][details][${unitIdx}][photos][]" class="form-control border-primary-subtle single-photo-input" accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.zip,.rar">
             <button type="button" class="btn btn-danger remove-photo-row" title="Hapus baris ini"><i class="bi bi-trash"></i></button>
         </div>`);
         container.find('.remove-photo-row').prop('disabled', false);
@@ -535,21 +570,43 @@
 
         fileInputs.each(function() {
             let files = this.files;
-            if (files && files[0] && files[0].type.match('image.*')) {
+            if (files && files[0]) {
                 hasFiles = true;
-                let reader = new FileReader();
-                reader.onload = function(e) {
+                let fileName = files[0].name;
+                
+                if (files[0].type.match('image.*')) {
+                    let reader = new FileReader();
+                    reader.onload = function(e) {
+                        previewDiv.append(`
+                        <div class="p-1 bg-white border shadow-sm rounded-3 position-relative photo-preview-item" title="${fileName}">
+                            <img src="${e.target.result}" class="rounded" style="width: 70px; height: 70px; object-fit: cover;">
+                        </div>`);
+                    }
+                    reader.readAsDataURL(files[0]);
+                } else {
                     previewDiv.append(`
-                    <div class="p-1 bg-white border shadow-sm rounded-3 position-relative photo-preview-item">
-                        <img src="${e.target.result}" class="rounded" style="width: 70px; height: 70px; object-fit: cover;">
+                    <div class="p-2 text-center bg-white border shadow-sm rounded-3 photo-preview-item d-flex flex-column justify-content-center align-items-center" style="width: 70px; height: 70px;" title="${fileName}">
+                        <i class="bi bi-file-earmark-text text-primary fs-3"></i>
+                        <span style="font-size: 0.5rem;" class="text-truncate w-100">${fileName}</span>
                     </div>`);
                 }
-                reader.readAsDataURL(files[0]);
             }
         });
 
-        if (!hasFiles) { previewDiv.html('<span class="text-muted small fst-italic"><i class="bi bi-camera me-1"></i> Preview foto muncul di sini...</span>'); }
+        if (!hasFiles) { previewDiv.html('<span class="text-muted small fst-italic"><i class="bi bi-file-earmark-text me-1"></i> Preview gambar/dokumen muncul di sini...</span>'); }
     }
+
+    // 🔥 EVENT LISTENER: Format Titik Ribuan Otomatis Saat Mengetik 🔥
+    $(document).on('input', '.price-format-input', function() {
+        let rawValue = $(this).val().replace(/[^0-9]/g, '');
+        let targetId = $(this).data('target');$('#' + targetId).val(rawValue);
+
+        if(rawValue) {
+            $(this).val(parseInt(rawValue, 10).toLocaleString('id-ID'));
+        } else {
+            $(this).val('');
+        }
+    });
 
     $('#form-capitalize').on('submit', function(e) {
         let accNumbers = []; let hasDuplicateAcc = false;

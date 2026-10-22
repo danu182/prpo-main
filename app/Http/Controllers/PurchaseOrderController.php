@@ -1589,7 +1589,8 @@ class PurchaseOrderController extends Controller
         ));
     }
 
-   // =========================================================================
+
+    // =========================================================================
     // 🔥 FUNGSI BARU: PROSES SIMPAN DIRECT PO (TANPA PR) 🔥
     // =========================================================================
     public function storeDirect(\Illuminate\Http\Request $request)
@@ -1645,18 +1646,22 @@ class PurchaseOrderController extends Controller
 
                 $globalDiscType = strtoupper($request->global_discount_type ?? 'FIXED');
                 $globalDiscVal = (float) ($request->global_discount_value ?? 0);
-                $poGlobalDiscount = ($globalDiscType === 'PERCENT') ? (($poSubtotalGross - $poTotalItemDiscount) * ($globalDiscVal / 100)) : $globalDiscVal;
 
+                // 🔥 PERBAIKAN: Hitung diskon global secara langsung tanpa looping array global_discounts 🔥
+                $poGlobalDiscount = ($globalDiscType === 'PERCENT') ? (($poSubtotalGross - $poTotalItemDiscount) * ($globalDiscVal / 100)) : $globalDiscVal;
                 $dppAfterGlobalDisc = ($poSubtotalGross - $poTotalItemDiscount) - $poGlobalDiscount;
 
                 $globalTaxType = strtoupper($request->global_tax_type ?? 'FIXED');
                 $globalTaxVal = (float) ($request->global_tax_value ?? 0);
+
+                // 🔥 PERBAIKAN: Hitung pajak global secara langsung 🔥
                 $poGlobalTax = ($globalTaxType === 'PERCENT') ? ($dppAfterGlobalDisc * ($globalTaxVal / 100)) : $globalTaxVal;
 
                 $poChargeTotal = 0; $appliedCharges = [];
                 if ($request->has('charges')) {
                     foreach ($request->charges as $charge) {
-                        if (!empty($charge['amount']) && ($charge['vendor_id'] == 'ALL' || $charge['vendor_id'] == $request->vendor_id)) {
+                        // 🔥 PERBAIKAN: Hapus pengecekan vendor_id karena ini Direct PO (semua untuk 1 vendor) 🔥
+                        if (!empty($charge['amount'])) {
                             $poChargeTotal += (float)$charge['amount'];
                             $appliedCharges[] = $charge;
                         }
@@ -1666,7 +1671,8 @@ class PurchaseOrderController extends Controller
                 $poExtraDiscountTotal = 0; $appliedExtraDiscs = [];
                 if ($request->has('extra_discounts')) {
                     foreach ($request->extra_discounts as $disc) {
-                        if (!empty($disc['amount']) && ($disc['vendor_id'] == 'ALL' || $disc['vendor_id'] == $request->vendor_id)) {
+                        // 🔥 PERBAIKAN: Hapus pengecekan vendor_id 🔥
+                        if (!empty($disc['amount'])) {
                             $poExtraDiscountTotal += (float)$disc['amount'];
                             $appliedExtraDiscs[] = $disc;
                         }
@@ -1706,12 +1712,12 @@ class PurchaseOrderController extends Controller
 
                 foreach ($appliedCharges as $charge) {
                     \Illuminate\Support\Facades\DB::table('purchase_order_charges')->insert([
-                        'purchase_order_id' => $po->id, 'name' => $charge['charge_type_id'], 'amount' => $charge['amount'], 'created_at' => now(), 'updated_at' => now()
+                        'purchase_order_id' => $po->id, 'name' => $charge['charge_type_id'] ?? 'Biaya Tambahan', 'amount' => $charge['amount'], 'created_at' => now(), 'updated_at' => now()
                     ]);
                 }
                 foreach ($appliedExtraDiscs as $disc) {
                     \Illuminate\Support\Facades\DB::table('purchase_order_discounts')->insert([
-                        'purchase_order_id' => $po->id, 'name' => $disc['discount_type_id'], 'amount' => $disc['amount'], 'created_at' => now(), 'updated_at' => now()
+                        'purchase_order_id' => $po->id, 'name' => $disc['discount_type_id'] ?? 'Potongan Tambahan', 'amount' => $disc['amount'], 'created_at' => now(), 'updated_at' => now()
                     ]);
                 }
 

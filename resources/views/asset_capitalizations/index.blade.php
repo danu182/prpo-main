@@ -63,6 +63,11 @@
                                             @if($asset->item)
                                                 <div class="small text-muted"><i class="bi bi-box me-1"></i>Master: {{ $asset->item->code }}</div>
                                             @endif
+                                            
+                                            {{-- 🔥 TAMBAHAN: Nama PT Kepemilikan Aset 🔥 --}}
+                                            <div class="mt-1 small text-primary" style="font-weight: 600;">
+                                                <i class="bi bi-building-fill me-1"></i> PT: {{ optional($asset->company)->name ?? 'Belum Diset' }}
+                                            </div>
                                         </div>
                                     </div>
                                 </td>

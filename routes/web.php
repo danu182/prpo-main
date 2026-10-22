@@ -521,7 +521,7 @@ Route::middleware('auth')->group(function () {
     Route::prefix('asset-capitalizations')->name('asset-capitalizations.')->middleware(['can:view_assets'])->group(function () {
         Route::get('/', [App\Http\Controllers\AssetCapitalizationController::class, 'index'])->name('index');
         Route::get('/create', [App\Http\Controllers\AssetCapitalizationController::class, 'create'])->name('create');
-        Route::post('/asset-capitalizations', [App\Http\Controllers\AssetCapitalizationController::class, 'store'])->name('store');
+        Route::post('/store', [App\Http\Controllers\AssetCapitalizationController::class, 'store'])->name('store');
         Route::get('/get-items/{gr_id}', [App\Http\Controllers\AssetCapitalizationController::class, 'getGrItems'])->name('get-items');
         Route::get('/{id}', [App\Http\Controllers\AssetCapitalizationController::class, 'show'])->name('show');
         Route::post('/{id}/void', [App\Http\Controllers\AssetCapitalizationController::class, 'voidAsset'])->name('void');

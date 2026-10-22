@@ -71,6 +71,29 @@
                     <div class="col-md-6 border-end pe-md-5">
                         <h6 class="pb-2 mb-4 border-bottom text-primary fw-bold"><i class="bi bi-box-seam me-2"></i>Detail Fisik & Spesifikasi</h6>
 
+                        <!-- 🔥 TAMBAHKAN KOTAK INI AGAR NAMA ASET BISA DI-RENAME 🔥 -->
+                        <div class="mb-3">
+                            <label class="form-label fw-bold small text-muted">Penamaan Spesifik Aset (Akuntansi) <span class="text-danger">*</span></label>
+                            <input type="text" name="name" class="shadow-sm form-control border-primary" value="{{ old('name', $asset->name) }}" required>
+
+                            <div class="p-2 mt-2 border rounded bg-light" style="font-size: 0.75rem;">
+                                <div class="mb-1 text-secondary">
+                                    <i class="bi bi-box me-1"></i> Nama Master Sistem: <strong class="text-dark">{{ optional($asset->item)->name }}</strong>
+                                </div>
+
+                                {{-- 🔥 Menampilkan Nama Asli dari PO Jika Ada 🔥 --}}
+                                @if($poItemName)
+                                    <div class="text-info">
+                                        <i class="bi bi-cart-check me-1"></i> Nama di Dokumen PO: <strong class="text-primary">{{ $poItemName }}</strong>
+                                    </div>
+                                @else
+                                    <div class="text-muted fst-italic">
+                                        <i class="bi bi-info-circle me-1"></i> Aset ini tidak terikat dengan dokumen PO (Input Manual/Hibah).
+                                    </div>
+                                @endif
+                            </div>
+                        </div>
+
                         <div class="mb-3">
                             <label class="form-label fw-bold small text-muted">Serial Number (S/N) Fisik</label>
                             <input type="text" name="serial_number" class="shadow-sm form-control" value="{{ old('serial_number', $asset->serial_number) }}">
@@ -98,11 +121,34 @@
                                     <div class="mb-2 small text-muted">Foto Saat Ini (Klik X untuk hapus):</div>
                                     <div class="flex-wrap gap-3 pt-2 d-flex pe-2">
                                         @foreach($asset->photos as $photo)
-                                            <div class="p-1 bg-white border rounded shadow-sm position-relative existing-photo-item" id="photo-{{ $photo->id }}">
-                                                <a href="{{ asset('storage/' . $photo->file_path) }}" target="_blank">
-                                                    <img src="{{ asset('storage/' . $photo->file_path) }}" class="rounded" style="width: 70px; height: 70px; object-fit: cover;">
-                                                </a>
-                                                <button type="button" class="btn btn-danger btn-delete-existing remove-existing-photo" data-photo-id="{{ $photo->id }}" title="Hapus Foto Ini">
+                                            @php
+                                                $extension = strtolower(pathinfo($photo->file_path, PATHINFO_EXTENSION));
+                                                $isImage = in_array($extension, ['jpg', 'jpeg', 'png', 'gif']);
+                                            @endphp
+
+                                            <div class="p-1 bg-white border rounded shadow-sm position-relative existing-photo-item" id="photo-{{ $photo->id }}" style="width: 78px; height: 78px;">
+                                                @if($isImage)
+                                                    <a href="{{ asset('storage/' . $photo->file_path) }}" target="_blank">
+                                                        <img src="{{ asset('storage/' . $photo->file_path) }}" class="rounded" style="width: 68px; height: 68px; object-fit: cover;">
+                                                    </a>
+                                                @else
+                                                    <a href="{{ asset('storage/' . $photo->file_path) }}" target="_blank" class="text-decoration-none">
+                                                        <div class="rounded bg-light d-flex flex-column align-items-center justify-content-center" style="width: 68px; height: 68px;">
+                                                            @if($extension == 'pdf')
+                                                                <i class="bi bi-file-earmark-pdf-fill text-danger fs-3"></i>
+                                                            @elseif(in_array($extension, ['doc', 'docx']))
+                                                                <i class="bi bi-file-earmark-word-fill text-primary fs-3"></i>
+                                                            @elseif(in_array($extension, ['xls', 'xlsx']))
+                                                                <i class="bi bi-file-earmark-excel-fill text-success fs-3"></i>
+                                                            @else
+                                                                <i class="bi bi-file-earmark-zip-fill text-secondary fs-3"></i>
+                                                            @endif
+                                                        </div>
+                                                    </a>
+                                                @endif
+
+                                                {{-- Tombol Hapus X Merah --}}
+                                                <button type="button" class="btn btn-danger btn-delete-existing remove-existing-photo" data-photo-id="{{ $photo->id }}" title="Hapus Lampiran Ini">
                                                     <i class="bi bi-x"></i>
                                                 </button>
                                             </div>
@@ -126,6 +172,7 @@
                                 <span class="text-muted small fst-italic"><i class="bi bi-image me-1"></i> Preview foto baru akan muncul di sini...</span>
                             </div>
                         </div>
+                        
                     </div>
 
                     <div class="col-md-6 ps-md-5">
@@ -149,7 +196,13 @@
                                         <option value="{{ $currency->id }}" {{ $asset->currency_id == $currency->id ? 'selected' : '' }}>{{ $currency->code }}</option>
                                     @endforeach
                                 </select>
-                                <input type="number" name="purchase_price" class="form-control border-success" value="{{ old('purchase_price', $asset->purchase_price) }}" placeholder="0" min="0">
+                                
+                                {{-- Input Visual (Untuk dibaca user dengan format titik) --}}
+                                <input type="text" id="display_purchase_price" class="form-control border-success fw-bold text-dark" 
+                                       value="{{ number_format(old('purchase_price', $asset->purchase_price), 0, ',', '.') }}" placeholder="0">
+                                
+                                {{-- Input Hidden (Angka murni yang akan dikirim ke Server) --}}
+                                <input type="hidden" name="purchase_price" id="real_purchase_price" value="{{ old('purchase_price', $asset->purchase_price) }}">
                             </div>
                         </div>
 
@@ -158,7 +211,8 @@
                             <select name="asset_category_id" class="shadow-sm form-select" required>
                                 <option value="">-- Pilih Kategori --</option>
                                 @foreach($assetCategories as $category)
-                                    <option value="{{ $category->id }}" {{ $asset->asset_category_id == $category->id ? 'selected' : '' }}>
+                                    {{-- 🔥 Gunakan old() agar jika ada error validasi, pilihan tidak ter-reset 🔥 --}}
+                                    <option value="{{ $category->id }}" {{ old('asset_category_id', $asset->asset_category_id) == $category->id ? 'selected' : '' }}>
                                         {{ $category->name }} ({{ $category->useful_life_years }} Thn)
                                     </option>
                                 @endforeach
@@ -355,6 +409,26 @@
                 $('#wrapper-reason').slideUp();
                 $('#status_change_reason').val('');
                 $('#status_change_reason').prop('required', false);
+            }
+        });
+
+
+        // 🔥 LOGIKA FORMAT RIBUAN HARGA BELI 🔥
+        let displayPrice = $('#display_purchase_price');
+        let realPrice = $('#real_purchase_price');
+
+        displayPrice.on('keyup', function() {
+            // Bersihkan semua karakter selain angka
+            let rawValue = $(this).val().replace(/[^0-9]/g, '');
+            
+            // Masukkan angka murni ke input hidden untuk dikirim ke database
+            realPrice.val(rawValue);
+            
+            // Format ulang dengan titik (Pemisah ribuan ala Indonesia) dan tampilkan ke layar
+            if(rawValue) {
+                $(this).val(parseInt(rawValue, 10).toLocaleString('id-ID'));
+            } else {
+                $(this).val('');
             }
         });
 

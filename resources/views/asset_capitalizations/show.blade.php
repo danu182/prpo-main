@@ -13,7 +13,7 @@
 @section('content')
 <div class="px-0 container-fluid">
     <div class="mb-3 d-flex justify-content-between align-items-center">
-        <a href="{{ route('asset-capitalizations.index') }}" class="border shadow-sm btn btn-light rounded-pill fw-bold text-secondary">
+        <a href="{{ route('fixed-assets.index') }}" class="border shadow-sm btn btn-light rounded-pill fw-bold text-secondary">
             <i class="bi bi-arrow-left me-1"></i> Kembali ke Daftar
         </a>
     </div>
@@ -85,11 +85,23 @@
                             <div class="row">
                                 <div class="col-md-6">
                                     <div class="detail-label">Nama Spesifik Aset</div>
-                                    <div class="detail-value text-uppercase fw-bold {{ $isVoid ? 'text-danger text-strike' : 'text-primary' }}">{{ $asset->name }}</div>
+                                    <div class="detail-value fw-bold {{ $isVoid ? 'text-danger text-strike' : 'text-primary' }} mb-1">{{ $asset->name }}</div>
+                                    
+                                    {{-- 🔥 MENAMPILKAN NAMA ASLI DARI PO 🔥 --}}
+                                    @if(!empty($poItemName))
+                                        <div class="mb-3 text-info" style="font-size: 0.8rem; font-weight: 600;">
+                                            <i class="bi bi-cart-check me-1"></i> Dari PO: <span class="text-dark">{{ $poItemName }}</span>
+                                        </div>
+                                    @else
+                                        <div class="mb-3"></div>
+                                    @endif
                                 </div>
                                 <div class="col-md-6">
                                     <div class="detail-label">Master Item Code</div>
-                                    <div class="detail-value"><span class="badge bg-secondary">{{ $asset->item->code ?? '-' }}</span></div>
+                                    <div class="detail-value">
+                                        <span class="badge bg-secondary me-1">{{ $asset->item->code ?? '-' }}</span> 
+                                        <span class="small text-muted">{{ $asset->item->name ?? '-' }}</span>
+                                    </div>
                                 </div>
                                 <div class="col-md-6">
                                     <div class="detail-label">Kategori (Pajak)</div>
@@ -113,6 +125,15 @@
                                     <div class="detail-label">No. Akuntansi (FA)</div>
                                     <div class="detail-value fw-bold text-dark">{{ $asset->accounting_asset_number ?: '-' }}</div>
                                 </div>
+
+                                {{-- 🔥 KOTAK PT TAMBAHKAN DI SINI 🔥 --}}
+                                <div class="mb-3 col-md-6">
+                                    <div class="detail-label">Kepemilikan PT</div>
+                                    <div class="detail-value fw-bold text-dark">
+                                        <i class="bi bi-building-fill text-primary me-1"></i> {{ optional($asset->company)->name ?? 'Belum Diset' }}
+                                    </div>
+                                </div>
+
                             </div>
                         </div>
                     </div>
@@ -172,15 +193,42 @@
                                 </div>
                             </div>
 
-                            {{-- 🔥 GALERI FOTO ASET 🔥 --}}
+                            {{-- 🔥 GALERI FOTO & DOKUMEN ASET 🔥 --}}
                             @if(isset($asset->photos) && $asset->photos->isNotEmpty())
                             <hr class="my-4 text-muted">
-                            <h6 class="mb-3 fw-bold text-dark"><i class="bi bi-images text-primary me-2"></i> Galeri Foto Fisik Aset</h6>
+                            <h6 class="mb-3 fw-bold text-dark"><i class="bi bi-images text-primary me-2"></i> Galeri Foto Fisik & Dokumen Aset</h6>
                             <div class="flex-wrap gap-3 p-3 border rounded d-flex bg-light">
                                 @foreach($asset->photos as $photo)
-                                    <a href="{{ asset('storage/' . $photo->file_path) }}" target="_blank" title="Klik untuk memperbesar">
-                                        <img src="{{ asset('storage/' . $photo->file_path) }}" class="border rounded shadow-sm img-thumbnail" style="width: 150px; height: 150px; object-fit: cover; transition: transform 0.2s;" onmouseover="this.style.transform='scale(1.05)'" onmouseout="this.style.transform='scale(1)'">
-                                    </a>
+                                    @php
+                                        // Deteksi ekstensi file
+                                        $extension = strtolower(pathinfo($photo->file_path, PATHINFO_EXTENSION));
+                                        $isImage = in_array($extension, ['jpg', 'jpeg', 'png', 'gif']);
+                                    @endphp
+
+                                    @if($isImage)
+                                        {{-- JIKA GAMBAR: Tampilkan pakai tag IMG --}}
+                                        <a href="{{ asset('storage/' . $photo->file_path) }}" target="_blank" title="Klik untuk memperbesar">
+                                            <img src="{{ asset('storage/' . $photo->file_path) }}" class="border rounded shadow-sm img-thumbnail" style="width: 150px; height: 150px; object-fit: cover; transition: transform 0.2s;" onmouseover="this.style.transform='scale(1.05)'" onmouseout="this.style.transform='scale(1)'">
+                                        </a>
+                                    @else
+                                        {{-- JIKA DOKUMEN (PDF, Excel, dll): Tampilkan Kotak Ikon yang seragam ukurannya --}}
+                                        <a href="{{ asset('storage/' . $photo->file_path) }}" target="_blank" title="Klik untuk membuka dokumen" class="text-decoration-none">
+                                            <div class="bg-white border rounded shadow-sm img-thumbnail d-flex flex-column align-items-center justify-content-center" style="width: 150px; height: 150px; transition: transform 0.2s;" onmouseover="this.style.transform='scale(1.05)'" onmouseout="this.style.transform='scale(1)'">
+                                                
+                                                @if($extension == 'pdf')
+                                                    <i class="bi bi-file-earmark-pdf-fill text-danger" style="font-size: 4rem;"></i>
+                                                @elseif(in_array($extension, ['doc', 'docx']))
+                                                    <i class="bi bi-file-earmark-word-fill text-primary" style="font-size: 4rem;"></i>
+                                                @elseif(in_array($extension, ['xls', 'xlsx']))
+                                                    <i class="bi bi-file-earmark-excel-fill text-success" style="font-size: 4rem;"></i>
+                                                @else
+                                                    <i class="bi bi-file-earmark-zip-fill text-secondary" style="font-size: 4rem;"></i>
+                                                @endif
+                                                
+                                                <span class="px-2 mt-2 text-dark small text-truncate fw-bold" style="max-width: 140px;">Lampiran.{{ $extension }}</span>
+                                            </div>
+                                        </a>
+                                    @endif
                                 @endforeach
                             </div>
                             @endif

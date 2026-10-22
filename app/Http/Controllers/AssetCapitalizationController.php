@@ -20,8 +20,8 @@ class AssetCapitalizationController extends Controller
 
     public function index()
     {
-        // 🔥 Tambahkan 'photos' agar bisa menampilkan thumbnail di halaman index
-        $assets = \App\Models\FixedAsset::with(['item', 'status', 'photos'])
+        // 🔥 Tambahkan 'company' agar PT bisa dipanggil di Blade
+        $assets = \App\Models\FixedAsset::with(['item', 'status', 'photos', 'company'])
                     ->orderBy('created_at', 'desc')
                     ->paginate(10);
 
@@ -33,13 +33,17 @@ class AssetCapitalizationController extends Controller
     // =========================================================================
     public function show($id)
     {
-        // 🔥 Tambahkan 'histories' dan 'photos'
         $asset = \App\Models\FixedAsset::with([
             'item',
             'status',
             'goodsReceipt.po.vendor',
-            'histories',
-            'photos' // 🔥 Relasi ke tabel asset_photos
+            'company', // 🔥 WAJIB TAMBAH INI AGAR NAMA PT TERBACA 🔥
+            // 🔥 WAJIB DITAMBAHKAN: Tarik relasi item PO agar bisa dibaca 🔥
+            'goodsReceipt.po.items', 
+            'goodsReceipt.purchaseOrder.items',
+            'histories.creator', 
+            'histories.assignee',
+            'photos' 
         ])->findOrFail($id);
 
         $categoryName = '-';
@@ -48,8 +52,22 @@ class AssetCapitalizationController extends Controller
             $categoryName = $cat ? $cat->name . ' (' . $cat->useful_life_years . ' Tahun)' : '-';
         }
 
-        return view('asset_capitalizations.show', compact('asset', 'categoryName'));
+        // 🔥 LOGIKA MENCARI NAMA DARI PO 🔥
+        $poItemName = null;
+        if ($asset->goodsReceipt) {
+            $poData = $asset->goodsReceipt->po ?? $asset->goodsReceipt->purchaseOrder;
+            if ($poData && $poData->items) {
+                $foundPoItem = $poData->items->where('item_id', $asset->item_id)->first();
+                if ($foundPoItem) {
+                    $poItemName = $foundPoItem->item_name;
+                }
+            }
+        }
+
+        // 🔥 Kirim $poItemName ke Blade 🔥
+        return view('asset_capitalizations.show', compact('asset', 'categoryName', 'poItemName'));
     }
+
 
     // =========================================================================
     // 🔥 1. FUNGSI CREATE: MENAMPILKAN HALAMAN & DOKUMEN GR (DENGAN DETEKTIF GUDANG) 🔥
@@ -123,15 +141,18 @@ class AssetCapitalizationController extends Controller
         }
 
         $assetCategories = \App\Models\AssetCategory::where('is_active', true)->get();
+        $companies = \App\Models\Company::orderBy('name', 'asc')->get();
 
         return view('asset_capitalizations.create', [
             'grs' => $validGrs,
-            'assetCategories' => $assetCategories
+            'assetCategories' => $assetCategories,
+            'companies' => $companies, // 🔥 KIRIM KE BLADE 🔥
         ]);
     }
 
-    // =========================================================================
-    // 🔥 2. FUNGSI AJAX: MENGAMBIL ITEM GR (SEKALIGUS NAMA GUDANG YANG BENAR) 🔥
+
+   // =========================================================================
+    // 🔥 2. FUNGSI AJAX: MENGAMBIL ITEM GR (SEKALIGUS NAMA GUDANG & PT) 🔥
     // =========================================================================
     public function getGrItems($gr_id)
     {
@@ -145,6 +166,9 @@ class AssetCapitalizationController extends Controller
 
             $grDate = $gr->received_date;
             $po = $gr->purchaseOrder ?? $gr->po;
+
+            // 🔥 LOGIKA MENCARI PT BAWAAN DARI PO 🔥
+            $defaultCompanyId = optional($po)->bill_to_company_id ?? optional($po)->company_id ?? null;
 
             $biayaTambahanPerUnit = 0;
             $diskonHeaderPerUnit = 0;
@@ -278,6 +302,7 @@ class AssetCapitalizationController extends Controller
             return response()->json([
                 'warehouse_id' => $globalWhId ?? 1,
                 'warehouse_name' => $globalWhName,
+                'default_company_id' => $defaultCompanyId, // 🔥 DIKIRIM KE JAVASCRIPT 🔥
                 'items' => $items
             ]);
 
@@ -292,19 +317,29 @@ class AssetCapitalizationController extends Controller
     }
 
     // =========================================================================
-    // 🔥 3. FUNGSI STORE: MENYIMPAN KAPITALISASI & POTONG KARTU STOK YANG BENAR 🔥
+    // 🔥 STORE: Simpan Kapitalisasi Aset (ANTI-SILENT FAIL & DOKUMEN AMAN)
     // =========================================================================
     public function store(Request $request)
     {
+        // 1. Validasi Super Ketat (SUDAH MENDUKUNG PDF, EXCEL, PT, & KATEGORI)
         $request->validate([
             'goods_receipt_id' => 'required|exists:goods_receipts,id',
             'items'            => 'required|array',
             'items.*.qty'      => 'required|numeric|min:0',
-            'items.*.details.*.accounting_no'     => 'nullable|string|distinct|unique:fixed_assets,accounting_asset_number',
+            'items.*.details.*.accounting_no'     => 'nullable|string|unique:fixed_assets,accounting_asset_number',
+            // 🔥 WAJIB ISI KATEGORI & PT 🔥
             'items.*.details.*.asset_category_id' => 'required|exists:asset_categories,id',
-            'items.*.details.*.photos.*'          => 'nullable|image|mimes:jpeg,png,jpg,gif|max:2048',
+            'items.*.details.*.company_id'        => 'required|exists:companies,id',
+            'items.*.details.*.photos.*'          => 'nullable|file|mimes:jpeg,png,jpg,gif,pdf,doc,docx,xls,xlsx,zip,rar|max:5120',
+        ], [
+            'items.*.details.*.accounting_no.unique'   => 'Nomor Akuntansi (FA) tersebut sudah dipakai oleh aset lain.',
+            'items.*.details.*.asset_category_id.required' => 'Kategori penyusutan wajib dipilih untuk setiap unit.',
+            'items.*.details.*.company_id.required'    => 'Kepemilikan PT wajib dipilih untuk setiap unit.',
+            'items.*.details.*.photos.*.mimes' => 'File lampiran harus berupa Gambar, PDF, Word, Excel, atau ZIP.',
+            'items.*.details.*.photos.*.max' => 'Ukuran setiap file maksimal 5MB.',
         ]);
 
+        // 2. Validasi Serial Number Kembar
         $snList = [];
         foreach ($request->items as $itemId => $data) {
             if (!isset($data['details'])) continue;
@@ -329,7 +364,9 @@ class AssetCapitalizationController extends Controller
                 $currencyCode = optional($poData)->currency ?? 'IDR';
                 $currencyDb = \DB::table('currencies')->where('code', $currencyCode)->first();
                 $currencyId = $currencyDb ? $currencyDb->id : 1;
-                $companyId  = optional($poData)->company_id ?? optional($poData)->bill_to_company_id ?? null;
+                
+                // PT Bawaan dari PO (Jika user tidak milih, pakai ini)
+                $defaultCompanyId = optional($poData)->bill_to_company_id ?? optional($poData)->company_id ?? 1;
 
                 foreach ($request->items as $itemId => $data) {
                     $qtyToCapitalize = (int) ($data['qty'] ?? 0);
@@ -337,26 +374,16 @@ class AssetCapitalizationController extends Controller
 
                     $masterItem = Item::findOrFail($itemId);
 
-                    // 🔥 DETEKTIF GUDANG: Cari Gudang Spesifik Untuk Item Ini 🔥
-                    $actualWarehouseId = $request->warehouse_id ?? 1;
-                    $mut = \Illuminate\Support\Facades\DB::table('stock_mutations')
-                        ->where('reference_number', $gr->gr_number)
-                        ->where('item_id', $itemId)
-                        ->where('type', 'IN')
-                        ->first();
-                    if ($mut && $mut->warehouse_id) {
-                        $actualWarehouseId = $mut->warehouse_id;
-                    }
-
-                    // 🔥 FILTER KARTU STOK HANYA DARI GUDANG YANG BENAR 🔥
                     $availableStocks = InventoryStock::where('item_id', $itemId)
-                                        ->where('warehouse_id', $actualWarehouseId)
                                         ->where('stock_qty', '>', 0)
                                         ->orderBy('created_at', 'asc')->lockForUpdate()->get();
 
                     $totalAvailable = $availableStocks->sum('stock_qty');
+
                     $qtyFromStock = min($qtyToCapitalize, $totalAvailable);
                     $qtyRetroactive = $qtyToCapitalize - $qtyFromStock;
+
+                    $actualWarehouseId = $gr->warehouse_id ?? 1;
 
                     if ($qtyFromStock > 0) {
                         $qtySisaPotong = $qtyFromStock;
@@ -365,6 +392,7 @@ class AssetCapitalizationController extends Controller
                         foreach ($availableStocks as $stockRow) {
                             if ($qtySisaPotong <= 0) break;
                             $potong = min($stockRow->stock_qty, $qtySisaPotong);
+                            $actualWarehouseId = $stockRow->warehouse_id;
 
                             $stockRow->decrement('stock_qty', $potong);
                             $qtySisaPotong -= $potong;
@@ -380,32 +408,37 @@ class AssetCapitalizationController extends Controller
                                 'notes'            => "[CAPITALIZE] Kapitalisasi menjadi Aset Tetap",
                                 'created_by'       => auth()->id(),
                             ]);
+                            
                             $saldoTotalSaatIni -= $potong;
                         }
-
-                        // Kurangi stok global
-                        $masterItem->decrement('current_stock', $qtyFromStock);
                     }
 
                     $details = $data['details'] ?? [];
                     for ($i = 0; $i < $qtyToCapitalize; $i++) {
                         $detail = $details[$i] ?? [];
+
                         $isRetroactive = $i >= $qtyFromStock;
                         $currentAssetStatus = $isRetroactive ? $statusInUseId : $statusAvailableId;
 
                         $year = date('Y'); $month = date('m');
                         $prefix = "AST/{$year}/{$month}/";
-                        $lastAsset = FixedAsset::where('asset_number', 'like', "{$prefix}%")->orderBy('id', 'desc')->lockForUpdate()->first();
+                        $lastAsset = FixedAsset::where('asset_number', 'like', "{$prefix}%")->orderBy('id', 'desc')->first();
                         $nextSeq = $lastAsset ? ((int) substr($lastAsset->asset_number, -4)) + 1 : 1;
                         $sysAssetNumber = $prefix . str_pad($nextSeq, 4, '0', STR_PAD_LEFT);
 
                         $accountingNo = $detail['accounting_no'] ?? null;
                         $specificName = $detail['specific_name'] ?? $masterItem->name;
                         $acqDate      = $detail['acquisition_date'] ?? date('Y-m-d');
-                        $accValue     = $detail['accounting_value'] ?? 0;
-                        $categoryId   = $detail['asset_category_id'] ?? null;
                         $specDetail   = $detail['notes'] ?? '';
                         $serialNumber = $detail['serial_number'] ?? null;
+
+                        // 🔥 KUNCI PERBAIKAN 1: BACA HARGA WALAUPUN ADA TITIK RIBUANNYA 🔥
+                        $rawPrice = $detail['accounting_value'] ?? 0;
+                        $accValue = (float) preg_replace('/[^0-9]/', '', $rawPrice);
+
+                        // 🔥 KUNCI PERBAIKAN 2: PAKSA AMBIL ID KATEGORI & PT 🔥
+                        $categoryId = !empty($detail['asset_category_id']) ? (int) $detail['asset_category_id'] : null;
+                        $companyId  = !empty($detail['company_id']) ? (int) $detail['company_id'] : $defaultCompanyId;
 
                         $extraNote = "Diakui dari dokumen penerimaan: {$gr->gr_number}.";
                         if ($isRetroactive) {
@@ -413,30 +446,35 @@ class AssetCapitalizationController extends Controller
                         }
 
                         $newAsset = FixedAsset::create([
-                            'asset_number'             => $sysAssetNumber,
-                            'accounting_asset_number'  => $accountingNo,
-                            'serial_number'            => $serialNumber,
-                            'spesifikasi_detail'       => $specDetail,
-                            'item_id'                  => $masterItem->id,
-                            'warehouse_id'             => $actualWarehouseId, // 🔥 TERSIMPAN DI GUDANG YANG BENAR 🔥
-                            'company_id'               => $companyId ?? 1,
-                            'goods_receipt_id'         => $gr->id,
-                            'name'                     => $specificName,
-                            'acquisition_date'         => $acqDate,
-                            'purchase_price'           => $accValue,
-                            'currency_id'              => $currencyId,
-                            'status_id'                => $currentAssetStatus,
-                            'notes'                    => $extraNote,
+                            'asset_number'            => $sysAssetNumber,
+                            'item_id'                 => $masterItem->id,
+                            'asset_category_id'       => $categoryId, // Sekarang pasti terisi
+                            'warehouse_id'            => $actualWarehouseId,
+                            'company_id'              => $companyId, // Menyimpan PT yang dipilih
+                            'goods_receipt_id'        => $gr->id,
+                            'name'                    => $specificName,
+                            'serial_number'           => $serialNumber,
+                            'accounting_asset_number' => $accountingNo,
+                            'acquisition_date'        => $acqDate,
+                            'purchase_price'          => $accValue, // Harga murni tanpa titik
+                            'currency_id'             => $currencyId,
+                            'spesifikasi_detail'      => $specDetail,
+                            'status_id'               => $currentAssetStatus,
+                            'notes'                   => $extraNote,
                         ]);
 
+                        // 🔥 PROSES UPLOAD DOKUMEN BUKTI & FOTO 🔥
                         if ($request->hasFile("items.{$itemId}.details.{$i}.photos")) {
                             $uploadedFiles = $request->file("items.{$itemId}.details.{$i}.photos");
+
                             $safeFolderName = str_replace('/', '-', $sysAssetNumber);
                             $folderPath = "FixAsset/{$safeFolderName}";
 
                             foreach ($uploadedFiles as $file) {
-                                $filename = time() . '_' . uniqid() . '.' . $file->getClientOriginalExtension();
+                                $originalName = $file->getClientOriginalName();
+                                $filename = time() . '_' . uniqid() . '_' . str_replace(' ', '_', $originalName);
                                 $path = $file->storeAs($folderPath, $filename, 'public');
+
                                 AssetPhoto::create([
                                     'fixed_asset_id' => $newAsset->id,
                                     'file_path'      => $path
@@ -452,6 +490,7 @@ class AssetCapitalizationController extends Controller
                         }
 
                         $historyText = $isRetroactive ? "Aset diregistrasi secara Retroactive (Barang sudah dipakai user)." : "Aset diregistrasi dari Stok Gudang.";
+
                         FixedAssetHistory::create([
                             'fixed_asset_id' => $newAsset->id,
                             'status'         => 'Registered (Terdaftar)',
@@ -462,13 +501,14 @@ class AssetCapitalizationController extends Controller
                 }
             });
 
-            return redirect()->route('asset-capitalizations.create')->with('success', 'Luar biasa! Pengakuan Aset berhasil disimpan beserta foto fisiknya.');
+            return redirect()->route('asset-capitalizations.create')->with('success', 'Luar biasa! Pengakuan Aset berhasil disimpan beserta dokumen pendukungnya.');
 
         } catch (\Exception $e) {
             Log::error('Error Kapitalisasi Aset: ' . $e->getMessage());
             return back()->withInput()->with('error', $e->getMessage());
         }
     }
+
 
 
     // =========================================================================

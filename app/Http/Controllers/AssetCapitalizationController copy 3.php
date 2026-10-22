@@ -18,15 +18,17 @@ use Illuminate\Support\Facades\Storage; // 🔥 Panggil Storage untuk hapus fold
 class AssetCapitalizationController extends Controller
 {
 
-    public function index()
-    {
-        // 🔥 Tambahkan 'photos' agar bisa menampilkan thumbnail di halaman index
-        $assets = \App\Models\FixedAsset::with(['item', 'status', 'photos'])
-                    ->orderBy('created_at', 'desc')
-                    ->paginate(10);
+SAYA_SEDANG_MENGEDIT_FILE_YANG_BENAR_ATAU_TIDAK; // 🔥 Tambahkan baris error ini sengaja!
 
-        return view('asset_capitalizations.index', compact('assets'));
-    }
+    // public function index()
+    // {
+    //     // 🔥 Tambahkan 'photos' agar bisa menampilkan thumbnail di halaman index
+    //     $assets = \App\Models\FixedAsset::with(['item', 'status', 'photos'])
+    //                 ->orderBy('created_at', 'desc')
+    //                 ->paginate(10);
+
+    //     return view('asset_capitalizations.index', compact('assets'));
+    // }
 
 
     // SHOW: Menampilkan Detail 1 Aset dengan Lengkap
@@ -86,6 +88,7 @@ class AssetCapitalizationController extends Controller
 
                 $baseQtyReceived = ($grItem->qty_received - ($grItem->qty_returned ?? 0)) * $grConvRate;
 
+
                 // =========================================================================
                 // 🔥 SUPER FILTER VOID MENGGUNAKAN PHP COLLECTION (AKURASI 1000%) 🔥
                 // =========================================================================
@@ -113,6 +116,7 @@ class AssetCapitalizationController extends Controller
 
                 // Suntikkan hasil hitungan
                 $grItem->sisa_bisa_diakui = $baseQtyReceived - $alreadyCapitalized;
+                // $grItem->sisa_bisa_diakui = $baseQtyReceived - $alreadyCapitalized;
 
                 // Jika masih ada sisa, tampilkan dokumen GR ini
                 if ($grItem->sisa_bisa_diakui > 0) {
@@ -379,24 +383,32 @@ class AssetCapitalizationController extends Controller
         }
     }
 
+
+
+
+    // =========================================================================
+    // 🔥 STORE: Simpan Kapitalisasi Aset (ANTI-SILENT FAIL & DOKUMEN AMAN)
+    // =========================================================================
     public function store(Request $request)
     {
+
+        // 1. Validasi Super Ketat (SUDAH MENDUKUNG PDF & EXCEL)
         $request->validate([
             'goods_receipt_id' => 'required|exists:goods_receipts,id',
             'items'            => 'required|array',
             'items.*.qty'      => 'required|numeric|min:0',
-            'items.*.details.*.accounting_no'     => 'nullable|string|distinct|unique:fixed_assets,accounting_asset_number',
+            'items.*.details.*.accounting_no'     => 'nullable|string|unique:fixed_assets,accounting_asset_number',
             'items.*.details.*.asset_category_id' => 'required|exists:asset_categories,id',
-            // Validasi foto (Maksimal 2MB per foto, tipe harus gambar)
-            'items.*.details.*.photos.*'          => 'nullable|image|mimes:jpeg,png,jpg,gif|max:2048',
+            // 🔥 KUNCI MUTLAK: Gunakan "file", BUKAN "image" 🔥
+            'items.*.details.*.photos.*'          => 'nullable|file|mimes:jpeg,png,jpg,gif,pdf,doc,docx,xls,xlsx,zip,rar|max:5120',
         ], [
-            'items.*.details.*.accounting_no.distinct' => 'Nomor Akuntansi (FA) ada yang kembar di dalam form ini.',
             'items.*.details.*.accounting_no.unique'   => 'Nomor Akuntansi (FA) tersebut sudah dipakai oleh aset lain.',
             'items.*.details.*.asset_category_id.required' => 'Kategori penyusutan wajib dipilih untuk setiap unit.',
-            'items.*.details.*.photos.*.image' => 'File yang diupload harus berupa gambar (JPG, PNG).',
-            'items.*.details.*.photos.*.max' => 'Ukuran setiap gambar maksimal 2MB.',
+            'items.*.details.*.photos.*.mimes' => 'File lampiran harus berupa Gambar, PDF, Word, Excel, atau ZIP.',
+            'items.*.details.*.photos.*.max' => 'Ukuran setiap file maksimal 5MB.',
         ]);
 
+        // 2. Validasi Serial Number Kembar
         $snList = [];
         foreach ($request->items as $itemId => $data) {
             if (!isset($data['details'])) continue;
@@ -463,6 +475,8 @@ class AssetCapitalizationController extends Controller
                                 'notes'            => "[CAPITALIZE] Kapitalisasi menjadi Aset Tetap",
                                 'created_by'       => auth()->id(),
                             ]);
+
+                            $saldoTotalSaatIni -= $potong;
                         }
                     }
 
@@ -511,20 +525,18 @@ class AssetCapitalizationController extends Controller
                             'notes'                   => $extraNote,
                         ]);
 
-                        // 🔥 PROSES UPLOAD FOTO MULTIPLE KE TABEL ASSET_PHOTOS 🔥
+                        // 🔥 PROSES UPLOAD DOKUMEN BUKTI & FOTO 🔥
                         if ($request->hasFile("items.{$itemId}.details.{$i}.photos")) {
                             $uploadedFiles = $request->file("items.{$itemId}.details.{$i}.photos");
 
-
-                            // 🔥 Ubah garis miring (/) jadi strip (-) khusus untuk nama folder
                             $safeFolderName = str_replace('/', '-', $sysAssetNumber);
                             $folderPath = "FixAsset/{$safeFolderName}";
 
                             foreach ($uploadedFiles as $file) {
-                                $filename = time() . '_' . uniqid() . '.' . $file->getClientOriginalExtension();
+                                $originalName = $file->getClientOriginalName();
+                                $filename = time() . '_' . uniqid() . '_' . str_replace(' ', '_', $originalName);
                                 $path = $file->storeAs($folderPath, $filename, 'public');
 
-                                // Simpan ke tabel relasi asset_photos
                                 AssetPhoto::create([
                                     'fixed_asset_id' => $newAsset->id,
                                     'file_path'      => $path
@@ -551,13 +563,15 @@ class AssetCapitalizationController extends Controller
                 }
             });
 
-            return redirect()->route('asset-capitalizations.create')->with('success', 'Luar biasa! Pengakuan Aset berhasil disimpan beserta foto fisiknya.');
+            return redirect()->route('asset-capitalizations.create')->with('success', 'Luar biasa! Pengakuan Aset berhasil disimpan beserta dokumen pendukungnya.');
 
         } catch (\Exception $e) {
             Log::error('Error Kapitalisasi Aset: ' . $e->getMessage());
             return back()->withInput()->with('error', $e->getMessage());
         }
     }
+
+
 
 
     // =========================================================================
