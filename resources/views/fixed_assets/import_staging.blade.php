@@ -210,16 +210,49 @@
                             @endif
                         </td>
                         <td>
-                            <div class="fw-bold text-dark">{{ $d->nama_spesifik_aset ?: 'Sesuai Master' }}</div>
+                            <div class="mb-1 fw-bold text-dark">{{ $d->nama_spesifik_aset ?: 'Sesuai Master' }}</div>
+
+                            {{-- 🔥 MENAMPILKAN SPESIFIKASI 🔥 --}}
+                            @if(!empty($d->spesifikasi))
+                                <div class="mb-1 text-muted" style="font-size: 0.8rem; line-height: 1.4;">
+                                    <span class="fw-bold text-secondary"><i class="bi bi-card-text me-1"></i>Spek:</span>
+                                    {{ Str::limit($d->spesifikasi, 100) }}
+                                </div>
+                            @endif
+
+                            {{-- 🔥 MENAMPILKAN CATATAN 🔥 --}}
+                            @if(!empty($d->catatan))
+                                <div class="text-muted fst-italic" style="font-size: 0.8rem; line-height: 1.4;">
+                                    <span class="fw-bold text-secondary"><i class="bi bi-journal-text me-1"></i>Note:</span>
+                                    {{ Str::limit($d->catatan, 100) }}
+                                </div>
+                            @endif
                         </td>
                         <td>
                             <div class="mb-1 small text-muted"><span class="fw-bold text-dark">L:</span> {{ $d->label_akuntansi ?: '-' }}</div>
                             <div class="small text-muted"><span class="fw-bold text-dark">S:</span> {{ $d->serial_number ?: '-' }}</div>
                         </td>
                         <td>
-                            <div class="mb-1 small fw-bold text-dark"><i class="bi bi-building text-primary me-1"></i> {{ $d->nama_pt }}</div>
-                            <div class="mb-1 small text-muted"><i class="bi bi-box-seam text-info me-1"></i> {{ $d->nama_gudang }}</div>
-                            <span class="border badge bg-secondary-subtle text-secondary border-secondary-subtle">{{ $d->status_aset }}</span>
+                            <div class="mb-1 small fw-bold text-dark" title="ID: {{ $d->nama_pt }}">
+                                <i class="bi bi-building text-primary me-1"></i>
+                                {{ optional($d->company)->name ?? 'PT Tidak Valid (' . $d->nama_pt . ')' }}
+                            </div>
+                            <div class="mb-1 small text-muted" title="ID: {{ $d->nama_gudang }}">
+                                <i class="bi bi-box-seam text-info me-1"></i>
+                                {{ optional($d->warehouse)->name ?? 'Gudang Tidak Valid (' . $d->nama_gudang . ')' }}
+                            </div>
+
+                            {{-- 🔥 MENAMPILKAN NAMA USER JIKA ADA 🔥 --}}
+                            @if($d->nama_peminjam)
+                                <div class="mb-1 small text-success fw-bold" title="ID: {{ $d->nama_peminjam }}">
+                                    <i class="bi bi-person-badge-fill me-1"></i>
+                                    {{ optional($d->assignee)->name ?? 'User Tidak Valid (' . $d->nama_peminjam . ')' }}
+                                </div>
+                            @endif
+
+                            <span class="border badge bg-secondary-subtle text-secondary border-secondary-subtle" title="ID: {{ $d->status_aset }}">
+                                {{ optional($d->statusAsset)->name ?? 'Status Tidak Valid (' . $d->status_aset . ')' }}
+                            </span>
                         </td>
                         <td class="fw-bold text-success">
                             {{ $d->mata_uang }} {{ number_format((float)$d->harga_beli, 0, ',', '.') }}

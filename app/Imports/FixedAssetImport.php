@@ -6,8 +6,9 @@ use App\Models\FixedAssetImportDetail;
 use Illuminate\Support\Collection;
 use Maatwebsite\Excel\Concerns\ToCollection;
 use Maatwebsite\Excel\Concerns\WithHeadingRow;
+use Maatwebsite\Excel\Concerns\WithCalculatedFormulas;
 
-class FixedAssetImport implements ToCollection, WithHeadingRow
+class FixedAssetImport implements ToCollection, WithHeadingRow, WithCalculatedFormulas
 {
     protected $batchId;
 
@@ -19,58 +20,29 @@ class FixedAssetImport implements ToCollection, WithHeadingRow
     public function collection(Collection $rows)
     {
         foreach ($rows as $row) {
-            // 1. Abaikan baris jika Kode Barang DAN Nama Spesifik kosong semua
-            if (empty(trim($row['kode_barang'] ?? '')) && empty(trim($row['nama_spesifik_aset'] ?? ''))) {
+            // Lewati baris yang kosong melompong di Excel
+            if (empty($row['id_pt']) && empty($row['nama_spesifik_aset']) && empty($row['kode_barang'])) {
                 continue;
             }
 
-            // 2. Format Tanggal Perolehan dari Excel
-            $rawDate = $row['tanggal_perolehan'] ?? null;
-            $acqDate = null;
-            if (!empty($rawDate)) {
-                if (is_numeric($rawDate)) {
-                    $acqDate = \PhpOffice\PhpSpreadsheet\Shared\Date::excelToDateTimeObject($rawDate)->format('Y-m-d');
-                } else {
-                    try {
-                        $acqDate = \Carbon\Carbon::parse(str_replace('/', '-', $rawDate))->format('Y-m-d');
-                    } catch (\Exception $e) {
-                        $acqDate = $rawDate; // Fallback jika format aneh
-                    }
-                }
-            }
-
-            // 3. Validasi Dasar (Sistem tidak akan error, hanya menandai baris ini tidak valid di Karantina)
-            $isValid = true;
-            $errorMsg = [];
-
-            if (empty(trim($row['nama_pt'] ?? ''))) {
-                $isValid = false;
-                $errorMsg[] = 'Nama PT kosong.';
-            }
-            if (empty(trim($row['nama_gudang'] ?? ''))) {
-                $isValid = false;
-                $errorMsg[] = 'Nama Gudang kosong.';
-            }
-
-            // 4. Masukkan ke Tabel Karantina (Staging Detail)
+            // Trik Senior: Kita simpan ID Angka dari Excel ke dalam kolom string yang sudah ada di tabel Staging Anda.
             FixedAssetImportDetail::create([
                 'batch_id'           => $this->batchId,
-                'kode_barang'        => trim($row['kode_barang'] ?? ''),
-                'nama_spesifik_aset' => trim($row['nama_spesifik_aset'] ?? ''),
-                'kategori_aset'      => trim($row['kategori_aset'] ?? ''), // 🔥 TAMBAHAN UNTUK MENANGKAP KATEGORI DARI EXCEL
-                'serial_number'      => trim($row['serial_number'] ?? ''),
-                'label_akuntansi'    => trim($row['label_akuntansi'] ?? ''),
-                'nama_pt'            => trim($row['nama_pt'] ?? ''),
-                'nama_gudang'        => trim($row['nama_gudang'] ?? ''),
-                'status_aset'        => trim($row['status'] ?? 'Available (Tersedia)'),
-                'nama_peminjam'      => trim($row['nama_peminjam'] ?? ''),
-                'tanggal_perolehan'  => $acqDate,
-                'mata_uang'          => strtoupper(trim($row['mata_uang'] ?? 'IDR')),
-                'harga_beli'         => preg_replace('/[^0-9]/', '', $row['harga_beli_angka_murni'] ?? 0),
-                'spesifikasi'        => trim($row['spesifikasi'] ?? ''),
-                'catatan'            => trim($row['catatan'] ?? ''),
-                'is_valid'           => $isValid,
-                'validation_error'   => implode(' | ', $errorMsg),
+                'kode_barang'        => $row['kode_barang'] ?? null,
+                'nama_spesifik_aset' => $row['nama_spesifik_aset'] ?? null,
+                'kategori_aset'      => $row['id_kategori_aset'] ?? null, // Berisi Angka ID
+                'serial_number'      => $row['serial_number'] ?? null,
+                'label_akuntansi'    => $row['label_akuntansi'] ?? null,
+                'nama_pt'            => $row['id_pt'] ?? null,            // Berisi Angka ID
+                'nama_gudang'        => $row['id_gudang'] ?? null,        // Berisi Angka ID
+                'status_aset'        => $row['id_status'] ?? null,        // Berisi Angka ID
+                'nama_peminjam'      => $row['id_peminjam'] ?? null,      // Berisi Angka ID
+                'tanggal_perolehan'  => $row['tanggal_perolehan'] ?? null,
+                'mata_uang'          => $row['kode_mata_uang'] ?? 'IDR',
+                'harga_beli'         => $row['harga_beli_angka_murni'] ?? 0,
+                'spesifikasi'        => $row['spesifikasi'] ?? null,
+                'catatan'            => $row['catatan'] ?? null,
+                'is_valid'           => 1, // Bebas error ketik karena pakai ID
             ]);
         }
     }

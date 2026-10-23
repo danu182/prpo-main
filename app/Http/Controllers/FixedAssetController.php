@@ -705,12 +705,13 @@ class FixedAssetController extends Controller
         foreach ($details as $row) {
             $item = null;
 
+            // 1. Cari atau Buat Master Barang
             if (!empty($row->kode_barang)) {
                 $item = \App\Models\Item::lockForUpdate()->where('code', $row->kode_barang)->first();
             }
 
             if (!$item) {
-                $namaAsetBaru = $row->nama_spesifik_aset;
+                $namaAsetBaru = $row->nama_spesifik_aset ?? 'Aset Import Tanpa Nama';
                 $item = \App\Models\Item::lockForUpdate()->where('name', $namaAsetBaru)->first();
 
                 if (!$item) {
@@ -719,13 +720,9 @@ class FixedAssetController extends Controller
                     $newCode  = 'ITM-' . str_pad($nextId, 4, '0', STR_PAD_LEFT);
                     $slug     = \Illuminate\Support\Str::slug($namaAsetBaru) . '-' . \Illuminate\Support\Str::random(4);
 
-                    $typeName = !empty($row->tipe_aset) ? $row->tipe_aset : 'Umum';
-
                     $cat = \App\Models\Category::firstOrCreate(
-                        ['name' => $typeName],
-                        ['code' => strtoupper(substr(preg_replace('/[^A-Za-z]/', '', $typeName), 0, 3))]
+                        ['name' => 'Umum'], ['code' => 'UMU']
                     );
-
                     $uom = \App\Models\Uom::firstOrCreate(['code' => 'PCS'], ['name' => 'Pieces']);
 
                     $item = \App\Models\Item::create([
@@ -734,54 +731,34 @@ class FixedAssetController extends Controller
                         'name'           => $namaAsetBaru,
                         'category_id'    => $cat->id,
                         'uom_id'         => $uom->id,
-                        'item_type_code' => 'STK',
+                        'item_type_code' => 'AST', // Pastikan masuk ke tipe Aset
                         'is_trackable'   => 1,
                         'is_active'      => 1,
                         'current_stock'  => 0,
-                        'specification'  => 'Item dibuat otomatis dari tipe: ' . $typeName
+                        'specification'  => 'Item dibuat otomatis dari Import Aset'
                     ]);
                 }
             }
 
-            $company = \App\Models\Company::where('name', 'like', "%{$row->nama_pt}%")->first();
-            $warehouse = \App\Models\Warehouse::where('name', 'like', "%{$row->nama_gudang}%")->first();
+            // 2. Karena data dari Excel sudah berupa ID, kita LANGSUNG pakai angkanya! (Bye bye query 'like')
+            $companyId = !empty($row->nama_pt) ? (int) $row->nama_pt : 1;
+            $warehouseId = !empty($row->nama_gudang) ? (int) $row->nama_gudang : 1;
+            $statusId = !empty($row->status_aset) ? (int) $row->status_aset : 1;
+            $assetCategoryId = !empty($row->kategori_aset) ? (int) $row->kategori_aset : null;
+            $assignedTo = !empty($row->nama_peminjam) ? (int) $row->nama_peminjam : null;
 
-            // Perbaikan pencarian status menggunakan Like masih diperlukan disini krn dari excel string bebas,
-            // Namun fallback-nya menggunakan Slug jika bisa
-            $status = \App\Models\Status::where('type', 'AST')->where('name', 'like', "%".explode('(', $row->status_aset)[0]."%")->first();
+            $status = \App\Models\Status::find($statusId);
+            $userPenerima = $assignedTo ? \App\Models\User::find($assignedTo) : null;
 
-            $assetCategory = \App\Models\AssetCategory::where('name', 'like', "%{$row->kategori_aset}%")->first();
-            $defaultCategory = \App\Models\AssetCategory::first();
-            $assetCategoryId = $assetCategory ? $assetCategory->id : ($defaultCategory ? $defaultCategory->id : null);
-
-            $departmentId = null;
-            if (!empty($row->departemen)) {
-                $deptCode = strtoupper(substr(preg_replace('/[^A-Za-z]/', '', $row->departemen), 0, 3));
-                $dept = \App\Models\Department::firstOrCreate(
-                    ['name' => $row->departemen],
-                    ['code' => $deptCode]
-                );
-                $departmentId = $dept->id;
-            }
-
-            $assignedTo = null;
-            $extraNotes = "";
-
-            if (!empty($row->nama_peminjam)) {
-                $user = \App\Models\User::where('name', 'like', "%{$row->nama_peminjam}%")->first();
-                if ($user) {
-                    $assignedTo = $user->id;
-                    if (!$status || $status->slug !== 'in_use') {
-                        $status = \App\Models\Status::where('type', 'AST')->where('slug', 'in_use')->first();
-                    }
+            // 3. Format Tanggal Perolehan (Support Format Excel)
+            $formattedDate = date('Y-m-d');
+            if (!empty($row->tanggal_perolehan)) {
+                if (is_numeric($row->tanggal_perolehan)) {
+                    $formattedDate = \PhpOffice\PhpSpreadsheet\Shared\Date::excelToDateTimeObject($row->tanggal_perolehan)->format('Y-m-d');
                 } else {
-                    $extraNotes .= "\n• User (Excel): " . $row->nama_peminjam;
+                    $formattedDate = date('Y-m-d', strtotime($row->tanggal_perolehan));
                 }
             }
-
-            if (!empty($row->condition) && $row->condition !== '-') { $extraNotes .= "\n• Kondisi: " . $row->condition; }
-            if (!empty($row->po_number) && $row->po_number !== '-') { $extraNotes .= "\n• PO Lama: " . $row->po_number; }
-            if (!empty($row->supplier) && $row->supplier !== '-') { $extraNotes .= "\n• Vendor Asal: " . $row->supplier; }
 
             $currency = \App\Models\Currency::where('code', strtoupper($row->mata_uang))->first();
 
@@ -789,45 +766,20 @@ class FixedAssetController extends Controller
             $nextSeq = $lastAsset ? ((int) substr($lastAsset->asset_number, -4)) + 1 : 1;
             $assetNumber = "AST/{$yearMonth}/" . str_pad($nextSeq, 4, '0', STR_PAD_LEFT);
 
-            $rawDate = $row->tanggal_perolehan;
-            $formattedDate = null;
-
-            if (!empty($rawDate)) {
-                if (preg_match("/^[0-9]{4}-(0[1-9]|1[0-2])-(0[1-9]|[1-2][0-9]|3[0-1])$/", $rawDate)) {
-                    $formattedDate = $rawDate;
-                } else {
-                    $indonesianMonths = [
-                        'Januari' => '01', 'Jan' => '01', 'Februari' => '02', 'Febuari' => '02', 'Feb' => '02',
-                        'Maret' => '03', 'Mar' => '03', 'April' => '04', 'Apr' => '04', 'Mei' => '05', 'May' => '05',
-                        'Juni' => '06', 'Jun' => '06', 'Juli' => '07', 'Jul' => '07', 'Agustus' => '08', 'Agu' => '08', 'Aug' => '08',
-                        'September' => '09', 'Sep' => '09', 'Oktober' => '10', 'Okt' => '10', 'Oct' => '10',
-                        'November' => '11', 'Nov' => '11', 'Desember' => '12', 'Des' => '12', 'Dec' => '12'
-                    ];
-                    $dateStr = str_ireplace(array_keys($indonesianMonths), array_values($indonesianMonths), $rawDate);
-                    try {
-                        $formattedDate = \Carbon\Carbon::parse($dateStr)->format('Y-m-d');
-                    } catch (\Exception $e) {
-                        $formattedDate = date('Y-m-d');
-                    }
-                }
-            } else {
-                $formattedDate = date('Y-m-d');
-            }
-
             $asset = \App\Models\FixedAsset::create([
                 'asset_number'            => $assetNumber,
                 'item_id'                 => $item->id,
                 'asset_category_id'       => $assetCategoryId,
                 'name'                    => $row->nama_spesifik_aset ?: $item->name,
-                'warehouse_id'            => $warehouse ? $warehouse->id : 1,
-                'company_id'              => $company ? $company->id : 1,
-                'department_id'           => $departmentId,
+                'warehouse_id'            => $warehouseId,
+                'company_id'              => $companyId,
+                'department_id'           => $userPenerima ? $userPenerima->department_id : null,
                 'serial_number'           => $row->serial_number,
                 'accounting_asset_number' => $row->label_akuntansi,
-                'status_id'               => $status ? $status->id : 1,
+                'status_id'               => $statusId,
                 'assigned_to'             => $assignedTo,
                 'spesifikasi_detail'      => $row->spesifikasi,
-                'notes'                   => trim($row->catatan . $extraNotes),
+                'notes'                   => trim($row->catatan),
                 'acquisition_date'        => $formattedDate,
                 'purchase_price'          => $row->harga_beli ?: 0,
                 'currency_id'             => $currency ? $currency->id : 1,
@@ -837,18 +789,19 @@ class FixedAssetController extends Controller
 
             \App\Models\FixedAssetHistory::create([
                 'fixed_asset_id' => $asset->id,
-                'status'         => $status ? $status->name : 'Unknown',
+                'status'         => $status ? $status->name : 'Registered',
                 'assigned_to'    => $assignedTo,
-                'notes'          => trim('Di-import via Karantina (Batch: '.$batch->batch_number.')' . $extraNotes),
+                'notes'          => 'Di-import via Karantina (Batch: '.$batch->batch_number.')',
                 'created_by'     => auth()->id()
             ]);
 
+            // 4. Mutasi Stok Pintar
             $currStock = (float) $item->current_stock;
             $balanceAfter = $currStock + 1;
 
             \App\Models\StockMutation::create([
                 'item_id' => $item->id,
-                'warehouse_id' => $warehouse ? $warehouse->id : 1,
+                'warehouse_id' => $warehouseId,
                 'type' => 'IN',
                 'qty' => 1,
                 'balance_before' => $currStock,
@@ -861,7 +814,7 @@ class FixedAssetController extends Controller
             if ($status && $status->slug === 'in_use') {
                 \App\Models\StockMutation::create([
                     'item_id' => $item->id,
-                    'warehouse_id' => $warehouse ? $warehouse->id : 1,
+                    'warehouse_id' => $warehouseId,
                     'type' => 'OUT',
                     'qty' => 1,
                     'balance_before' => $balanceAfter,
@@ -876,6 +829,7 @@ class FixedAssetController extends Controller
             }
         }
     }
+
 
     public function cancelImport($batch_id)
     {
@@ -1461,4 +1415,6 @@ class FixedAssetController extends Controller
             return back()->with('error', 'Gagal Menghapus: ' . $e->getMessage());
         }
     }
-}
+
+
+  }

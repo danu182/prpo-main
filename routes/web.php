@@ -185,6 +185,8 @@ Route::middleware('auth')->group(function () {
         Route::delete('/{id}', [FixedAssetController::class, 'destroy'])->name('destroy');
     });
 
+    
+
     Route::prefix('assets')->name('assets.')->middleware(['can:view_assets'])->group(function () {
         Route::get('/', [AssetController::class, 'index'])->name('index');
         Route::get('/pending', [AssetController::class, 'indexPending'])->name('pending');
