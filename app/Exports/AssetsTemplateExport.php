@@ -14,7 +14,7 @@ use App\Models\Company;
 use App\Models\Status;
 use App\Models\Warehouse;
 use App\Models\Currency;
-use App\Models\AssetCategory; // 🔥 PASTIKAN MODEL INI DI-IMPORT
+use App\Models\AssetCategory;
 
 class AssetsTemplateExport implements WithMultipleSheets
 {
@@ -24,14 +24,14 @@ class AssetsTemplateExport implements WithMultipleSheets
     {
         return [
             // =======================================================
-            // SHEET 1: FORM UTAMA
+            // SHEET 1: FORM UTAMA (MENGGUNAKAN ID / KODE UNIK)
             // =======================================================
             new class implements FromArray, WithTitle {
                 public function array(): array {
                     return [[
-                        'Kode Barang', 'Nama Spesifik Aset', 'Kategori Aset', // 🔥 TAMBAH KOLOM KATEGORI
-                        'Serial Number', 'Label Akuntansi', 'Nama PT', 'Nama Gudang', 'Status', 'Nama Peminjam',
-                        'Tanggal Perolehan', 'Mata Uang', 'Harga Beli Angka Murni', 'Spesifikasi', 'Catatan'
+                        'Kode Barang', 'Nama Spesifik Aset', 'ID Kategori Aset',
+                        'Serial Number', 'Label Akuntansi', 'ID PT', 'ID Gudang', 'ID Status', 'ID Peminjam',
+                        'Tanggal Perolehan', 'Kode Mata Uang', 'Harga Beli Angka Murni', 'Spesifikasi', 'Catatan'
                     ]];
                 }
                 public function title(): string { return '1. Form Import Aset'; }
@@ -42,18 +42,20 @@ class AssetsTemplateExport implements WithMultipleSheets
             // =======================================================
             new class implements FromCollection, WithHeadings, WithTitle {
                 public function collection() {
-                    return User::select('name', 'email', 'job_title')->orderBy('name')->get();
+                    // 🔥 Tambahkan ID di paling depan
+                    return User::select('id', 'name', 'email', 'job_title')->orderBy('name')->get();
                 }
-                public function headings(): array { return ['NAMA PEMINJAM (COPAS KE FORM)', 'EMAIL', 'JABATAN']; }
+                public function headings(): array { return ['ID PEMINJAM (COPAS KE FORM)', 'NAMA PEMINJAM', 'EMAIL', 'JABATAN']; }
                 public function title(): string { return '2. Referensi Karyawan'; }
             },
 
             // =======================================================
-            // SHEET 3: REFERENSI BARANG (KATALOG)
+            // SHEET 3: REFERENSI BARANG (KATALOG) -> Sudah pakai Code
             // =======================================================
             new class implements FromCollection, WithHeadings, WithTitle {
                 public function collection() {
                     return Item::select('code', 'name')
+                               // ->where('item_type_code', 'AST') // 🔥 Filter ini dihapus agar semua item muncul
                                ->where('is_active', 1)
                                ->orderBy('name')
                                ->get();
@@ -67,9 +69,10 @@ class AssetsTemplateExport implements WithMultipleSheets
             // =======================================================
             new class implements FromCollection, WithHeadings, WithTitle {
                 public function collection() {
-                    return Company::select('name')->orderBy('name')->get();
+                    // 🔥 Tambahkan ID di paling depan
+                    return Company::select('id', 'name')->orderBy('name')->get();
                 }
-                public function headings(): array { return ['NAMA PT / ENTITAS (COPAS KE FORM)']; }
+                public function headings(): array { return ['ID PT (COPAS KE FORM)', 'NAMA PT / ENTITAS']; }
                 public function title(): string { return '4. Referensi PT'; }
             },
 
@@ -78,9 +81,10 @@ class AssetsTemplateExport implements WithMultipleSheets
             // =======================================================
             new class implements FromCollection, WithHeadings, WithTitle {
                 public function collection() {
-                    return Warehouse::select('name')->orderBy('name')->get();
+                    // 🔥 Tambahkan ID di paling depan
+                    return Warehouse::select('id', 'name')->orderBy('name')->get();
                 }
-                public function headings(): array { return ['NAMA GUDANG (COPAS KE FORM)']; }
+                public function headings(): array { return ['ID GUDANG (COPAS KE FORM)', 'NAMA GUDANG']; }
                 public function title(): string { return '5. Referensi Gudang'; }
             },
 
@@ -89,34 +93,36 @@ class AssetsTemplateExport implements WithMultipleSheets
             // =======================================================
             new class implements FromCollection, WithHeadings, WithTitle {
                 public function collection() {
-                    return Status::where('type', 'AST')->orderBy('sequence')->select('name')->get();
+                    // 🔥 Tambahkan ID di paling depan
+                    return Status::where('type', 'AST')->orderBy('sequence')->select('id', 'name', 'slug')->get();
                 }
-                public function headings(): array { return ['STATUS ASET (COPAS KE FORM)']; }
+                public function headings(): array { return ['ID STATUS (COPAS KE FORM)', 'NAMA STATUS', 'KODE SISTEM (SLUG)']; }
                 public function title(): string { return '6. Referensi Status'; }
             },
 
             // =======================================================
-            // SHEET 7: REFERENSI MATA UANG
+            // SHEET 7: REFERENSI MATA UANG -> Sudah pakai Code
             // =======================================================
             new class implements FromCollection, WithHeadings, WithTitle {
                 public function collection() {
                     return Currency::where('is_active', 1)->select('code', 'name', 'symbol')->get();
                 }
-                public function headings(): array { return ['KODE (COPAS KE FORM)', 'NAMA MATA UANG', 'SIMBOL']; }
+                public function headings(): array { return ['KODE MATA UANG (COPAS KE FORM)', 'NAMA MATA UANG', 'SIMBOL']; }
                 public function title(): string { return '7. Referensi Mata Uang'; }
             },
 
             // =======================================================
-            // 🔥 SHEET 8: REFERENSI KATEGORI ASET (BARU) 🔥
+            // SHEET 8: REFERENSI KATEGORI ASET
             // =======================================================
             new class implements FromCollection, WithHeadings, WithTitle {
                 public function collection() {
+                    // 🔥 Tambahkan ID di paling depan
                     return AssetCategory::where('is_active', 1)
-                                        ->select('name', 'useful_life_years')
+                                        ->select('id', 'name', 'useful_life_years')
                                         ->orderBy('useful_life_years')
                                         ->get();
                 }
-                public function headings(): array { return ['KATEGORI ASET (COPAS KE FORM)', 'UMUR EKONOMIS (TAHUN)']; }
+                public function headings(): array { return ['ID KATEGORI (COPAS KE FORM)', 'NAMA KATEGORI ASET', 'UMUR EKONOMIS (TAHUN)']; }
                 public function title(): string { return '8. Referensi Kategori Aset'; }
             },
 
@@ -128,21 +134,21 @@ class AssetsTemplateExport implements WithMultipleSheets
                     return [
                         ['Kode Barang', 'OPSIONAL', 'Ambil dari Sheet 3. KOSONGKAN jika barang belum ada di Katalog, sistem akan membuatkannya otomatis.'],
                         ['Nama Spesifik Aset', 'WAJIB (Jika Kode Kosong)', 'Cth: Laptop Core i7. WAJIB DIISI jika Kode Barang di atas dikosongkan.'],
-                        ['Kategori Aset', 'OPSIONAL', 'Ambil dari Sheet 8. Menentukan umur penyusutan. Jika kosong, sistem otomatis memasukkannya ke Kelompok 1 (4 Tahun).'], // 🔥 TAMBAHAN PANDUAN
-                        ['Serial Number', 'OPSIONAL', 'Nomor Seri / S/N fisik.'],
+                        ['ID Kategori Aset', 'OPSIONAL', 'Ambil ANGKA ID dari Sheet 8. Jika kosong, otomatis masuk ke Kelompok 1 (4 Tahun).'],
+                        ['Serial Number', 'OPSIONAL', 'Nomor Seri / S/N fisik dari barang.'],
                         ['Label Akuntansi', 'OPSIONAL', 'Nomor aset dari Keuangan (Cth: FA-001).'],
-                        ['Nama PT', 'WAJIB', 'Ambil dari Sheet 4 (Referensi PT).'],
-                        ['Nama Gudang', 'WAJIB', 'Ambil dari Sheet 5 (Referensi Gudang).'],
-                        ['Status', 'WAJIB', 'Ambil dari Sheet 6. WAJIB COPAS!'],
-                        ['Nama Peminjam', 'OPSIONAL', 'Wajib diisi jika status "In Use". Ambil dari Sheet 2.'],
-                        ['Tanggal Perolehan', 'OPSIONAL', 'Format: YYYY-MM-DD atau format Date Excel.'],
-                        ['Mata Uang', 'OPSIONAL', 'Ketik IDR, USD, dll. Kosong = IDR. Ambil dari Sheet 7.'],
-                        ['Harga Beli Angka Murni', 'OPSIONAL', 'Hanya angka! (Cth: 15000000)'],
+                        ['ID PT', 'WAJIB', 'Ambil ANGKA ID dari Sheet 4 (Referensi PT).'],
+                        ['ID Gudang', 'WAJIB', 'Ambil ANGKA ID dari Sheet 5 (Referensi Gudang).'],
+                        ['ID Status', 'WAJIB', 'Ambil ANGKA ID dari Sheet 6 (Referensi Status Aset).'],
+                        ['ID Peminjam', 'OPSIONAL', 'Wajib diisi jika status "In Use". Ambil ANGKA ID dari Sheet 2.'],
+                        ['Tanggal Perolehan', 'OPSIONAL', 'Format: YYYY-MM-DD atau format Date bawaan Excel.'],
+                        ['Kode Mata Uang', 'OPSIONAL', 'Ketik IDR, USD, dll. Kosong = IDR. Ambil KODE dari Sheet 7.'],
+                        ['Harga Beli Angka Murni', 'OPSIONAL', 'Hanya angka murni, tanpa titik/koma! (Cth: 15000000)'],
                         ['Spesifikasi', 'OPSIONAL', 'Detail spek khusus unit ini.'],
                         ['Catatan', 'OPSIONAL', 'Keterangan tambahan jika ada.'],
                     ];
                 }
-                public function headings(): array { return ['NAMA KOLOM', 'SIFAT', 'PANDUAN PENGISIAN']; }
+                public function headings(): array { return ['NAMA KOLOM', 'SIFAT', 'PANDUAN PENGISIAN (PASTIKAN COPAS ID BUKAN NAMA)']; }
                 public function title(): string { return '9. Panduan Pengisian'; }
             }
         ];
