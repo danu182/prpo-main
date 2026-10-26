@@ -76,9 +76,12 @@ class FixedAssetController extends Controller
             'purchase_price'          => 'nullable|numeric|min:0',
             'currency_id'             => 'required|exists:currencies,id',
             'supporting_document'     => 'nullable|file|mimes:pdf,jpg,jpeg,png|max:5120',
-            'photos.*'                => 'nullable|image|mimes:jpeg,png,jpg|max:2048',
+            // 🔥 KUNCI PERBAIKAN: Ubah 'image' menjadi 'file', tambahkan ekstensi PDF/Excel dll 🔥
+            'photos.*'                => 'nullable|file|mimes:jpeg,png,jpg,gif,pdf,doc,docx,xls,xlsx,zip,rar|max:5120',
+        ], [
+            'photos.*.mimes' => 'File lampiran harus berupa Gambar, PDF, Word, Excel, atau ZIP.',
+            'photos.*.max' => 'Ukuran setiap file lampiran maksimal 5MB.',
         ]);
-
         $selectedStatus = \App\Models\Status::find($request->status_id);
         $statusSlug = optional($selectedStatus)->slug; // Menggunakan slug murni
 

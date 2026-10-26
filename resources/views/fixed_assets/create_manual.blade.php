@@ -118,7 +118,7 @@
 
                             <div id="photo-inputs-container" class="gap-2 mb-3 d-flex flex-column">
                                 <div class="shadow-sm input-group input-group-sm photo-input-row">
-                                    <input type="file" name="photos[]" class="form-control border-primary-subtle single-photo-input" accept="image/*">
+                                    <input type="file" name="photos[]" class="form-control border-primary-subtle single-photo-input" accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.zip,.rar">
                                     <button type="button" class="btn btn-danger remove-photo-row" title="Hapus baris ini" disabled><i class="bi bi-trash"></i></button>
                                 </div>
                             </div>
@@ -189,7 +189,10 @@
                             </div>
                             <div class="mb-3 col-8 ps-1">
                                 <label class="form-label fw-bold small text-muted">Nilai Wajar / Harga</label>
-                                <input type="number" name="purchase_price" class="shadow-sm form-control border-success" value="{{ old('purchase_price') }}" placeholder="Estimasi harga hibah..." min="0">
+                                {{-- 🔥 Input Visual (Titik Ribuan) 🔥 --}}
+                                <input type="text" class="shadow-sm form-control border-success price-format-input" value="{{ old('purchase_price') ? number_format(old('purchase_price'), 0, ',', '.') : '' }}" placeholder="Estimasi harga hibah...">
+                                {{-- 🔥 Input Hidden (Angka Murni) 🔥 --}}
+                                <input type="hidden" name="purchase_price" id="real_purchase_price" value="{{ old('purchase_price') }}">
                             </div>
                         </div>
 
@@ -291,7 +294,7 @@
             let container = $('#photo-inputs-container');
             container.append(`
             <div class="mb-2 shadow-sm input-group input-group-sm photo-input-row">
-                <input type="file" name="photos[]" class="form-control border-primary-subtle single-photo-input" accept="image/*">
+                <input type="file" name="photos[]" class="form-control border-primary-subtle single-photo-input" accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.zip,.rar">
                 <button type="button" class="btn btn-danger remove-photo-row" title="Hapus baris ini"><i class="bi bi-trash"></i></button>
             </div>`);
         });
@@ -305,6 +308,17 @@
             triggerPhotoPreview();
         });
 
+        // 🔥 Format Titik Ribuan Otomatis Saat Mengetik 🔥
+        $(document).on('input', '.price-format-input', function() {
+            let rawValue = $(this).val().replace(/[^0-9]/g, '');
+            $('#real_purchase_price').val(rawValue);
+            if(rawValue) {
+                $(this).val(parseInt(rawValue, 10).toLocaleString('id-ID'));
+            } else {
+                $(this).val('');
+            }
+        });
+
         function triggerPhotoPreview() {
             let fileInputs = $('.single-photo-input');
             let previewDiv = $('#preview-photos');
@@ -314,21 +328,32 @@
 
             fileInputs.each(function() {
                 let files = this.files;
-                if (files && files[0] && files[0].type.match('image.*')) {
+                if (files && files[0]) {
                     hasFiles = true;
-                    let reader = new FileReader();
-                    reader.onload = function(e) {
+                    let fileName = files[0].name;
+
+                    if (files[0].type.match('image.*')) {
+                        let reader = new FileReader();
+                        reader.onload = function(e) {
+                            previewDiv.append(`
+                            <div class="p-1 bg-white border shadow-sm rounded-3 position-relative photo-preview-item" title="${fileName}">
+                                <img src="${e.target.result}" class="rounded" style="width: 70px; height: 70px; object-fit: cover;">
+                            </div>`);
+                        }
+                        reader.readAsDataURL(files[0]);
+                    } else {
+                        // Tampilan ikon jika yang diupload adalah PDF / Dokumen
                         previewDiv.append(`
-                        <div class="p-1 bg-white border shadow-sm rounded-3 position-relative photo-preview-item">
-                            <img src="${e.target.result}" class="rounded" style="width: 70px; height: 70px; object-fit: cover;">
+                        <div class="p-2 text-center bg-white border shadow-sm rounded-3 photo-preview-item d-flex flex-column justify-content-center align-items-center" style="width: 70px; height: 70px;" title="${fileName}">
+                            <i class="bi bi-file-earmark-text text-primary fs-3"></i>
+                            <span style="font-size: 0.5rem;" class="text-truncate w-100">${fileName}</span>
                         </div>`);
                     }
-                    reader.readAsDataURL(files[0]);
                 }
             });
 
             if (!hasFiles) {
-                previewDiv.html('<span class="text-muted small fst-italic"><i class="bi bi-image me-1"></i> Preview foto fisik akan muncul di sini...</span>');
+                previewDiv.html('<span class="text-muted small fst-italic"><i class="bi bi-image me-1"></i> Preview lampiran akan muncul di sini...</span>');
             }
         }
     });
