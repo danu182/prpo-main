@@ -607,15 +607,16 @@ class BillRequestController extends Controller
             \DB::commit();
 
             // 9. SINKRONISASI GOOGLE SHEET
-            try {
-                $sheetService = new \App\Services\GoogleSheetService();
-                $tabName = env('GOOGLE_SHEET_OPEX_TAB_NAME', 'Sheet1');
-                foreach ($googleSheetRows as $rowData) {
-                    $sheetService->appendRow($tabName, $rowData);
-                }
-            } catch (\Exception $e) {
-                \Log::error("Google Sheet Sync Error pada Bill {$billNumber}: " . $e->getMessage());
-            }
+            // try {
+            //     $sheetService = new \App\Services\GoogleSheetService();
+            //     $tabName = env('GOOGLE_SHEET_OPEX_TAB_NAME', 'Sheet1');
+            //     foreach ($googleSheetRows as $rowData) {
+            //         $sheetService->appendRow($tabName, $rowData);
+            //     }
+            // } catch (\Exception $e) {
+            //     \Log::error("Google Sheet Sync Error pada Bill {$billNumber}: " . $e->getMessage());
+            // }
+            \App\Jobs\SyncBillToGoogleSheet::dispatch($bill->refresh());
 
             return redirect()->route('bills.index')->with('success', "Tagihan Opex berhasil disimpan! Nomor: {$billNumber}");
 
@@ -1173,22 +1174,23 @@ class BillRequestController extends Controller
             // ==========================================
             // 9. SINKRONISASI GOOGLE SHEET (ANTI DOBEL)
             // ==========================================
-            try {
-                $sheetService = new \App\Services\GoogleSheetService();
-                $tabName = env('GOOGLE_SHEET_OPEX_TAB_NAME', 'Sheet1');
+            // try {
+            //     $sheetService = new \App\Services\GoogleSheetService();
+            //     $tabName = env('GOOGLE_SHEET_OPEX_TAB_NAME', 'Sheet1');
 
-                // Hapus formasi lama di Sheet
-                $sheetService->deleteRowsByBillNumber($tabName, $bill->bill_number);
+            //     // Hapus formasi lama di Sheet
+            //     $sheetService->deleteRowsByBillNumber($tabName, $bill->bill_number);
 
-                // Insert formasi yang baru
-                if (!empty($googleSheetRows)) {
-                    foreach ($googleSheetRows as $rowData) {
-                        $sheetService->appendRow($tabName, $rowData);
-                    }
-                }
-            } catch (\Exception $e) {
-                \Log::error("Google Sheet Sync Error pada Opex Update {$bill->bill_number}: " . $e->getMessage());
-            }
+            //     // Insert formasi yang baru
+            //     if (!empty($googleSheetRows)) {
+            //         foreach ($googleSheetRows as $rowData) {
+            //             $sheetService->appendRow($tabName, $rowData);
+            //         }
+            //     }
+            // } catch (\Exception $e) {
+            //     \Log::error("Google Sheet Sync Error pada Opex Update {$bill->bill_number}: " . $e->getMessage());
+            // }
+            \App\Jobs\SyncBillToGoogleSheet::dispatch($bill->refresh());
 
             return redirect()->route('bills.show', $bill->bill_number)->with('success', "Tagihan berhasil diperbarui!");
 
@@ -2130,10 +2132,11 @@ class BillRequestController extends Controller
             $this->logHistory($bill, 'REJECTED', "Ditolak oleh " . auth()->user()->name . ". Alasan: {$request->rejection_reason}");
 
             // Hapus dari Laporan Google Sheet karena tagihan ditolak/dihapus/void
-            try {
-                $sheetService = new \App\Services\GoogleSheetService();
-                $sheetService->deleteRowsByBillNumber(env('GOOGLE_SHEET_OPEX_TAB_NAME', 'Sheet1'), $bill->bill_number);
-            } catch (\Exception $e) {}
+            // try {
+            //     $sheetService = new \App\Services\GoogleSheetService();
+            //     $sheetService->deleteRowsByBillNumber(env('GOOGLE_SHEET_OPEX_TAB_NAME', 'Sheet1'), $bill->bill_number);
+            // } catch (\Exception $e) {}
+            \App\Jobs\SyncBillToGoogleSheet::dispatch($bill->refresh(), 'DELETE');
 
             DB::commit();
             return back()->with('error', 'Tagihan OPEX telah ditolak.');
@@ -2187,13 +2190,14 @@ class BillRequestController extends Controller
             DB::commit();
 
             // 🔥 HAPUS DARI GOOGLE SHEET 🔥
-            try {
-                $sheetService = new GoogleSheetService();
-                $tabName = env('GOOGLE_SHEET_PO_TAB_NAME', 'PO_Sheet');
-                $sheetService->deleteRowsByBillNumber($tabName, $poNumber);
-            } catch (\Exception $e) {
-                \Log::error("Gagal menghapus baris PO dari sheet: " . $e->getMessage());
-            }
+            // try {
+            //     $sheetService = new GoogleSheetService();
+            //     $tabName = env('GOOGLE_SHEET_PO_TAB_NAME', 'PO_Sheet');
+            //     $sheetService->deleteRowsByBillNumber($tabName, $poNumber);
+            // } catch (\Exception $e) {
+            //     \Log::error("Gagal menghapus baris PO dari sheet: " . $e->getMessage());
+            // }
+            \App\Jobs\SyncBillToGoogleSheet::dispatch($bill->refresh(), 'DELETE');
 
             return redirect()->route('po.index')->with('success', 'PO berhasil dihapus sepenuhnya.');
         } catch (\Exception $e) {
@@ -2276,10 +2280,11 @@ class BillRequestController extends Controller
             $this->logHistory($bill, 'PEMBAYARAN DIBATALKAN (VOID)', 'Pembayaran telah ditarik kembali/dibatalkan. Alasan: ' . $request->void_reason);
 
             // Hapus dari Laporan Google Sheet karena tagihan ditolak/dihapus/void
-            try {
-                $sheetService = new \App\Services\GoogleSheetService();
-                $sheetService->deleteRowsByBillNumber(env('GOOGLE_SHEET_OPEX_TAB_NAME', 'Sheet1'), $bill->bill_number);
-            } catch (\Exception $e) {}
+            // try {
+            //     $sheetService = new \App\Services\GoogleSheetService();
+            //     $sheetService->deleteRowsByBillNumber(env('GOOGLE_SHEET_OPEX_TAB_NAME', 'Sheet1'), $bill->bill_number);
+            // } catch (\Exception $e) {}
+            \App\Jobs\SyncBillToGoogleSheet::dispatch($bill->refresh(), 'DELETE');
 
             DB::commit();
             return redirect()->route('bills.show', $bill->bill_number)->with('success', 'Pembayaran berhasil dibatalkan. Tagihan kembali berstatus APPROVED.');
@@ -2329,10 +2334,12 @@ class BillRequestController extends Controller
             $this->logHistory($bill, 'TAGIHAN DIBATALKAN (VOID)', "Tagihan dibatalkan secara permanen oleh Sistem/Atasan. Alasan: " . $request->void_reason);
 
             // Hapus dari Laporan Google Sheet karena tagihan ditolak/dihapus/void
-            try {
-                $sheetService = new \App\Services\GoogleSheetService();
-                $sheetService->deleteRowsByBillNumber(env('GOOGLE_SHEET_OPEX_TAB_NAME', 'Sheet1'), $bill->bill_number);
-            } catch (\Exception $e) {}
+            // try {
+            //     $sheetService = new \App\Services\GoogleSheetService();
+            //     $sheetService->deleteRowsByBillNumber(env('GOOGLE_SHEET_OPEX_TAB_NAME', 'Sheet1'), $bill->bill_number);
+            // } catch (\Exception $e) {}
+
+            \App\Jobs\SyncBillToGoogleSheet::dispatch($bill->refresh(), 'DELETE');
 
             DB::commit();
             return redirect()->route('bills.show', $bill->bill_number)->with('success', 'Tagihan berhasil dibatalkan secara permanen (VOID).');
@@ -2485,18 +2492,19 @@ class BillRequestController extends Controller
 
             $googleSheetRows = array_merge([$parentRow], $childRows);
 
-            try {
-                $sheetService = new \App\Services\GoogleSheetService();
-                $tabName = env('GOOGLE_SHEET_OPEX_TAB_NAME', 'Sheet1');
+            // try {
+            //     $sheetService = new \App\Services\GoogleSheetService();
+            //     $tabName = env('GOOGLE_SHEET_OPEX_TAB_NAME', 'Sheet1');
 
-                // Hapus data PIC lama di Sheet berdasarkan nomor tagihan, lalu tulis data PIC baru
-                $sheetService->deleteRowsByBillNumber($tabName, $bill->bill_number);
-                foreach ($googleSheetRows as $rowData) {
-                    $sheetService->appendRow($tabName, $rowData);
-                }
-            } catch (\Exception $e) {
-                \Log::error("Google Sheet Sync Error saat Ganti PIC {$bill->bill_number}: " . $e->getMessage());
-            }
+            //     // Hapus data PIC lama di Sheet berdasarkan nomor tagihan, lalu tulis data PIC baru
+            //     $sheetService->deleteRowsByBillNumber($tabName, $bill->bill_number);
+            //     foreach ($googleSheetRows as $rowData) {
+            //         $sheetService->appendRow($tabName, $rowData);
+            //     }
+            // } catch (\Exception $e) {
+            //     \Log::error("Google Sheet Sync Error saat Ganti PIC {$bill->bill_number}: " . $e->getMessage());
+            // }
+            \App\Jobs\SyncBillToGoogleSheet::dispatch($bill->refresh());
 
             \DB::commit();
             return back()->with('success', 'Penanggung Jawab (PIC) berhasil dialihkan ke ' . $newUser->name . ' dan tersinkronisasi ke Sheet!');

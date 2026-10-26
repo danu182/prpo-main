@@ -33,6 +33,7 @@ class DatabaseSeeder extends Seeder
             ItemTypeSeeder::class,
             VendorSeeder::class,
             // ItemsSeeder::class,
+            ItemSeeder2::class,
 
             // D. Pondasi Keuangan (Finance & Purchasing)
             CurrencySeeder::class,
