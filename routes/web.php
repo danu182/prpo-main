@@ -103,6 +103,9 @@ Route::middleware('auth')->group(function () {
         Route::get('/{slug}/print-bpr-standar-attachments', [\App\Http\Controllers\PurchaseOrderController::class, 'printBprStandarWithAttachments'])->name('print_bpr_standar_attachments')->where('slug', '.*');
         Route::get('/print-bpr-detail/{slug}', [\App\Http\Controllers\PurchaseOrderController::class, 'printBprDetail'])->name('print_bpr_detail');
         Route::get('/{slug}/print-bpr-attachments', [\App\Http\Controllers\PurchaseOrderController::class, 'printBprWithAttachments'])->name('print_bpr_attachments')->where('slug', '.*');
+        // cetakbundle_standa
+        Route::get('/{slug}/print-bundle-standar', [\App\Http\Controllers\PurchaseOrderController::class, 'printBundleStandar'])->name('print_bundle_standar');
+        Route::get('/{slug}/print-bundle-detail', [\App\Http\Controllers\PurchaseOrderController::class, 'printBundleDetail'])->name('print_bundle_detail');
 
         // Approval Khusus
         Route::post('/decide/{slug}', [PurchaseOrderController::class, 'decide'])->name('decide');
@@ -185,7 +188,7 @@ Route::middleware('auth')->group(function () {
         Route::delete('/{id}', [FixedAssetController::class, 'destroy'])->name('destroy');
     });
 
-    
+
 
     Route::prefix('assets')->name('assets.')->middleware(['can:view_assets'])->group(function () {
         Route::get('/', [AssetController::class, 'index'])->name('index');
