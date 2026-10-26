@@ -190,7 +190,7 @@ class PurchaseOrderController extends Controller
             DB::commit();
 
             // 🔥 SYNC GOOGLE SHEET 🔥
-            $this->syncPoToSheet($po->refresh());
+            \App\Jobs\SyncPoToGoogleSheet::dispatch($po->refresh());
 
             return redirect()->route('po.show', $po->id)->with('success', 'Draft Purchase Order berhasil dibuat!');
         } catch (\Exception $e) {
@@ -472,7 +472,7 @@ class PurchaseOrderController extends Controller
                     }
 
                     // 🔥 SYNC GOOGLE SHEET 🔥
-                    $this->syncPoToSheet($po->refresh());
+                    \App\Jobs\SyncPoToGoogleSheet::dispatch($po->refresh());
                 }
 
                 if (!empty($prItemIdsToHeal)) {
@@ -806,7 +806,7 @@ class PurchaseOrderController extends Controller
                 $this->logHistory($po->id, 'PO Direvisi', 'Perubahan telah disimpan.');
 
                 // 🔥 SYNC GOOGLE SHEET 🔥
-                $this->syncPoToSheet($po->refresh());
+                \App\Jobs\SyncPoToGoogleSheet::dispatch($po->refresh());
 
             });
 
@@ -1839,7 +1839,7 @@ class PurchaseOrderController extends Controller
                     $this->logHistory($po->id, 'APPROVED', 'PO Auto-Approved karena tidak ada aturan matriks aktif.');
                 }
 
-                $this->syncPoToSheet($po->refresh());
+                \App\Jobs\SyncPoToGoogleSheet::dispatch($po->refresh());
 
             });
 
@@ -1868,7 +1868,7 @@ class PurchaseOrderController extends Controller
             $this->logHistory($po->id, 'Info Tagihan Diupdate', 'Nomor Invoice atau Rekening Vendor telah diperbarui untuk keperluan pembayaran.');
 
             // 🔥 SYNC GOOGLE SHEET SAAT INVOICE DIUPDATE 🔥
-            $this->syncPoToSheet($po->refresh());
+            \App\Jobs\SyncPoToGoogleSheet::dispatch($po->refresh());
 
             return back()->with('success', 'Informasi Invoice & Rekening berhasil disimpan!');
         } catch (\Exception $e) {
@@ -2570,172 +2570,172 @@ class PurchaseOrderController extends Controller
     // =========================================================================
     // 🔥 HELPER SINKRONISASI GOOGLE SHEET (FORMAT 14 KOLOM SEPERTI OPEX) 🔥
     // =========================================================================
-    private function syncPoToSheet($po)
-    {
-        try {
-            $po->load(['items.item.category', 'vendor', 'company', 'user']);
+    // private function syncPoToSheet($po)
+    // {
+    //     try {
+    //         $po->load(['items.item.category', 'vendor', 'company', 'user']);
 
-            $companyName = optional($po->company)->name ?? '-';
-            $vendorName  = optional($po->vendor)->name ?? '-';
-            $poDate      = \Carbon\Carbon::parse($po->po_date)->format('d-M-Y');
+    //         $companyName = optional($po->company)->name ?? '-';
+    //         $vendorName  = optional($po->vendor)->name ?? '-';
+    //         $poDate      = \Carbon\Carbon::parse($po->po_date)->format('d-M-Y');
 
-            $childRows = [];
+    //         $childRows = [];
 
-            // 1. LOOPING ITEM PO
-            foreach ($po->items as $item) {
-                $infoTambahan = "";
-                if ($item->discount_amount > 0) {
-                    $infoTambahan .= (strtoupper($item->discount_type) === 'PERCENT') ? " (-Disc {$item->discount_value}%)" : " (-Diskon Rp" . number_format($item->discount_amount, 0, ',', '.') . ")";
-                }
-                if ($item->tax_amount > 0) {
-                    $infoTambahan .= (strtoupper($item->tax_type) === 'PERCENT') ? " (+PPN {$item->tax_value}%)" : " (+Pajak Rp" . number_format($item->tax_amount, 0, ',', '.') . ")";
-                }
+    //         // 1. LOOPING ITEM PO
+    //         foreach ($po->items as $item) {
+    //             $infoTambahan = "";
+    //             if ($item->discount_amount > 0) {
+    //                 $infoTambahan .= (strtoupper($item->discount_type) === 'PERCENT') ? " (-Disc {$item->discount_value}%)" : " (-Diskon Rp" . number_format($item->discount_amount, 0, ',', '.') . ")";
+    //             }
+    //             if ($item->tax_amount > 0) {
+    //                 $infoTambahan .= (strtoupper($item->tax_type) === 'PERCENT') ? " (+PPN {$item->tax_value}%)" : " (+Pajak Rp" . number_format($item->tax_amount, 0, ',', '.') . ")";
+    //             }
 
-                $dppSheet = $item->subtotal; // DPP dari item (Gross - Discount)
-                $categoryName = optional(optional($item->item)->category)->name ?? 'Lainnya';
+    //             $dppSheet = $item->subtotal; // DPP dari item (Gross - Discount)
+    //             $categoryName = optional(optional($item->item)->category)->name ?? 'Lainnya';
 
-                // 🔥 BERSIHKAN HTML DARI NAMA ITEM 🔥
-                $deskripsiLayanan = html_entity_decode(strip_tags($item->item_name ?? optional($item->item)->name ?? 'Item Tanpa Nama'));
+    //             // 🔥 BERSIHKAN HTML DARI NAMA ITEM 🔥
+    //             $deskripsiLayanan = html_entity_decode(strip_tags($item->item_name ?? optional($item->item)->name ?? 'Item Tanpa Nama'));
 
-                $childRows[] = [
-                    $poDate, // A: Tanggal
-                    $companyName, // B: PT / Perusahaan
-                    $vendorName, // C: Vendor / Supplier
-                    "  ↳ [Item] " . $deskripsiLayanan . $infoTambahan, // D: Layanan
-                    $categoryName, // E: Kategori
-                    $dppSheet, // F: PRICE (DPP)
-                    $item->tax_amount ?? 0, // G: Pajak
-                    $dppSheet + ($item->tax_amount ?? 0), // H: Total Tagihan Item
-                    $po->invoice_number ?? '-', // I: No Penawaran / Invoice
-                    $po->account_number ?? '-', // J: No Rekening
-                    $po->po_number, // K: Nomer Dokumen (PO Number)
-                    $po->user->name ?? 'System', // L: Create by
-                    '-', // M: Keterangan BPR/PO (Kosong untuk anak)
-                    html_entity_decode(strip_tags($item->description ?? '-')) // N: Spesifikasi Detail
-                ];
-            }
+    //             $childRows[] = [
+    //                 $poDate, // A: Tanggal
+    //                 $companyName, // B: PT / Perusahaan
+    //                 $vendorName, // C: Vendor / Supplier
+    //                 "  ↳ [Item] " . $deskripsiLayanan . $infoTambahan, // D: Layanan
+    //                 $categoryName, // E: Kategori
+    //                 $dppSheet, // F: PRICE (DPP)
+    //                 $item->tax_amount ?? 0, // G: Pajak
+    //                 $dppSheet + ($item->tax_amount ?? 0), // H: Total Tagihan Item
+    //                 $po->invoice_number ?? '-', // I: No Penawaran / Invoice
+    //                 $po->account_number ?? '-', // J: No Rekening
+    //                 $po->po_number, // K: Nomer Dokumen (PO Number)
+    //                 $po->user->name ?? 'System', // L: Create by
+    //                 '-', // M: Keterangan BPR/PO (Kosong untuk anak)
+    //                 html_entity_decode(strip_tags($item->description ?? '-')) // N: Spesifikasi Detail
+    //             ];
+    //         }
 
-            // 2. LOOPING BIAYA TAMBAHAN PO
-            $charges = \DB::table('purchase_order_charges')->where('purchase_order_id', $po->id)->get();
-            foreach ($charges as $charge) {
-                $childRows[] = [
-                    $poDate, $companyName, $vendorName,
-                    "  ↳ [+] " . html_entity_decode(strip_tags($charge->name)), 'Biaya Tambahan',
-                    $charge->amount, 0, $charge->amount,
-                    $po->invoice_number ?? '-', $po->account_number ?? '-', $po->po_number, $po->user->name ?? 'System', '-', '-'
-                ];
-            }
+    //         // 2. LOOPING BIAYA TAMBAHAN PO
+    //         $charges = \DB::table('purchase_order_charges')->where('purchase_order_id', $po->id)->get();
+    //         foreach ($charges as $charge) {
+    //             $childRows[] = [
+    //                 $poDate, $companyName, $vendorName,
+    //                 "  ↳ [+] " . html_entity_decode(strip_tags($charge->name)), 'Biaya Tambahan',
+    //                 $charge->amount, 0, $charge->amount,
+    //                 $po->invoice_number ?? '-', $po->account_number ?? '-', $po->po_number, $po->user->name ?? 'System', '-', '-'
+    //             ];
+    //         }
 
-            // 3. LOOPING POTONGAN/DISKON TAMBAHAN PO
-            $discounts = \DB::table('purchase_order_discounts')->where('purchase_order_id', $po->id)->get();
-            foreach ($discounts as $discount) {
-                $childRows[] = [
-                    $poDate, $companyName, $vendorName,
-                    "  ↳ [-] " . html_entity_decode(strip_tags($discount->name)), 'Potongan / Diskon',
-                    -abs($discount->amount), 0, -abs($discount->amount),
-                    $po->invoice_number ?? '-', $po->account_number ?? '-', $po->po_number, $po->user->name ?? 'System', '-', '-'
-                ];
-            }
+    //         // 3. LOOPING POTONGAN/DISKON TAMBAHAN PO
+    //         $discounts = \DB::table('purchase_order_discounts')->where('purchase_order_id', $po->id)->get();
+    //         foreach ($discounts as $discount) {
+    //             $childRows[] = [
+    //                 $poDate, $companyName, $vendorName,
+    //                 "  ↳ [-] " . html_entity_decode(strip_tags($discount->name)), 'Potongan / Diskon',
+    //                 -abs($discount->amount), 0, -abs($discount->amount),
+    //                 $po->invoice_number ?? '-', $po->account_number ?? '-', $po->po_number, $po->user->name ?? 'System', '-', '-'
+    //             ];
+    //         }
 
-            // =========================================================================
-            // 🔥 3.5. LOGIKA BARU: SINKRONISASI DISKON GLOBAL & PAJAK GLOBAL 🔥
-            // =========================================================================
+    //         // =========================================================================
+    //         // 🔥 3.5. LOGIKA BARU: SINKRONISASI DISKON GLOBAL & PAJAK GLOBAL 🔥
+    //         // =========================================================================
 
-            // A. HITUNG DISKON GLOBAL (Komersial) MURNI DARI HEADER
-            $sumItemDisc = $po->items->sum('discount_amount');
-            $actualGlobalDisc = (float)($po->discount_total ?? 0) - $sumItemDisc;
+    //         // A. HITUNG DISKON GLOBAL (Komersial) MURNI DARI HEADER
+    //         $sumItemDisc = $po->items->sum('discount_amount');
+    //         $actualGlobalDisc = (float)($po->discount_total ?? 0) - $sumItemDisc;
 
-            if ($actualGlobalDisc > 0) {
-                // Buat label persentasenya jika tipe persen
-                $labelDiskonGlobal = "Diskon Komersial (Global)";
-                if (isset($po->global_discount_type) && strtoupper($po->global_discount_type) === 'PERCENT') {
-                    $labelDiskonGlobal = "Diskon Komersial {$po->global_discount_value}%";
-                }
+    //         if ($actualGlobalDisc > 0) {
+    //             // Buat label persentasenya jika tipe persen
+    //             $labelDiskonGlobal = "Diskon Komersial (Global)";
+    //             if (isset($po->global_discount_type) && strtoupper($po->global_discount_type) === 'PERCENT') {
+    //                 $labelDiskonGlobal = "Diskon Komersial {$po->global_discount_value}%";
+    //             }
 
-                $childRows[] = [
-                    $poDate, $companyName, $vendorName,
-                    "  ↳ [-] " . $labelDiskonGlobal, 'Potongan / Diskon',
-                    -$actualGlobalDisc, 0, -$actualGlobalDisc,
-                    $po->invoice_number ?? '-', $po->account_number ?? '-', $po->po_number, $po->user->name ?? 'System', '-', '-'
-                ];
-            }
+    //             $childRows[] = [
+    //                 $poDate, $companyName, $vendorName,
+    //                 "  ↳ [-] " . $labelDiskonGlobal, 'Potongan / Diskon',
+    //                 -$actualGlobalDisc, 0, -$actualGlobalDisc,
+    //                 $po->invoice_number ?? '-', $po->account_number ?? '-', $po->po_number, $po->user->name ?? 'System', '-', '-'
+    //             ];
+    //         }
 
-            // B. HITUNG PAJAK GLOBAL (VAT/PPN) MURNI DARI HEADER
-            $sumItemTax = $po->items->sum('tax_amount');
-            $actualGlobalTax = (float)($po->tax_total ?? 0) - $sumItemTax;
+    //         // B. HITUNG PAJAK GLOBAL (VAT/PPN) MURNI DARI HEADER
+    //         $sumItemTax = $po->items->sum('tax_amount');
+    //         $actualGlobalTax = (float)($po->tax_total ?? 0) - $sumItemTax;
 
-            if ($actualGlobalTax > 0) {
-                // Buat label persentasenya jika tipe persen
-                $labelPajakGlobal = "Pajak Header (VAT/PPN)";
-                if (isset($po->global_tax_type) && strtoupper($po->global_tax_type) === 'PERCENT') {
-                    $labelPajakGlobal = "Pajak (VAT/PPN) {$po->global_tax_value}%";
-                }
+    //         if ($actualGlobalTax > 0) {
+    //             // Buat label persentasenya jika tipe persen
+    //             $labelPajakGlobal = "Pajak Header (VAT/PPN)";
+    //             if (isset($po->global_tax_type) && strtoupper($po->global_tax_type) === 'PERCENT') {
+    //                 $labelPajakGlobal = "Pajak (VAT/PPN) {$po->global_tax_value}%";
+    //             }
 
-                $childRows[] = [
-                    $poDate, $companyName, $vendorName,
-                    "  ↳ [+] " . $labelPajakGlobal, 'Pajak',
-                    $actualGlobalTax, 0, $actualGlobalTax,
-                    $po->invoice_number ?? '-', $po->account_number ?? '-', $po->po_number, $po->user->name ?? 'System', '-', '-'
-                ];
-            }
-            // =========================================================================
+    //             $childRows[] = [
+    //                 $poDate, $companyName, $vendorName,
+    //                 "  ↳ [+] " . $labelPajakGlobal, 'Pajak',
+    //                 $actualGlobalTax, 0, $actualGlobalTax,
+    //                 $po->invoice_number ?? '-', $po->account_number ?? '-', $po->po_number, $po->user->name ?? 'System', '-', '-'
+    //             ];
+    //         }
+    //         // =========================================================================
 
-            // 4. FORMAT BARIS INDUK (PARENT SUMMARY)
-            $globalDiscLabel = "";
-            if ($po->global_discount_value > 0) {
-                $globalDiscLabel = ($po->global_discount_type === 'PERCENT') ? " (-Disc Global {$po->global_discount_value}%)" : " (-Disc Global Rp" . number_format($po->global_discount_value, 0, ',', '.') . ")";
-            }
+    //         // 4. FORMAT BARIS INDUK (PARENT SUMMARY)
+    //         $globalDiscLabel = "";
+    //         if ($po->global_discount_value > 0) {
+    //             $globalDiscLabel = ($po->global_discount_type === 'PERCENT') ? " (-Disc Global {$po->global_discount_value}%)" : " (-Disc Global Rp" . number_format($po->global_discount_value, 0, ',', '.') . ")";
+    //         }
 
-            $globalTaxLabel = "";
-            if ($po->global_tax_value > 0) {
-                $globalTaxLabel = ($po->global_tax_type === 'PERCENT') ? " (+PPN Global {$po->global_tax_value}%)" : " (+Pajak Global Rp" . number_format($po->global_tax_value, 0, ',', '.') . ")";
-            }
+    //         $globalTaxLabel = "";
+    //         if ($po->global_tax_value > 0) {
+    //             $globalTaxLabel = ($po->global_tax_type === 'PERCENT') ? " (+PPN Global {$po->global_tax_value}%)" : " (+Pajak Global Rp" . number_format($po->global_tax_value, 0, ',', '.') . ")";
+    //         }
 
-            $judulParent = "⭐ GRAND TOTAL PO" . $globalTaxLabel . $globalDiscLabel;
+    //         $judulParent = "⭐ GRAND TOTAL PO" . $globalTaxLabel . $globalDiscLabel;
 
-            // 🔥 BERSIHKAN HTML DARI KETERANGAN GLOBAL 🔥
-            $catatanParent = html_entity_decode(strip_tags(trim($po->notes ?? '-')));
+    //         // 🔥 BERSIHKAN HTML DARI KETERANGAN GLOBAL 🔥
+    //         $catatanParent = html_entity_decode(strip_tags(trim($po->notes ?? '-')));
 
-            // Kalkulasi Total DPP Murni (Grand Total - Total Pajak Keseluruhan)
-            $totalDPP = ($po->grand_total ?? 0) - ($po->tax_total ?? 0);
+    //         // Kalkulasi Total DPP Murni (Grand Total - Total Pajak Keseluruhan)
+    //         $totalDPP = ($po->grand_total ?? 0) - ($po->tax_total ?? 0);
 
-            $parentRow = [
-                $poDate, // A
-                $companyName, // B
-                $vendorName, // C
-                $judulParent, // D
-                "SUMMARY", // E
-                $totalDPP, // F: Total DPP Keseluruhan
-                $po->tax_total ?? 0, // G: Total Pajak Keseluruhan
-                $po->grand_total ?? 0, // H: Grand Total Keseluruhan
-                $po->invoice_number ?? '-', // I
-                $po->account_number ?? '-', // J
-                $po->po_number, // K
-                $po->user->name ?? 'System', // L
-                $catatanParent, // M: Keterangan Global
-                '-' // N: Spesifikasi
-            ];
+    //         $parentRow = [
+    //             $poDate, // A
+    //             $companyName, // B
+    //             $vendorName, // C
+    //             $judulParent, // D
+    //             "SUMMARY", // E
+    //             $totalDPP, // F: Total DPP Keseluruhan
+    //             $po->tax_total ?? 0, // G: Total Pajak Keseluruhan
+    //             $po->grand_total ?? 0, // H: Grand Total Keseluruhan
+    //             $po->invoice_number ?? '-', // I
+    //             $po->account_number ?? '-', // J
+    //             $po->po_number, // K
+    //             $po->user->name ?? 'System', // L
+    //             $catatanParent, // M: Keterangan Global
+    //             '-' // N: Spesifikasi
+    //         ];
 
-            // Gabungkan Parent di atas, disusul baris Child di bawahnya
-            $googleSheetRows = array_merge([$parentRow], $childRows);
+    //         // Gabungkan Parent di atas, disusul baris Child di bawahnya
+    //         $googleSheetRows = array_merge([$parentRow], $childRows);
 
-            // 5. EKSEKUSI PENGIRIMAN KE GOOGLE SHEET
-            $sheetService = new \App\Services\GoogleSheetService();
+    //         // 5. EKSEKUSI PENGIRIMAN KE GOOGLE SHEET
+    //         $sheetService = new \App\Services\GoogleSheetService();
 
-            // Disetel agar menembak ke tab OPEX (Sheet1) agar menyatu dengan tabel BPR
-            // Pastikan jika tab PO berbeda, ganti 'Sheet1' dengan nama tab PO yang benar
-            $tabName = env('GOOGLE_SHEET_OPEX_TAB_NAME', 'Sheet1');
+    //         // Disetel agar menembak ke tab OPEX (Sheet1) agar menyatu dengan tabel BPR
+    //         // Pastikan jika tab PO berbeda, ganti 'Sheet1' dengan nama tab PO yang benar
+    //         $tabName = env('GOOGLE_SHEET_OPEX_TAB_NAME', 'Sheet1');
 
-            // Hapus baris PO lama jika ini adalah revisi (Update)
-            $sheetService->deleteRowsByBillNumber($tabName, $po->po_number);
+    //         // Hapus baris PO lama jika ini adalah revisi (Update)
+    //         $sheetService->deleteRowsByBillNumber($tabName, $po->po_number);
 
-            foreach ($googleSheetRows as $rowData) {
-                $sheetService->appendRow($tabName, $rowData);
-            }
-        } catch (\Exception $e) {
-            \Log::error("Gagal Sync PO ke Sheet: " . $e->getMessage());
-        }
-    }
+    //         foreach ($googleSheetRows as $rowData) {
+    //             $sheetService->appendRow($tabName, $rowData);
+    //         }
+    //     } catch (\Exception $e) {
+    //         \Log::error("Gagal Sync PO ke Sheet: " . $e->getMessage());
+    //     }
+    // }
 
 
 
