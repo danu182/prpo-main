@@ -87,7 +87,8 @@
                         <strong>{{ $item->name }}</strong>
                         <br>
                         <span style="font-size: 9pt; color: #444;">
-                            <em>(Periode: {{ \Carbon\Carbon::parse($bill->invoice_date)->translatedFormat('F Y') }})</em>
+                            {{-- <em>(Periode: {{ \Carbon\Carbon::parse($bill->invoice_date)->translatedFormat('F Y') }})</em> --}}
+                            <em>(Periode: {{ \Carbon\Carbon::parse($bill->invoice_date)->addMonths($bill->period_offset ?? 0)->translatedFormat('F Y') }})</em>
                         </span>
                         @if(!empty($item->description))
                             <br><span style="font-size: 9pt;">{!! strip_tags($item->description) !!}</span>
@@ -123,7 +124,6 @@
 
     {{-- KOTAK TANDA TANGAN --}}
     @php
-        // 🔥 PERBAIKAN: HANYA LOAD 'role', JANGAN 'user' KARENA NAMA RELASINYA BEDA DI MODEL 🔥
         $approvals = \App\Models\DocumentApproval::with(['role'])
             ->where('document_id', $bill->id)
             ->whereIn('document_type', ['App\Models\BillRequest', 'OPEX', 'BillRequest', get_class($bill)])
@@ -132,15 +132,19 @@
 
         $totalCols = 1 + $approvals->count();
 
+        // 1. TTD PEMBUAT (REQUESTER)
         $prepSigBase64 = null;
         if ($bill->user && $bill->user->signature) {
             $path = public_path('storage/' . $bill->user->signature);
-            if (file_exists($path)) { $prepSigBase64 = 'data:image/' . pathinfo($path, PATHINFO_EXTENSION) . ';base64,' . base64_encode(file_get_contents($path)); }
+            if (file_exists($path)) {
+                $prepSigBase64 = 'data:image/' . pathinfo($path, PATHINFO_EXTENSION) . ';base64,' . base64_encode(file_get_contents($path));
+            }
         }
     @endphp
 
     <table class="signature-table">
         <tr>
+            {{-- KOLOM PEMBUAT --}}
             <td style="width: {{ 100 / ($totalCols > 0 ? $totalCols : 1) }}%;">
                 <div style="margin-bottom: 5px;">Prepared by :</div>
                 <div style="height: 60px; text-align: center;">
@@ -156,11 +160,10 @@
                 </div>
             </td>
 
-            {{-- Loop Persetujuan --}}
+            {{-- KOLOM APPROVAL BERANTAI --}}
             @foreach($approvals as $approval)
                 <td style="width: {{ 100 / ($totalCols > 0 ? $totalCols : 1) }}%;">
 
-                    {{-- 🔥 LOGIKA LABEL KIRI ATAS 🔥 --}}
                     <div style="margin-bottom: 5px; text-align: left;">
                         @if($loop->last)
                             Approved by :
@@ -173,10 +176,28 @@
                         @endif
                     </div>
 
-                    {{-- Status Digital --}}
+                    {{-- 🔥 LOGIKA TTD DIGITAL APPROVER 🔥 --}}
                     <div style="height: 60px; text-align: center;">
-                        @if($approval->status == 'APPROVED')
-                            <div style="color: green; font-size: 10px; margin-top: 15px;">[ APPROVED ]</div>
+                        @php
+                            $apprSigBase64 = null;
+                            if ($approval->status == 'APPROVED' && $approval->approved_by) {
+                                $approverUser = \App\Models\User::find($approval->approved_by);
+                                if ($approverUser && $approverUser->signature) {
+                                    $path = public_path('storage/' . $approverUser->signature);
+                                    if (file_exists($path)) {
+                                        $type = pathinfo($path, PATHINFO_EXTENSION);
+                                        $data = file_get_contents($path);
+                                        $apprSigBase64 = 'data:image/' . $type . ';base64,' . base64_encode($data);
+                                    }
+                                }
+                            }
+                        @endphp
+
+                        @if($apprSigBase64)
+                            <img src="{{ $apprSigBase64 }}" style="max-height: 60px; max-width: 140px; object-fit: contain;">
+                        @elseif($approval->status == 'APPROVED')
+                            {{-- Fallback jika user menekan Approve tapi tidak punya file gambar TTD di profilnya --}}
+                            <div style="display: inline-block; padding: 5px 10px; font-weight: bold; font-size: 10pt; border: 2px solid #198754; color: #198754; margin-top: 15px;">APPROVED</div>
                         @else
                             <div style="color: gray; font-size: 10px; margin-top: 15px;">[ PENDING ]</div>
                         @endif
@@ -188,7 +209,11 @@
                             $namaTtd = "";
                             $uid = $approval->user_id ?? $approval->approver_id ?? $approval->specific_user_id ?? null;
 
-                            if (!empty($uid)) {
+                            // Jika sudah di-approve, gunakan nama asli pengeklik. Jika belum, gunakan target nama
+                            if ($approval->approved_by) {
+                                $userTtd = \App\Models\User::find($approval->approved_by);
+                                $namaTtd = $userTtd ? $userTtd->name : '';
+                            } elseif (!empty($uid)) {
                                 $userTtd = \App\Models\User::find($uid);
                                 $namaTtd = $userTtd ? $userTtd->name : '';
                             }
@@ -212,13 +237,20 @@
 
                         <strong><u>{{ $namaTtd }}</u></strong>
                         @if(!empty($jabatanLengkap))
-                            <br>
-                            <span style="font-size: 8pt; color: #FFF;">{{ $jabatanLengkap }}</span>
+                            <br><span style="font-size: 8pt; color: #666;">{{ $jabatanLengkap }}</span>
+                        @endif
+
+                        {{-- Cap Tanggal Otomatis --}}
+                        @if($approval->status == 'APPROVED' && $approval->approved_at)
+                            <br><span style="font-size: 7pt; color: #666;">{{ \Carbon\Carbon::parse($approval->approved_at)->format('d/m/y H:i') }}</span>
                         @endif
                     </div>
                 </td>
             @endforeach
         </tr>
     </table>
+
+
+
 </body>
 </html>

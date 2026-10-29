@@ -14,7 +14,7 @@
         $statusSlug = optional($bill->status)->slug ?? 'unknown';
         $statusName = optional($bill->status)->name ?? 'UNKNOWN';
         $statusColor = optional($bill->status)->color ?? 'secondary';
-        
+
         $userRoleNames = auth()->user()->getRoleNames()->toArray();
         $userRoleIds = auth()->user()->roles->pluck('id')->toArray();
         $isSuperAdmin = in_array('Super Administrator', $userRoleNames) || in_array('Super Admin', $userRoleNames) || auth()->id() === 1;
@@ -27,8 +27,8 @@
                 Detail Tagihan Opex: <span class="text-primary">{{ $bill->bill_number }}</span>
             </h4>
             <div class="text-muted small">
-                Dibuat oleh: <span class="fw-bold text-primary">{{ $bill->user->name ?? 'System' }}</span> 
-                
+                Dibuat oleh: <span class="fw-bold text-primary">{{ $bill->user->name ?? 'System' }}</span>
+
                 @if($isSuperAdmin)
                     <a href="#" class="ms-2 text-warning fw-bold text-decoration-none" data-bs-toggle="modal" data-bs-target="#changePicModal">
                         <i class="bi bi-pencil-square"></i> Ganti PIC
@@ -463,7 +463,7 @@
         {{-- KOLOM KANAN: SUMMARY & ACTIONS --}}
         <div class="col-lg-4">
 
-            @php
+            {{-- @php
                 // 1. Cari Antrean PENDING untuk dokumen ini
                 $currentApproval = \App\Models\DocumentApproval::with('role')
                     ->where('document_id', $bill->id)
@@ -481,6 +481,7 @@
 
                 // 4. Logika Penentu Muncul/Tidaknya Tombol Approval
                 $canApprove = false;
+                {{-- $canApprove = false; --}}
                 if ($currentApproval) {
                     if (in_array($currentApproval->role_id, $userRoleIds) || $isSuperAdmin) {
                         $canApprove = true;
@@ -490,15 +491,16 @@
                         $canApprove = true;
                     }
                 }
-            @endphp
+            @endphp --}}
 
             {{-- PANEL APPROVAL --}}
-            @if(in_array($statusSlug, ['pending', 'partial_approved', 'draft']) && $canApprove)
+            {{-- 🔥 Cek langsung dengan variabel $isApprover yang dikirim dari Controller 🔥 --}}
+            @if(in_array($statusSlug, ['pending', 'partial_approved', 'draft']) && $isApprover)
             <div class="mb-4 border border-0 shadow-sm card rounded-4 border-warning">
                 <div class="p-4 card-body bg-warning-subtle rounded-4">
                     <h6 class="mb-2 fw-bold text-dark">
                         <i class="bi bi-shield-lock-fill me-2 text-warning"></i>Tindakan Persetujuan
-                        @if(!$currentApproval && $isSuperAdmin)
+                        @if($isSuperAdmin)
                             <span class="badge bg-danger ms-2" style="font-size: 0.6rem;">BYPASS MODE</span>
                         @endif
                     </h6>

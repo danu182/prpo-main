@@ -21,6 +21,9 @@ return Application::configure(basePath: dirname(__DIR__))
         ]);
         // =======================================================
     })
-    ->withExceptions(function (Exceptions $exceptions): void {
-        //
+    ->withExceptions(function (Exceptions $exceptions) {
+        // 🔥 Tangkap error 419 (Token Mismatch) dan alihkan ke Login
+        $exceptions->render(function (\Illuminate\Session\TokenMismatchException $e, $request) {
+            return redirect()->route('login')->with('error', 'Sesi Anda telah berakhir. Silakan login kembali.');
+        });
     })->create();

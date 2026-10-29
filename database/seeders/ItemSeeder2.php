@@ -69,9 +69,9 @@ class ItemSeeder2 extends Seeder
             // 6. Non-Stok Opex: Contoh Konsumsi Rapat (Satuan: Pax/Paket)
             [
                 'name' => 'Konsumsi Rapat / Snack Box',
-                'code' => 'JSA-CATER-001',
+                'code' => 'SKU-FNB-00001',
                 'uom_id' => 4,
-                'category_id' => 5,
+                'category_id' => 6,
                 'item_type_code' => 'JSA',
                 'is_trackable' => 0,
                 'current_stock' => 0,

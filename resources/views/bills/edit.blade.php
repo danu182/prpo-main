@@ -82,6 +82,16 @@
                                 <label class="form-label fw-bold small text-muted text-uppercase">Tanggal Tagihan <span class="text-danger">*</span></label>
                                 <input type="date" name="bill_date" class="form-control" value="{{ \Carbon\Carbon::parse($bill->invoice_date)->format('Y-m-d') }}" required>
                             </div>
+                            <div class="mb-3">
+                                <label class="form-label small fw-bold text-muted">PERIODE PEMAKAIAN YANG DIBAYAR</label>
+                                <select name="period_offset" class="form-select rounded-3">
+                                    <option value="-1" {{ (isset($bill) && $bill->period_offset == -1) ? 'selected' : '' }}>Mundur 1 Bulan (Contoh: Internet/PLN)</option>
+                                    <option value="0" {{ (!isset($bill) || $bill->period_offset == 0) ? 'selected' : '' }}>Sesuai Bulan Tagihan (Default)</option>
+                                    <option value="1" {{ (isset($bill) && $bill->period_offset == 1) ? 'selected' : '' }}>Maju 1 Bulan (Bayar di Muka)</option>
+                                </select>
+                            </div>
+
+
                             <div class="col-md-6">
                                 <label class="form-label fw-bold small text-muted text-uppercase">Jatuh Tempo (Due Date) <span class="text-danger">*</span></label>
                                 <input type="date" name="due_date" class="form-control" value="{{ \Carbon\Carbon::parse($bill->due_date)->format('Y-m-d') }}" required>
@@ -240,7 +250,7 @@
                                                 <option value="percent" {{ $item->tax_type == 'percent' ? 'selected' : '' }}>%</option>
                                                 <option value="fixed" {{ $item->tax_type == 'fixed' ? 'selected' : '' }}>Rp</option>
                                             </select>
-                                            
+
                                             @php
                                                 $isManualPct = ($item->tax_type == 'percent' && (empty($item->tax_id) || $item->tax_id === 'MANUAL_PERCENT') && $item->tax_value > 0);
                                                 $selectedMaster = $isManualPct ? 'MANUAL_PERCENT' : $item->tax_id;
@@ -359,7 +369,7 @@
                         <h6 class="mb-0 fw-bold text-primary"><i class="bi bi-paperclip me-2"></i>Lampiran Dokumen</h6>
                     </div>
                     <div class="p-4 pt-2 card-body">
-                        
+
                         {{-- MENAMPILKAN LAMPIRAN SAAT INI UNTUK DIHAPUS JIKA PERLU --}}
                         @if(isset($attachments) && $attachments->count() > 0)
                             <div class="p-3 mb-4 border border-opacity-25 rounded bg-light border-secondary">
@@ -492,7 +502,7 @@ $(document).ready(function() {
         let isPercent = false;
         if($(this).hasClass('disc-val-display')) isPercent = $(this).closest('.input-group').find('.disc-type').val() === 'percent';
         if($(this).hasClass('tax-val-display')) isPercent = $(this).closest('.input-group').find('.tax-type').val() === 'percent';
-        
+
         let val = parseFloat($(this).val()) || 0;
         $(this).val(isPercent ? val : formatNumber(val));
     });

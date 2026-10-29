@@ -311,8 +311,11 @@ class BillRequestController extends Controller
             $companyName = $company ? $company->name : '-';
             $monthYear = \Carbon\Carbon::parse($request->bill_date)->format('Y/m');
 
-            // 🔥 OTOMATIS DETEKSI PERIODE 🔥
-            $periodeTagihan = \Carbon\Carbon::parse($request->bill_date)->translatedFormat('F Y');
+            // 🔥 TANGKAP PERIOD OFFSET 🔥
+            $periodOffset = (int) $request->input('period_offset', 0);
+
+            // Tambahkan offset ke bulan tagihan untuk keperluan label Periode (di PDF dan Sheet)
+            $periodeTagihan = \Carbon\Carbon::parse($request->bill_date)->addMonths($periodOffset)->translatedFormat('F Y');
 
             $prefix = "BILL/OPX/{$companyCode}/{$monthYear}/";
             $lastBill = \App\Models\BillRequest::where('bill_number', 'like', $prefix . '%')->lockForUpdate()->orderBy('id', 'desc')->first();
@@ -334,6 +337,7 @@ class BillRequestController extends Controller
                 'account_number'        => $request->account_number,
                 'description'           => $request->note,
                 'invoice_date'          => $request->bill_date,
+                'period_offset'         => $periodOffset, // 🔥 Simpan pilihan user ke Database
                 'due_date'              => $request->due_date,
                 'currency'              => $currency,
                 'status_id'             => $this->getStatusId('pending') ?? 1,
@@ -416,7 +420,8 @@ class BillRequestController extends Controller
                     \Carbon\Carbon::parse($request->bill_date)->format('d-M-Y'), // A
                     $companyName, // B
                     $request->vendor_name, // C
-                    "  ↳ [Item] " . $namaLayananCustom . $infoTambahan, // D
+                    // 🔥 GABUNGKAN NAMA ITEM DENGAN LABEL PERIODE BARU 🔥
+                    "  ↳ [Item] " . $namaLayananCustom . " (Periode: " . $periodeTagihan . ")" . $infoTambahan, // D
                     $categoryName, // E
                     $dppSheet, // F
                     $savedItem->tax_amount, // G
@@ -607,15 +612,6 @@ class BillRequestController extends Controller
             \DB::commit();
 
             // 9. SINKRONISASI GOOGLE SHEET
-            // try {
-            //     $sheetService = new \App\Services\GoogleSheetService();
-            //     $tabName = env('GOOGLE_SHEET_OPEX_TAB_NAME', 'Sheet1');
-            //     foreach ($googleSheetRows as $rowData) {
-            //         $sheetService->appendRow($tabName, $rowData);
-            //     }
-            // } catch (\Exception $e) {
-            //     \Log::error("Google Sheet Sync Error pada Bill {$billNumber}: " . $e->getMessage());
-            // }
             \App\Jobs\SyncBillToGoogleSheet::dispatch($bill->refresh());
 
             return redirect()->route('bills.index')->with('success', "Tagihan Opex berhasil disimpan! Nomor: {$billNumber}");
@@ -678,7 +674,6 @@ class BillRequestController extends Controller
             // 🔥 3. TENTUKAN MANA YANG LEBIH BARU 🔥
             $activeLog = null;
             if ($customLog && $standardLog) {
-                // Jika log custom lebih baru dari log standar, maka custom aktif
                 $activeLog = ($customLog->id > $standardLog->id) ? $customLog : null;
             } elseif ($customLog) {
                 $activeLog = $customLog;
@@ -788,11 +783,14 @@ class BillRequestController extends Controller
                 return back()->with('error', 'Gagal! Tagihan ini sudah diproses atau dibayar.');
             }
 
-            // 2. Siapkan Variabel Pendukung
+            // 2. Siapkan Variabel Pendukung & Offset
             $currency = \App\Models\Currency::find($request->currency_id)->code ?? 'IDR';
             $company = \App\Models\Company::find($request->paid_by_company_id);
             $companyName = $company ? $company->name : '-';
-            $periodeTagihan = \Carbon\Carbon::parse($request->bill_date)->translatedFormat('F Y');
+
+            // 🔥 TANGKAP PERIOD OFFSET DARI FORM 🔥
+            $periodOffset = (int) $request->input('period_offset', 0);
+            $periodeTagihan = \Carbon\Carbon::parse($request->bill_date)->addMonths($periodOffset)->translatedFormat('F Y');
 
             // 3. Update Data Induk Opex (Header)
             $bill->update([
@@ -803,6 +801,7 @@ class BillRequestController extends Controller
                 'description'           => $request->note, // Catatan OPEX
                 'invoice_date'          => $request->bill_date,
                 'due_date'              => $request->due_date,
+                'period_offset'         => $periodOffset, // 🔥 Simpan Offset ke Database
                 'currency'              => $currency,
                 'is_recurring'          => $request->is_recurring == '1',
                 'recurring_interval'    => $request->is_recurring == '1' ? (int)$request->recurring_interval : null,
@@ -1172,24 +1171,8 @@ class BillRequestController extends Controller
             \DB::commit();
 
             // ==========================================
-            // 9. SINKRONISASI GOOGLE SHEET (ANTI DOBEL)
+            // 9. SINKRONISASI GOOGLE SHEET
             // ==========================================
-            // try {
-            //     $sheetService = new \App\Services\GoogleSheetService();
-            //     $tabName = env('GOOGLE_SHEET_OPEX_TAB_NAME', 'Sheet1');
-
-            //     // Hapus formasi lama di Sheet
-            //     $sheetService->deleteRowsByBillNumber($tabName, $bill->bill_number);
-
-            //     // Insert formasi yang baru
-            //     if (!empty($googleSheetRows)) {
-            //         foreach ($googleSheetRows as $rowData) {
-            //             $sheetService->appendRow($tabName, $rowData);
-            //         }
-            //     }
-            // } catch (\Exception $e) {
-            //     \Log::error("Google Sheet Sync Error pada Opex Update {$bill->bill_number}: " . $e->getMessage());
-            // }
             \App\Jobs\SyncBillToGoogleSheet::dispatch($bill->refresh());
 
             return redirect()->route('bills.show', $bill->bill_number)->with('success', "Tagihan berhasil diperbarui!");
@@ -1199,781 +1182,6 @@ class BillRequestController extends Controller
             return back()->withInput()->with('error', 'Gagal update tagihan: ' . $e->getMessage());
         }
     }
-
-
-
-
-    // =========================================================================
-    // 3. STORE (SIMPAN DATA BARU + PARENT-CHILD GOOGLE SHEET)
-    // =========================================================================
-    // public function store(Request $request)
-    // {
-    //     $request->validate([
-    //         'paid_by_company_id'    => 'required|exists:companies,id',
-    //         'currency_id'           => 'required|exists:currencies,id',
-    //         'bill_date'             => 'required|date',
-    //         'due_date'              => 'required|date|after_or_equal:bill_date',
-    //         'vendor_name'           => 'required|string|max:255',
-    //         'vendor_invoice_number' => 'nullable|string|max:255',
-    //         'account_number'        => 'nullable|string|max:255',
-    //         'items'                 => 'required|array|min:1',
-    //         'items.*.name'          => 'required|string',
-    //         'items.*.qty'           => 'required|numeric|min:1',
-    //         'items.*.price'         => 'required|numeric|min:0',
-    //     ]);
-
-    //     \DB::beginTransaction();
-    //     try {
-    //         $company = \App\Models\Company::find($request->paid_by_company_id);
-    //         $companyCode = $company ? ($company->code ?? 'GEN') : 'GEN';
-    //         $companyName = $company ? $company->name : '-';
-    //         $monthYear = \Carbon\Carbon::parse($request->bill_date)->format('Y/m');
-
-    //         $prefix = "BILL/OPX/{$companyCode}/{$monthYear}/";
-    //         $lastBill = \App\Models\BillRequest::where('bill_number', 'like', $prefix . '%')->lockForUpdate()->orderBy('id', 'desc')->first();
-
-    //         $newNumber = $lastBill ? ((int) substr($lastBill->bill_number, -4) + 1) : 1;
-    //         $billNumber = $prefix . sprintf('%04d', $newNumber);
-    //         $currency = \App\Models\Currency::find($request->currency_id)->code ?? 'IDR';
-
-    //         $totalSubtotal = 0; $totalItemDisc = 0; $totalTax = 0; $totalCharge = 0; $totalExtDisc = 0;
-
-    //         $bill = \App\Models\BillRequest::create([
-    //             'bill_number'           => $billNumber,
-    //             'title'                 => 'Tagihan Opex - ' . $request->vendor_name,
-    //             'user_id'               => auth()->id(),
-    //             'company_id'            => $request->paid_by_company_id,
-    //             'type'                  => 'OPEX',
-    //             'vendor_name'           => $request->vendor_name,
-    //             'vendor_invoice_number' => $request->vendor_invoice_number,
-    //             'account_number'        => $request->account_number,
-    //             'description'           => $request->note,
-    //             'invoice_date'          => $request->bill_date,
-    //             'due_date'              => $request->due_date,
-    //             'currency'              => $currency,
-    //             'status_id'             => $this->getStatusId('pending'),
-    //             'subtotal'              => 0, 'total_discount' => 0, 'total_tax' => 0, 'total_charge' => 0, 'amount' => 0,
-    //             'is_recurring'          => $request->is_recurring == '1',
-    //             'recurring_interval'    => $request->is_recurring == '1' ? (int)$request->recurring_interval : null,
-    //             'recurring_period'      => $request->is_recurring == '1' ? $request->recurring_period : null,
-    //             'next_generation_date'  => $request->is_recurring == '1' ? \Carbon\Carbon::parse($request->bill_date)->add((int)$request->recurring_interval, $request->recurring_period) : null,
-    //         ]);
-
-    //         // 🔥 KERANJANG UNTUK BARIS ANAK (CHILD ROWS) 🔥
-    //         $childRows = [];
-
-    //         // 1. PROSES ITEM UTAMA (CHILD)
-    //         foreach ($request->items as $item) {
-    //             $qty = (float)$item['qty']; $price = (float)$item['price']; $gross = $qty * $price;
-    //             $discVal = (float)($item['discount_value'] ?? 0); $discType = $item['discount_type'] ?? 'fixed';
-    //             $discAmount = ($discType == 'percent' || $discType == 'PERCENT') ? ($gross * $discVal / 100) : $discVal;
-    //             $dpp = $gross - $discAmount;
-
-    //             $taxVal = (float)($item['tax_value'] ?? 0); $taxType = $item['tax_type'] ?? 'percent';
-    //             $taxId = $item['tax_id'] ?? null;
-
-    //             // Pengecekan cerdas dari Master Pajak
-    //             if ($taxId && is_numeric($taxId)) {
-    //                 $taxMaster = \App\Models\Tax::find($taxId);
-    //                 if ($taxMaster) {
-    //                     $taxVal = $taxMaster->percent;
-    //                     $taxType = 'percent';
-    //                 }
-    //             } elseif ($taxId === 'MANUAL_PERCENT') {
-    //                 $taxType = 'percent';
-    //             }
-
-    //             $taxAmount = ($taxType == 'percent' || $taxType == 'PERCENT') ? ($dpp * $taxVal / 100) : $taxVal;
-
-    //             $namaLayananCustom = $item['name_override'] ?? $item['item_name'] ?? $item['name'] ?? 'Layanan Tanpa Nama';
-
-    //             // Pelacakan Kategori Master Item
-    //             $masterItemId = null;
-    //             if (!empty($item['item_id'])) {
-    //                 $masterItemId = $item['item_id'];
-    //             } elseif (!empty($item['code'])) {
-    //                 $masterItem = \App\Models\Item::where('code', $item['code'])->first();
-    //                 if ($masterItem) $masterItemId = $masterItem->id;
-    //             } elseif (!empty($item['name'])) {
-    //                 $exploded = explode(' - ', $item['name']);
-    //                 $potentialCode = trim($exploded[0]);
-    //                 $masterItem = \App\Models\Item::where('code', $potentialCode)->orWhere('name', $item['name'])->first();
-    //                 if ($masterItem) $masterItemId = $masterItem->id;
-    //             }
-
-    //             $categoryName = 'Lainnya';
-    //             if ($masterItemId) {
-    //                 $masterItemData = \App\Models\Item::find($masterItemId);
-    //                 if ($masterItemData && $masterItemData->category_id) {
-    //                     $kategori = \DB::table('categories')->where('id', $masterItemData->category_id)->first();
-    //                     if ($kategori) $categoryName = $kategori->name;
-    //                 }
-    //             }
-
-    //             // SIMPAN KE DATABASE DULU AGAR PASTI BENAR!
-    //             $savedItem = $bill->items()->create([
-    //                 'item_id'         => $masterItemId,
-    //                 'name'            => $namaLayananCustom,
-    //                 'description'     => $item['description'] ?? null,
-    //                 'qty'             => $qty,
-    //                 'price'           => $price,
-    //                 'amount'          => $dpp + $taxAmount,
-    //                 'discount_type'   => $discType,
-    //                 'discount_value'  => $discVal,
-    //                 'discount_amount' => $discAmount,
-    //                 'tax_id'          => is_numeric($taxId) ? $taxId : null,
-    //                 'tax_type'        => $taxType,
-    //                 'tax_value'       => $taxVal,
-    //                 'tax_amount'      => $taxAmount,
-    //                 'subtotal'        => $gross,
-    //             ]);
-
-    //             $totalSubtotal += $savedItem->subtotal;
-    //             $totalItemDisc += $savedItem->discount_amount;
-    //             $totalTax += $savedItem->tax_amount;
-
-    //             // 🔥 GENERATE LABEL SHEET DARI DATA DATABASE 🔥
-    //             $infoTambahan = "";
-    //             if ($savedItem->discount_amount > 0) {
-    //                 $infoTambahan .= (strtoupper($savedItem->discount_type) === 'PERCENT') ? " (-Disc {$savedItem->discount_value}%)" : " (-Diskon Rp" . number_format($savedItem->discount_amount, 0, ',', '.') . ")";
-    //             }
-    //             if ($savedItem->tax_amount > 0) {
-    //                 $infoTambahan .= (strtoupper($savedItem->tax_type) === 'PERCENT') ? " (+PPN {$savedItem->tax_value}%)" : " (+Pajak Rp" . number_format($savedItem->tax_amount, 0, ',', '.') . ")";
-    //             }
-
-    //             $dppSheet = $savedItem->subtotal - $savedItem->discount_amount;
-
-    //             $childRows[] = [
-    //                 \Carbon\Carbon::parse($request->bill_date)->format('d-M-Y'),
-    //                 $companyName, $request->vendor_name,
-    //                 "  ↳ [Item] " . $namaLayananCustom . $infoTambahan, // 🔥 SUNTIKKAN LABEL DISINI
-    //                 $categoryName,
-    //                 $dppSheet,
-    //                 $savedItem->tax_amount,
-    //                 $savedItem->amount,
-    //                 $request->vendor_invoice_number ?? '-', $request->account_number ?? '-', $billNumber, auth()->user()->name ?? 'System', '-',
-    //                 '-'
-    //             ];
-    //         }
-
-    //         // 2. PROSES BIAYA EKSTRA (CHILD)
-    //         if ($request->has('charges')) {
-    //             foreach ($request->charges as $charge) {
-    //                 if (!empty($charge['charge_type_id']) && $charge['amount'] > 0) {
-    //                     $savedCharge = $bill->charges()->create(['charge_type_id' => $charge['charge_type_id'], 'amount' => $charge['amount'], 'note' => $charge['note'] ?? null]);
-    //                     $totalCharge += $savedCharge->amount;
-
-    //                     $chargeType = \DB::table('charge_types')->where('id', $savedCharge->charge_type_id)->first();
-    //                     $chargeName = $chargeType ? $chargeType->name : 'Biaya Tambahan';
-    //                     $note = !empty($savedCharge->note) ? ' (' . $savedCharge->note . ')' : '';
-
-    //                     $childRows[] = [
-    //                         \Carbon\Carbon::parse($request->bill_date)->format('d-M-Y'),
-    //                         $companyName, $request->vendor_name,
-    //                         "  ↳ [+] " . $chargeName . $note,
-    //                         'Biaya Tambahan',
-    //                         $savedCharge->amount,
-    //                         0,
-    //                         $savedCharge->amount,
-    //                         $request->vendor_invoice_number ?? '-', $request->account_number ?? '-', $billNumber, auth()->user()->name ?? 'System', '-',
-    //                         '-'
-    //                     ];
-    //                 }
-    //             }
-    //         }
-
-    //         // 3. PROSES POTONGAN EKSTRA (CHILD)
-    //         if ($request->has('discounts')) {
-    //             foreach ($request->discounts as $discount) {
-    //                 if (!empty($discount['discount_type_id']) && $discount['amount'] > 0) {
-    //                     $savedDisc = $bill->discounts()->create(['discount_type_id' => $discount['discount_type_id'], 'amount' => $discount['amount'], 'note' => $discount['note'] ?? null]);
-    //                     $totalExtDisc += $savedDisc->amount;
-
-    //                     $discType = \DB::table('discount_types')->where('id', $savedDisc->discount_type_id)->first();
-    //                     $discName = $discType ? $discType->name : 'Potongan';
-    //                     $note = !empty($savedDisc->note) ? ' (' . $savedDisc->note . ')' : '';
-
-    //                     $childRows[] = [
-    //                         \Carbon\Carbon::parse($request->bill_date)->format('d-M-Y'),
-    //                         $companyName, $request->vendor_name,
-    //                         "  ↳ [-] " . $discName . $note,
-    //                         'Potongan / Diskon',
-    //                         -abs($savedDisc->amount),
-    //                         0,
-    //                         -abs($savedDisc->amount),
-    //                         $request->vendor_invoice_number ?? '-', $request->account_number ?? '-', $billNumber, auth()->user()->name ?? 'System', '-',
-    //                         '-'
-    //                     ];
-    //                 }
-    //             }
-    //         }
-
-    //         // 4. Kalkulasi Grand Total
-    //         $grandTotal = max(0, ($totalSubtotal - $totalItemDisc) + $totalTax + $totalCharge - $totalExtDisc);
-
-    //         // 🔥 Cek Pajak & Diskon Global dari Form
-    //         $globalTaxValue = (float)$request->input('global_tax_value', 0);
-    //         $globalTaxType = $request->input('global_tax_type', 'PERCENT');
-    //         $globalTaxLabel = "";
-    //         $globalTaxAmount = 0;
-
-    //         if ($globalTaxValue > 0) {
-    //             if (strtoupper($globalTaxType) === 'PERCENT') {
-    //                 $dppAwal = $totalSubtotal - $totalItemDisc; // DPP sebelum pajak global
-    //                 $globalTaxAmount = ($dppAwal * $globalTaxValue) / 100;
-    //                 $globalTaxLabel = " (+PPN Global {$globalTaxValue}%)";
-    //             } else {
-    //                 $globalTaxAmount = $globalTaxValue;
-    //                 $globalTaxLabel = " (+Pajak Global Rp" . number_format($globalTaxAmount, 0, ',', '.') . ")";
-    //             }
-
-    //             // Tambahkan sebagai pajak global ke Grand Total
-    //             $grandTotal += $globalTaxAmount;
-    //             $totalTax += $globalTaxAmount; // Akumulasikan ke total pajak
-    //         }
-
-    //         $globalDiscValue = (float)$request->input('global_discount_value', 0);
-    //         $globalDiscType = $request->input('global_discount_type', 'PERCENT');
-    //         $globalDiscLabel = "";
-    //         $globalDiscAmount = 0;
-
-    //         if ($globalDiscValue > 0) {
-    //             if (strtoupper($globalDiscType) === 'PERCENT') {
-    //                 $dppAwal = $totalSubtotal - $totalItemDisc;
-    //                 $globalDiscAmount = ($dppAwal * $globalDiscValue) / 100;
-    //                 $globalDiscLabel = " (-Disc Global {$globalDiscValue}%)";
-    //             } else {
-    //                 $globalDiscAmount = $globalDiscValue;
-    //                 $globalDiscLabel = " (-Disc Global Rp" . number_format($globalDiscAmount, 0, ',', '.') . ")";
-    //             }
-
-    //             // Kurangkan dari Grand Total
-    //             $grandTotal -= $globalDiscAmount;
-    //             $totalItemDisc += $globalDiscAmount; // Akumulasikan ke total diskon
-    //         }
-
-    //         $bill->update(['subtotal' => $totalSubtotal, 'total_discount' => $totalItemDisc + $totalExtDisc, 'total_tax' => $totalTax, 'total_charge' => $totalCharge, 'amount' => $grandTotal]);
-
-    //         // 🔥 MEMBUAT BARIS INDUK (PARENT ROW) 🔥
-    //         // Jika ada pajak/diskon global, tempelkan di judul GRAND TOTAL
-    //         $judulParent = "⭐ GRAND TOTAL" . $globalTaxLabel . $globalDiscLabel;
-
-    //         $parentRow = [
-    //             \Carbon\Carbon::parse($request->bill_date)->format('d-M-Y'),
-    //             $companyName,
-    //             $request->vendor_name,
-    //             $judulParent,
-    //             "SUMMARY",
-    //             ($totalSubtotal - $totalItemDisc + $totalCharge - $totalExtDisc),
-    //             $totalTax,
-    //             $grandTotal,
-    //             $request->vendor_invoice_number ?? '-',
-    //             $request->account_number ?? '-',
-    //             $billNumber,
-    //             auth()->user()->name ?? 'System',
-    //             '-',
-    //             $request->note ?? '-' // 🔥 CATATAN / DESKRIPSI GLOBAL PO (Tampil di Parent)
-    //         ];
-
-    //         $googleSheetRows = array_merge([$parentRow], $childRows);
-
-    //         if ($request->hasFile('attachments')) {
-    //             $basePath = \DB::table('system_settings')->where('setting_key', 'path_bills_opex')->value('setting_value') ?: 'attachments/opex';
-    //             $safeBillNumber = str_replace(['/', '\\'], '-', $bill->bill_number);
-    //             $storagePath = $basePath . '/' . $safeBillNumber;
-
-    //             foreach ($request->file('attachments') as $file) {
-    //                 $originalName = $file->getClientOriginalName();
-    //                 $path = $file->storeAs($storagePath, time() . '_' . uniqid() . '_' . str_replace(' ', '_', $originalName), 'public');
-    //                 \DB::table('bill_attachments')->insert([
-    //                     'bill_request_id' => $bill->id, 'file_name' => $originalName, 'file_path' => str_replace('\\', '/', $path),
-    //                     'created_at' => now(), 'updated_at' => now()
-    //                 ]);
-    //             }
-    //         }
-
-    //         $this->logHistory($bill, 'CREATED', "Membuat tagihan baru No: {$billNumber}");
-
-    //         $customWorkflowId = $request->input('custom_workflow_id');
-    //         $needsApproval = false;
-
-    //         if ($customWorkflowId) {
-    //             $workflow = \App\Models\ApprovalWorkflow::with('steps')->find($customWorkflowId);
-    //             if ($workflow && $workflow->steps->count() > 0) {
-    //                 foreach ($workflow->steps as $step) {
-    //                     \App\Models\DocumentApproval::create([
-    //                         'document_id' => $bill->id, 'document_type' => get_class($bill), 'role_id' => $step->role_id,
-    //                         'target_department_id' => $step->target_department_id ?? $step->department_id ?? null,
-    //                         'step_order' => $step->step_order, 'status' => 'PENDING'
-    //                     ]);
-    //                 }
-    //                 $needsApproval = true;
-    //                 $this->logHistory($bill, 'SYSTEM', "Menggunakan Rute Persetujuan Khusus: " . $workflow->name);
-    //             }
-    //         } else {
-    //             $needsApproval = \App\Services\ApprovalService::generateWorkflow($bill);
-    //         }
-
-    //         if ($needsApproval) {
-    //             $bill->update(['status_id' => $this->getStatusId('pending') ?? 1]);
-    //         } else {
-    //             $bill->update(['status_id' => $this->getStatusId('approved') ?? 3]);
-    //         }
-
-    //         \DB::commit();
-
-    //         try {
-    //             $sheetService = new \App\Services\GoogleSheetService();
-    //             $tabName = env('GOOGLE_SHEET_OPEX_TAB_NAME', 'Sheet1');
-
-    //             foreach ($googleSheetRows as $rowData) {
-    //                 $sheetService->appendRow($tabName, $rowData);
-    //             }
-    //         } catch (\Exception $e) {
-    //             \Log::error("Google Sheet Sync Error pada Bill {$billNumber}: " . $e->getMessage());
-    //         }
-
-    //         return redirect()->route('bills.index')->with('success', "Tagihan Opex berhasil disimpan! Nomor: {$billNumber}");
-
-    //     } catch (\Exception $e) {
-    //         \DB::rollback();
-    //         return back()->withInput()->with('error', 'Gagal menyimpan tagihan: ' . $e->getMessage());
-    //     }
-    // }
-
-
-    // =========================================================================
-    // 5. EDIT (FORM EDIT BERBASIS SLUG)
-    // =========================================================================
-
-
-
-
-    // =========================================================================
-    // UPDATE (SIMPAN REVISI OPEX + PARENT-CHILD GOOGLE SHEET)
-    // =========================================================================
-    // public function update(Request $request, $slug)
-    // {
-    //     $request->validate([
-    //         'paid_by_company_id'    => 'required|exists:companies,id',
-    //         'currency_id'           => 'required|exists:currencies,id',
-    //         'bill_date'             => 'required|date',
-    //         'due_date'              => 'required|date|after_or_equal:bill_date',
-    //         'vendor_name'           => 'required|string|max:255',
-    //         'vendor_invoice_number' => 'nullable|string|max:255',
-    //         'account_number'        => 'nullable|string|max:255',
-    //         'items'                 => 'required|array|min:1',
-    //     ]);
-
-    //     \DB::beginTransaction();
-    //     try {
-    //         // 1. Ambil Data Bill Berdasarkan Slug
-    //         $bill = \App\Models\BillRequest::where('bill_number', $slug)->firstOrFail();
-
-    //         if ($bill->status && in_array($bill->status->slug, ['paid', 'partial', 'completed'])) {
-    //             return back()->with('error', 'Gagal! Tagihan ini sudah diproses atau dibayar.');
-    //         }
-
-    //         // 2. Siapkan Variabel Pendukung
-    //         $currency = \App\Models\Currency::find($request->currency_id)->code ?? 'IDR';
-    //         $company = \App\Models\Company::find($request->paid_by_company_id);
-    //         $companyName = $company ? $company->name : '-';
-
-    //         // 3. Update Data Induk Opex (Header)
-    //         $bill->update([
-    //             'company_id'            => $request->paid_by_company_id,
-    //             'vendor_name'           => $request->vendor_name,
-    //             'vendor_invoice_number' => $request->vendor_invoice_number,
-    //             'account_number'        => $request->account_number,
-    //             'description'           => $request->note, // Catatan OPEX
-    //             'invoice_date'          => $request->bill_date,
-    //             'due_date'              => $request->due_date,
-    //             'currency'              => $currency,
-    //             'is_recurring'          => $request->is_recurring == '1',
-    //             'recurring_interval'    => $request->is_recurring == '1' ? (int)$request->recurring_interval : null,
-    //             'recurring_period'      => $request->is_recurring == '1' ? $request->recurring_period : null,
-    //         ]);
-
-    //         // 4. Bersihkan Relasi Lama
-    //         $bill->items()->delete();
-    //         $bill->charges()->delete();
-    //         $bill->discounts()->delete();
-
-    //         $totalSubtotal = 0;
-    //         $totalItemDisc = 0;
-    //         $totalTax = 0;
-    //         $totalCharge = 0;
-    //         $totalExtDisc = 0;
-
-    //         // Variabel penyimpan baris-baris Google Sheet
-    //         $childRows = [];
-
-    //         // ==========================================
-    //         // A. PROSES ITEM UTAMA (CHILD)
-    //         // ==========================================
-    //         foreach ($request->items as $item) {
-    //             $qty = (float)$item['qty'];
-    //             $price = (float)$item['price'];
-    //             $gross = $qty * $price;
-
-    //             $discVal = (float)($item['discount_value'] ?? 0);
-    //             $discType = $item['discount_type'] ?? 'fixed';
-    //             $discAmount = (strtoupper($discType) === 'PERCENT') ? ($gross * $discVal / 100) : $discVal;
-    //             $dpp = $gross - $discAmount;
-
-    //             $taxVal = (float)($item['tax_value'] ?? 0);
-    //             $taxType = $item['tax_type'] ?? 'percent';
-    //             $taxId = $item['tax_id'] ?? null;
-
-    //             // Pengecekan cerdas dari Master Pajak
-    //             if ($taxId && is_numeric($taxId)) {
-    //                 $taxMaster = \App\Models\Tax::find($taxId);
-    //                 if ($taxMaster) {
-    //                     $taxVal = $taxMaster->percent;
-    //                     $taxType = 'percent';
-    //                 }
-    //             } elseif ($taxId === 'MANUAL_PERCENT') {
-    //                 $taxType = 'percent';
-    //             }
-
-    //             $taxAmount = (strtoupper($taxType) === 'PERCENT') ? ($dpp * $taxVal / 100) : $taxVal;
-
-    //             $namaItemCustom = $item['name_override'] ?? $item['item_name'] ?? $item['name'] ?? 'Barang Tanpa Nama';
-
-    //             // Pelacakan Kategori Master Item
-    //             $masterItemId = null;
-    //             if (!empty($item['item_id'])) {
-    //                 $masterItemId = $item['item_id'];
-    //             } elseif (!empty($item['code'])) {
-    //                 $masterItem = \App\Models\Item::where('code', $item['code'])->first();
-    //                 if ($masterItem) $masterItemId = $masterItem->id;
-    //             } elseif (!empty($item['name'])) {
-    //                 $exploded = explode(' - ', $item['name']);
-    //                 $potentialCode = trim($exploded[0]);
-    //                 $masterItem = \App\Models\Item::where('code', $potentialCode)->orWhere('name', $item['name'])->first();
-    //                 if ($masterItem) $masterItemId = $masterItem->id;
-    //             }
-
-    //             $categoryName = 'Lainnya';
-    //             if ($masterItemId) {
-    //                 $masterItemData = \App\Models\Item::find($masterItemId);
-    //                 if ($masterItemData && $masterItemData->category_id) {
-    //                     $kategori = \DB::table('categories')->where('id', $masterItemData->category_id)->first();
-    //                     if ($kategori) $categoryName = $kategori->name;
-    //                 }
-    //             }
-
-    //             // SIMPAN KE DATABASE DULU AGAR PASTI BENAR!
-    //             $savedItem = $bill->items()->create([
-    //                 'item_id'         => $masterItemId,
-    //                 'name'            => $namaItemCustom,
-    //                 'description'     => $item['description'] ?? null,
-    //                 'qty'             => $qty,
-    //                 'price'           => $price,
-    //                 'amount'          => $dpp + $taxAmount,
-    //                 'discount_type'   => $discType,
-    //                 'discount_value'  => $discVal,
-    //                 'discount_amount' => $discAmount,
-    //                 'tax_id'          => is_numeric($taxId) ? $taxId : null,
-    //                 'tax_type'        => $taxType,
-    //                 'tax_value'       => $taxVal,
-    //                 'tax_amount'      => $taxAmount,
-    //                 'subtotal'        => $gross,
-    //             ]);
-
-    //             // 🔥 AMBIL KEMBALI DARI DATABASE AGAR PERHITUNGAN SHEET SAMA DENGAN DATABASE 🔥
-    //             $totalSubtotal += $savedItem->subtotal;
-    //             $totalItemDisc += $savedItem->discount_amount;
-    //             $totalTax += $savedItem->tax_amount;
-
-    //             // 🔥 GENERATE LABEL SHEET DARI DATA DATABASE 🔥
-    //             $infoTambahan = "";
-    //             if ($savedItem->discount_amount > 0) {
-    //                 $infoTambahan .= (strtoupper($savedItem->discount_type) === 'PERCENT') ? " (-Disc {$savedItem->discount_value}%)" : " (-Diskon Rp" . number_format($savedItem->discount_amount, 0, ',', '.') . ")";
-    //             }
-    //             if ($savedItem->tax_amount > 0) {
-    //                 $infoTambahan .= (strtoupper($savedItem->tax_type) === 'PERCENT') ? " (+PPN {$savedItem->tax_value}%)" : " (+Pajak Rp" . number_format($savedItem->tax_amount, 0, ',', '.') . ")";
-    //             }
-
-    //             $dppSheet = $savedItem->subtotal - $savedItem->discount_amount;
-
-    //             $childRows[] = [
-    //                 \Carbon\Carbon::parse($request->bill_date)->format('d-M-Y'),
-    //                 $companyName,
-    //                 $request->vendor_name,
-    //                 "  ↳ [Item] " . $namaItemCustom . $infoTambahan, // 🔥 SUNTIKKAN LABEL DISINI
-    //                 $categoryName,
-    //                 $dppSheet,
-    //                 $savedItem->tax_amount,
-    //                 $savedItem->amount,
-    //                 $request->vendor_invoice_number ?? '-',
-    //                 $request->account_number ?? '-',
-    //                 $bill->bill_number,
-    //                 auth()->user()->name ?? 'System',
-    //                 '-',
-    //                 '-'
-    //             ];
-    //         }
-
-    //         // ==========================================
-    //         // B. PROSES BIAYA TAMBAHAN (CHARGES)
-    //         // ==========================================
-    //         if ($request->has('charges')) {
-    //             foreach ($request->charges as $charge) {
-    //                 if (!empty($charge['charge_type_id']) && $charge['amount'] > 0) {
-    //                     $savedCharge = $bill->charges()->create([
-    //                         'charge_type_id' => $charge['charge_type_id'],
-    //                         'amount'         => $charge['amount'],
-    //                         'note'           => $charge['note'] ?? null
-    //                     ]);
-
-    //                     $totalCharge += $savedCharge->amount;
-
-    //                     $chargeType = \DB::table('charge_types')->where('id', $savedCharge->charge_type_id)->first();
-    //                     $chargeName = $chargeType ? $chargeType->name : 'Biaya Tambahan';
-    //                     $note = !empty($savedCharge->note) ? ' (' . $savedCharge->note . ')' : '';
-
-    //                     $childRows[] = [
-    //                         \Carbon\Carbon::parse($request->bill_date)->format('d-M-Y'),
-    //                         $companyName,
-    //                         $request->vendor_name,
-    //                         "  ↳ [+] " . $chargeName . $note,
-    //                         'Biaya Tambahan',
-    //                         $savedCharge->amount,
-    //                         0,
-    //                         $savedCharge->amount,
-    //                         $request->vendor_invoice_number ?? '-',
-    //                         $request->account_number ?? '-',
-    //                         $bill->bill_number,
-    //                         auth()->user()->name ?? 'System',
-    //                         '-',
-    //                         '-'
-    //                     ];
-    //                 }
-    //             }
-    //         }
-
-    //         // ==========================================
-    //         // C. PROSES POTONGAN (DISCOUNTS KESELURUHAN)
-    //         // ==========================================
-    //         if ($request->has('discounts')) {
-    //             foreach ($request->discounts as $discount) {
-    //                 if (!empty($discount['discount_type_id']) && $discount['amount'] > 0) {
-    //                     $savedDisc = $bill->discounts()->create([
-    //                         'discount_type_id' => $discount['discount_type_id'],
-    //                         'amount'           => $discount['amount'],
-    //                         'note'             => $discount['note'] ?? null
-    //                     ]);
-
-    //                     $totalExtDisc += $savedDisc->amount;
-
-    //                     $discType = \DB::table('discount_types')->where('id', $savedDisc->discount_type_id)->first();
-    //                     $discName = $discType ? $discType->name : 'Potongan';
-    //                     $note = !empty($savedDisc->note) ? ' (' . $savedDisc->note . ')' : '';
-
-    //                     $childRows[] = [
-    //                         \Carbon\Carbon::parse($request->bill_date)->format('d-M-Y'),
-    //                         $companyName,
-    //                         $request->vendor_name,
-    //                         "  ↳ [-] " . $discName . $note,
-    //                         'Potongan / Diskon',
-    //                         -abs($savedDisc->amount), // Nilai minus
-    //                         0,
-    //                         -abs($savedDisc->amount),
-    //                         $request->vendor_invoice_number ?? '-',
-    //                         $request->account_number ?? '-',
-    //                         $bill->bill_number,
-    //                         auth()->user()->name ?? 'System',
-    //                         '-',
-    //                         '-'
-    //                     ];
-    //                 }
-    //             }
-    //         }
-
-    //         // ==========================================
-    //         // 5. KALKULASI GRAND TOTAL
-    //         // ==========================================
-    //         $grandTotal = max(0, ($totalSubtotal - $totalItemDisc) + $totalTax + $totalCharge - $totalExtDisc);
-
-    //         // 🔥 Cek Pajak & Diskon Global dari Form
-    //         $globalTaxValue = (float)$request->input('global_tax_value', 0);
-    //         $globalTaxType = $request->input('global_tax_type', 'PERCENT');
-    //         $globalTaxLabel = "";
-    //         $globalTaxAmount = 0;
-
-    //         if ($globalTaxValue > 0) {
-    //             if (strtoupper($globalTaxType) === 'PERCENT') {
-    //                 $dppAwal = $totalSubtotal - $totalItemDisc; // DPP sebelum pajak global
-    //                 $globalTaxAmount = ($dppAwal * $globalTaxValue) / 100;
-    //                 $globalTaxLabel = " (+PPN Global {$globalTaxValue}%)";
-    //             } else {
-    //                 $globalTaxAmount = $globalTaxValue;
-    //                 $globalTaxLabel = " (+Pajak Global Rp" . number_format($globalTaxAmount, 0, ',', '.') . ")";
-    //             }
-
-    //             // Tambahkan sebagai pajak global ke Grand Total
-    //             $grandTotal += $globalTaxAmount;
-    //             $totalTax += $globalTaxAmount; // Akumulasikan ke total pajak
-    //         }
-
-    //         $globalDiscValue = (float)$request->input('global_discount_value', 0);
-    //         $globalDiscType = $request->input('global_discount_type', 'PERCENT');
-    //         $globalDiscLabel = "";
-    //         $globalDiscAmount = 0;
-
-    //         if ($globalDiscValue > 0) {
-    //             if (strtoupper($globalDiscType) === 'PERCENT') {
-    //                 $dppAwal = $totalSubtotal - $totalItemDisc;
-    //                 $globalDiscAmount = ($dppAwal * $globalDiscValue) / 100;
-    //                 $globalDiscLabel = " (-Disc Global {$globalDiscValue}%)";
-    //             } else {
-    //                 $globalDiscAmount = $globalDiscValue;
-    //                 $globalDiscLabel = " (-Disc Global Rp" . number_format($globalDiscAmount, 0, ',', '.') . ")";
-    //             }
-
-    //             // Kurangkan dari Grand Total
-    //             $grandTotal -= $globalDiscAmount;
-    //             $totalItemDisc += $globalDiscAmount; // Akumulasikan ke total diskon
-    //         }
-
-    //         $bill->update([
-    //             'subtotal'       => $totalSubtotal,
-    //             'total_discount' => $totalItemDisc + $totalExtDisc,
-    //             'total_tax'      => $totalTax,
-    //             'total_charge'   => $totalCharge,
-    //             'amount'         => $grandTotal
-    //         ]);
-
-    //         // ==========================================
-    //         // 6. MEMBUAT BARIS INDUK GOOGLE SHEET (PARENT)
-    //         // ==========================================
-    //         // Jika ada pajak/diskon global, tempelkan di judul GRAND TOTAL
-    //         $judulParent = "⭐ GRAND TOTAL" . $globalTaxLabel . $globalDiscLabel;
-
-    //         $parentRow = [
-    //             \Carbon\Carbon::parse($request->bill_date)->format('d-M-Y'),
-    //             $companyName,
-    //             $request->vendor_name,
-    //             $judulParent,
-    //             "SUMMARY",
-    //             ($totalSubtotal - $totalItemDisc + $totalCharge - $totalExtDisc), // DPP Keseluruhan
-    //             $totalTax,
-    //             $grandTotal,
-    //             $request->vendor_invoice_number ?? '-',
-    //             $request->account_number ?? '-',
-    //             $bill->bill_number,
-    //             auth()->user()->name ?? 'System',
-    //             '-',
-    //             $request->note ?? '-' // 🔥 CATATAN / DESKRIPSI GLOBAL OPEX (Tampil di Parent)
-    //         ];
-
-    //         // Gabungkan Parent dan Child
-    //         $googleSheetRows = array_merge([$parentRow], $childRows);
-
-    //         // ==========================================
-    //         // 7. HANDLE ATTACHMENTS (Jika Ada File Baru/Hapus)
-    //         // ==========================================
-    //         if ($request->hasFile('attachments')) {
-    //             $basePath = \DB::table('system_settings')->where('setting_key', 'path_bills_opex')->value('setting_value') ?: 'attachments/opex';
-    //             $storagePath = $basePath . '/' . str_replace(['/', '\\'], '-', $bill->bill_number);
-
-    //             foreach ($request->file('attachments') as $file) {
-    //                 $originalName = $file->getClientOriginalName();
-    //                 $path = $file->storeAs($storagePath, time() . '_' . uniqid() . '_' . str_replace(' ', '_', $originalName), 'public');
-
-    //                 \DB::table('bill_attachments')->insert([
-    //                     'bill_request_id' => $bill->id,
-    //                     'file_name'       => $originalName,
-    //                     'file_path'       => str_replace('\\', '/', $path),
-    //                     'created_at'      => now(),
-    //                     'updated_at'      => now()
-    //                 ]);
-    //             }
-    //         }
-
-    //         if ($request->has('delete_media')) {
-    //             foreach ($request->delete_media as $mediaId) {
-    //                 $attachment = \DB::table('bill_attachments')->where('id', $mediaId)->first();
-    //                 if ($attachment) {
-    //                     if (\Illuminate\Support\Facades\Storage::disk('public')->exists($attachment->file_path)) {
-    //                         \Illuminate\Support\Facades\Storage::disk('public')->delete($attachment->file_path);
-    //                     }
-    //                     \DB::table('bill_attachments')->where('id', $mediaId)->delete();
-    //                 }
-    //             }
-    //         }
-
-    //         // ==========================================
-    //         // 8. LOG HISTORY & WORKFLOW APPROVAL
-    //         // ==========================================
-    //         $this->logHistory($bill, 'UPDATED', "Merevisi dokumen Opex. Total Baru: {$currency} " . number_format($grandTotal, 0, ',', '.'));
-
-    //         // Hapus workflow lama
-    //         \App\Models\DocumentApproval::where('document_id', $bill->id)->where('document_type', get_class($bill))->delete();
-
-    //         $customWorkflowId = $request->input('custom_workflow_id');
-    //         $needsApproval = false;
-
-    //         if ($customWorkflowId) {
-    //             // Workflow Khusus
-    //             $workflow = \App\Models\ApprovalWorkflow::with('steps')->find($customWorkflowId);
-    //             if ($workflow && $workflow->steps->count() > 0) {
-    //                 foreach ($workflow->steps as $step) {
-    //                     \App\Models\DocumentApproval::create([
-    //                         'document_id'          => $bill->id,
-    //                         'document_type'        => get_class($bill),
-    //                         'role_id'              => $step->role_id,
-    //                         'target_department_id' => $step->target_department_id ?? $step->department_id ?? null,
-    //                         'step_order'           => $step->step_order,
-    //                         'status'               => 'PENDING'
-    //                     ]);
-    //                 }
-    //                 $needsApproval = true;
-    //                 $this->logHistory($bill, 'SYSTEM', "Revisi menggunakan Rute Persetujuan Khusus: " . $workflow->name);
-    //             }
-    //         } else {
-    //             // Workflow Default (menggunakan ApprovalService)
-    //             $needsApproval = \App\Services\ApprovalService::generateWorkflow($bill);
-    //         }
-
-    //         // Update Status berdasarkan ada tidaknya approval
-    //         if ($needsApproval) {
-    //             $bill->update(['status_id' => $this->getStatusId('pending') ?? 1]);
-    //         } else {
-    //             $bill->update(['status_id' => $this->getStatusId('approved') ?? 3]);
-    //         }
-
-    //         \DB::commit();
-
-    //         // ==========================================
-    //         // 9. SINKRONISASI GOOGLE SHEET (ANTI DOBEL)
-    //         // ==========================================
-    //         try {
-    //             $sheetService = new \App\Services\GoogleSheetService();
-    //             $tabName = env('GOOGLE_SHEET_OPEX_TAB_NAME', 'Sheet1');
-
-    //             // Hapus formasi lama di Sheet
-    //             $sheetService->deleteRowsByBillNumber($tabName, $bill->bill_number);
-
-    //             // Insert formasi yang baru
-    //             if (!empty($googleSheetRows)) {
-    //                 foreach ($googleSheetRows as $rowData) {
-    //                     $sheetService->appendRow($tabName, $rowData);
-    //                 }
-    //             }
-    //         } catch (\Exception $e) {
-    //             \Log::error("Google Sheet Sync Error pada Opex Update {$bill->bill_number}: " . $e->getMessage());
-    //         }
-
-    //         return redirect()->route('bills.show', $bill->bill_number)->with('success', "Tagihan berhasil diperbarui!");
-
-    //     } catch (\Exception $e) {
-    //         \DB::rollback();
-    //         return back()->withInput()->with('error', 'Gagal update tagihan: ' . $e->getMessage());
-    //     }
-    // }
-
 
 
 
@@ -1996,6 +1204,11 @@ class BillRequestController extends Controller
 
             if ($bill->status && $bill->status->slug !== 'pending' && $bill->status->slug !== 'partial_approved') {
                 return back()->with('error', 'Tagihan ini sudah diproses sebelumnya.');
+            }
+
+            // 🔥 TAMBAHKAN PENGAMAN MUTLAK INI DI SINI 🔥
+            if (!$this->checkIsApprover($bill)) {
+                return back()->with('error', 'Akses Ditolak: Anda tidak memiliki wewenang untuk menyetujui OPEX ini.');
             }
 
             $currentApproval = \App\Models\DocumentApproval::with('role')
@@ -2380,7 +1593,10 @@ class BillRequestController extends Controller
         // 🔥 WAJIB ADA AGAR DROPDOWN MUNCUL 🔥
         $usersList = \App\Models\User::with('department')->orderBy('name')->get();
 
-        return view('bills.show', compact('bill', 'attachments', 'approvals', 'usersList'));
+        // 🔥 TAMBAHAN: CEK APAKAH USER LOGIN BERHAK APPROVE DOKUMEN INI 🔥
+        $isApprover = $this->checkIsApprover($bill);
+
+        return view('bills.show', compact('bill', 'attachments', 'approvals', 'usersList','isApprover'));
     }
 
     // =========================================================================
@@ -2703,4 +1919,85 @@ class BillRequestController extends Controller
         $pdf = \Barryvdh\DomPDF\Facade\Pdf::loadView('bills.pdf_bpr_digital', compact('bill'))->setPaper('a4', 'portrait');
         return $pdf->stream('BPR_Digital_' . str_replace('/', '_', $bill->bill_number) . '.pdf');
     }
+
+
+
+    // =========================================================================
+    // 🔥 HELPER 1: DETEKSI OTOMATIS APAKAH USER SAAT INI BERHAK APPROVE 🔥
+    // =========================================================================
+    private function checkIsApprover($bill)
+    {
+        $currentApproval = \App\Models\DocumentApproval::with('role')
+            ->where('document_id', $bill->id)
+            ->whereIn('document_type', ['App\Models\BillRequest', 'OPEX', 'BillRequest', get_class($bill)])
+            ->where('status', 'PENDING')
+            ->orderBy('step_order', 'asc')->first();
+
+        if (!$currentApproval) return false;
+
+        $user = auth()->user();
+
+        // Super Admin kebal hukum
+        if ($user->hasAnyRole(['Super Admin', 'Super Administrator', 'super-admin']) || $user->id === 1) {
+            return true;
+        }
+
+        // 1. Cek Spesifik Nama User (Seperti kasus Anwar & Radit)
+        $uid = $currentApproval->user_id ?? $currentApproval->specific_user_id ?? $currentApproval->approver_id ?? null;
+        if (!empty($uid)) {
+            return $user->id == $uid;
+        }
+
+        // 2. Cek Berdasarkan Jabatan & Departemen
+        $reqRole = optional($currentApproval->role)->name;
+        if ($reqRole && $user->hasRole($reqRole)) {
+            $targetDept = $currentApproval->target_department_id;
+            if (empty($targetDept) || $targetDept === 'all' || $targetDept == 0) return true;
+            if ($user->department_id == $targetDept) return true;
+            if ($bill->user && $user->department_id == $bill->user->department_id) return true;
+        }
+
+        return false;
+    }
+
+    // =========================================================================
+    // 🔥 HELPER 2: TEMBAK NOTIFIKASI KE APPROVER YANG SEDANG ANTRE 🔥
+    // =========================================================================
+    private function notifyCurrentApprover($bill)
+    {
+        $currentApproval = \App\Models\DocumentApproval::with('role')
+            ->where('document_id', $bill->id)
+            ->whereIn('document_type', ['App\Models\BillRequest', 'OPEX', 'BillRequest', get_class($bill)])
+            ->where('status', 'PENDING')
+            ->orderBy('step_order', 'asc')->first();
+
+        if (!$currentApproval) return;
+
+        $uid = $currentApproval->user_id ?? $currentApproval->specific_user_id ?? $currentApproval->approver_id ?? null;
+        $url = route('bills.show', $bill->bill_number);
+        $msg = "Tagihan OPEX Nomor {$bill->bill_number} telah diajukan dan menunggu persetujuan Anda.";
+
+        // Jika ditujukan untuk Spesifik User (Misal: Anwar)
+        if (!empty($uid)) {
+            $u = \App\Models\User::find($uid);
+            if ($u && class_exists('\App\Notifications\DocumentApprovalNotification')) {
+                $u->notify(new \App\Notifications\DocumentApprovalNotification('OPEX Butuh Persetujuan 📝', $msg, $url));
+            }
+        } else {
+            // Jika ditujukan untuk Jabatan Global
+            $reqRole = optional($currentApproval->role)->name;
+            if ($reqRole) {
+                $users = \App\Models\User::role($reqRole)->get();
+                foreach ($users as $u) {
+                    if (class_exists('\App\Notifications\DocumentApprovalNotification')) {
+                        $u->notify(new \App\Notifications\DocumentApprovalNotification('OPEX Butuh Persetujuan 📝', $msg, $url));
+                    }
+                }
+            }
+        }
+    }
+
+
+
+
 }

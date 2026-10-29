@@ -93,9 +93,10 @@ class GenerateRecurringBills extends Command
                     $newBill->current_approval_level = 0;
                     $newBill->rejection_reason = null;
 
-                    // 🔥 OTOMATIS REPLACE BULAN PADA CATATAN GLOBAL 🔥
-                    $oldMonthYear = Carbon::parse($masterBill->invoice_date)->translatedFormat('F Y');
-                    $periodeBaru = Carbon::parse($newBill->invoice_date)->translatedFormat('F Y');
+                    // 🔥 GANTI LOGIKA REPLACE BULAN PADA CATATAN GLOBAL 🔥
+                    // Gunakan period_offset untuk mencari nama bulan lama dan membuat nama bulan baru
+                    $oldMonthYear = Carbon::parse($masterBill->invoice_date)->addMonths((int)$masterBill->period_offset)->translatedFormat('F Y');
+                    $periodeBaru = Carbon::parse($newBill->invoice_date)->addMonths((int)$newBill->period_offset)->translatedFormat('F Y');
 
                     if (!empty($masterBill->description)) {
                         $newBill->description = str_ireplace($oldMonthYear, $periodeBaru, $masterBill->description);
