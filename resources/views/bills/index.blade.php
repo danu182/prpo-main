@@ -117,12 +117,14 @@
             <table class="table mb-0 align-middle table-hover">
                 <thead class="bg-secondary bg-opacity-10">
                     <tr>
-                        <th class="px-4 py-3 text-secondary small text-uppercase fw-bold" width="25%">Informasi Tagihan</th>
-                        <th class="py-3 text-secondary small text-uppercase fw-bold" width="20%">Vendor & PT</th>
-                        <th class="py-3 text-secondary small text-uppercase fw-bold text-end" width="15%">Nominal Tagihan</th>
-                        <th class="py-3 text-center text-secondary small text-uppercase fw-bold" width="15%">Jatuh Tempo</th>
-                        <th class="py-3 text-center text-secondary small text-uppercase fw-bold" width="15%">Status</th>
-                        <th class="px-4 py-3 text-secondary small text-uppercase fw-bold text-end" width="10%">Aksi</th>
+                        <th class="px-4 py-3 text-secondary small text-uppercase fw-bold" width="18%">No. Dokumen</th>
+                        {{-- 🔥 KOLOM BARU: DESKRIPSI TAGIHAN 🔥 --}}
+                        <th class="py-3 text-secondary small text-uppercase fw-bold" width="22%">Judul Tagihan</th>
+                        <th class="py-3 text-secondary small text-uppercase fw-bold" width="18%">Vendor & PT</th>
+                        <th class="py-3 text-secondary small text-uppercase fw-bold text-end" width="12%">Nominal</th>
+                        <th class="py-3 text-center text-secondary small text-uppercase fw-bold" width="12%">Jatuh Tempo</th>
+                        <th class="py-3 text-center text-secondary small text-uppercase fw-bold" width="12%">Status</th>
+                        <th class="px-4 py-3 text-secondary small text-uppercase fw-bold text-end" width="6%">Aksi</th>
                     </tr>
                 </thead>
                 <tbody class="border-top-0">
@@ -135,6 +137,7 @@
                         $isOverdue = \Carbon\Carbon::parse($bill->due_date)->isPast() && !in_array($statusSlug, ['paid', 'rejected', 'cancelled']);
                     @endphp
                     <tr class="{{ $isOverdue ? 'overdue-row bg-danger bg-opacity-10' : 'normal-row' }}">
+                        {{-- KOLOM 1: NOMOR & INFO --}}
                         <td class="px-4 py-3">
                             <a href="{{ route('bills.show', $bill->bill_number) }}" class="mb-1 fw-bold text-decoration-none text-primary d-block">
                                 {{ $bill->bill_number }}
@@ -148,19 +151,36 @@
                                 </span>
                             @endif
                         </td>
+
+                        {{-- 🔥 KOLOM 2: JUDUL & DESKRIPSI (BARU) 🔥 --}}
+                        <td class="py-3">
+                            <div class="mb-1 fw-bold text-dark text-wrap" style="max-width: 250px;" title="{{ $bill->title }}">
+                                {{ str_ireplace('Tagihan Opex - ', '', $bill->title ?? '-') }}
+                            </div>
+                            <div class="small text-muted text-truncate" style="max-width: 250px;" title="{{ $bill->description }}">
+                                {{ $bill->description ?: 'Tidak ada keterangan khusus.' }}
+                            </div>
+                        </td>
+
+                        {{-- KOLOM 3: VENDOR & PT --}}
                         <td class="py-3">
                             <div class="mb-1 fw-bold text-dark text-truncate" style="max-width: 200px;" title="{{ $bill->vendor_name }}">
                                 <i class="bi bi-shop text-warning me-1"></i> {{ $bill->vendor_name }}
                             </div>
                             <div class="small text-muted text-truncate" style="max-width: 200px;" title="{{ $bill->company->name ?? '-' }}">
+                                {{-- 🔥 PERBAIKAN: Cetak nama lengkap PT, bukan kodenya 🔥 --}}
                                 <i class="bi bi-building me-1"></i> {{ $bill->company->name ?? '-' }}
                             </div>
                         </td>
+
+                        {{-- KOLOM 4: NOMINAL --}}
                         <td class="py-3 text-end">
                             <div class="fw-bold text-dark fs-6">
                                 {{ $bill->currency }} {{ number_format($bill->amount, 0, ',', '.') }}
                             </div>
                         </td>
+
+                        {{-- KOLOM 5: JATUH TEMPO --}}
                         <td class="py-3 text-center">
                             <div class="small fw-semibold {{ $isOverdue ? 'text-danger' : 'text-muted' }}">
                                 {{ $bill->due_date ? \Carbon\Carbon::parse($bill->due_date)->format('d M Y') : '-' }}
@@ -169,11 +189,15 @@
                                 <div class="px-2 mt-1 badge bg-danger" style="font-size: 0.65rem;">OVERDUE</div>
                             @endif
                         </td>
+
+                        {{-- KOLOM 6: STATUS --}}
                         <td class="py-3 text-center">
                             <span class="badge bg-{{ $statusColor }}-subtle text-{{ $statusColor }} border border-{{ $statusColor }} rounded-pill px-3 py-2 text-uppercase">
                                 {{ $statusName }}
                             </span>
                         </td>
+
+                        {{-- KOLOM 7: AKSI --}}
                         <td class="px-4 py-3 text-end">
                             <div class="dropdown">
                                 <button class="border shadow-sm btn btn-light btn-sm rounded-circle" type="button" data-bs-toggle="dropdown" data-bs-boundary="window">
@@ -223,7 +247,7 @@
                     </tr>
                     @empty
                     <tr>
-                        <td colspan="6" class="py-5 text-center text-muted bg-light">
+                        <td colspan="7" class="py-5 text-center text-muted bg-light">
                             <i class="mb-3 opacity-50 bi bi-inbox fs-1 d-block"></i>
                             <h6 class="fw-bold">Belum Ada Tagihan</h6>
                             <p class="mb-0 small">Tidak ada data tagihan yang ditemukan atau sesuai dengan filter Anda.</p>
@@ -240,6 +264,7 @@
             </div>
         @endif
     </div>
+
 </div>
 @endsection
 

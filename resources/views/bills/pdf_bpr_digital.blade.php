@@ -19,8 +19,8 @@
         table.main-table th { text-align: center; font-weight: bold; background-color: #fff; }
 
         table.signature-table { border: 1px solid #000; border-top: none; page-break-inside: avoid; }
-        /* 🔥 UBAH HEIGHT DARI 110px MENJADI 140px AGAR KOTAK LEBIH PANJANG 🔥 */
-        table.signature-table td { border: none; padding: 10px; vertical-align: top; text-align: left; height: 140px; position: relative; }
+        /* 🔥 TINGGI DITAMBAH KE 160px UNTUK MEMBERI RUANG KEPADA IMEJ TINGGI 🔥 */
+        table.signature-table td { border: none; padding: 10px; vertical-align: top; text-align: left; height: 160px; position: relative; }
 
         .text-center { text-align: center; } .fw-bold { font-weight: bold; } .break-text { word-wrap: break-word; word-break: break-all; }
         table.amount-box { width: 100%; border: none !important; margin: 0; padding: 0; }
@@ -114,7 +114,8 @@
                 </tr>
             @endforeach
             <tr>
-                <td colspan="4" class="text-center fw-bold">Total Amount</td>
+                {{-- 🔥 TUKAR class "text-center" kepada "text-right" dan tambah padding 🔥 --}}
+                <td colspan="4" class="fw-bold" style="text-align: right; padding-right: 15px;">GRAND TOTAL</td>
                 <td style="padding: 0 4px;"><table class="amount-box fw-bold"><tr><td class="curr-txt">{{ $currency }}</td><td class="num-txt">{{ number_format($bill->amount, 0, ',', '.') }}</td></tr></table></td>
             </tr>
         </tbody>
@@ -130,14 +131,12 @@
 
         $totalCols = 1 + $approvals->count();
 
-        // 🔥 HELPER SAKTI: Pencari File Gambar (Anti-Symlink Gagal) 🔥
+        // 🔥 HELPER SAKTI: Pencari File Gambar 🔥
         $getSignatureBase64 = function($signatureDbPath) {
             if (!$signatureDbPath) return null;
-
             $cleanPath = ltrim(str_replace('storage/', '', $signatureDbPath), '/');
             $path1 = storage_path('app/public/' . $cleanPath);
             $path2 = public_path('storage/' . $cleanPath);
-
             $finalPath = file_exists($path1) ? $path1 : (file_exists($path2) ? $path2 : null);
 
             if ($finalPath) {
@@ -161,23 +160,21 @@
             <td style="width: {{ 100 / ($totalCols > 0 ? $totalCols : 1) }}%;">
                 <div style="margin-bottom: 10px;">Prepared by :</div>
 
-                <div style="height: 70px; text-align: center;">
+                <div style="text-align: center;">
                     @if($prepSigBase64)
-                        {{-- 🔥 MAX HEIGHT DITURUNKAN KE 65px AGAR TIDAK MENJUNTAI KE TEKS 🔥 --}}
-                        <img src="{{ $prepSigBase64 }}" style="max-height: 65px; max-width: 130px;">
+                        <img src="{{ $prepSigBase64 }}" style="max-height: 70px; max-width: 140px; object-fit: contain;">
                     @else
-                        <div style="display: inline-block; padding: 5px 10px; font-weight: bold; font-size: 10pt; border: 2px solid #198754; color: #198754; margin-top: 10px;">DIAJUKAN</div>
+                        <div style="display: inline-block; padding: 5px 10px; font-weight: bold; font-size: 10pt; border: 2px solid #198754; color: #198754; margin-top: 15px;">DIAJUKAN</div>
                     @endif
                 </div>
 
-                {{-- 🔥 POSITION ABSOLUTE DIHAPUS, DIGANTI FLOW MARGIN NORMAL 🔥 --}}
-                <div style="text-align: center; margin-top: 10px; height: 35px;">
-                    <div style="height: 18px;">
-                        <span class="fw-bold" style="text-decoration: underline;">{{ $bill->user->name ?? 'Requester' }}</span>
-                    </div>
-                    <div style="height: 15px; font-size: 7pt; color: #666;">
-                        {{ $bill->created_at ? $bill->created_at->format('d/m/y H:i') : '' }}
-                    </div>
+                {{-- 🔥 KUNCI NAMA PADA DASAR KOTAK (ABSOLUTE) 🔥 --}}
+                <div style="position: absolute; bottom: 25px; left: 0; width: 100%; text-align: center;">
+                    <span class="fw-bold" style="text-decoration: underline;">{{ $bill->user->name ?? 'Requester' }}</span>
+                </div>
+                {{-- 🔥 KUNCI TARIKH PADA DASAR KOTAK (ABSOLUTE) 🔥 --}}
+                <div style="position: absolute; bottom: 10px; left: 0; width: 100%; text-align: center; font-size: 7pt; color: #666;">
+                    {{ $bill->created_at ? $bill->created_at->format('d/m/y H:i') : '&nbsp;' }}
                 </div>
             </td>
 
@@ -197,8 +194,7 @@
                         @endif
                     </div>
 
-                    {{-- 🔥 LOGIKA TTD DIGITAL APPROVER 🔥 --}}
-                    <div style="height: 70px; text-align: center;">
+                    <div style="text-align: center;">
                         @php
                             $apprSigBase64 = null;
                             if ($approval->status == 'APPROVED' && $approval->approved_by) {
@@ -210,54 +206,52 @@
                         @endphp
 
                         @if($apprSigBase64)
-                            {{-- 🔥 MAX HEIGHT DITURUNKAN KE 65px AGAR TIDAK MENJUNTAI KE TEKS 🔥 --}}
-                            <img src="{{ $apprSigBase64 }}" style="max-height: 65px; max-width: 130px;">
+                            <img src="{{ $apprSigBase64 }}" style="max-height: 70px; max-width: 140px; object-fit: contain;">
                         @elseif($approval->status == 'APPROVED')
-                            <div style="display: inline-block; padding: 5px 10px; font-weight: bold; font-size: 10pt; border: 2px solid #198754; color: #198754; margin-top: 10px;">APPROVED</div>
+                            <div style="display: inline-block; padding: 5px 10px; font-weight: bold; font-size: 10pt; border: 2px solid #198754; color: #198754; margin-top: 15px;">APPROVED</div>
                         @else
-                            <div style="color: gray; font-size: 10px; margin-top: 15px;">[ PENDING ]</div>
+                            <div style="color: gray; font-size: 10px; margin-top: 15px;"></div>
                         @endif
                     </div>
 
-                    {{-- Nama & Jabatan --}}
-                    {{-- 🔥 POSITION ABSOLUTE DIHAPUS, DIGANTI FLOW MARGIN NORMAL 🔥 --}}
-                    <div style="text-align: center; margin-top: 10px; height: 35px;">
-                        @php
-                            $namaTtd = "";
-                            $uid = $approval->user_id ?? $approval->approver_id ?? $approval->specific_user_id ?? null;
+                    @php
+                        $namaTtd = "";
+                        $uid = $approval->user_id ?? $approval->approver_id ?? $approval->specific_user_id ?? null;
 
-                            if ($approval->approved_by) {
-                                $userTtd = \App\Models\User::find($approval->approved_by);
-                                $namaTtd = $userTtd ? $userTtd->name : '';
-                            } elseif (!empty($uid)) {
-                                $userTtd = \App\Models\User::find($uid);
-                                $namaTtd = $userTtd ? $userTtd->name : '';
-                            }
+                        if ($approval->approved_by) {
+                            $userTtd = \App\Models\User::find($approval->approved_by);
+                            $namaTtd = $userTtd ? $userTtd->name : '';
+                        } elseif (!empty($uid)) {
+                            $userTtd = \App\Models\User::find($uid);
+                            $namaTtd = $userTtd ? $userTtd->name : '';
+                        }
 
-                            $roleName = optional($approval->role)->name ?? 'Manager';
-                            $deptName = '';
-                            if (!empty($approval->target_department_id)) {
-                                $dept = \DB::table('departments')->where('id', $approval->target_department_id)->first();
-                                $deptName = $dept ? $dept->name : '';
-                            } else {
-                                $deptName = optional(optional($bill->user)->department)->name ?? '';
-                            }
+                        $roleName = optional($approval->role)->name ?? 'Manager';
+                        $deptName = '';
+                        if (!empty($approval->target_department_id)) {
+                            $dept = \DB::table('departments')->where('id', $approval->target_department_id)->first();
+                            $deptName = $dept ? $dept->name : '';
+                        } else {
+                            $deptName = optional(optional($bill->user)->department)->name ?? '';
+                        }
 
-                            $jabatanLengkap = trim($roleName . ' ' . $deptName);
+                        if (empty($namaTtd)) {
+                            $namaTtd = trim($roleName . ' ' . $deptName);
+                        }
+                    @endphp
 
-                            if (empty($namaTtd)) {
-                                $namaTtd = $jabatanLengkap;
-                                $jabatanLengkap = '';
-                            }
-                        @endphp
+                    {{-- 🔥 KUNCI NAMA PADA DASAR KOTAK (ABSOLUTE) 🔥 --}}
+                    <div style="position: absolute; bottom: 25px; left: 0; width: 100%; text-align: center;">
+                        <strong><u>{{ $namaTtd }}</u></strong>
+                    </div>
 
-                        <div style="height: 18px;">
-                            <strong><u>{{ $namaTtd }}</u></strong>
-                        </div>
-
-                        <div style="height: 15px; font-size: 7pt; color: #666;">
-                            {{-- Kosong / Ruang Keseimbangan --}}
-                        </div>
+                    {{-- 🔥 KUNCI TARIKH PADA DASAR KOTAK (ABSOLUTE) 🔥 --}}
+                    <div style="position: absolute; bottom: 10px; left: 0; width: 100%; text-align: center; font-size: 7pt; color: #666;">
+                        @if($approval->status == 'APPROVED' && $approval->approved_at)
+                            {{ \Carbon\Carbon::parse($approval->approved_at)->format('d/m/y H:i') }}
+                        @else
+                            &nbsp;
+                        @endif
                     </div>
                 </td>
             @endforeach
