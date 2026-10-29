@@ -19,7 +19,8 @@
         table.main-table th { text-align: center; font-weight: bold; background-color: #fff; }
 
         table.signature-table { border: 1px solid #000; border-top: none; page-break-inside: avoid; }
-        table.signature-table td { border: none; padding: 10px; vertical-align: top; text-align: left; height: 110px; position: relative; }
+        /* 🔥 UBAH HEIGHT DARI 110px MENJADI 140px AGAR KOTAK LEBIH PANJANG 🔥 */
+        table.signature-table td { border: none; padding: 10px; vertical-align: top; text-align: left; height: 140px; position: relative; }
 
         .text-center { text-align: center; } .fw-bold { font-weight: bold; } .break-text { word-wrap: break-word; word-break: break-all; }
         table.amount-box { width: 100%; border: none !important; margin: 0; padding: 0; }
@@ -29,7 +30,8 @@
     </style>
 </head>
 <body>
-    <footer>* Dokumen ini dicetak otomatis oleh sistem pada {{ \Carbon\Carbon::now()->translatedFormat('d F Y H:i:s') }} WIB - (Digital Signature)</footer>
+    <footer>Dokumen ini dicetak otomatis oleh sistem pada
+{{ \Carbon\Carbon::now()->translatedFormat('d F Y H:i:s') }} WIB - (Digital Signature)</footer>
 
     @php
         $companyName = optional($bill->company)->name ?? 'HITAWASANA';
@@ -52,7 +54,7 @@
             <td width="13%" style="padding-top: 8px;">Requester</td><td width="2%" style="padding-top: 8px;">:</td>
             <td width="35%" style="padding-top: 8px;">{{ $bill->user->name ?? 'System' }}</td>
             <td width="13%" style="padding-left: 12px; padding-top: 8px;">Title</td><td width="2%" style="padding-top: 8px;">:</td>
-            <td width="35%" style="padding-top: 8px;">{{ $bill->title ?? 'Tagihan Opex' }}</td>
+            <td width="35%" style="padding-top: 8px;">{{ str_ireplace('Tagihan Opex', 'Tagihan', $bill->title ?? 'Tagihan') }}</td>
         </tr>
         <tr>
             <td>Department</td><td>:</td><td>{{ optional($bill->user->department)->name ?? 'Umum' }}</td>
@@ -60,10 +62,7 @@
         </tr>
         <tr>
             <td style="padding-bottom: 8px;">Request Date</td><td style="padding-bottom: 8px;">:</td>
-
-            {{-- 🔥 PERBAIKAN DI SINI: Menggunakan invoice_date agar sama dengan inputan form 🔥 --}}
             <td style="padding-bottom: 8px;">{{ $bill->invoice_date ? date('d-M-y', strtotime($bill->invoice_date)) : '-' }}</td>
-
             <td style="padding-left: 12px; padding-bottom: 8px;">Due Date</td><td style="padding-bottom: 8px;">:</td>
             <td style="padding-bottom: 8px;">{{ $bill->due_date ? date('d-M-y', strtotime($bill->due_date)) : '-' }}</td>
         </tr>
@@ -87,7 +86,6 @@
                         <strong>{{ $item->name }}</strong>
                         <br>
                         <span style="font-size: 9pt; color: #444;">
-                            {{-- <em>(Periode: {{ \Carbon\Carbon::parse($bill->invoice_date)->translatedFormat('F Y') }})</em> --}}
                             <em>(Periode: {{ \Carbon\Carbon::parse($bill->invoice_date)->addMonths($bill->period_offset ?? 0)->translatedFormat('F Y') }})</em>
                         </span>
                         @if(!empty($item->description))
@@ -132,13 +130,28 @@
 
         $totalCols = 1 + $approvals->count();
 
+        // 🔥 HELPER SAKTI: Pencari File Gambar (Anti-Symlink Gagal) 🔥
+        $getSignatureBase64 = function($signatureDbPath) {
+            if (!$signatureDbPath) return null;
+
+            $cleanPath = ltrim(str_replace('storage/', '', $signatureDbPath), '/');
+            $path1 = storage_path('app/public/' . $cleanPath);
+            $path2 = public_path('storage/' . $cleanPath);
+
+            $finalPath = file_exists($path1) ? $path1 : (file_exists($path2) ? $path2 : null);
+
+            if ($finalPath) {
+                $type = pathinfo($finalPath, PATHINFO_EXTENSION);
+                $data = file_get_contents($finalPath);
+                return 'data:image/' . $type . ';base64,' . base64_encode($data);
+            }
+            return null;
+        };
+
         // 1. TTD PEMBUAT (REQUESTER)
         $prepSigBase64 = null;
         if ($bill->user && $bill->user->signature) {
-            $path = public_path('storage/' . $bill->user->signature);
-            if (file_exists($path)) {
-                $prepSigBase64 = 'data:image/' . pathinfo($path, PATHINFO_EXTENSION) . ';base64,' . base64_encode(file_get_contents($path));
-            }
+            $prepSigBase64 = $getSignatureBase64($bill->user->signature);
         }
     @endphp
 
@@ -146,17 +159,25 @@
         <tr>
             {{-- KOLOM PEMBUAT --}}
             <td style="width: {{ 100 / ($totalCols > 0 ? $totalCols : 1) }}%;">
-                <div style="margin-bottom: 5px;">Prepared by :</div>
-                <div style="height: 60px; text-align: center;">
+                <div style="margin-bottom: 10px;">Prepared by :</div>
+
+                <div style="height: 70px; text-align: center;">
                     @if($prepSigBase64)
-                        <img src="{{ $prepSigBase64 }}" style="max-height: 60px; max-width: 140px; object-fit: contain;">
+                        {{-- 🔥 MAX HEIGHT DITURUNKAN KE 65px AGAR TIDAK MENJUNTAI KE TEKS 🔥 --}}
+                        <img src="{{ $prepSigBase64 }}" style="max-height: 65px; max-width: 130px;">
                     @else
-                        <div style="display: inline-block; padding: 5px 10px; font-weight: bold; font-size: 10pt; border: 2px solid #198754; color: #198754; margin-top: 15px;">DIAJUKAN</div>
+                        <div style="display: inline-block; padding: 5px 10px; font-weight: bold; font-size: 10pt; border: 2px solid #198754; color: #198754; margin-top: 10px;">DIAJUKAN</div>
                     @endif
                 </div>
-                <div style="text-align: center; position: absolute; bottom: 10px; width: 100%; left: 0;">
-                    <span class="fw-bold" style="text-decoration: underline;">{{ $bill->user->name ?? 'Requester' }}</span><br>
-                    <span style="font-size: 7pt; color: #666;">{{ $bill->created_at ? $bill->created_at->format('d/m/y H:i') : '' }}</span>
+
+                {{-- 🔥 POSITION ABSOLUTE DIHAPUS, DIGANTI FLOW MARGIN NORMAL 🔥 --}}
+                <div style="text-align: center; margin-top: 10px; height: 35px;">
+                    <div style="height: 18px;">
+                        <span class="fw-bold" style="text-decoration: underline;">{{ $bill->user->name ?? 'Requester' }}</span>
+                    </div>
+                    <div style="height: 15px; font-size: 7pt; color: #666;">
+                        {{ $bill->created_at ? $bill->created_at->format('d/m/y H:i') : '' }}
+                    </div>
                 </div>
             </td>
 
@@ -164,7 +185,7 @@
             @foreach($approvals as $approval)
                 <td style="width: {{ 100 / ($totalCols > 0 ? $totalCols : 1) }}%;">
 
-                    <div style="margin-bottom: 5px; text-align: left;">
+                    <div style="margin-bottom: 10px; text-align: left;">
                         @if($loop->last)
                             Approved by :
                         @else
@@ -177,39 +198,34 @@
                     </div>
 
                     {{-- 🔥 LOGIKA TTD DIGITAL APPROVER 🔥 --}}
-                    <div style="height: 60px; text-align: center;">
+                    <div style="height: 70px; text-align: center;">
                         @php
                             $apprSigBase64 = null;
                             if ($approval->status == 'APPROVED' && $approval->approved_by) {
                                 $approverUser = \App\Models\User::find($approval->approved_by);
                                 if ($approverUser && $approverUser->signature) {
-                                    $path = public_path('storage/' . $approverUser->signature);
-                                    if (file_exists($path)) {
-                                        $type = pathinfo($path, PATHINFO_EXTENSION);
-                                        $data = file_get_contents($path);
-                                        $apprSigBase64 = 'data:image/' . $type . ';base64,' . base64_encode($data);
-                                    }
+                                    $apprSigBase64 = $getSignatureBase64($approverUser->signature);
                                 }
                             }
                         @endphp
 
                         @if($apprSigBase64)
-                            <img src="{{ $apprSigBase64 }}" style="max-height: 60px; max-width: 140px; object-fit: contain;">
+                            {{-- 🔥 MAX HEIGHT DITURUNKAN KE 65px AGAR TIDAK MENJUNTAI KE TEKS 🔥 --}}
+                            <img src="{{ $apprSigBase64 }}" style="max-height: 65px; max-width: 130px;">
                         @elseif($approval->status == 'APPROVED')
-                            {{-- Fallback jika user menekan Approve tapi tidak punya file gambar TTD di profilnya --}}
-                            <div style="display: inline-block; padding: 5px 10px; font-weight: bold; font-size: 10pt; border: 2px solid #198754; color: #198754; margin-top: 15px;">APPROVED</div>
+                            <div style="display: inline-block; padding: 5px 10px; font-weight: bold; font-size: 10pt; border: 2px solid #198754; color: #198754; margin-top: 10px;">APPROVED</div>
                         @else
                             <div style="color: gray; font-size: 10px; margin-top: 15px;">[ PENDING ]</div>
                         @endif
                     </div>
 
                     {{-- Nama & Jabatan --}}
-                    <div style="text-align: center; position: absolute; bottom: 10px; width: 100%; left: 0;">
+                    {{-- 🔥 POSITION ABSOLUTE DIHAPUS, DIGANTI FLOW MARGIN NORMAL 🔥 --}}
+                    <div style="text-align: center; margin-top: 10px; height: 35px;">
                         @php
                             $namaTtd = "";
                             $uid = $approval->user_id ?? $approval->approver_id ?? $approval->specific_user_id ?? null;
 
-                            // Jika sudah di-approve, gunakan nama asli pengeklik. Jika belum, gunakan target nama
                             if ($approval->approved_by) {
                                 $userTtd = \App\Models\User::find($approval->approved_by);
                                 $namaTtd = $userTtd ? $userTtd->name : '';
@@ -235,22 +251,18 @@
                             }
                         @endphp
 
-                        <strong><u>{{ $namaTtd }}</u></strong>
-                        @if(!empty($jabatanLengkap))
-                            <br><span style="font-size: 8pt; color: #666;">{{ $jabatanLengkap }}</span>
-                        @endif
+                        <div style="height: 18px;">
+                            <strong><u>{{ $namaTtd }}</u></strong>
+                        </div>
 
-                        {{-- Cap Tanggal Otomatis --}}
-                        @if($approval->status == 'APPROVED' && $approval->approved_at)
-                            <br><span style="font-size: 7pt; color: #666;">{{ \Carbon\Carbon::parse($approval->approved_at)->format('d/m/y H:i') }}</span>
-                        @endif
+                        <div style="height: 15px; font-size: 7pt; color: #666;">
+                            {{-- Kosong / Ruang Keseimbangan --}}
+                        </div>
                     </div>
                 </td>
             @endforeach
         </tr>
     </table>
-
-
 
 </body>
 </html>
