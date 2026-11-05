@@ -48,25 +48,39 @@
 
     {{-- KOTAK INFORMASI --}}
     <table class="info-table">
-    <tr>
-        <td width="13%" style="padding-top: 8px;">Requester</td><td width="2%" style="padding-top: 8px;">:</td>
-        <td width="35%" style="padding-top: 8px;">{{ $bill->user->name ?? 'System' }}</td>
-        <td width="13%" style="padding-left: 12px; padding-top: 8px;">Title</td><td width="2%" style="padding-top: 8px;">:</td>
-        <td width="35%" style="padding-top: 8px;">{{ $bill->title ?? 'Tagihan Opex' }}</td>
-    </tr>
-    <tr>
-        <td>Department</td><td>:</td><td>{{ optional($bill->user->department)->name ?? 'Umum' }}</td>
-        <td style="padding-left: 12px;">Bill Ref.</td><td>:</td><td class="fw-bold">{{ $bill->bill_number }}</td>
-    </tr>
-    <tr>
-        <td style="padding-bottom: 8px;">Request Date</td><td style="padding-bottom: 8px;">:</td>
+        <tr>
+            <td width="13%" style="padding-top: 8px;">Requester</td><td width="2%" style="padding-top: 8px;">:</td>
+            <td width="35%" style="padding-top: 8px;">{{ $bill->user->name ?? 'System' }}</td>
+            <td width="13%" style="padding-left: 12px; padding-top: 8px;">Title</td><td width="2%" style="padding-top: 8px;">:</td>
+            {{-- <td width="35%" style="padding-top: 8px;">{{ str_ireplace('Tagihan Opex', 'Tagihan', $bill->title ?? 'Tagihan') }}</td> --}}
+            {{-- Menampilkan Catatan Tagihan. Jika catatan kosong, kembali menampilkan nama Vendor --}}
+            <td width="35%" style="padding-top: 8px;">
+                {{ !empty($bill->description) ? $bill->description . ' - ' . $bill->vendor_name : str_ireplace('Tagihan Opex - ', '', $bill->title ?? '-') }}
+            </td>
 
-        {{-- 🔥 PERBAIKAN DI SINI: Menggunakan invoice_date agar sama dengan inputan form 🔥 --}}
-        <td style="padding-bottom: 8px;">{{ $bill->invoice_date ? date('d-M-y', strtotime($bill->invoice_date)) : '-' }}</td>
+        </tr>
+        {{-- <tr>
+            <td width="13%" style="padding-top: 8px;"></td><td width="2%" style="padding-top: 8px;">:</td>
+            <td width="35%" style="padding-top: 8px;"></td>
+            <td width="13%" style="padding-left: 12px; padding-top: 8px;">Vendor</td><td width="2%" style="padding-top: 8px;">:</td>
+            <td width="35%" style="padding-top: 8px;">{{ {{ $bill->vendor_name ?? '-' }} }}</td>
 
-        <td style="padding-left: 12px; padding-bottom: 8px;">Due Date</td><td style="padding-bottom: 8px;">:</td>
-        <td style="padding-bottom: 8px;">{{ $bill->due_date ? date('d-M-y', strtotime($bill->due_date)) : '-' }}</td>
-    </tr>
+        </tr> --}}
+        <tr>
+            <td>Department</td><td>:</td><td>{{ optional($bill->user->department)->name ?? 'Umum' }}</td>
+            {{-- <td style="padding-left: 12px;">Bill Ref.</td><td>:</td><td class="fw-bold">{{ $bill->bill_number }}</td> --}}
+            <td style="padding-left: 12px;">Bill Ref.</td><td>:</td><td class="">{{ $bill->bill_number }}</td>
+        </tr>
+        <tr>
+            <td style="padding-bottom: 8px;">Request Date</td><td style="padding-bottom: 8px;">:</td>
+            {{-- <td style="padding-bottom: 8px;">{{ $bill->invoice_date ? date('d-M-y', strtotime($bill->invoice_date)) : '-' }}</td> --}}
+            {{-- Menggunakan d F Y untuk Hari, Bulan Lengkap, Tahun 4 Digit --}}
+            <td style="padding-bottom: 8px;">{{ $bill->invoice_date ? date('d F Y', strtotime($bill->invoice_date)) : '-' }}</td>
+
+            <td style="padding-left: 12px; padding-bottom: 8px;">Due Date</td><td style="padding-bottom: 8px;">:</td>
+            {{-- <td style="padding-bottom: 8px;">{{ $bill->due_date ? date('d-M-y', strtotime($bill->due_date)) : '-' }}</td> --}}
+            <td style="padding-bottom: 8px;">{{ $bill->due_date ? date('d F Y', strtotime($bill->due_date)) : '-' }}</td>
+        </tr>
     </table>
 
     {{-- TABEL ITEM DETAIL --}}
@@ -84,10 +98,11 @@
                     <td class="text-center">{{ $index + 1 }}</td>
                     <td class="text-center break-text">@if($index === 0) {{ !empty($bill->vendor_invoice_number) ? wordwrap($bill->vendor_invoice_number, 14, " ", true) : '-' }} @endif</td>
                     <td>
-                        <strong>{{ $item->name }}</strong>
+                        {{-- <strong>{{ $item->name }}</strong> --}}
+                        {{ $item->name }}
                         <br>
                         <span style="font-size: 9pt; color: #444;">
-                            <em>(Periode: {{ \Carbon\Carbon::parse($bill->invoice_date)->translatedFormat('F Y') }})</em>
+                            <em>(Periode: {{ \Carbon\Carbon::parse($bill->invoice_date)->addMonths($bill->period_offset ?? 0)->translatedFormat('F Y') }})</em>
                         </span>
                         @if(!empty($item->description))
                             <br><span style="font-size: 9pt;">{!! strip_tags($item->description) !!}</span>
@@ -115,7 +130,8 @@
                 </tr>
             @endforeach
             <tr>
-                <td colspan="4" class="text-center fw-bold">Total Amount</td>
+                {{-- 🔥 TUKAR class "text-center" kepada "text-right" dan tambah padding 🔥 --}}
+                <td colspan="4" class="fw-bold" style="text-align: right; padding-right: 15px;">GRAND TOTAL</td>
                 <td style="padding: 0 4px;"><table class="amount-box fw-bold"><tr><td class="curr-txt">{{ $currency }}</td><td class="num-txt">{{ number_format($bill->amount, 0, ',', '.') }}</td></tr></table></td>
             </tr>
         </tbody>

@@ -475,30 +475,35 @@ class BillPaymentController extends Controller
     // =========================================================================
     // CETAK BPR + LAMPIRAN (SMART MERGER SUPER OPEX)
     // =========================================================================
-    public function printBprWithAttachments(Request $request, $slug)
+    public function printBprWithAttachments(\Illuminate\Http\Request $request, $slug)
     {
-        $type = $request->query('type', 'digital');
-        $format = $request->query('format', 'standar'); // standar / detail
+        // 1. TAMBAH KAPASITAS MEMORI (PENTING UNTUK MERGE PDF & RENDER GAMBAR)
+        ini_set('memory_limit', '512M');
+        ini_set('max_execution_time', 300);
 
-        // 🔥 PERBAIKAN FINAL: Hapus 'approvals.role' dan 'approvals.approver' dari query with()
-        if ($format == 'detail') {
-            $bill = \App\Models\BillRequest::with(['items', 'company', 'user', 'payments', 'charges', 'discounts', 'media'])
-                ->where('bill_number', $slug)->firstOrFail();
-            $pdf = \Barryvdh\DomPDF\Facade\Pdf::loadView('payments.print_bpr_detail', compact('bill', 'type'))->setPaper('A4', 'portrait');
-            $fileNamePrefix = 'BPR_OPEX_Detail_';
-        } else {
-            $bill = \App\Models\BillRequest::with(['items', 'company', 'user', 'payments', 'media'])
-                ->where('bill_number', $slug)->firstOrFail();
-            $pdf = \Barryvdh\DomPDF\Facade\Pdf::loadView('payments.print_bpr', compact('bill', 'type'))->setPaper('A4', 'portrait');
-            $fileNamePrefix = 'BPR_OPEX_Standar_';
-        }
+        // 2. Ambil Parameter dari URL UI
+        $format = $request->query('format', 'detail'); // summary / detail
+        $signatureMode = $request->query('signature', 'hybrid'); // manual / hybrid / digital
 
+        // 3. Tarik Data Utama
+        $bill = \App\Models\BillRequest::with([
+            'items', 'company', 'user', 'payments', 'charges', 'discounts', 'media'
+        ])->where('bill_number', $slug)->firstOrFail();
+
+        // 4. Render Main PDF (Hanya panggil 1 Blade, karena Blade kita sudah pintar mendeteksi $format)
+        $pdf = \Barryvdh\DomPDF\Facade\Pdf::loadView('bills.pdf_bpr_digital', compact('bill'))
+                ->setPaper('A4', 'portrait');
+        
+        $fileNamePrefix = $format === 'detail' ? 'BPR_OPEX_Detail_' : 'BPR_OPEX_Ringkas_';
+
+        // 5. Siapkan Folder Temporary
         $tempDir = storage_path('app/public/temp_pdf');
         if (!file_exists($tempDir)) mkdir($tempDir, 0777, true);
 
         $tempMainPdfPath = $tempDir . '/temp_opex_bpr_' . uniqid() . '.pdf';
         file_put_contents($tempMainPdfPath, $pdf->output());
 
+        // 6. Inisialisasi PDF Merger
         $oMerger = \Webklex\PDFMerger\Facades\PDFMergerFacade::init();
         $oMerger->addPDF($tempMainPdfPath, 'all');
         $tempFilesToDelete = [$tempMainPdfPath];
@@ -506,7 +511,9 @@ class BillPaymentController extends Controller
         $totalLampiran = 0;
         $allFiles = [];
 
-        // 1. TARIK LAMPIRAN DARI SPATIE MEDIA LIBRARY (UTAMA)
+        // --- MENGUMPULKAN FILE DARI BERBAGAI SUMBER ---
+        
+        // A. Spatie Media Library
         if ($bill->media && $bill->media->count() > 0) {
             foreach ($bill->media as $media) {
                 if (method_exists($media, 'getPath')) {
@@ -517,7 +524,7 @@ class BillPaymentController extends Controller
             }
         }
 
-        // 2. TARIK LAMPIRAN DARI TABEL CUSTOM (FALLBACK JIKA ADA)
+        // B. Custom Table 'bill_attachments'
         if (\Illuminate\Support\Facades\Schema::hasTable('bill_attachments')) {
             $dbAttachments = \DB::table('bill_attachments')->where('bill_request_id', $bill->id)->get();
             foreach ($dbAttachments as $att) {
@@ -525,13 +532,15 @@ class BillPaymentController extends Controller
             }
         }
 
-        // 3. TARIK BUKTI TRANSFER/PEMBAYARAN KASIR (BONUS OTOMATIS)
-        $paymentAttachments = \DB::table('payment_attachments')->whereIn('bill_payment_id', $bill->payments->pluck('id')->toArray())->get();
-        foreach ($paymentAttachments as $att) {
-            $allFiles[] = ['path' => storage_path('app/public/' . ltrim($att->file_path, '/')), 'name' => 'Bukti_Transfer_' . ($att->file_name ?? '')];
+        // C. Bukti Transfer / Pembayaran
+        if (\Illuminate\Support\Facades\Schema::hasTable('payment_attachments') && $bill->payments && $bill->payments->count() > 0) {
+            $paymentAttachments = \DB::table('payment_attachments')->whereIn('bill_payment_id', $bill->payments->pluck('id')->toArray())->get();
+            foreach ($paymentAttachments as $att) {
+                $allFiles[] = ['path' => storage_path('app/public/' . ltrim($att->file_path, '/')), 'name' => 'Bukti_Transfer_' . ($att->file_name ?? '')];
+            }
         }
 
-        // PROSES PENGGABUNGAN SEMUA FILE
+        // --- PROSES PENGGABUNGAN FILE ---
         if (count($allFiles) > 0) {
             foreach ($allFiles as $file) {
                 $finalFilePath = $file['path'];
@@ -547,11 +556,12 @@ class BillPaymentController extends Controller
                             $fpdi->setSourceFile($finalFilePath);
                             $oMerger->addPDF($finalFilePath, 'all');
                         } catch (\Exception $e) { 
-                             // Jika PDF Terkunci / Enkripsi
+                             // PDF Terkunci / Enkripsi
                              $html = "<div style='border:2px solid #0d6efd; padding:20px; text-align:center; font-family:sans-serif; margin-top:50px;'>
                                         <h2 style='color:#0d6efd;'>📄 LAMPIRAN PDF (TERENKRIPSI/TERKOMPRESI)</h2>
                                         <p>File pendukung bernama: <b>{$fileName}</b></p>
-                                        <p>File ini menggunakan format PDF terkunci yang tidak bisa digabungkan secara otomatis oleh sistem.</p>
+                                        <p>File ini menggunakan format PDF terkunci yang tidak bisa digabungkan secara otomatis.</p>
+                                        <p><i>Silakan lihat file ini langsung melalui sistem ProcureApp.</i></p>
                                      </div>";
                              $infoPdf = \Barryvdh\DomPDF\Facade\Pdf::loadHTML($html)->setPaper('a4', 'portrait');
                              $infoPath = $tempDir . '/info_' . uniqid() . '.pdf';
@@ -560,8 +570,8 @@ class BillPaymentController extends Controller
                              $tempFilesToDelete[] = $infoPath;
                         }
                     } elseif (in_array($extension, ['jpg', 'jpeg', 'png'])) {
-                        // Ubah Gambar jadi Halaman PDF
-                        $imgPdf = \Barryvdh\DomPDF\Facade\Pdf::loadHTML("<html><body style='margin:0;text-align:center;'><img src='data:" . mime_content_type($finalFilePath) . ";base64," . base64_encode(file_get_contents($finalFilePath)) . "' style='max-width:100%;'></body></html>")->setPaper('a4', 'portrait');
+                        // Rendering Gambar menjadi Halaman PDF
+                        $imgPdf = \Barryvdh\DomPDF\Facade\Pdf::loadHTML("<html><body style='margin:0;padding:20px;text-align:center;'><h3 style='font-family:sans-serif;'>LAMPIRAN GAMBAR</h3><img src='data:" . mime_content_type($finalFilePath) . ";base64," . base64_encode(file_get_contents($finalFilePath)) . "' style='max-width:100%; max-height:900px; object-fit:contain;'></body></html>")->setPaper('a4', 'portrait');
                         $imgTempPath = $tempDir . '/img_' . uniqid() . '.pdf';
                         file_put_contents($imgTempPath, $imgPdf->output());
                         $oMerger->addPDF($imgTempPath, 'all');
@@ -571,26 +581,29 @@ class BillPaymentController extends Controller
             }
         }
 
-        // JIKA TETAP KOSONG
+        // --- JIKA TIDAK ADA LAMPIRAN FISIK SAMA SEKALI ---
         if ($totalLampiran === 0) {
-            $noDataPdf = \Barryvdh\DomPDF\Facade\Pdf::loadHTML("<div style='border: 2px solid orange; padding: 20px; font-family: sans-serif; text-align:center; margin-top:50px;'><h2 style='color: orange;'>⚠️ INFO SISTEM ⚠️</h2><p>TIDAK ADA DATA LAMPIRAN (Dokumen atau Bukti Transfer) untuk Tagihan ini.</p></div>")->setPaper('a4', 'portrait');
+            $noDataPdf = \Barryvdh\DomPDF\Facade\Pdf::loadHTML("<div style='border: 2px solid orange; padding: 20px; font-family: sans-serif; text-align:center; margin-top:50px;'><h2 style='color: orange;'>⚠️ INFO SISTEM ⚠️</h2><p>TIDAK ADA DATA LAMPIRAN (Dokumen atau Bukti Transfer) yang ditemukan di server.</p></div>")->setPaper('a4', 'portrait');
             $noDataTempPath = $tempDir . '/err_nodata_' . uniqid() . '.pdf';
             file_put_contents($noDataTempPath, $noDataPdf->output());
             $oMerger->addPDF($noDataTempPath, 'all');
             $tempFilesToDelete[] = $noDataTempPath;
         }
 
+        // 7. Eksekusi Gabungan Akhir
         $oMerger->merge();
         $finalPdfOutput = $oMerger->output();
 
-        // Bersihkan Sampah Temporary
+        // 8. Bersihkan Sampah File Sementara (Wajib agar disk server tidak penuh)
         foreach ($tempFilesToDelete as $trashPath) {
             if (file_exists($trashPath)) unlink($trashPath);
         }
 
-        $prefix = $type === 'manual' ? 'Manual_' : 'Digital_';
-        return response($finalPdfOutput)->header('Content-Type', 'application/pdf')->header('Content-Disposition', 'inline; filename="' . $fileNamePrefix . $prefix . str_replace('/', '_', $bill->bill_number) . '.pdf"');
+        $filename = $fileNamePrefix . ucfirst($signatureMode) . '_' . str_replace(['/', '\\'], '_', $bill->bill_number) . '.pdf';
+        
+        return response($finalPdfOutput)
+                ->header('Content-Type', 'application/pdf')
+                ->header('Content-Disposition', 'inline; filename="' . $filename . '"');
     }
-
 
 }

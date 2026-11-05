@@ -1904,6 +1904,9 @@ class BillRequestController extends Controller
                 ->header('Content-Disposition', 'inline; filename="' . $filename . '"');
     }
 
+
+
+
     public function printBprManual($slug) {
         $bill = \App\Models\BillRequest::with(['items.item', 'user.department', 'company', 'documentApprovals.role', 'documentApprovals.user'])
             ->where('bill_number', $slug)->firstOrFail();

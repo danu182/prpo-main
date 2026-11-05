@@ -48,46 +48,37 @@
                 </a>
             @endif
 
-            {{-- 🔥 TOMBOL CETAK DIPERBARUI: 4 PILIHAN DINAMIS 🔥 --}}
-            <div class="shadow-sm btn-group">
-                {{-- Tombol Utama (Kiri) --}}
-                <a href="{{ route('bills.print', $bill->bill_number) }}" target="_blank" class="btn btn-dark fw-bold rounded-start-pill">
-                    <i class="bi bi-printer me-1"></i> Cetak Opex Standar
-                </a>
-                {{-- Tombol Panah Dropdown (Kanan) --}}
-                <button type="button" class="btn btn-dark dropdown-toggle dropdown-toggle-split rounded-end-pill" data-bs-toggle="dropdown" aria-expanded="false">
-                    <span class="visually-hidden">Toggle Dropdown</span>
+            <div class="dropdown d-inline-block">
+                <button class="shadow-sm btn btn-primary dropdown-toggle rounded-pill fw-bold" type="button" data-bs-toggle="dropdown" aria-expanded="false">
+                    <i class="bi bi-printer me-1"></i> Cetak BPR
                 </button>
-
-                {{-- Menu Pilihan (Dropdown) --}}
-                <ul class="mt-2 border-0 shadow dropdown-menu dropdown-menu-end">
-                    <li><h6 class="dropdown-header text-primary fw-bold"><i class="bi bi-laptop"></i> Versi Digital (Otomatis)</h6></li>
-                    <li>
-                        <a class="py-2 dropdown-item fw-medium" href="{{ route('bills.prinBpr', ['slug' => $bill->bill_number, 'type' => 'digital']) }}" target="_blank">
-                            <i class="bi bi-bank text-success me-2"></i> Cetak Form BPR
-                        </a>
-                    </li>
-                    <li>
-                        <a class="py-2 dropdown-item fw-medium" href="{{ route('bills.printBprWithAttachments', ['slug' => $bill->bill_number, 'type' => 'digital']) }}" target="_blank">
-                            <i class="bi bi-file-earmark-plus text-primary me-2"></i> Cetak BPR + Lampiran
-                        </a>
-                    </li>
+                <ul class="py-2 shadow dropdown-menu dropdown-menu-end rounded-4" style="min-width: 280px;">
+                    <li><h6 class="dropdown-header fw-bold text-primary">Versi Ringkas (Hanya Grand Total)</h6></li>
+                    {{-- 🔥 Perbaikan: Ubah 'id' menjadi 'slug' 🔥 --}}
+                    <li><a class="py-2 dropdown-item" target="_blank" href="{{ route('bills.print', ['slug' => $bill->bill_number, 'format' => 'summary', 'signature' => 'manual']) }}"><i class="bi bi-pen me-2 text-muted"></i>TTD Manual (Kosong)</a></li>
+                    <li><a class="py-2 dropdown-item" target="_blank" href="{{ route('bills.print', ['slug' => $bill->bill_number, 'format' => 'summary', 'signature' => 'hybrid']) }}"><i class="bi bi-vector-pen me-2 text-info"></i>TTD Hybrid (Jika Approved)</a></li>
 
                     <li><hr class="dropdown-divider"></li>
 
-                    <li><h6 class="dropdown-header text-danger fw-bold"><i class="bi bi-pen"></i> Versi Manual (Tanda Tangan Basah)</h6></li>
+                    <li><h6 class="dropdown-header fw-bold text-primary">Versi Detail (Rincian PO Lengkap)</h6></li>
+                    <li><a class="py-2 dropdown-item" target="_blank" href="{{ route('bills.print', ['slug' => $bill->bill_number, 'format' => 'detail', 'signature' => 'manual']) }}"><i class="bi bi-pen me-2 text-muted"></i>TTD Manual (Kosong)</a></li>
+                    <li><a class="py-2 dropdown-item" target="_blank" href="{{ route('bills.print', ['slug' => $bill->bill_number, 'format' => 'detail', 'signature' => 'hybrid']) }}"><i class="bi bi-vector-pen me-2 text-info"></i>TTD Hybrid (Jika Approved)</a></li>
+
+                    <li><hr class="dropdown-divider"></li>
+
+
+                    <li><h6 class="dropdown-header fw-bold text-success">Paket Bundling Dokumen</h6></li>
                     <li>
-                        <a class="py-2 dropdown-item fw-medium" href="{{ route('bills.prinBpr', ['slug' => $bill->bill_number, 'type' => 'manual']) }}" target="_blank">
-                            <i class="bi bi-bank text-danger me-2"></i> Cetak Form BPR
+                        {{-- 🔥 ARAHKAN ROUTE KE printBprWithAttachments SESUAI CONTROLLER ANDA 🔥 --}}
+                        <a class="py-2 dropdown-item fw-bold text-success bg-success bg-opacity-10" target="_blank"
+                        href="{{ route('bills.printBprWithAttachments', ['slug' => $bill->bill_number, 'type' => 'digital']) }}">
+                            <i class="bi bi-file-earmark-zip me-2"></i>Cetak Detail + Lampiran (TTD Digital)
                         </a>
                     </li>
-                    <li>
-                        <a class="py-2 dropdown-item fw-medium" href="{{ route('bills.printBprWithAttachments', ['slug' => $bill->bill_number, 'type' => 'manual']) }}" target="_blank">
-                            <i class="bi bi-file-earmark-plus text-danger me-2"></i> Cetak BPR + Lampiran
-                        </a>
-                    </li>
+
                 </ul>
             </div>
+
         </div>
     </div>
 
