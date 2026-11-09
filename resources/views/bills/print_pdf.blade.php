@@ -98,11 +98,17 @@
                     <td class="text-center">{{ $index + 1 }}</td>
                     <td class="text-center break-text">@if($index === 0) {{ !empty($bill->vendor_invoice_number) ? wordwrap($bill->vendor_invoice_number, 14, " ", true) : '-' }} @endif</td>
                     <td>
-                        {{ $item->name }}<br>
-                        <span style="font-size: 9pt; color: #444;"><em>(Periode: {{ \Carbon\Carbon::parse($bill->invoice_date)->addMonths($bill->period_offset ?? 0)->translatedFormat('F Y') }})</em></span>
+                        {{-- 1. Nama Item Utama --}}
+                        {{ $item->name }}
+
+                        {{-- 2. Deskripsi Item (Ditampilkan di tengah jika ada) --}}
                         @if(!empty($item->description))
                             <br><span style="font-size: 9pt;">{!! nl2br(e($item->description)) !!}</span>
                         @endif
+
+                        {{-- 3. Periode (Dipindah ke paling bawah) --}}
+                        <br><span style="font-size: 9pt; color: #444;"><em>(Periode: {{ \Carbon\Carbon::parse($bill->invoice_date)->addMonths($bill->period_offset ?? 0)->translatedFormat('F Y') }})</em></span>
+
                     </td>
                     <td align="center">
                         @php
@@ -119,7 +125,8 @@
                         <table class="amount-box"><tr><td class="curr-txt">{{ $currency }}</td><td class="num-txt">{{ number_format($item->amount, 0, ',', '.') }}</td></tr></table>
                     </td>
                     @if($index === 0)
-                    <td rowspan="{{ $bill->items->count() }}" class="text-center break-text fw-bold" style="vertical-align: middle;">
+                    {{-- 🔥 PERBAIKAN 1: Tambahkan border-bottom: none; agar garis bawah sel ini menghilang 🔥 --}}
+                    <td rowspan="{{ $bill->items->count() }}" class="text-center break-text fw-bold" style="vertical-align: middle; border-bottom: none !important;">
                         {{ !empty($bill->account_number) ? wordwrap($bill->account_number, 14, " ", true) : '-' }}
                     </td>
                     @endif
@@ -148,34 +155,35 @@
                 <tr>
                     <td colspan="4" style="text-align: right; padding-right: 15px;">Subtotal Item</td>
                     <td style="padding: 0 4px;"><table class="amount-box"><tr><td class="curr-txt">{{ $currency }}</td><td class="num-txt">{{ number_format($subtotalGross, 0, ',', '.') }}</td></tr></table></td>
-                    <td style="border-top: none; border-bottom: none;"></td>
+                    {{-- 🔥 PERBAIKAN 2: Kosongkan border atas dan bawah pada sel-sel ringkasan 🔥 --}}
+                    <td style="border-top: none !important; border-bottom: none !important;"></td>
                 </tr>
                 @if($totalItemDiscount > 0)
                 <tr>
                     <td colspan="4" style="text-align: right; padding-right: 15px; color: red;">Diskon Item</td>
                     <td style="padding: 0 4px; color: red;"><table class="amount-box"><tr><td class="curr-txt">{{ $currency }}</td><td class="num-txt">- {{ number_format($totalItemDiscount, 0, ',', '.') }}</td></tr></table></td>
-                    <td style="border-top: none; border-bottom: none;"></td>
+                    <td style="border-top: none !important; border-bottom: none !important;"></td>
                 </tr>
                 @endif
                 @if($totalItemTax > 0)
                 <tr>
                     <td colspan="4" style="text-align: right; padding-right: 15px;">Pajak</td>
                     <td style="padding: 0 4px;"><table class="amount-box"><tr><td class="curr-txt">{{ $currency }}</td><td class="num-txt">{{ number_format($totalItemTax, 0, ',', '.') }}</td></tr></table></td>
-                    <td style="border-top: none; border-bottom: none;"></td>
+                    <td style="border-top: none !important; border-bottom: none !important;"></td>
                 </tr>
                 @endif
                 @if($totalCharges > 0)
                 <tr>
                     <td colspan="4" style="text-align: right; padding-right: 15px;">Biaya Ekstra (Lain-lain)</td>
                     <td style="padding: 0 4px;"><table class="amount-box"><tr><td class="curr-txt">{{ $currency }}</td><td class="num-txt">{{ number_format($totalCharges, 0, ',', '.') }}</td></tr></table></td>
-                    <td style="border-top: none; border-bottom: none;"></td>
+                    <td style="border-top: none !important; border-bottom: none !important;"></td>
                 </tr>
                 @endif
                 @if($totalGlobalDiscount > 0)
                 <tr>
                     <td colspan="4" style="text-align: right; padding-right: 15px; color: red;">Potongan Harga Global</td>
                     <td style="padding: 0 4px; color: red;"><table class="amount-box"><tr><td class="curr-txt">{{ $currency }}</td><td class="num-txt">- {{ number_format($totalGlobalDiscount, 0, ',', '.') }}</td></tr></table></td>
-                    <td style="border-top: none; border-bottom: none;"></td>
+                    <td style="border-top: none !important; border-bottom: none !important;"></td>
                 </tr>
                 @endif
             @endif
@@ -184,11 +192,8 @@
             <tr>
                 <td colspan="4" class="fw-bold" style="text-align: right; padding-right: 15px;">GRAND TOTAL</td>
                 <td style="padding: 0 4px; border-top: 1px solid #000;"><table class="amount-box fw-bold"><tr><td class="curr-txt">{{ $currency }}</td><td class="num-txt">{{ number_format($bill->amount, 0, ',', '.') }}</td></tr></table></td>
-                @if($forcePrintDetails)
-                    <td style="border-top: 1px solid #000;"></td>
-                @else
-                    {{-- Rowspan account number mengisi ini otomatis --}}
-                @endif
+                {{-- 🔥 PERBAIKAN 3: Hilangkan border atas, tapi biarkan border bawah alami untuk menutup kotak tabel 🔥 --}}
+                <td style="border-top: none !important;"></td>
             </tr>
         </tbody>
     </table>
@@ -224,23 +229,24 @@
         $getSignatureBase64 = function($signatureDbPath) {
             if (empty($signatureDbPath)) return null;
 
-            // Bersihkan path dari awalan storage/ atau public/
-            $cleanPath = ltrim(str_replace(['storage/', 'public/'], '', $signatureDbPath), '/');
+            // Bersihkan path dari awalan public/ atau storage/ bawaan lama
+            $cleanPath = ltrim(str_replace(['public/', 'storage/'], '', $signatureDbPath), '/');
 
-            // Daftar kemungkinan lokasi file TTD di server Laravel
+            // Daftar kemungkinan lokasi file TTD sesuai struktur baru (users/{id}/signature/...)
             $paths = [
-                storage_path('app/public/' . $cleanPath),
-                public_path('storage/' . $cleanPath),
-                public_path($cleanPath),
-                storage_path('app/' . $cleanPath)
+                storage_path('app/public/' . $cleanPath),       // Path standar Laravel Storage
+                public_path('storage/' . $cleanPath),           // Path jika sudah di-symlink
+                storage_path('app/' . $cleanPath),              // Path jika tersimpan di root app/
             ];
 
             foreach($paths as $path) {
                 if (file_exists($path) && is_file($path)) {
                     $type = pathinfo($path, PATHINFO_EXTENSION);
-                    return 'data:image/' . $type . ';base64,' . base64_encode(file_get_contents($path));
+                    $data = file_get_contents($path);
+                    return 'data:image/' . $type . ';base64,' . base64_encode($data);
                 }
             }
+
             return null; // File fisik tidak ditemukan
         };
 
@@ -268,7 +274,7 @@
                     <span class="fw-bold" style="text-decoration: underline;">{{ $bill->user->name ?? 'Requester' }}</span>
                 </div>
                 <div style="position: absolute; bottom: 10px; left: 0; width: 100%; text-align: center; font-size: 7pt; color: #666;">
-                    {{ $sigMode != 'manual' && $bill->created_at ? $bill->created_at->format('d/m/y H:i') : '&nbsp;' }}
+                    {{ $sigMode != 'manual' && $bill->created_at ? $bill->created_at->format('d/m/y H:i') : '' }}
                 </div>
             </td>
 
@@ -294,7 +300,7 @@
                         @elseif($sigMode != 'manual' && $approval->status == 'APPROVED')
                             <div style="display: inline-block; padding: 5px 10px; font-weight: bold; font-size: 10pt; border: 2px solid #198754; color: #198754; margin-top: 15px;">APPROVED</div>
                         @elseif($sigMode != 'manual' && $approval->status != 'APPROVED')
-                            <div style="color: gray; font-size: 10px; margin-top: 15px;">[ PENDING ]</div>
+                            {{-- <div style="color: gray; font-size: 10px; margin-top: 15px;">[ PENDING ]</div> --}}
                         @endif
                     </div>
 

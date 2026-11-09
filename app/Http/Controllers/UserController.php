@@ -43,6 +43,7 @@ class UserController extends Controller
     }
 
     // 2. SIMPAN PENGGUNA BARU
+    // 2. SIMPAN PENGGUNA BARU
     public function store(Request $request)
     {
         $request->validate([
@@ -51,15 +52,16 @@ class UserController extends Controller
             'password'      => 'required|string|min:6|confirmed',
             'company_id'    => 'nullable|exists:companies,id',
             'department_id' => 'nullable|exists:departments,id',
-            'job_title'     => 'required|string|max:255', // 🔥 Wajib diisi dari dropdown
+            'job_title'     => 'required|string|max:255',
             'roles'         => 'nullable|array',
             'warehouse_ids' => 'nullable|array',
             'avatar'        => 'nullable|image|mimes:jpg,jpeg,png|max:2048',
-            'signature'     => 'nullable|image|mimes:png|max:2048',
+            'signature'     => 'nullable|image|mimes:png,jpg,jpeg|max:2048',
         ]);
 
         try {
-            $userData = [
+            // A. Simpan data dasar terlebih dahulu untuk mendapatkan ID User
+            $user = User::create([
                 'name'          => $request->name,
                 'email'         => $request->email,
                 'password'      => Hash::make($request->password),
@@ -67,22 +69,32 @@ class UserController extends Controller
                 'department_id' => $request->department_id,
                 'job_title'     => $request->job_title,
                 'is_active'     => 1,
-            ];
+            ]);
 
-            // LOGIKA UPLOAD GAMBAR
+            // B. LOGIKA UPLOAD GAMBAR (Persis seperti ProfileController)
+            $needsUpdate = false;
+
+            // Upload Avatar -> public/users/{id}/avatar
             if ($request->hasFile('avatar')) {
-                $userData['avatar'] = $request->file('avatar')->store('avatars', 'public');
+                $user->avatar = $request->file('avatar')->store("users/{$user->id}/avatar", 'public');
+                $needsUpdate = true;
             }
+
+            // Upload Signature -> public/users/{id}/signature
             if ($request->hasFile('signature')) {
-                $userData['signature'] = $request->file('signature')->store('signatures', 'public');
+                $user->signature = $request->file('signature')->store("users/{$user->id}/signature", 'public');
+                $needsUpdate = true;
             }
 
-            $user = User::create($userData);
+            // Jika ada gambar yang diupload, update record usernya
+            if ($needsUpdate) {
+                $user->save();
+            }
 
+            // C. Sync Hak Akses dan Gudang
             if ($request->has('roles')) {
                 $user->syncRoles($request->roles);
             }
-
             if ($request->has('warehouse_ids')) {
                 $user->warehouses()->sync($request->warehouse_ids);
             }
@@ -92,6 +104,7 @@ class UserController extends Controller
             return back()->with('error', 'Gagal menambahkan user: ' . $e->getMessage());
         }
     }
+
 
     // 3. UPDATE DATA PENGGUNA & ROLE
     public function update(Request $request, $id)
@@ -103,12 +116,12 @@ class UserController extends Controller
             'email'         => 'required|string|email|max:255|unique:users,email,' . $id,
             'company_id'    => 'nullable|exists:companies,id',
             'department_id' => 'nullable|exists:departments,id',
-            'job_title'     => 'required|string|max:255', // 🔥 Wajib diisi dari dropdown
+            'job_title'     => 'required|string|max:255',
             'is_active'     => 'required|boolean',
             'roles'         => 'nullable|array',
             'warehouse_ids' => 'nullable|array',
             'avatar'        => 'nullable|image|mimes:jpg,jpeg,png|max:2048',
-            'signature'     => 'nullable|image|mimes:png|max:2048',
+            'signature'     => 'nullable|image|mimes:png,jpg,jpeg|max:2048',
         ]);
 
         try {
@@ -124,18 +137,22 @@ class UserController extends Controller
                 $user->password = Hash::make($request->password);
             }
 
-            // LOGIKA REPLACE GAMBAR LAMA
+            // LOGIKA REPLACE GAMBAR LAMA (Persis seperti ProfileController)
+
+            // 1. Upload Avatar
             if ($request->hasFile('avatar')) {
                 if ($user->avatar && \Illuminate\Support\Facades\Storage::disk('public')->exists($user->avatar)) {
                     \Illuminate\Support\Facades\Storage::disk('public')->delete($user->avatar);
                 }
-                $user->avatar = $request->file('avatar')->store('avatars', 'public');
+                $user->avatar = $request->file('avatar')->store("users/{$user->id}/avatar", 'public');
             }
+
+            // 2. Upload Signature
             if ($request->hasFile('signature')) {
                 if ($user->signature && \Illuminate\Support\Facades\Storage::disk('public')->exists($user->signature)) {
                     \Illuminate\Support\Facades\Storage::disk('public')->delete($user->signature);
                 }
-                $user->signature = $request->file('signature')->store('signatures', 'public');
+                $user->signature = $request->file('signature')->store("users/{$user->id}/signature", 'public');
             }
 
             $user->save();

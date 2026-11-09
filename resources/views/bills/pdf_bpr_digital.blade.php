@@ -92,17 +92,56 @@
                 <th width="13%">Account No</th>
             </tr>
         </thead>
+
         <tbody>
+            {{-- 🔥 PINDAHKAN LOGIKA PERHITUNGAN KE ATAS UNTUK MENDAPATKAN TOTAL ROWSPAN 🔥 --}}
+            @php
+                $subtotalGross = 0; $totalItemDiscount = 0; $totalItemTax = 0;
+
+                foreach($bill->items as $itm) {
+                    $gross = (float)$itm->qty * (float)$itm->price;
+                    $itemDisc = ($itm->discount_type == 'fixed') ? (float)$itm->discount_value : ($gross * (float)$itm->discount_value / 100);
+                    $itemTax = ($itm->tax_type == 'fixed') ? (float)$itm->tax_value : (($gross - $itemDisc) * (float)$itm->tax_value / 100);
+
+                    $subtotalGross += $gross; $totalItemDiscount += $itemDisc; $totalItemTax += $itemTax;
+                }
+                $totalCharges = $bill->charges->sum('amount');
+                $totalGlobalDiscount = $bill->discounts->sum('amount');
+
+                $hasExtraCosts = ($totalItemDiscount > 0 || $totalItemTax > 0 || $totalCharges > 0 || $totalGlobalDiscount > 0);
+                $forcePrintDetails = ($printFormat == 'detail' || ($printFormat == 'summary' && $hasExtraCosts));
+
+                // Hitung Dinamis Rowspan untuk Kolom "Account No" agar menutup rapat sampai bawah tabel!
+                $accRowSpan = $bill->items->count() + 1; // Item(s) + 1 Baris Grand Total
+                if ($forcePrintDetails) {
+                    $accRowSpan += 1; // Tambah 1 Baris Subtotal
+                    if ($totalItemDiscount > 0) $accRowSpan++;
+                    if ($totalItemTax > 0) $accRowSpan++;
+
+                    // Tambah rowspan sesuai JUMLAH baris biaya & diskon
+                    if ($totalCharges > 0) $accRowSpan += $bill->charges->count();
+                    if ($totalGlobalDiscount > 0) $accRowSpan += $bill->discounts->count();
+                }
+            @endphp
+
             @foreach($bill->items as $index => $item)
                 <tr>
                     <td class="text-center">{{ $index + 1 }}</td>
-                    <td class="text-center break-text">@if($index === 0) {{ !empty($bill->vendor_invoice_number) ? wordwrap($bill->vendor_invoice_number, 14, " ", true) : '-' }} @endif</td>
+                    <td class="text-center break-text">
+                        @if($index === 0)
+                            {{ !empty($bill->vendor_invoice_number) ? wordwrap($bill->vendor_invoice_number, 14, " ", true) : '-' }}
+                        @endif</td>
                     <td>
-                        {{ $item->name }}<br>
-                        <span style="font-size: 9pt; color: #444;"><em>(Periode: {{ \Carbon\Carbon::parse($bill->invoice_date)->addMonths($bill->period_offset ?? 0)->translatedFormat('F Y') }})</em></span>
+                        {{-- 1. Nama Item Utama --}}
+                        {{ $item->name }}
+
+                        {{-- 2. Deskripsi Item (Ditampilkan di tengah jika ada) --}}
                         @if(!empty($item->description))
                             <br><span style="font-size: 9pt;">{!! nl2br(e($item->description)) !!}</span>
                         @endif
+
+                        {{-- 3. Periode (Dipindah ke paling bawah) --}}
+                        <br><span style="font-size: 9pt; color: #444;"><em>(Periode: {{ \Carbon\Carbon::parse($bill->invoice_date)->addMonths($bill->period_offset ?? 0)->translatedFormat('F Y') }})</em></span>
                     </td>
                     <td align="center">
                         @php
@@ -119,64 +158,81 @@
                         <table class="amount-box"><tr><td class="curr-txt">{{ $currency }}</td><td class="num-txt">{{ number_format($item->amount, 0, ',', '.') }}</td></tr></table>
                     </td>
                     @if($index === 0)
-                    <td rowspan="{{ $bill->items->count() }}" class="text-center break-text fw-bold" style="vertical-align: middle;">
+                    {{-- 🔥 Kolom Account No dengan Rowspan Dinamis (Tanpa border !important palsu) 🔥 --}}
+                    <td rowspan="{{ $accRowSpan }}" class="text-center break-text fw-bold" style="vertical-align: middle;">
                         {{ !empty($bill->account_number) ? wordwrap($bill->account_number, 14, " ", true) : '-' }}
                     </td>
                     @endif
                 </tr>
             @endforeach
 
-            {{-- LOGIKA SMART SUMMARY --}}
-            @php
-                $subtotalGross = 0; $totalItemDiscount = 0; $totalItemTax = 0;
-
-                foreach($bill->items as $itm) {
-                    $gross = (float)$itm->qty * (float)$itm->price;
-                    $itemDisc = ($itm->discount_type == 'fixed') ? (float)$itm->discount_value : ($gross * (float)$itm->discount_value / 100);
-                    $itemTax = ($itm->tax_type == 'fixed') ? (float)$itm->tax_value : (($gross - $itemDisc) * (float)$itm->tax_value / 100);
-
-                    $subtotalGross += $gross; $totalItemDiscount += $itemDisc; $totalItemTax += $itemTax;
-                }
-                $totalCharges = $bill->charges->sum('amount');
-                $totalGlobalDiscount = $bill->discounts->sum('amount');
-
-                $hasExtraCosts = ($totalItemDiscount > 0 || $totalItemTax > 0 || $totalCharges > 0 || $totalGlobalDiscount > 0);
-                $forcePrintDetails = ($printFormat == 'detail' || ($printFormat == 'summary' && $hasExtraCosts));
-            @endphp
-
             @if($forcePrintDetails)
                 <tr>
                     <td colspan="4" style="text-align: right; padding-right: 15px;">Subtotal Item</td>
                     <td style="padding: 0 4px;"><table class="amount-box"><tr><td class="curr-txt">{{ $currency }}</td><td class="num-txt">{{ number_format($subtotalGross, 0, ',', '.') }}</td></tr></table></td>
-                    <td style="border-top: none; border-bottom: none;"></td>
+                    {{-- Kolom ke-6 DIHAPUS --}}
                 </tr>
                 @if($totalItemDiscount > 0)
                 <tr>
                     <td colspan="4" style="text-align: right; padding-right: 15px; color: red;">Diskon Item</td>
                     <td style="padding: 0 4px; color: red;"><table class="amount-box"><tr><td class="curr-txt">{{ $currency }}</td><td class="num-txt">- {{ number_format($totalItemDiscount, 0, ',', '.') }}</td></tr></table></td>
-                    <td style="border-top: none; border-bottom: none;"></td>
+                    {{-- Kolom ke-6 DIHAPUS --}}
                 </tr>
                 @endif
                 @if($totalItemTax > 0)
                 <tr>
                     <td colspan="4" style="text-align: right; padding-right: 15px;">Pajak</td>
                     <td style="padding: 0 4px;"><table class="amount-box"><tr><td class="curr-txt">{{ $currency }}</td><td class="num-txt">{{ number_format($totalItemTax, 0, ',', '.') }}</td></tr></table></td>
-                    <td style="border-top: none; border-bottom: none;"></td>
+                    {{-- Kolom ke-6 DIHAPUS --}}
                 </tr>
                 @endif
+
+                {{-- RINCIAN BIAYA TAMBAHAN --}}
                 @if($totalCharges > 0)
-                <tr>
-                    <td colspan="4" style="text-align: right; padding-right: 15px;">Biaya Ekstra (Lain-lain)</td>
-                    <td style="padding: 0 4px;"><table class="amount-box"><tr><td class="curr-txt">{{ $currency }}</td><td class="num-txt">{{ number_format($totalCharges, 0, ',', '.') }}</td></tr></table></td>
-                    <td style="border-top: none; border-bottom: none;"></td>
-                </tr>
+                    @foreach($bill->charges as $charge)
+                        @php
+                            $chargeName = optional($charge->chargeType)->name ?? 'Biaya Ekstra';
+                            if (!empty($charge->note)) {
+                                $chargeName .= ' (' . $charge->note . ')';
+                            }
+                        @endphp
+                        <tr>
+                            <td colspan="4" style="text-align: right; padding-right: 15px;">{{ $chargeName }}</td>
+                            <td style="padding: 0 4px;">
+                                <table class="amount-box">
+                                    <tr>
+                                        <td class="curr-txt">{{ $currency }}</td>
+                                        <td class="num-txt">{{ number_format($charge->amount, 0, ',', '.') }}</td>
+                                    </tr>
+                                </table>
+                            </td>
+                            {{-- Kolom ke-6 DIHAPUS --}}
+                        </tr>
+                    @endforeach
                 @endif
+
+                {{-- RINCIAN POTONGAN HARGA GLOBAL --}}
                 @if($totalGlobalDiscount > 0)
-                <tr>
-                    <td colspan="4" style="text-align: right; padding-right: 15px; color: red;">Potongan Harga Global</td>
-                    <td style="padding: 0 4px; color: red;"><table class="amount-box"><tr><td class="curr-txt">{{ $currency }}</td><td class="num-txt">- {{ number_format($totalGlobalDiscount, 0, ',', '.') }}</td></tr></table></td>
-                    <td style="border-top: none; border-bottom: none;"></td>
-                </tr>
+                    @foreach($bill->discounts as $discount)
+                        @php
+                            $discountName = optional($discount->discountType)->name ?? 'Potongan Harga';
+                            if (!empty($discount->note)) {
+                                $discountName .= ' (' . $discount->note . ')';
+                            }
+                        @endphp
+                        <tr>
+                            <td colspan="4" style="text-align: right; padding-right: 15px; color: red;">{{ $discountName }}</td>
+                            <td style="padding: 0 4px; color: red;">
+                                <table class="amount-box">
+                                    <tr>
+                                        <td class="curr-txt">{{ $currency }}</td>
+                                        <td class="num-txt">- {{ number_format($discount->amount, 0, ',', '.') }}</td>
+                                    </tr>
+                                </table>
+                            </td>
+                            {{-- Kolom ke-6 DIHAPUS --}}
+                        </tr>
+                    @endforeach
                 @endif
             @endif
 
@@ -184,13 +240,10 @@
             <tr>
                 <td colspan="4" class="fw-bold" style="text-align: right; padding-right: 15px;">GRAND TOTAL</td>
                 <td style="padding: 0 4px; border-top: 1px solid #000;"><table class="amount-box fw-bold"><tr><td class="curr-txt">{{ $currency }}</td><td class="num-txt">{{ number_format($bill->amount, 0, ',', '.') }}</td></tr></table></td>
-                @if($forcePrintDetails)
-                    <td style="border-top: 1px solid #000;"></td>
-                @else
-                    {{-- Rowspan account number mengisi ini otomatis --}}
-                @endif
+                {{-- Kolom ke-6 DIHAPUS --}}
             </tr>
         </tbody>
+
     </table>
 
     {{-- KOTAK 3: TANDA TANGAN DINAMIS --}}
@@ -268,7 +321,7 @@
                     <span class="fw-bold" style="text-decoration: underline;">{{ $bill->user->name ?? 'Requester' }}</span>
                 </div>
                 <div style="position: absolute; bottom: 10px; left: 0; width: 100%; text-align: center; font-size: 7pt; color: #666;">
-                    {{ $sigMode != 'manual' && $bill->created_at ? $bill->created_at->format('d/m/y H:i') : '&nbsp;' }}
+                    {{ $sigMode != 'manual' && $bill->created_at ? $bill->created_at->format('d/m/y H:i') : '' }}
                 </div>
             </td>
 
@@ -294,7 +347,7 @@
                         @elseif($sigMode != 'manual' && $approval->status == 'APPROVED')
                             <div style="display: inline-block; padding: 5px 10px; font-weight: bold; font-size: 10pt; border: 2px solid #198754; color: #198754; margin-top: 15px;">APPROVED</div>
                         @elseif($sigMode != 'manual' && $approval->status != 'APPROVED')
-                            <div style="color: gray; font-size: 10px; margin-top: 15px;">[ PENDING ]</div>
+                            {{-- <div style="color: gray; font-size: 10px; margin-top: 15px;">[ PENDING ]</div> --}}
                         @endif
                     </div>
 
