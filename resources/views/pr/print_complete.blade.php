@@ -132,39 +132,134 @@
         </tbody>
     </table>
 
-    {{-- KOTAK TANDA TANGAN (MATRIKS) --}}
+    {{-- KOTAK TANDA TANGAN (MATRIKS) DENGAN SMART LOOKUP --}}
     @php
         $totalCols = 1 + $approvals->count();
+
+        // Helper untuk mencari file gambar TTD (antisipasi struktur folder baru)
+        $getSignatureBase64 = function($signatureDbPath) {
+            if (empty($signatureDbPath)) return null;
+            $cleanPath = ltrim(str_replace(['public/', 'storage/'], '', $signatureDbPath), '/');
+            $paths = [
+                storage_path('app/public/' . $cleanPath),
+                public_path('storage/' . $cleanPath),
+                storage_path('app/' . $cleanPath)
+            ];
+            foreach($paths as $path) {
+                if (file_exists($path) && is_file($path)) {
+                    $type = pathinfo($path, PATHINFO_EXTENSION);
+                    $data = file_get_contents($path);
+                    return 'data:image/' . $type . ';base64,' . base64_encode($data);
+                }
+            }
+            return null;
+        };
+
+        // Base64 TTD Requester
+        $prepSigBase64 = null;
+        if ($pr->user && !empty($pr->user->signature)) {
+            $prepSigBase64 = $getSignatureBase64($pr->user->signature);
+        }
     @endphp
 
     <table class="signature">
         <tr>
+            {{-- 1. KOTAK REQUESTER --}}
             <td style="width: {{ 100 / ($totalCols > 0 ? $totalCols : 1) }}%;">
                 <div class="sign-title">Dibuat Oleh:</div>
-                <div class="sign-status" style="color: #198754;">
-                    Diajukan<br>{{ date('d/m/Y', strtotime($pr->created_at)) }}
-                </div>
-                <div class="sign-name">{{ $pr->user->name ?? 'Pemohon' }}<br><span style="font-size: 7.5pt; font-weight: normal;">Requester</span></div>
+
+                {{-- Area Tanda Tangan / Stempel --}}
+                @if($prepSigBase64)
+                    <div style="text-align: center; margin-top: 15px;">
+                        <img src="{{ $prepSigBase64 }}" style="max-height: 50px; max-width: 120px; object-fit: contain;">
+                    </div>
+                @else
+                    <div class="sign-status" style="color: #198754;">
+                        Diajukan<br>{{ date('d/m/Y', strtotime($pr->created_at)) }}
+                    </div>
+                @endif
+
+                <div class="sign-name">{{ optional($pr->user)->name ?? 'Pemohon' }}<br><span style="font-size: 7.5pt; font-weight: normal;">Requester</span></div>
             </td>
 
+            {{-- 2. KOTAK APPROVER (BERJENJANG) --}}
             @foreach($approvals as $idx => $approval)
             <td style="width: {{ 100 / $totalCols }}%;">
                 <div class="sign-title">{{ $loop->last ? 'Disetujui Oleh:' : 'Diperiksa Oleh:' }}</div>
 
+                @php
+                    // Ambil TTD Approver
+                    $apprSigBase64 = null;
+                    if ($approval->status === 'APPROVED' && optional($approval->approver)->signature) {
+                        $apprSigBase64 = $getSignatureBase64($approval->approver->signature);
+                    }
+
+                    // Smart Lookup Nama
+                    $namaTtd = "";
+                    $uid = $approval->user_id ?? $approval->approver_id ?? $approval->specific_user_id ?? null;
+
+                    if (!empty($uid)) {
+                        $userTtd = \App\Models\User::find($uid);
+                        $namaTtd = $userTtd ? $userTtd->name : '';
+                    }
+
+                    $roleName = optional($approval->role)->name ?? 'Manager';
+                    $deptName = '';
+                    if (!empty($approval->target_department_id) && $approval->target_department_id !== 'all') {
+                        $dept = \DB::table('departments')->where('id', $approval->target_department_id)->first();
+                        $deptName = $dept ? $dept->name : '';
+                    } else {
+                        $deptName = optional(optional($pr->user)->department)->name ?? '';
+                    }
+
+                    $jabatanLengkap = trim($roleName . ' ' . $deptName);
+
+                    if (empty($namaTtd) && !empty($roleName)) {
+                        $potentialUsers = \App\Models\User::role($roleName);
+
+                        if (!empty($approval->target_department_id) && $approval->target_department_id !== 'all') {
+                            $potentialUsers->where('department_id', $approval->target_department_id);
+                        } elseif (empty($approval->target_department_id)) {
+                            $potentialUsers->where('department_id', optional($pr->user)->department_id);
+                        }
+
+                        $firstUser = $potentialUsers->first();
+                        if ($firstUser) {
+                            $namaTtd = $firstUser->name;
+                        }
+                    }
+
+                    if (empty($namaTtd)) {
+                        $namaTtd = $jabatanLengkap;
+                    }
+                @endphp
+
+                {{-- Area Tanda Tangan / Stempel Approver --}}
                 @if($approval->status == 'APPROVED')
-                    <div class="sign-status" style="color: #198754;">
-                        Telah Disetujui<br>{{ date('d/m/Y', strtotime($approval->approved_at)) }}
-                    </div>
+                    @if($apprSigBase64)
+                        <div style="text-align: center; margin-top: 15px;">
+                            <img src="{{ $apprSigBase64 }}" style="max-height: 50px; max-width: 120px; object-fit: contain;">
+                        </div>
+                    @else
+                        <div class="sign-status" style="color: #198754;">
+                            Telah Disetujui<br>{{ date('d/m/Y', strtotime($approval->approved_at)) }}
+                        </div>
+                    @endif
                 @elseif($approval->status == 'REJECTED')
                     <div class="sign-status" style="color: #dc3545;">Ditolak</div>
                 @endif
 
+                {{-- Nama Selalu Muncul (Smart Lookup) --}}
+                {{-- <div class="sign-name">
+                    {{ $namaTtd }}
+                    <br><span style="font-size: 7.5pt; font-weight: normal;">{{ $roleName }}</span>
+
+                </div> --}}
+
+                {{-- Nama Selalu Muncul (Dengan baris kosong transparan agar sejajar dengan kotak pertama) --}}
                 <div class="sign-name">
-                    @if($approval->status == 'APPROVED' || $approval->status == 'REJECTED')
-                        {{ \App\Models\User::find($approval->approved_by)->name ?? optional($approval->role)->name }}
-                    @else
-                        ({{ optional($approval->role)->name ?? 'Atasan' }})
-                    @endif
+                    {{ $namaTtd }}
+                    <br><span style="font-size: 7.5pt; color: transparent;">-</span>
                 </div>
             </td>
             @endforeach

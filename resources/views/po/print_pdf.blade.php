@@ -280,10 +280,34 @@
         // Membagi lebar kotak secara merata berdasarkan jumlah total kotak (Prepared + Approver)
         $equalWidth = 100 / ($totalCols > 0 ? $totalCols : 1);
 
+        // 🔥 HELPER SAKTI: PENCARI FILE GAMBAR TTD ANTI-GAGAL (VERSI PO) 🔥
+        $getSignatureBase64 = function($signatureDbPath) {
+            if (empty($signatureDbPath)) return null;
+
+            // Bersihkan path dari awalan public/ atau storage/
+            $cleanPath = ltrim(str_replace(['public/', 'storage/'], '', $signatureDbPath), '/');
+
+            // Daftar kemungkinan lokasi file TTD sesuai struktur baru (users/{id}/signature/...)
+            $paths = [
+                storage_path('app/public/' . $cleanPath),       // Path standar Laravel Storage
+                public_path('storage/' . $cleanPath),           // Path jika sudah di-symlink
+                storage_path('app/' . $cleanPath),              // Path jika tersimpan di root app/
+            ];
+
+            foreach($paths as $path) {
+                if (file_exists($path) && is_file($path)) {
+                    $type = pathinfo($path, PATHINFO_EXTENSION);
+                    $data = file_get_contents($path);
+                    return 'data:image/' . $type . ';base64,' . base64_encode($data);
+                }
+            }
+            return null; // File fisik tidak ditemukan
+        };
+
+        // Siapkan TTD Pembuat (Requester)
         $prepSigBase64 = null;
-        if ($po->user && $po->user->signature) {
-            $path = public_path('storage/' . $po->user->signature);
-            if (file_exists($path)) { $prepSigBase64 = 'data:image/' . pathinfo($path, PATHINFO_EXTENSION) . ';base64,' . base64_encode(file_get_contents($path)); }
+        if ($po->user && !empty($po->user->signature)) {
+            $prepSigBase64 = $getSignatureBase64($po->user->signature);
         }
     @endphp
 
@@ -316,15 +340,12 @@
             @foreach($approvals as $approval)
                 <td style="border-top: none; border-bottom: none; height: 70px; text-align: center; vertical-align: bottom;">
                     @php
-                        // 🔥 LOGIKA PENCARIAN TANDA TANGAN APPROVER 🔥
+                        // 🔥 LOGIKA PENCARIAN TTD APPROVER MENGGUNAKAN HELPER BARU 🔥
                         $apprSigBase64 = null;
                         if ($approval->status == 'APPROVED' && $approval->approved_by) {
                             $apprUser = \App\Models\User::find($approval->approved_by);
-                            if ($apprUser && $apprUser->signature) {
-                                $path = public_path('storage/' . $apprUser->signature);
-                                if (file_exists($path)) {
-                                    $apprSigBase64 = 'data:image/' . pathinfo($path, PATHINFO_EXTENSION) . ';base64,' . base64_encode(file_get_contents($path));
-                                }
+                            if ($apprUser && !empty($apprUser->signature)) {
+                                $apprSigBase64 = $getSignatureBase64($apprUser->signature);
                             }
                         }
                     @endphp
@@ -338,7 +359,6 @@
                         @elseif($approval->status == 'REJECTED')
                             <div style="color: red; font-size: 10px; margin-bottom: 15px;">[ REJECTED ]</div>
                         @else
-                            <!-- 🔥 TULISAN PENDING DIHILANGKAN, DIBIARKAN KOSONG UNTUK TANDA TANGAN BASAH 🔥 -->
                             <div style="height: 15px; margin-bottom: 15px;"></div>
                         @endif
                     @endif
