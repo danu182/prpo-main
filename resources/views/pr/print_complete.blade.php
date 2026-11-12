@@ -82,7 +82,20 @@
             <tr>
                 <td style="text-align: center;">{{ $index + 1 }}</td>
                 <td class="desc-cell">
-                    <strong>{{ optional($item->item)->name ?? 'Item Tidak Diketahui' }}</strong>
+                    @php
+                        $customName = trim($item->item_name);
+                        $masterName = optional($item->item)->name ?? 'Item Tidak Diketahui';
+                    @endphp
+
+                    {{-- Jika ada Nama Spesifik, tampilkan, lalu jadikan Nama Master sebagai referensi (Katalog) --}}
+                    @if(!empty($customName))
+                        <strong>{{ $customName }}</strong><br>
+                        <span style="font-size: 8pt; color: #666;"><em>(Katalog: {{ $masterName }})</em></span>
+                    @else
+                        {{-- Jika tidak ada Nama Spesifik, langsung tampilkan Nama Master --}}
+                        <strong>{{ $masterName }}</strong>
+                    @endif
+
                     <div style="font-size: 8pt; color: #555; margin-top: 5px;">
                         {!! $item->specification ?? '-' !!}
                     </div>

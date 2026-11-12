@@ -581,9 +581,16 @@ class ItemController extends Controller
             $item = \App\Models\Item::where('name', $row->name)->first();
 
             if (!$item) {
-                $lastItem = \App\Models\Item::orderBy('id', 'desc')->first();
-                $nextId   = $lastItem ? $lastItem->id + 1 : 1;
-                $newCode  = 'ITM-' . str_pad($nextId, 4, '0', STR_PAD_LEFT);
+                // 🔥 PERBAIKAN: Gunakan rumus SKU-KATEGORI seperti di fitur Tambah Manual 🔥
+                $categoryCode = !empty($row->category_code) ? strtoupper($row->category_code) : 'UMM';
+                $prefix = 'SKU-' . $categoryCode . '-';
+
+                $lastItem = \App\Models\Item::where('code', 'like', $prefix . '%')
+                                ->orderBy('id', 'desc')
+                                ->first();
+
+                $nextNumber = $lastItem ? ((int) str_replace($prefix, '', $lastItem->code)) + 1 : 1;
+                $newCode  = $prefix . str_pad($nextNumber, 5, '0', STR_PAD_LEFT);
             } else {
                 $newCode  = $item->code;
             }
@@ -604,6 +611,7 @@ class ItemController extends Controller
                     'max_stock'      => $row->max_stock,
                     'specification'  => $row->specification,
                     'is_active'      => 1,
+                    'is_asset'       => 0, // Pastikan diset 0 untuk Master Barang biasa
                 ]
             );
         }

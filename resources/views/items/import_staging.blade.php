@@ -48,7 +48,7 @@
                     @php
                         $statusColor = 'secondary';
                         $statusName = strtoupper($batch->status);
-                        if($batch->status == 'waiting_approval') { $statusColor = 'warning text-dark'; $statusName = 'MENUNGGU APPROVAL'; }
+                        if($batch->status == 'pending') { $statusColor = 'warning text-dark'; $statusName = 'MENUNGGU APPROVAL'; }
                         if($batch->status == 'approved') { $statusColor = 'success'; $statusName = 'DISETUJUI (SAH)'; }
                         if($batch->status == 'rejected') { $statusColor = 'danger'; $statusName = 'DITOLAK'; }
                     @endphp
@@ -73,13 +73,14 @@
             </div>
         </div>
 
-        {{-- KOLOM TOMBOL AKSI --}}
+        {{-- KOLOM TOMBOL AKSI (TUNGGAL & BERSIH) --}}
         <div class="col-md-3">
             <div class="p-3 text-center text-white border-0 shadow-sm card rounded-4 h-100 bg-dark d-flex flex-column justify-content-center">
                 @php
                     $errCount = $batch->details->where('is_valid', false)->count();
+                    $batchStatus = strtolower(trim($batch->status));
 
-                    // Cek giliran persetujuan
+                    // 1. Ambil Giliran Persetujuan Saat Ini
                     $currentApproval = \App\Models\DocumentApproval::with('role')
                         ->where('document_id', $batch->id)
                         ->where('document_type', get_class($batch))
@@ -87,21 +88,38 @@
                         ->orderBy('step_order', 'asc')
                         ->first();
 
-                    // Hak Akses (Approver atau Super Admin)
+                    // 2. Evaluasi Hak Akses (Is Approver)
                     $isApprover = false;
+                    $isSuperAdmin = false;
+
                     if ($currentApproval && auth()->check()) {
                         $user = auth()->user();
-                        $isApprover = $user->hasRole($currentApproval->role->name) ||
-                                      $user->hasRole('Super Admin') ||
-                                      $user->hasRole('Super Administrator') ||
-                                      $user->id === 1;
+                        $uid = $currentApproval->user_id ?? $currentApproval->approver_id ?? $currentApproval->specific_user_id ?? null;
+
+                        // Cek manual jika ID user = 1 atau Role = Super Admin/Super Administrator
+                        $roles = $user->getRoleNames()->map(fn($role) => strtolower(trim($role)))->toArray();
+                        if ($user->id === 1 || in_array('super admin', $roles) || in_array('super administrator', $roles)) {
+                            $isSuperAdmin = true;
+                            $isApprover = true; // Super Admin otomatis jadi Approver
+                        }
+
+                        // Jika bukan Super Admin, cek spesifik UID atau Role Workflow
+                        if (!$isSuperAdmin) {
+                            if ($uid && (int)$user->id === (int)$uid) {
+                                $isApprover = true;
+                            } elseif ($currentApproval->role) {
+                                $roleTarget = strtolower(trim($currentApproval->role->name));
+                                if (in_array($roleTarget, $roles)) {
+                                    $isApprover = true;
+                                }
+                            }
+                        }
                     }
                 @endphp
 
                 {{-- KONDISI 1: DRAFT / REJECTED --}}
-                @if(in_array(strtolower($batch->status), ['draft', 'rejected']))
+                @if(in_array($batchStatus, ['draft', 'rejected']))
 
-                    {{-- 🔥 RUTE DIPERBAIKI: items.import.submit_approval 🔥 --}}
                     <form id="formSubmitApproval" action="{{ route('items.import.submit_approval', $batch->id) }}" method="POST" class="w-100">
                         @csrf
                         <button type="button" id="btnSubmitApproval" class="mb-2 shadow-sm btn btn-warning w-100 fw-bold rounded-pill" {{ $errCount > 0 ? 'disabled' : '' }}>
@@ -109,7 +127,6 @@
                         </button>
                     </form>
 
-                    {{-- 🔥 RUTE DIPERBAIKI: items.import_staging.cancel 🔥 --}}
                     <form id="formCancelDraft" action="{{ route('items.import_staging.cancel', $batch->id) }}" method="POST" class="w-100">
                         @csrf
                         @method('DELETE')
@@ -118,12 +135,14 @@
                         </button>
                     </form>
 
-                {{-- KONDISI 2: WAITING APPROVAL & USER ADALAH ATASAN --}}
-                @elseif(strtolower($batch->status) === 'waiting_approval' && $isApprover)
+                {{-- KONDISI 2: PENDING & USER ADALAH ATASAN (ATAU SUPER ADMIN) --}}
+                @elseif($batchStatus === 'pending' && $isApprover)
 
-                    <div class="mb-2 small text-warning fw-bold"><i class="bi bi-exclamation-circle-fill me-1"></i> Menunggu Keputusan Anda</div>
+                    <div class="mb-2 small text-warning fw-bold">
+                        <i class="bi bi-exclamation-circle-fill me-1"></i> Menunggu Keputusan Anda
+                        @if($isSuperAdmin) <br><span style="font-size: 10px; color:#fff;">(Super Admin Access)</span> @endif
+                    </div>
 
-                    {{-- 🔥 RUTE DIPERBAIKI: items.import.decide 🔥 --}}
                     <form action="{{ route('items.import.decide', $batch->id) }}" method="POST" class="mb-2 w-100">
                         @csrf
                         <input type="hidden" name="action" value="APPROVE">
@@ -132,7 +151,6 @@
                         </button>
                     </form>
 
-                    {{-- 🔥 RUTE DIPERBAIKI: items.import.decide 🔥 --}}
                     <form action="{{ route('items.import.decide', $batch->id) }}" method="POST" class="w-100">
                         @csrf
                         <input type="hidden" name="action" value="REJECT">
@@ -141,26 +159,26 @@
                         </button>
                     </form>
 
-                {{-- KONDISI 3: WAITING APPROVAL TAPI USER BUKAN ATASAN --}}
-                @elseif(strtolower($batch->status) === 'waiting_approval' && !$isApprover)
+                {{-- KONDISI 3: PENDING TAPI USER BUKAN ATASAN --}}
+                @elseif($batchStatus === 'pending' && !$isApprover)
 
                     <div class="mb-2 display-4 text-warning"><i class="bi bi-hourglass-split"></i></div>
                     <div class="small fw-bold">Menunggu Persetujuan</div>
                     <div class="text-white-50" style="font-size: 0.75rem;">Giliran: <strong>{{ strtoupper($currentApproval->role->name ?? 'Atasan') }}</strong></div>
 
                 {{-- KONDISI 4: APPROVED --}}
-                @elseif(strtolower($batch->status) === 'approved')
+                @elseif($batchStatus === 'approved')
 
                     <div class="mb-2 display-4 text-success"><i class="bi bi-check-circle-fill"></i></div>
                     <h6 class="mb-0 fw-bold text-success">TELAH DISETUJUI</h6>
                     <div class="text-white-50" style="font-size: 0.75rem;">Barang telah masuk ke Katalog Utama</div>
 
+                @else
+                    <div class="small fw-bold">Status: {{ strtoupper($batchStatus) }}</div>
                 @endif
-
             </div>
         </div>
     </div>
-
     {{-- TABEL DATA --}}
     <div class="border-0 border-4 shadow-sm card rounded-4 border-top border-warning">
         <div class="py-3 bg-white card-header d-flex justify-content-between align-items-center">

@@ -97,7 +97,8 @@
                         @forelse($requests as $pr)
                             <tr>
                                 <td class="py-3 ps-4">
-                                    <a href="{{ route('pr.edit', $pr->pr_number) }}" class="fw-bold text-decoration-none">
+                                    {{-- 🔥 PERBAIKAN 1: Tautan diarahkan ke halaman SHOW (Detail), BUKAN EDIT 🔥 --}}
+                                    <a href="{{ route('pr.show', $pr->pr_number) }}" class="fw-bold text-decoration-none">
                                         {{ $pr->pr_number }}
                                     </a>
 
@@ -105,14 +106,15 @@
                                         <div class="mt-1 small text-muted" style="font-size: 0.75rem;">
                                             <i class="bi bi-link-45deg"></i> Ref PO:
                                             @foreach($pr->purchaseOrders as $po)
-                                                <a href="{{ route('po.show', $po->id) }}" class="pb-1 border-opacity-25 text-muted text-decoration-none fw-semibold border-bottom border-secondary">
+                                                {{-- 🔥 PERBAIKAN 2: Tautan PO menggunakan 'po_number' (slug), bukan 'id' 🔥 --}}
+                                                <a href="{{ route('po.show', $po->po_number) }}" class="pb-1 border-opacity-25 text-muted text-decoration-none fw-semibold border-bottom border-secondary">
                                                     {{ $po->po_number }}
                                                 </a>{{ !$loop->last ? ', ' : '' }}
                                             @endforeach
                                         </div>
                                     @endif
 
-                                    <!-- 🔥 LENCANA INDIKATOR SMART RESTOCK (WARNA BARU) 🔥 -->
+                                    <!-- LENCANA INDIKATOR SMART RESTOCK -->
                                     @php
                                         $isAutoRestock = false;
                                         if(!empty($pr->description) && str_contains($pr->description, 'Auto-Restock')) $isAutoRestock = true;

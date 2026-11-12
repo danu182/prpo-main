@@ -39,4 +39,14 @@ class ItemImportBatch extends Model
     }
 
 
+    public function user()
+    {
+        // Jika kolom di database Anda bernama 'user_id'
+        return $this->belongsTo(User::class, 'user_id');
+
+        // Catatan: Jika di tabel Anda menggunakan nama kolom 'created_by',
+        // ganti kodenya menjadi: return $this->belongsTo(User::class, 'created_by');
+    }
+
+
 }
