@@ -29,6 +29,7 @@ class UomSeeder extends Seeder
             ['code' => 'BTL',  'name' => 'Botol',        'description' => 'Satuan kemasan botol'],
             ['code' => 'KLG',  'name' => 'Kaleng',       'description' => 'Satuan kemasan kaleng'],
             ['code' => 'GLN',  'name' => 'Galon',        'description' => 'Satuan galon (air minum/cairan)'],
+            ['code' => 'RIM',  'name' => 'Rim',        'description' => 'Satuan kertas pack 500 lembar (kertas)'],
 
             // ==========================================
             // 3. SATUAN BERAT (MASS) -> Untuk Bahan Baku
@@ -57,7 +58,10 @@ class UomSeeder extends Seeder
             ['code' => 'PKT',  'name' => 'Paket', 'description' => 'Satuan borongan / jasa komplit'],
             ['code' => 'LOT',  'name' => 'Lot',   'description' => 'Satuan proyek atau lot pekerjaan'],
             ['code' => 'JAM',  'name' => 'Jam',   'description' => 'Satuan waktu (untuk sewa alat / upah tenaga)'],
+            ['code' => 'DAY',  'name' => 'Hari', 'description' => 'Satuan waktu harian (untuk langganan/sewa)'],
+            ['code' => 'MGU',  'name' => 'Minggu', 'description' => 'Satuan waktu minggunan (untuk langganan/sewa)'],
             ['code' => 'BLN',  'name' => 'Bulan', 'description' => 'Satuan waktu bulanan (untuk langganan/sewa)'],
+            ['code' => 'THN',  'name' => 'Tahun', 'description' => 'Satuan waktu tahunan (untuk langganan/sewa)'],
         ];
 
         foreach ($uoms as $uom) {

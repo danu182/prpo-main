@@ -14,8 +14,8 @@ class CompanySeeder extends Seeder
         Company::firstOrCreate(
             ['code' => 'HO-001'],
             [
-                'name' => 'PT Induk Nusantara (Head Office)',
-                'address' => 'Gedung Pusat, Jakarta',
+                'name' => 'Destin Asian Media Group (Head Office)',
+                'address' => 'Menara Batavia, 11th Floor | Jl. K.H. Mas Mansyur Kav. 126 | Jakarta 10220 - Indonesia',
                 'is_head_office' => true,
             ]
         );
@@ -35,7 +35,7 @@ class CompanySeeder extends Seeder
                 ['name' => $comp['name']],
                 [
                     'code' => $comp['code'],
-                    'address' => 'Gedung Pusat, Lt. 5, Jl. Sudirman No. 1, Jakarta',
+                    'address' => 'Menara Batavia, 11th Floor | Jl. K.H. Mas Mansyur Kav. 126 | Jakarta 10220 - Indonesia',
                     'is_head_office' => false,
                 ]
             );
