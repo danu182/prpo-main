@@ -19,16 +19,16 @@ class RolePermissionSeeder extends Seeder
         $permissions = [
             // 📁 GRUP MASTER DATA
             'menu_master_data',
-                'view_items', 'manage_items',
+                'view_items', 'manage_items', 'approve_master', // 🔥 Tambah approve_master
                 'view_companies', 'manage_companies',
                 'view_vendors', 'manage_vendors',
-                'view_assets_master', // Untuk Kategori Aset
+                'view_assets_master',
 
             // 📁 GRUP PURCHASING
             'menu_purchasing',
-                'view_pr', 'create_pr', 'approve_pr',
-                'view_po', 'create_po', 'approve_po',
-                'view_purchasing_reports', // Untuk analisa harga
+                'view_pr', 'create_pr', 'manage_pr', 'approve_pr', // 🔥 Tambah manage_pr
+                'view_po', 'create_po', 'manage_po', 'approve_po', // 🔥 Tambah manage_po
+                'view_purchasing_reports',
 
             // 📁 GRUP RECEIVING
             'menu_receiving',
@@ -36,7 +36,7 @@ class RolePermissionSeeder extends Seeder
 
             // 📁 GRUP WAREHOUSE
             'menu_warehouse',
-                'view_inventory', 'manage_inventory', // Manage mencakup GI, mutasi, opname
+                'view_inventory', 'manage_inventory',
 
             // 📁 GRUP FIXED ASSET
             'menu_assets',
@@ -44,10 +44,10 @@ class RolePermissionSeeder extends Seeder
 
             // 📁 GRUP FINANCE
             'menu_finance',
-                'view_invoices', 'manage_invoices', // A/P Tagihan Vendor
-                'view_bills', 'manage_bills',       // OPEX
-                'view_payments', 'manage_payments', // Proses Bayar
-                'view_inventory_valuation',         // Valuasi Rp
+                'view_invoices', 'manage_invoices',
+                'view_bills', 'manage_bills', 'approve_bills', // 🔥 Tambah approve_bills (OPEX)
+                'view_payments', 'manage_payments',
+                'view_inventory_valuation',
 
             // 📁 GRUP LAPORAN
             'menu_reports',
@@ -63,17 +63,40 @@ class RolePermissionSeeder extends Seeder
         }
 
         // ==========================================
-        // 2. PEMBAGIAN HAK AKSES PER JABATAN
+        // 2. PEMBAGIAN HAK AKSES PER JABATAN (Berdasarkan Tabel Baru)
         // ==========================================
 
-        // A. STAFF (Hanya bisa buka menu Purchasing & Finance tertentu)
-        $roleStaff = Role::firstOrCreate(['name' => 'Staff']);
-        $roleStaff->syncPermissions([
-            'menu_purchasing', 'view_pr', 'create_pr',
-            'menu_finance', 'view_bills', 'manage_bills'
+        // A. USER / STAFF (Hanya membuat/manage tanpa hak setuju)
+        $roleUser = Role::firstOrCreate(['name' => 'User']);
+        $roleUser->syncPermissions([
+            'menu_purchasing', 'view_pr', 'create_pr', 'manage_pr',
+            'view_po', 'create_po', 'manage_po',
+            'menu_finance', 'view_bills', 'manage_bills' // OPEX
         ]);
 
-        // B. FINANCE (Dewa di area Keuangan)
+        // B. SUPERVISOR (Manage + Hak Setuju / Approval)
+        $roleSupervisor = Role::firstOrCreate(['name' => 'Supervisor']);
+        $roleSupervisor->syncPermissions([
+            'menu_purchasing', 'view_pr', 'create_pr', 'manage_pr', 'approve_pr',
+            'view_po', 'create_po', 'manage_po', 'approve_po',
+            'menu_finance', 'view_bills', 'manage_bills', 'approve_bills', // OPEX
+            'menu_master_data', 'view_items', 'manage_items', 'approve_master' // Master Barang
+        ]);
+
+        // C. MANAGER (Sama dengan Supervisor + Lihat Laporan)
+        $roleManager = Role::firstOrCreate(['name' => 'Manager']);
+        $roleManager->syncPermissions([
+            'menu_purchasing', 'view_pr', 'create_pr', 'manage_pr', 'approve_pr',
+            'view_po', 'create_po', 'manage_po', 'approve_po',
+            'menu_finance', 'view_bills', 'manage_bills', 'approve_bills', // OPEX
+            'menu_master_data', 'view_items', 'manage_items', 'approve_master', // Master Barang
+            'menu_reports', 'view_reports' // Ekstra untuk level Manager
+        ]);
+
+        // ==========================================
+        // 3. ROLE TAMBAHAN TETAP DIPERTAHANKAN
+        // ==========================================
+
         $roleFinance = Role::firstOrCreate(['name' => 'Finance']);
         $roleFinance->syncPermissions([
             'menu_master_data', 'view_companies', 'view_vendors',
@@ -83,7 +106,6 @@ class RolePermissionSeeder extends Seeder
             'menu_reports', 'view_reports'
         ]);
 
-        // C. PURCHASING (Dewa di area Belanja & Vendor)
         $rolePurchasing = Role::firstOrCreate(['name' => 'Purchasing']);
         $rolePurchasing->syncPermissions([
             'menu_master_data', 'view_items', 'manage_items', 'view_vendors', 'manage_vendors',
@@ -91,7 +113,6 @@ class RolePermissionSeeder extends Seeder
             'menu_finance', 'view_bills'
         ]);
 
-        // D. GUDANG (Dewa di area Fisik Barang)
         $roleGudang = Role::firstOrCreate(['name' => 'Gudang']);
         $roleGudang->syncPermissions([
             'menu_purchasing', 'view_po',
@@ -99,7 +120,6 @@ class RolePermissionSeeder extends Seeder
             'menu_warehouse', 'view_inventory', 'manage_inventory'
         ]);
 
-        // E. OPEX & ASSET
         $roleAsset = Role::firstOrCreate(['name' => 'Opex & Asset']);
         $roleAsset->syncPermissions([
             'menu_master_data', 'view_assets_master',
@@ -108,15 +128,6 @@ class RolePermissionSeeder extends Seeder
             'menu_warehouse', 'view_inventory'
         ]);
 
-        // F. MANAGER (Level Approval & Laporan)
-        $roleManager = Role::firstOrCreate(['name' => 'Manager']);
-        $roleManager->syncPermissions([
-            'menu_purchasing', 'view_pr', 'approve_pr', 'view_po', 'approve_po',
-            'menu_finance', 'view_bills',
-            'menu_reports', 'view_reports'
-        ]);
-
-        // G. DIREKTUR (Level Approval Puncak & Laporan)
         $roleDirektur = Role::firstOrCreate(['name' => 'Direktur']);
         $roleDirektur->syncPermissions([
             'menu_purchasing', 'view_pr', 'view_po', 'approve_po',
@@ -124,7 +135,6 @@ class RolePermissionSeeder extends Seeder
             'menu_reports', 'view_reports'
         ]);
 
-        // H. SUPER ADMIN (Semua Akses)
         $roleAdmin = Role::firstOrCreate(['name' => 'Super Admin']);
         $roleAdmin->syncPermissions(Permission::all());
 
