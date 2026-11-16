@@ -115,13 +115,14 @@
                     <div class="mt-2 collapse" id="detailAsetCollapse">
                         <div class="p-2 bg-white border border-white border-opacity-25 bg-opacity-10 rounded-3 custom-scrollbar" style="max-height: 140px; overflow-y: auto;">
                             @foreach($availableAssets as $ast)
-                                <div class="pb-1 mb-1 border-opacity-25 border-bottom border-light" style="last-child { border: none !important; margin-bottom: 0 !important; padding-bottom: 0 !important; }">
-                                    <div class="text-white fw-bold d-flex align-items-center" style="font-size: 0.75rem;">
+                                <div class="text-white fw-bold d-flex align-items-center justify-content-between w-100" style="font-size: 0.75rem;">
+                                    <div>
                                         <i class="bi bi-check2-circle text-info me-1"></i> {{ $ast->serial_number ?: $ast->asset_number }}
                                     </div>
-                                    <div class="text-white-50 ms-3" style="font-size: 0.65rem; line-height: 1.2;">
-                                        No: {{ $ast->accounting_asset_number ?? $ast->asset_number }}
-                                    </div>
+                                    {{-- 🔥 TOMBOL CETAK LABEL 🔥 --}}
+                                    <a href="{{ route('inventory.print_label', $ast->id) }}" target="_blank" class="btn btn-sm btn-light py-0 px-2 shadow-sm" style="font-size: 0.65rem;" title="Cetak Label Barcode">
+                                        <i class="bi bi-printer-fill text-primary"></i> Cetak
+                                    </a>
                                 </div>
                             @endforeach
                         </div>
@@ -371,7 +372,15 @@
                                                         @if(str_contains($sn, '<div'))
                                                             {!! $sn !!}
                                                         @else
-                                                            <span class="text-success fw-bold me-1">✓</span> <strong class="text-dark">{{ $sn }}</strong>
+                                                            {{-- 🔥 TOMBOL CETAK UNTUK SN MENTAH 🔥 --}}
+                                                            <div class="p-2 mb-1 bg-white border rounded shadow-sm d-flex justify-content-between align-items-center">
+                                                                <div>
+                                                                    <span class="text-success fw-bold me-1">✓</span> <strong class="text-dark">{{ $sn }}</strong>
+                                                                </div>
+                                                                <a href="{{ route('inventory.print_label') }}?raw_sn={{ urlencode($sn) }}&item_id={{ $item->id }}" target="_blank" class="px-2 py-0 border shadow-sm btn btn-sm btn-light" style="font-size: 0.6rem;" title="Cetak Label">
+                                                                    <i class="bi bi-printer-fill text-primary"></i> Cetak
+                                                                </a>
+                                                            </div>
                                                         @endif
                                                     </div>
                                                 @endforeach

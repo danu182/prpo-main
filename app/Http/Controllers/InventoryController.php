@@ -171,6 +171,91 @@ class InventoryController extends Controller
         }
     }
 
+    // public function show($id, Request $request)
+    // {
+    //     $warehouseId = $request->input('warehouse_id');
+    //     $item = \App\Models\Item::with('uom')->where('item_type_code', 'STK')->findOrFail($id);
+
+    //     $mutQuery = \App\Models\StockMutation::where('item_id', $id);
+    //     if ($warehouseId) $mutQuery->where('warehouse_id', $warehouseId);
+
+    //     $masuk = (clone $mutQuery)->where('type', 'IN')->sum('qty');
+    //     $keluarFisik = (clone $mutQuery)->where('type', '!=', 'IN')->where('reference_number', 'not like', 'GI-AST%')->sum('qty');
+    //     $bulkStock = $masuk - $keluarFisik;
+
+    //     $assetStock = \App\Models\FixedAsset::where('item_id', $id)
+    //         ->whereHas('status', function($q) { $q->where('slug', 'available'); })
+    //         ->when($warehouseId, function($q) use ($warehouseId) { $q->where('warehouse_id', $warehouseId); })->count();
+
+    //     $currentStock = $bulkStock + $assetStock;
+
+    //     $mutations = \App\Models\StockMutation::with('warehouse')
+    //         ->where('item_id', $id)
+    //         ->when($warehouseId, function($q) use ($warehouseId) {
+    //             $q->where('warehouse_id', $warehouseId);
+    //         })
+    //         ->orderBy('created_at', 'desc')
+    //         ->orderBy('id', 'desc')
+    //         ->paginate(20)
+    //         ->withQueryString();
+
+    //     if ($mutations->count() > 0) {
+    //         $oldestMutationOnPage = $mutations->last();
+
+    //         $pastIn = \App\Models\StockMutation::where('item_id', $id)
+    //             ->when($warehouseId, function($q) use ($warehouseId) { $q->where('warehouse_id', $warehouseId); })
+    //             ->where(function($q) use ($oldestMutationOnPage) {
+    //                 $q->where('created_at', '<', $oldestMutationOnPage->created_at)
+    //                   ->orWhere(function($q2) use ($oldestMutationOnPage) {
+    //                       $q2->where('created_at', '=', $oldestMutationOnPage->created_at)->where('id', '<', $oldestMutationOnPage->id);
+    //                   });
+    //             })->where('type', 'IN')->sum('qty');
+
+    //         $pastOut = \App\Models\StockMutation::where('item_id', $id)
+    //             ->when($warehouseId, function($q) use ($warehouseId) { $q->where('warehouse_id', $warehouseId); })
+    //             ->where(function($q) use ($oldestMutationOnPage) {
+    //                 $q->where('created_at', '<', $oldestMutationOnPage->created_at)
+    //                   ->orWhere(function($q2) use ($oldestMutationOnPage) {
+    //                       $q2->where('created_at', '=', $oldestMutationOnPage->created_at)->where('id', '<', $oldestMutationOnPage->id);
+    //                   });
+    //             })
+    //             ->where('type', '!=', 'IN')
+    //             ->where('notes', 'not like', '%[CAPITALIZE]%')
+    //             ->where('notes', 'not like', '%Kapitalisasi%')
+    //             ->sum('qty');
+
+    //         $runningBalance = $pastIn - $pastOut;
+
+    //         $reversed = $mutations->reverse();
+    //         foreach ($reversed as $mut) {
+    //             $isCapitalize = str_contains($mut->notes, '[CAPITALIZE]') || str_contains(strtolower($mut->notes), 'kapitalisasi');
+
+    //             if ($isCapitalize) {
+    //                 $mut->dynamic_balance = $runningBalance;
+    //             } else {
+    //                 if ($mut->type === 'IN') {
+    //                     $runningBalance += $mut->qty;
+    //                 } else {
+    //                     $runningBalance -= $mut->qty;
+    //                 }
+    //                 $mut->dynamic_balance = $runningBalance;
+    //             }
+
+    //             if (preg_match('/User ID:\s*(\d+)/i', $mut->notes, $matches)) {
+    //                 $userId = $matches[1];
+    //                 $userName = \Illuminate\Support\Facades\DB::table('users')->where('id', $userId)->value('name');
+    //                 if ($userName) {
+    //                     $mut->notes = preg_replace('/User ID:\s*\d+/i', $userName, $mut->notes);
+    //                 }
+    //             }
+    //         }
+    //     }
+
+    //     $warehouses = \App\Models\Warehouse::orderBy('name')->get();
+
+    //     return view('inventory.show', compact('item', 'mutations', 'warehouses', 'warehouseId', 'currentStock', 'bulkStock', 'assetStock'));
+    // }
+
     public function show($id, Request $request)
     {
         $warehouseId = $request->input('warehouse_id');
@@ -229,6 +314,10 @@ class InventoryController extends Controller
             $reversed = $mutations->reverse();
             foreach ($reversed as $mut) {
                 $isCapitalize = str_contains($mut->notes, '[CAPITALIZE]') || str_contains(strtolower($mut->notes), 'kapitalisasi');
+                $isDeCapitalize = str_contains($mut->notes, '[DE-CAPITALIZE]');
+                
+                $mut->is_capitalize = $isCapitalize;
+                $mut->is_decapitalize = $isDeCapitalize;
 
                 if ($isCapitalize) {
                     $mut->dynamic_balance = $runningBalance;
@@ -248,6 +337,130 @@ class InventoryController extends Controller
                         $mut->notes = preg_replace('/User ID:\s*\d+/i', $userName, $mut->notes);
                     }
                 }
+                
+                // =========================================================================
+                // 🔥 KECERDASAN BUATAN UNTUK MELACAK SN DI SEMUA TRANSAKSI 🔥
+                // =========================================================================
+                $realSns = [];
+
+                if ($isCapitalize || $isDeCapitalize) {
+                    $assetsData = \DB::table('fixed_assets')
+                        ->where('item_id', $mut->item_id)
+                        ->where('warehouse_id', $mut->warehouse_id)
+                        ->whereBetween('created_at', [\Carbon\Carbon::parse($mut->created_at)->subMinutes(1), \Carbon\Carbon::parse($mut->created_at)->addMinutes(1)])
+                        ->get();
+
+                    foreach ($assetsData as $ad) {
+                        $badgeType = $isCapitalize ? 'bg-primary' : 'bg-danger';
+                        $badgeText = $isCapitalize ? 'ASET' : 'VOID';
+
+                        $accNo = $ad->accounting_asset_number ? '<div class="text-success fw-bold" style="font-size:0.7rem; margin-top:2px;">[FA: ' . $ad->accounting_asset_number . ']</div>' : '';
+                        $snInfo = $ad->serial_number ? '<div class="text-muted" style="font-size:0.7rem;">SN: ' . $ad->serial_number . '</div>' : '';
+                        $printUrl = route('inventory.print_label', $ad->id);
+
+                        $htmlBlock = '
+                        <div class="p-2 mb-2 bg-white border rounded shadow-sm border-secondary-subtle ms-3 position-relative">
+                            <div class="top-0 position-absolute start-0 translate-middle">
+                                <span class="badge ' . $badgeType . ' px-2 py-1" style="font-size:0.55rem; letter-spacing:0.5px;">' . $badgeText . '</span>
+                            </div>
+                            <div class="mt-1 fw-bold text-primary">' . $ad->asset_number . '</div>
+                            ' . $accNo . '
+                            ' . $snInfo . '
+                            
+                            <!-- 🔥 TOMBOL CETAK INJECTED 🔥 -->
+                            <a href="' . $printUrl . '" target="_blank" class="position-absolute top-0 end-0 mt-1 me-1 btn btn-sm btn-light py-0 px-2 border shadow-sm" style="font-size: 0.6rem;" title="Cetak Label Tom & Jerry">
+                                <i class="bi bi-printer-fill text-primary"></i>
+                            </a>
+                        </div>';
+
+                        $realSns[] = $htmlBlock;
+                    }
+                } else {
+                    if (str_starts_with($mut->reference_number, 'GR-')) {
+                        $grDoc = \DB::table('goods_receipts')->where('gr_number', $mut->reference_number)->first();
+                        if ($grDoc) {
+                            $realSns = \DB::table('item_serials')->where('goods_receipt_id', $grDoc->id)->where('item_id', $mut->item_id)->where('warehouse_id', $mut->warehouse_id)->pluck('serial_number')->toArray();
+                        }
+                    } elseif (str_starts_with($mut->reference_number, 'RTV-')) {
+                        $rtvDoc = \DB::table('return_to_vendors')->where('rtv_number', $mut->reference_number)->first();
+                        if ($rtvDoc) {
+                            $realSns = \DB::table('item_serials')->where('return_to_vendor_id', $rtvDoc->id)->where('item_id', $mut->item_id)->where('warehouse_id', $mut->warehouse_id)->pluck('serial_number')->toArray();
+                        }
+                    } elseif (str_starts_with($mut->reference_number, 'ADJ/')) {
+                        $adjDoc = \DB::table('stock_adjustments')->where('adjustment_number', $mut->reference_number)->first();
+                        if ($adjDoc) {
+                            $realSns = \DB::table('item_serials')
+                                ->where('stock_adjustment_id', $adjDoc->id)
+                                ->where('item_id', $mut->item_id)
+                                ->pluck('serial_number')
+                                ->toArray();
+                        }
+                    } elseif (str_starts_with($mut->reference_number, 'SO-')) {
+                        $soDoc = \DB::table('stock_opnames')->where('document_number', $mut->reference_number)->first();
+                        if ($soDoc) {
+                            $realSns = \DB::table('item_serials')
+                                ->where('stock_opname_id', $soDoc->id)
+                                ->where('item_id', $mut->item_id)
+                                ->pluck('serial_number')
+                                ->toArray();
+                        }
+                    } elseif (str_starts_with($mut->reference_number, 'GI-') || str_starts_with($mut->reference_number, 'RET-GI')) {
+                        $baseRefNumber = str_replace('RET-', '', $mut->reference_number);
+                        $giDoc = \DB::table('goods_issues')->where('gi_number', $baseRefNumber)->orWhere('gi_number', $mut->reference_number)->first();
+
+                        if ($giDoc) {
+                            if (\Schema::hasColumn('item_serials', 'goods_issue_id')) {
+                                $snMinor = \DB::table('item_serials')->where('goods_issue_id', $giDoc->id)->where('item_id', $mut->item_id)->where('warehouse_id', $mut->warehouse_id)->pluck('serial_number')->toArray();
+                                $realSns = array_merge($realSns, $snMinor);
+                            } else {
+                                $snMinor = \DB::table('item_serials')
+                                    ->where('item_id', $mut->item_id)
+                                    ->where('warehouse_id', $mut->warehouse_id)
+                                    ->whereIn('status', ['ISSUED', 'USED', 'OUT', 'DISPATCHED'])
+                                    ->whereBetween('updated_at', [\Carbon\Carbon::parse($mut->created_at)->subMinutes(1), \Carbon\Carbon::parse($mut->created_at)->addMinutes(1)])
+                                    ->pluck('serial_number')->toArray();
+                                $realSns = array_merge($realSns, $snMinor);
+                            }
+
+                            $giAssets = \DB::table('fixed_assets')
+                                ->where('item_id', $mut->item_id)
+                                ->where('warehouse_id', $mut->warehouse_id)
+                                ->whereBetween('updated_at', [\Carbon\Carbon::parse($mut->created_at)->subMinutes(1), \Carbon\Carbon::parse($mut->created_at)->addMinutes(1)])
+                                ->get();
+
+                            foreach ($giAssets as $ad) {
+                                $accNo = $ad->accounting_asset_number ? '<div class="text-success fw-bold" style="font-size:0.7rem; margin-top:2px;">[FA: ' . $ad->accounting_asset_number . ']</div>' : '';
+                                $snInfo = $ad->serial_number ? '<div class="text-muted" style="font-size:0.7rem;">SN: ' . $ad->serial_number . '</div>' : '';
+                                $printUrl = route('inventory.print_label', $ad->id);
+
+                                $htmlBlock = '
+                                <div class="p-2 mb-2 bg-white border rounded shadow-sm border-secondary-subtle ms-3 position-relative">
+                                    <div class="top-0 position-absolute start-0 translate-middle">
+                                        <span class="px-2 py-1 badge bg-primary" style="font-size:0.55rem; letter-spacing:0.5px;">ASET</span>
+                                    </div>
+                                    <div class="mt-1 fw-bold text-primary">' . $ad->asset_number . '</div>
+                                    ' . $accNo . '
+                                    ' . $snInfo . '
+                                    
+                                    <!-- 🔥 TOMBOL CETAK INJECTED 🔥 -->
+                                    <a href="' . $printUrl . '" target="_blank" class="position-absolute top-0 end-0 mt-1 me-1 btn btn-sm btn-light py-0 px-2 border shadow-sm" style="font-size: 0.6rem;" title="Cetak Label Tom & Jerry">
+                                        <i class="bi bi-printer-fill text-primary"></i>
+                                    </a>
+                                </div>';
+
+                                if ($ad->serial_number) {
+                                    $key = array_search($ad->serial_number, $realSns);
+                                    if ($key !== false) unset($realSns[$key]);
+                                }
+
+                                if (!in_array($htmlBlock, $realSns)) $realSns[] = $htmlBlock;
+                            }
+                            $realSns = array_values($realSns);
+                        }
+                    }
+                }
+                
+                $mut->real_sns_html = $realSns; // Simpan di object $mut untuk digunakan di Blade
             }
         }
 
@@ -255,6 +468,8 @@ class InventoryController extends Controller
 
         return view('inventory.show', compact('item', 'mutations', 'warehouses', 'warehouseId', 'currentStock', 'bulkStock', 'assetStock'));
     }
+
+
 
     public function storeAdjustment(Request $request)
     {
@@ -1111,4 +1326,152 @@ class InventoryController extends Controller
             return back()->with('error', 'Gagal memperbarui batas stok: ' . $e->getMessage());
         }
     }
+
+    
+    // =========================================================================
+    // 🔥 FITUR CETAK LABEL ASET / SERIAL NUMBER (MENDUKUNG TOM & JERRY) 🔥
+    // =========================================================================
+    public function printLabel(\Illuminate\Http\Request $request, $assetId = null)
+    {
+        $startPos = max(1, (int) $request->query('start_pos', 1));
+        $assets = collect();
+        
+        // 🔥 Skenario 1: Cetak SN Mentah (Stok Biasa)
+        if ($request->has('raw_sn') && $request->has('item_id')) {
+            $item = \App\Models\Item::find($request->item_id);
+            $rawSns = explode(',', $request->query('raw_sn'));
+            
+            foreach($rawSns as $sn) {
+                $cleanSn = trim($sn);
+                $companyName = null;
+                $tglIn = now()->format('d/m/Y');
+                $foundGrId = null;
+                $foundWarehouseId = null;
+                
+                $masterItemName = $item->name ?? 'Barang Umum';
+                $specificItemName = $masterItemName; // Default sama
+                $grNumber = '-';
+
+                // 1. Lacak via item_serials
+                $serialData = \DB::table('item_serials')->where('item_id', $item->id ?? 0)->where('serial_number', $cleanSn)->first();
+                if ($serialData) {
+                    if (isset($serialData->goods_receipt_id)) $foundGrId = $serialData->goods_receipt_id;
+                    if (isset($serialData->warehouse_id)) $foundWarehouseId = $serialData->warehouse_id;
+                    
+                    // Coba cari nama spesifik dari Goods Issue jika sudah dikeluarkan
+                    if (isset($serialData->goods_issue_id) && $serialData->goods_issue_id) {
+                        $giItemRow = \DB::table('goods_issue_items')->where('goods_issue_id', $serialData->goods_issue_id)->where('item_id', $item->id ?? 0)->first();
+                        if ($giItemRow && isset($giItemRow->item_name) && $giItemRow->item_name) {
+                            $specificItemName = $giItemRow->item_name;
+                        }
+                    }
+                }
+
+                // 2. Lacak via goods_receipt_items
+                if (!$foundGrId) {
+                    $grItem = \DB::table('goods_receipt_items')->where('item_id', $item->id ?? 0)
+                        ->where(function($q) use ($cleanSn) {
+                            $q->where('notes', 'like', '%' . $cleanSn . '%')->orWhere('serial_number', $cleanSn);
+                        })->first();
+                        
+                    if ($grItem && isset($grItem->goods_receipt_id)) {
+                        $foundGrId = $grItem->goods_receipt_id;
+                    }
+                }
+
+                // 3. Tarik Data GR dan PO
+                if ($foundGrId) {
+                    $gr = \DB::table('goods_receipts')->where('id', $foundGrId)->first();
+                    if ($gr) {
+                        $grNumber = $gr->gr_number ?? '-';
+                        $tglIn = isset($gr->receipt_date) ? date('d/m/Y', strtotime($gr->receipt_date)) : (isset($gr->created_at) ? date('d/m/Y', strtotime($gr->created_at)) : $tglIn);
+                        if (isset($gr->warehouse_id) && !$foundWarehouseId) $foundWarehouseId = $gr->warehouse_id;
+
+                        if (isset($gr->purchase_order_id)) {
+                            $po = \DB::table('purchase_orders')->where('id', $gr->purchase_order_id)->first();
+                            if ($po) {
+                                $poArray = (array) $po;
+                                
+                                if (array_key_exists('company_id', $poArray) && $po->company_id) {
+                                    $companyName = \DB::table('companies')->where('id', $po->company_id)->value('name');
+                                } elseif (array_key_exists('purchase_request_id', $poArray) && $po->purchase_request_id) {
+                                    $pr = \DB::table('purchase_requests')->where('id', $po->purchase_request_id)->first();
+                                    $prArray = (array) $pr;
+                                    if ($pr && array_key_exists('company_id', $prArray) && $pr->company_id) $companyName = \DB::table('companies')->where('id', $pr->company_id)->value('name');
+                                }
+
+                                // Jika nama spesifik belum berubah (masih sama dengan master), cari di PO Items
+                                if ($specificItemName === $masterItemName) {
+                                    $poItemRow = \DB::table('purchase_order_items')->where('purchase_order_id', $po->id)->where('item_id', $item->id ?? 0)->first();
+                                    if ($poItemRow) {
+                                        $poItemArr = (array) $poItemRow;
+                                        if (array_key_exists('item_name', $poItemArr) && $poItemRow->item_name) {
+                                            $specificItemName = $poItemRow->item_name;
+                                        } elseif (array_key_exists('description', $poItemArr) && $poItemRow->description) {
+                                            $specificItemName = $poItemRow->description;
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                if (!$companyName && $foundWarehouseId) {
+                    $stock = \DB::table('inventory_stocks')->where('item_id', $item->id ?? 0)->where('warehouse_id', $foundWarehouseId)->first();
+                    $stockArray = (array) $stock;
+                    if ($stock && array_key_exists('company_id', $stockArray) && $stock->company_id) {
+                        $companyName = \DB::table('companies')->where('id', $stock->company_id)->value('name');
+                    }
+                }
+
+                // Buat QR Cadangan: Kode Barang + Nomor GR
+                $fallbackQr = ($item->code ?? 'BRG') . '-' . ($grNumber !== '-' ? $grNumber : uniqid());
+
+                // Standarisasi Koleksi
+                $assets->push((object)[
+                    'master_item_name' => $item->name ?? '-',
+                    'po_item_name' => $specificItemName,
+                    'item_code' => $item->code ?? '-',
+                    'company_name' => $companyName ?: 'PERUSAHAAN INTERNAL',
+                    'serial_number' => $cleanSn ?: '-',
+                    'asset_number' => '-', 
+                    'tanggal_in' => $tglIn,
+                    'reference_number' => $grNumber,
+                    
+                    // 🔥 PERBAIKAN DI SINI 🔥
+                    'qr_data' => $cleanSn ?: $fallbackQr,
+                ]);
+            }
+            $assetIds = [];
+        } 
+        // 🔥 Skenario 2: Cetak Aset Resmi
+        else {
+            $assetIds = $request->query('ids') ? explode(',', $request->query('ids')) : [$assetId];
+            $assetsData = \App\Models\FixedAsset::with(['item', 'company'])->whereIn('id', $assetIds)->get();
+            
+            foreach ($assetsData as $ast) {
+                $grNumber = '-';
+                if (isset($ast->reference_number) && str_starts_with($ast->reference_number, 'GR-')) {
+                    $grNumber = $ast->reference_number;
+                }
+                
+                $assets->push((object)[
+                    'master_item_name' => optional($ast->item)->name ?? '-',
+                    'po_item_name' => $ast->name ?? '-',
+                    'item_code' => optional($ast->item)->code ?? '-',
+                    'company_name' => optional($ast->company)->name ?? 'PERUSAHAAN INTERNAL',
+                    'serial_number' => $ast->serial_number ?: '-',
+                    'asset_number' => $ast->asset_number ?: '-',
+                    'tanggal_in' => $ast->acquisition_date ? date('d/m/Y', strtotime($ast->acquisition_date)) : '-',
+                    'reference_number' => $grNumber,
+                    'qr_data' => $ast->serial_number ?: $ast->asset_number,
+                ]);
+            }
+        }
+
+        return view('inventory.print_label', compact('assets', 'startPos', 'assetIds'));
+    }
+
+
 }

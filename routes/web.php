@@ -306,7 +306,12 @@ Route::middleware('auth')->group(function () {
         Route::get('/capitalize/{slug}', [App\Http\Controllers\InventoryController::class, 'capitalizeForm'])->name('capitalize.form');
         Route::post('/capitalize/{slug}', [App\Http\Controllers\InventoryController::class, 'capitalizeStore'])->name('capitalize.store');
 
+        // Rute Cetak Label Barcode / QR Aset Fisik
+        Route::get('/print-label/{asset_id?}', [\App\Http\Controllers\InventoryController::class, 'printLabel'])->name('print_label');
+        
         Route::get('/{inventory}', [InventoryController::class, 'show'])->name('show');
+
+
     });
 
     // =========================================================================

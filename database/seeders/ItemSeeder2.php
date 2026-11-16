@@ -182,7 +182,7 @@ class ItemSeeder2 extends Seeder
             [
                 'name' => 'Hard Disk External',
                 'code' => 'SKU-ELK-00008',
-                'uom_id' => 1, 'category_id' => 13, 'item_type_code' => 'STK', 'is_trackable' => 0, 'current_stock' => 0,
+                'uom_id' => 1, 'category_id' => 13, 'item_type_code' => 'STK', 'is_trackable' => 1, 'current_stock' => 0,
                 'specification' => 'External',
             ],
 
