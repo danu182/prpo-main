@@ -70,7 +70,7 @@ class VendorSeeder extends Seeder
                 'updated_at' => now(),
             ],
             [
-                'name' => 'Gopgle',
+                'name' => 'Google',
                 'email' => '',
                 'phone' => '',
                 'address' => 'Google',

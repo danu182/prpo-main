@@ -335,8 +335,10 @@
             initCKEditor(newSpecId);
         });
 
+        
         $('#prForm').on('submit', function(e) {
-            let form = this; e.preventDefault();
+            let form = this; 
+            e.preventDefault();
 
             for (let editorId in myEditors) {
                 if (myEditors.hasOwnProperty(editorId) && myEditors[editorId]) {
@@ -352,17 +354,27 @@
             $('input[type="file"]').each(function() { if ($(this).val() === '') { $(this).prop('disabled', true); } });
 
             Swal.fire({
-                title: 'Ajukan Purchase Request?', icon: 'question', showCancelButton: true,
-                confirmButtonColor: '#0d6efd', confirmButtonText: 'Ya, Kirim PR!', cancelButtonText: 'Batal'
+                title: 'Ajukan Purchase Request?', 
+                icon: 'question', 
+                showCancelButton: true,
+                confirmButtonColor: '#0d6efd', 
+                confirmButtonText: 'Ya, Kirim PR!', 
+                cancelButtonText: 'Batal'
             }).then((result) => {
                 if (result.isConfirmed) {
-                    Swal.fire({ title: 'Menyimpan...', didOpen: () => { Swal.showLoading() }, allowOutsideClick: false });
+                    // Ubah tombol submit menjadi spinner (tanpa kotak loading SweetAlert)
+                    let submitBtn = $(form).find('button[type="submit"], #btn-submit-main');
+                    submitBtn.data('original-html', submitBtn.html());
+                    submitBtn.prop('disabled', true).html('<span class="spinner-border spinner-border-sm me-2"></span> Menyimpan...');
+                    
                     form.submit();
                 } else {
                     $('input[type="file"]').prop('disabled', false);
                 }
             });
         });
+
+
     });
 
     function initSelect2User() { $('.select2-user').select2({ theme: 'bootstrap-5', placeholder: "Cari Nama User...", width: '100%', allowClear: true }); }

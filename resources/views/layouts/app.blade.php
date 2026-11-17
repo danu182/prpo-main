@@ -405,6 +405,29 @@
         });
     </script>
 
+    <script>
+        window.addEventListener('pageshow', function(event) {
+            // Tutup paksa popup SweetAlert jika masih tersisa di cache browser
+            if (typeof Swal !== 'undefined' && Swal.isVisible()) {
+                Swal.close();
+            }
+
+            // Aktifkan kembali input file yang sempat di-disable sebelum submit
+            document.querySelectorAll('input[type="file"]:disabled').forEach(input => {
+                input.disabled = false;
+            });
+
+            // Kembalikan semua tombol submit ke teks aslinya
+            document.querySelectorAll('button:disabled').forEach(btn => {
+                const origHtml = btn.dataset.originalHtml || (typeof $ !== 'undefined' ? $(btn).data('original-html') : null);
+                if (origHtml) {
+                    btn.disabled = false;
+                    btn.innerHTML = origHtml;
+                }
+            });
+        });
+    </script>
+
     @stack('scripts')
 </body>
 </html>

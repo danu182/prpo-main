@@ -469,10 +469,10 @@
                 return Swal.fire({ icon: 'warning', title: 'Data Belum Lengkap', text: 'Ada baris barang yang belum dipilih dari katalog.' });
             }
 
-            // 3. Validasi HTML5 Bawaan Browser (PENTING!)
+            // 3. Validasi HTML5 Bawaan Browser
             if (!form.checkValidity()) {
-                form.reportValidity(); // Memunculkan tooltip merah dari browser
-                return; // Membunuh proses JS agar tidak masuk ke SweetAlert
+                form.reportValidity();
+                return;
             }
 
             // 4. Pastikan ada minimal 1 barang
@@ -482,20 +482,26 @@
 
             // 5. Jika semua lolos, jalankan proses penyimpanan
             Swal.fire({
-                title: 'Simpan Perubahan?', icon: 'question', showCancelButton: true,
-                confirmButtonColor: '#198754', confirmButtonText: 'Ya, Simpan!', cancelButtonText: 'Batal'
+                title: 'Simpan Perubahan?', 
+                icon: 'question', 
+                showCancelButton: true,
+                confirmButtonColor: '#198754', 
+                confirmButtonText: 'Ya, Simpan!', 
+                cancelButtonText: 'Batal'
             }).then((result) => {
                 if (result.isConfirmed) {
+                    btn.data('original-html', btn.html());
                     btn.prop('disabled', true).html('<span class="spinner-border spinner-border-sm me-2"></span> Menyimpan...');
-                    Swal.fire({ title: 'Menyimpan...', didOpen: () => { Swal.showLoading() }, allowOutsideClick: false });
 
-                    // Matikan input file yang kosong agar tidak ikut terkirim ke server (mempercepat proses)
+                    // Matikan input file yang kosong agar tidak ikut terkirim ke server
                     $('input[type="file"]').each(function() { if ($(this).val() === '') { $(this).prop('disabled', true); } });
 
                     form.submit();
                 }
             });
         });
+
+
     });
 
     function initSelect2User() { $('.select2-user').select2({ theme: 'bootstrap-5', placeholder: "Cari Nama User...", width: '100%', allowClear: true }); }

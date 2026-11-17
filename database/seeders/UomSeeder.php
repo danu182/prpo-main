@@ -62,6 +62,7 @@ class UomSeeder extends Seeder
             ['code' => 'MGU',  'name' => 'Minggu', 'description' => 'Satuan waktu minggunan (untuk langganan/sewa)'],
             ['code' => 'BLN',  'name' => 'Bulan', 'description' => 'Satuan waktu bulanan (untuk langganan/sewa)'],
             ['code' => 'THN',  'name' => 'Tahun', 'description' => 'Satuan waktu tahunan (untuk langganan/sewa)'],
+            ['code' => 'USR',  'name' => 'User', 'description' => 'Satuan jumlah pemakai(untuk langganan lisensi / user)'],
         ];
 
         foreach ($uoms as $uom) {

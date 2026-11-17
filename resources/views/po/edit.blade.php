@@ -445,11 +445,11 @@
                     @endphp
 
                     @if($currentApprovals->count() > 0)
-                    <div class="p-3 mt-4 bg-white border rounded-3 shadow-sm border-info-subtle">
+                    <div class="p-3 mt-4 bg-white border shadow-sm rounded-3 border-info-subtle">
                         <div class="mb-2 fw-bold text-dark" style="font-size: 0.85rem;">
                             <i class="bi bi-people-fill text-info me-1"></i> Status Persetujuan Saat Ini:
                         </div>
-                        <div class="d-flex align-items-center flex-wrap gap-2 mt-2">
+                        <div class="flex-wrap gap-2 mt-2 d-flex align-items-center">
                             @foreach($currentApprovals as $appr)
                                 @php
                                     $namaTtd = "";
@@ -1189,7 +1189,11 @@
             confirmButtonText: 'Ya, Simpan!'
         }).then(function(result) {
             if (result.isConfirmed) {
-                Swal.fire({ title: 'Menyimpan...', allowOutsideClick: false, didOpen: function() { Swal.showLoading() } });
+                // Ubah tombol submit menjadi spinner (tanpa kotak loading SweetAlert)
+                let submitBtn = $(form).find('button[type="submit"], #btnSubmitForm, #btn-submit-main');
+                submitBtn.data('original-html', submitBtn.html());
+                submitBtn.prop('disabled', true).html('<span class="spinner-border spinner-border-sm me-2"></span> Menyimpan...');
+
                 form.submit();
             } else {
                 $('input[type="file"]').prop('disabled', false);

@@ -44,7 +44,7 @@
 
     {{-- HEADER KEKINIAN --}}
     <div class="mb-4 d-flex align-items-center">
-        <a href="{{ route('bills.index') }}" class="btn btn-white border shadow-sm rounded-circle me-3 d-flex align-items-center justify-content-center hover-light" style="width: 48px; height: 48px;">
+        <a href="{{ route('bills.index') }}" class="border shadow-sm btn btn-white rounded-circle me-3 d-flex align-items-center justify-content-center hover-light" style="width: 48px; height: 48px;">
             <i class="bi bi-arrow-left fs-5 text-primary"></i>
         </a>
         <div>
@@ -160,7 +160,7 @@
                 </div>
 
                 {{-- CARD 3: SIKLUS BERULANG --}}
-                <div class="modern-card border-start border-4 border-info">
+                <div class="border-4 modern-card border-start border-info">
                     <div class="p-4 card-body">
                         <div class="row align-items-center">
                             <div class="col-md-4">
@@ -191,11 +191,11 @@
 
                 {{-- CARD 4: RINCIAN ITEM --}}
                 <div class="modern-card">
-                    <div class="modern-card-header d-flex justify-content-between align-items-center flex-wrap gap-2">
+                    <div class="flex-wrap gap-2 modern-card-header d-flex justify-content-between align-items-center">
                         <h5 class="mb-0 section-title"><i class="bi bi-list-check"></i> 3. Rincian Barang & Jasa</h5>
 
                         {{-- Tool Pajak Global --}}
-                        <div class="input-group input-group-sm w-auto shadow-sm">
+                        <div class="w-auto shadow-sm input-group input-group-sm">
                             <span class="input-group-text bg-light fw-bold text-muted border-end-0">Pajak Massal:</span>
                             <select id="global_tax_type" class="form-select border-start-0" style="max-width: 60px;">
                                 <option value="percent" selected>%</option><option value="fixed">Rp</option>
@@ -227,7 +227,7 @@
                                     {{-- Kolom 1: Data Item --}}
                                     <td>
                                         <div class="item-box">
-                                            <label class="form-label text-xs fw-bold text-muted">Master Item <span class="text-danger">*</span></label>
+                                            <label class="text-xs form-label fw-bold text-muted">Master Item <span class="text-danger">*</span></label>
                                             <select name="items[0][item_id]" class="mb-3 form-select select2-item item-select" required onchange="onOpexItemSelect(this, 0)">
                                                 <option value="">-- Pilih Item Opex --</option>
                                                 @foreach($opexItems as $opx)
@@ -235,10 +235,10 @@
                                                 @endforeach
                                             </select>
 
-                                            <label class="form-label text-xs fw-bold text-muted">Nama di Tagihan <span class="text-danger">*</span></label>
+                                            <label class="text-xs form-label fw-bold text-muted">Nama di Tagihan <span class="text-danger">*</span></label>
                                             <input type="text" name="items[0][name_override]" id="name_override_0" class="mb-3 form-control form-control-sm fw-bold text-primary" placeholder="Bisa disesuaikan..." required>
 
-                                            <label class="form-label text-xs fw-bold text-muted">Spesifikasi Detail</label>
+                                            <label class="text-xs form-label fw-bold text-muted">Spesifikasi Detail</label>
                                             {{-- 🔥 TEXTAREA DIPERTAHANKAN SESUAI PERMINTAAN 🔥 --}}
                                             <textarea name="items[0][description]" class="form-control form-control-sm" rows="2" placeholder="Bisa tekan enter untuk baris baru..."></textarea>
                                         </div>
@@ -247,10 +247,10 @@
                                     {{-- Kolom 2: Harga & Qty --}}
                                     <td>
                                         <div class="item-box">
-                                            <label class="form-label text-xs fw-bold text-muted">Jumlah (Qty) <span class="text-danger">*</span></label>
+                                            <label class="text-xs form-label fw-bold text-muted">Jumlah (Qty) <span class="text-danger">*</span></label>
                                             <input type="number" name="items[0][qty]" class="mb-3 text-center form-control form-control-sm qty fw-bold" value="1" min="1">
 
-                                            <label class="form-label text-xs fw-bold text-muted">Harga Satuan <span class="text-danger">*</span></label>
+                                            <label class="text-xs form-label fw-bold text-muted">Harga Satuan <span class="text-danger">*</span></label>
                                             <div class="input-group input-group-sm">
                                                 <span class="input-group-text curr-symbol bg-light text-muted">Rp</span>
                                                 <input type="text" class="form-control price-display text-end fw-bold" value="0">
@@ -262,7 +262,7 @@
                                     {{-- Kolom 3: Pajak & Diskon --}}
                                     <td>
                                         <div class="item-box border-info-subtle">
-                                            <label class="form-label text-xs fw-bold text-info"><i class="bi bi-plus-circle me-1"></i>Pajak Item</label>
+                                            <label class="text-xs form-label fw-bold text-info"><i class="bi bi-plus-circle me-1"></i>Pajak Item</label>
                                             <div class="mb-3 input-group input-group-sm">
                                                 <select name="items[0][tax_type]" class="form-select tax-type" style="max-width: 55px; padding-right:5px; padding-left:5px;">
                                                     <option value="percent" selected>%</option><option value="fixed">Rp</option>
@@ -278,7 +278,7 @@
                                                 <input type="hidden" name="items[0][tax_value]" class="tax-val-real" value="0">
                                             </div>
 
-                                            <label class="form-label text-xs fw-bold text-danger"><i class="bi bi-dash-circle me-1"></i>Diskon Item</label>
+                                            <label class="text-xs form-label fw-bold text-danger"><i class="bi bi-dash-circle me-1"></i>Diskon Item</label>
                                             <div class="input-group input-group-sm">
                                                 <select name="items[0][discount_type]" class="form-select disc-type" style="max-width: 55px; padding-right:5px; padding-left:5px;">
                                                     <option value="percent" selected>%</option><option value="fixed">Rp</option>
@@ -291,14 +291,14 @@
 
                                     {{-- Kolom 4: Aksi --}}
                                     <td class="text-center align-middle">
-                                        <button type="button" class="btn btn-white border shadow-sm text-danger remove-item rounded-circle" title="Hapus Baris">
+                                        <button type="button" class="border shadow-sm btn btn-white text-danger remove-item rounded-circle" title="Hapus Baris">
                                             <i class="bi bi-trash"></i>
                                         </button>
                                     </td>
                                 </tr>
                             </tbody>
                         </table>
-                        <button type="button" class="px-4 py-2 mt-2 btn btn-primary bg-opacity-10 text-primary border-0 rounded-pill fw-bold" id="addItem" style="background-color: rgba(13, 110, 253, 0.1);">
+                        <button type="button" class="px-4 py-2 mt-2 border-0 btn btn-primary bg-opacity-10 text-primary rounded-pill fw-bold" id="addItem" style="background-color: rgba(13, 110, 253, 0.1);">
                             <i class="bi bi-plus-lg me-1"></i> Tambah Baris Item
                         </button>
                     </div>
@@ -307,7 +307,7 @@
                 {{-- CARD 5 & 6: BIAYA EKSTRA & LAMPIRAN --}}
                 <div class="row g-4">
                     <div class="col-md-7">
-                        <div class="modern-card h-100 mb-0">
+                        <div class="mb-0 modern-card h-100">
                             <div class="p-4 card-body">
                                 <h6 class="mb-4 fw-bold text-dark"><i class="bi bi-calculator me-2 text-warning"></i>Biaya Ekstra & Potongan Global</h6>
 
@@ -329,16 +329,16 @@
                     </div>
 
                     <div class="col-md-5">
-                        <div class="modern-card h-100 mb-0">
+                        <div class="mb-0 modern-card h-100">
                             <div class="p-4 card-body">
                                 <h6 class="mb-3 fw-bold text-dark"><i class="bi bi-paperclip me-2 text-primary"></i>Lampiran File</h6>
                                 <div id="attachmentContainer">
                                     <div class="mb-2 input-group">
                                         <input type="file" name="attachments[]" class="form-control" accept=".pdf,.jpg,.jpeg,.png">
-                                        <button class="btn btn-light border remove-file text-danger" type="button"><i class="bi bi-x-lg"></i></button>
+                                        <button class="border btn btn-light remove-file text-danger" type="button"><i class="bi bi-x-lg"></i></button>
                                     </div>
                                 </div>
-                                <button type="button" class="mt-2 btn btn-light border text-primary btn-sm rounded-pill fw-bold w-100" id="addFile">
+                                <button type="button" class="mt-2 border btn btn-light text-primary btn-sm rounded-pill fw-bold w-100" id="addFile">
                                     <i class="bi bi-plus-lg me-1"></i> Tambah File
                                 </button>
                                 <p class="mt-3 text-muted" style="font-size: 0.7rem;"><i class="bi bi-info-circle me-1"></i>Mendukung file PDF, JPG, PNG (Max 5MB/file).</p>
@@ -353,7 +353,7 @@
             <div class="col-xl-4 col-lg-5">
                 <div class="receipt-panel">
                     <div class="p-4 card-body">
-                        <h5 class="mb-4 text-center fw-bold text-dark pb-3 border-bottom"><i class="bi bi-receipt me-2 text-primary"></i>Ringkasan Tagihan</h5>
+                        <h5 class="pb-3 mb-4 text-center fw-bold text-dark border-bottom"><i class="bi bi-receipt me-2 text-primary"></i>Ringkasan Tagihan</h5>
 
                         <div class="receipt-row">
                             <span class="text-muted">Subtotal Item</span>
@@ -363,16 +363,16 @@
                             <span class="text-muted">Diskon Per-Item</span>
                             <span class="fw-bold text-danger">- <span class="curr-symbol-display">Rp</span> <span id="display_item_discount">0</span></span>
                         </div>
-                        <div class="receipt-row pb-3 mb-3 border-bottom">
+                        <div class="pb-3 mb-3 receipt-row border-bottom">
                             <span class="text-muted">Total Pajak Item</span>
                             <span class="fw-bold text-info">+ <span class="curr-symbol-display">Rp</span> <span id="display_tax">0</span></span>
                         </div>
 
-                        <div class="receipt-row mt-3">
+                        <div class="mt-3 receipt-row">
                             <span class="text-muted fw-bold">Biaya Tambahan</span>
                             <span class="fw-bold text-warning-emphasis">+ <span class="curr-symbol-display">Rp</span> <span id="display_charges">0</span></span>
                         </div>
-                        <div class="receipt-row mb-2">
+                        <div class="mb-2 receipt-row">
                             <span class="text-muted fw-bold">Potongan Global</span>
                             <span class="fw-bold text-danger">- <span class="curr-symbol-display">Rp</span> <span id="display_extra_discounts">0</span></span>
                         </div>
@@ -385,7 +385,7 @@
                         <button type="button" id="btnSubmitForm" class="py-3 mt-4 shadow-sm btn btn-primary w-100 rounded-pill fw-bold d-flex align-items-center justify-content-center" style="font-size: 1.05rem;">
                             <i class="bi bi-save2 fs-5 me-2"></i> Simpan Tagihan
                         </button>
-                        <a href="{{ route('bills.index') }}" class="py-2 mt-2 btn btn-light w-100 rounded-pill fw-bold text-muted border-0">Batal & Kembali</a>
+                        <a href="{{ route('bills.index') }}" class="py-2 mt-2 border-0 btn btn-light w-100 rounded-pill fw-bold text-muted">Batal & Kembali</a>
                     </div>
                 </div>
             </div>
@@ -427,6 +427,39 @@
 <script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
 
 <script>
+
+document.addEventListener('DOMContentLoaded', function() {
+    const billForm = document.getElementById('billForm');
+
+    if (billForm) {
+        billForm.addEventListener('submit', function(e) {
+            // Jika menggunakan validasi kustom lain dan gagal (e.defaultPrevented), jangan kunci tombol
+            if (e.defaultPrevented) return;
+
+            const submitBtn = this.querySelector('button[type="submit"]');
+            if (submitBtn) {
+                if (submitBtn.disabled) {
+                    e.preventDefault();
+                    return;
+                }
+                submitBtn.disabled = true;
+                submitBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>Menyimpan...';
+            }
+        });
+    }
+});
+
+// Buka kembali tombol jika user menekan tombol Back di browser
+window.addEventListener('pageshow', function(event) {
+    if (event.persisted) {
+        const submitBtn = document.querySelector('#billForm button[type="submit"]');
+        if (submitBtn) {
+            submitBtn.disabled = false;
+            submitBtn.innerHTML = '<i class="bi bi-save me-1"></i> Simpan Tagihan';
+        }
+    }
+});
+
 $(document).ready(function() {
 
     function initSelect2() {
@@ -600,22 +633,22 @@ $(document).ready(function() {
         tr.innerHTML = `
             <td>
                 <div class="item-box">
-                    <label class="form-label text-xs fw-bold text-muted">Master Item <span class="text-danger">*</span></label>
+                    <label class="text-xs form-label fw-bold text-muted">Master Item <span class="text-danger">*</span></label>
                     ${templateSelect}
 
-                    <label class="form-label text-xs fw-bold text-muted">Nama di Tagihan <span class="text-danger">*</span></label>
+                    <label class="text-xs form-label fw-bold text-muted">Nama di Tagihan <span class="text-danger">*</span></label>
                     <input type="text" name="items[${index}][name_override]" id="name_override_${index}" class="mb-3 form-control form-control-sm fw-bold text-primary" placeholder="Bisa diedit..." required>
 
-                    <label class="form-label text-xs fw-bold text-muted">Spesifikasi Detail</label>
+                    <label class="text-xs form-label fw-bold text-muted">Spesifikasi Detail</label>
                     <textarea name="items[${index}][description]" class="form-control form-control-sm" rows="2" placeholder="Bisa tekan enter..."></textarea>
                 </div>
             </td>
             <td>
                 <div class="item-box">
-                    <label class="form-label text-xs fw-bold text-muted">Jumlah (Qty) <span class="text-danger">*</span></label>
+                    <label class="text-xs form-label fw-bold text-muted">Jumlah (Qty) <span class="text-danger">*</span></label>
                     <input type="number" name="items[${index}][qty]" class="mb-3 text-center form-control form-control-sm qty fw-bold" value="1" min="1">
 
-                    <label class="form-label text-xs fw-bold text-muted">Harga Satuan <span class="text-danger">*</span></label>
+                    <label class="text-xs form-label fw-bold text-muted">Harga Satuan <span class="text-danger">*</span></label>
                     <div class="input-group input-group-sm">
                         <span class="input-group-text curr-symbol bg-light text-muted border-end-0">Rp</span>
                         <input type="text" class="form-control price-display text-end fw-bold border-start-0" value="0">
@@ -625,7 +658,7 @@ $(document).ready(function() {
             </td>
             <td>
                 <div class="item-box border-info-subtle">
-                    <label class="form-label text-xs fw-bold text-info"><i class="bi bi-plus-circle me-1"></i>Pajak Item</label>
+                    <label class="text-xs form-label fw-bold text-info"><i class="bi bi-plus-circle me-1"></i>Pajak Item</label>
                     <div class="mb-3 input-group input-group-sm">
                         <select name="items[${index}][tax_type]" class="form-select tax-type" style="max-width: 55px; padding-right:5px; padding-left:5px;">
                             <option value="percent" selected>%</option><option value="fixed">Rp</option>
@@ -640,7 +673,7 @@ $(document).ready(function() {
                         <input type="hidden" name="items[${index}][tax_value]" class="tax-val-real" value="0">
                     </div>
 
-                    <label class="form-label text-xs fw-bold text-danger"><i class="bi bi-dash-circle me-1"></i>Diskon Item</label>
+                    <label class="text-xs form-label fw-bold text-danger"><i class="bi bi-dash-circle me-1"></i>Diskon Item</label>
                     <div class="input-group input-group-sm">
                         <select name="items[${index}][discount_type]" class="form-select disc-type" style="max-width: 55px; padding-right:5px; padding-left:5px;">
                             <option value="percent" selected>%</option><option value="fixed">Rp</option>
@@ -651,7 +684,7 @@ $(document).ready(function() {
                 </div>
             </td>
             <td class="text-center align-middle">
-                <button type="button" class="btn btn-white border shadow-sm text-danger remove-item rounded-circle" title="Hapus Baris"><i class="bi bi-trash"></i></button>
+                <button type="button" class="border shadow-sm btn btn-white text-danger remove-item rounded-circle" title="Hapus Baris"><i class="bi bi-trash"></i></button>
             </td>
         `;
         container.appendChild(tr);
@@ -670,13 +703,13 @@ $(document).ready(function() {
         div.innerHTML = `
             ${templateSelect}
             <div class="mb-2 input-group input-group-sm">
-                <span class="input-group-text curr-symbol border-end-0 bg-white">Rp</span>
+                <span class="bg-white input-group-text curr-symbol border-end-0">Rp</span>
                 <input type="text" class="form-control charge-display text-end fw-bold border-start-0 text-warning-emphasis" value="0">
                 <input type="hidden" name="charges[${index}][amount]" class="charge-real" value="0">
             </div>
             <div class="d-flex">
-                <input type="text" name="charges[${index}][note]" class="form-control form-control-sm me-2 bg-white" placeholder="Keterangan opsional...">
-                <button type="button" class="btn btn-light border btn-sm remove-extra text-danger"><i class="bi bi-trash"></i></button>
+                <input type="text" name="charges[${index}][note]" class="bg-white form-control form-control-sm me-2" placeholder="Keterangan opsional...">
+                <button type="button" class="border btn btn-light btn-sm remove-extra text-danger"><i class="bi bi-trash"></i></button>
             </div>
         `;
         container.appendChild(div);
@@ -695,13 +728,13 @@ $(document).ready(function() {
         div.innerHTML = `
             ${templateSelect}
             <div class="mb-2 input-group input-group-sm">
-                <span class="text-danger input-group-text bg-white curr-symbol border-end-0 border-danger border-opacity-50">Rp</span>
-                <input type="text" class="form-control ext-disc-display text-end text-danger fw-bold border-start-0 border-danger border-opacity-50" value="0">
+                <span class="bg-white border-opacity-50 text-danger input-group-text curr-symbol border-end-0 border-danger">Rp</span>
+                <input type="text" class="border-opacity-50 form-control ext-disc-display text-end text-danger fw-bold border-start-0 border-danger" value="0">
                 <input type="hidden" name="discounts[${index}][amount]" class="ext-disc-real" value="0">
             </div>
             <div class="d-flex">
-                <input type="text" name="discounts[${index}][note]" class="form-control form-control-sm me-2 bg-white" placeholder="Keterangan potongan...">
-                <button type="button" class="btn btn-light border btn-sm remove-extra text-danger"><i class="bi bi-trash"></i></button>
+                <input type="text" name="discounts[${index}][note]" class="bg-white form-control form-control-sm me-2" placeholder="Keterangan potongan...">
+                <button type="button" class="border btn btn-light btn-sm remove-extra text-danger"><i class="bi bi-trash"></i></button>
             </div>
         `;
         container.appendChild(div);
@@ -717,7 +750,7 @@ $(document).ready(function() {
     $(document).on('click', '.remove-extra', function() {$(this).closest('.charge-row, .discount-row').remove(); calculate(); });
 
     $('#addFile').click(function() {
-        $('#attachmentContainer').append(`<div class="mb-2 input-group"><input type="file" name="attachments[]" class="form-control" accept=".pdf,.jpg,.jpeg,.png"><button class="btn btn-light border remove-file text-danger" type="button"><i class="bi bi-x-lg"></i></button></div>`);
+        $('#attachmentContainer').append(`<div class="mb-2 input-group"><input type="file" name="attachments[]" class="form-control" accept=".pdf,.jpg,.jpeg,.png"><button class="border btn btn-light remove-file text-danger" type="button"><i class="bi bi-x-lg"></i></button></div>`);
     });
     $(document).on('click', '.remove-file', function() {$(this).closest('.input-group').remove(); });
 
@@ -775,16 +808,29 @@ $(document).ready(function() {
         if (!form.checkValidity()) { form.reportValidity(); return; }
 
         Swal.fire({
-            title: 'Simpan Tagihan?', text: "Pastikan semua nominal & rincian sudah sesuai.", icon: 'question',
-            showCancelButton: true, confirmButtonColor: '#0d6efd', cancelButtonColor: '#6c757d',
-            confirmButtonText: 'Ya, Simpan!', reverseButtons: true, borderRadius: '1rem'
+            title: 'Simpan Tagihan Opex?',
+            text: "Pastikan data vendor, nominal, dan jadwal perulangan sudah sesuai.",
+            icon: 'question',
+            showCancelButton: true,
+            confirmButtonColor: '#0d6efd',
+            cancelButtonColor: '#6c757d',
+            confirmButtonText: 'Ya, Simpan Tagihan!',
+            cancelButtonText: 'Batal',
+            reverseButtons: true,
+            borderRadius: '1rem'
         }).then((result) => {
             if (result.isConfirmed) {
                 $(this).prop('disabled', true).html('<span class="spinner-border spinner-border-sm me-2"></span> Menyimpan...');
-                Swal.fire({ title: 'Memproses Data...', allowOutsideClick: false, didOpen: () => { Swal.showLoading(); } });
                 form.submit();
             }
         });
+    });
+
+    // Pengaman: Kembalikan tombol seperti semula jika user menekan tombol Back di Chrome
+    window.addEventListener('pageshow', function(event) {
+        if (event.persisted) {
+            $('#btnSubmitForm').prop('disabled', false).html('<i class="bi bi-save me-1"></i> Simpan Tagihan');
+        }
     });
 
     // ==========================================

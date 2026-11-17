@@ -1095,7 +1095,11 @@
             confirmButtonText: 'Ya, Terbitkan PO!'
         }).then((result) => {
             if (result.isConfirmed) {
-                Swal.fire({ title: 'Menerbitkan Dokumen PO...', allowOutsideClick: false, didOpen: () => Swal.showLoading() });
+                // Ubah tombol submit menjadi spinner (tanpa kotak loading SweetAlert)
+                let submitBtn = $(this).find('button[type="submit"], #btnSubmitForm, #btn-submit-main');
+                submitBtn.data('original-html', submitBtn.html());
+                submitBtn.prop('disabled', true).html('<span class="spinner-border spinner-border-sm me-2"></span> Menerbitkan...');
+
                 this.submit();
             } else {
                 $('input[type="file"]').prop('disabled', false);

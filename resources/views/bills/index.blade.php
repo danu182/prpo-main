@@ -9,6 +9,8 @@
         .nav-pills .nav-link.active { background-color: #0d6efd; box-shadow: 0 0.125rem 0.25rem rgba(13, 110, 253, 0.4); }
         .nav-pills .nav-link { color: #6c757d; font-weight: 600; border-radius: 50rem; padding: 0.5rem 1.5rem; transition: all 0.3s; }
         .nav-pills .nav-link:hover:not(.active) { background-color: #e9ecef; color: #000; }
+        .kpi-card { transition: transform 0.2s ease, box-shadow 0.2s ease; }
+        .kpi-card:hover { transform: translateY(-2px); box-shadow: 0 .5rem 1rem rgba(0,0,0,.08)!important; }
     </style>
 @endpush
 
@@ -16,7 +18,7 @@
 <div class="px-0 py-4 container-fluid">
 
     {{-- HEADER --}}
-    <div class="mb-4 d-flex justify-content-between align-items-end">
+    <div class="gap-3 mb-4 d-flex flex-column flex-md-row justify-content-between align-items-md-end">
         <div>
             <h4 class="mb-1 fw-bold text-dark"><i class="bi bi-wallet2 me-2 text-primary"></i>Daftar Tagihan Opex</h4>
             <p class="mb-0 text-muted small">Pantau seluruh tagihan operasional, vendor, dan status pembayaran.</p>
@@ -26,33 +28,92 @@
         </a>
     </div>
 
-    {{-- 🔥 NAV TABS (SEMUA TAGIHAN vs LANGGANAN AKTIF) 🔥 --}}
-    <ul class="p-2 mb-4 bg-white border shadow-sm nav nav-pills rounded-pill d-inline-flex">
-        <li class="nav-item">
-            <a class="nav-link {{ request('tab') != 'recurring' ? 'active' : '' }}" href="{{ route('bills.index') }}">
-                <i class="bi bi-receipt-cutoff me-1"></i> Semua Tagihan
+    {{-- KPI SUMMARY CARDS --}}
+    <div class="mb-4 row g-3">
+        <div class="col-md-4">
+            <div class="border-0 border-4 shadow-sm card rounded-4 border-start border-primary kpi-card h-100">
+                <div class="p-3 card-body d-flex align-items-center justify-content-between">
+                    <div>
+                        <div class="mb-1 text-muted small fw-bold text-uppercase" style="font-size: 0.7rem;">Total Tagihan (Sesuai Filter)</div>
+                        <h4 class="mb-0 fw-bolder text-dark">Rp {{ number_format($summary['total_nominal'] ?? 0, 0, ',', '.') }}</h4>
+                        <div class="mt-1 small text-muted">{{ $summary['total_count'] ?? 0 }} Dokumen ditemukan</div>
+                    </div>
+                    <div class="p-3 rounded-circle bg-primary-subtle text-primary">
+                        <i class="bi bi-receipt fs-4"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-md-4">
+            <div class="border-0 border-4 shadow-sm card rounded-4 border-start border-warning kpi-card h-100">
+                <div class="p-3 card-body d-flex align-items-center justify-content-between">
+                    <div>
+                        <div class="mb-1 text-muted small fw-bold text-uppercase" style="font-size: 0.7rem;">Menunggu Pembayaran (Unpaid)</div>
+                        <h4 class="mb-0 fw-bolder text-warning-emphasis">Rp {{ number_format($summary['total_unpaid'] ?? 0, 0, ',', '.') }}</h4>
+                        <div class="mt-1 small text-muted">{{ $summary['count_unpaid'] ?? 0 }} Tagihan belum lunas</div>
+                    </div>
+                    <div class="p-3 rounded-circle bg-warning-subtle text-warning-emphasis">
+                        <i class="bi bi-hourglass-split fs-4"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-md-4">
+            <a href="{{ route('bills.index', array_merge(request()->query(), ['overdue' => request('overdue') == '1' ? null : '1'])) }}" class="text-decoration-none">
+                <div class="border-0 border-4 shadow-sm card rounded-4 border-start border-danger kpi-card h-100 {{ request('overdue') == '1' ? 'bg-danger-subtle' : '' }}">
+                    <div class="p-3 card-body d-flex align-items-center justify-content-between">
+                        <div>
+                            <div class="mb-1 text-danger small fw-bold text-uppercase" style="font-size: 0.7rem;">
+                                Lewat Jatuh Tempo (Overdue)
+                                <span class="badge bg-danger ms-1">{{ request('overdue') == '1' ? 'Filter Aktif' : 'Klik Filter' }}</span>
+                            </div>
+                            <h4 class="mb-0 fw-bolder text-danger">Rp {{ number_format($summary['total_overdue'] ?? 0, 0, ',', '.') }}</h4>
+                            <div class="mt-1 small text-danger-emphasis">{{ $summary['count_overdue'] ?? 0 }} Tagihan terlambat bayar</div>
+                        </div>
+                        <div class="p-3 text-white rounded-circle bg-danger">
+                            <i class="bi bi-exclamation-triangle-fill fs-4"></i>
+                        </div>
+                    </div>
+                </div>
             </a>
-        </li>
-        <li class="nav-item">
-            <a class="nav-link {{ request('tab') == 'recurring' ? 'active' : '' }}" href="{{ route('bills.index', ['tab' => 'recurring']) }}">
-                <i class="bi bi-arrow-repeat me-1"></i> Langganan Aktif (Recurring)
+        </div>
+    </div>
+
+    {{-- NAV TABS --}}
+    <div class="flex-wrap gap-2 mb-3 d-flex justify-content-between align-items-center">
+        <ul class="p-2 bg-white border shadow-sm nav nav-pills rounded-pill d-inline-flex">
+            <li class="nav-item">
+                <a class="nav-link {{ request('tab') != 'recurring' ? 'active' : '' }}" href="{{ route('bills.index', request()->except('tab', 'page')) }}">
+                    <i class="bi bi-receipt-cutoff me-1"></i> Semua Tagihan
+                </a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link {{ request('tab') == 'recurring' ? 'active' : '' }}" href="{{ route('bills.index', array_merge(request()->except('page'), ['tab' => 'recurring'])) }}">
+                    <i class="bi bi-arrow-repeat me-1"></i> Langganan Aktif (Recurring)
+                </a>
+            </li>
+        </ul>
+
+        @if(request()->anyFilled(['company_id', 'vendor', 'status', 'search', 'month', 'year', 'start_date', 'end_date', 'overdue', 'bill_type']))
+            <a href="{{ route('bills.index', ['tab' => request('tab')]) }}" class="px-3 shadow-sm btn btn-sm btn-outline-danger rounded-pill fw-bold">
+                <i class="bi bi-arrow-counterclockwise me-1"></i> Reset Semua Filter
             </a>
-        </li>
-    </ul>
+        @endif
+    </div>
 
     {{-- CARD FILTER --}}
     <div class="mb-4 border-0 shadow-sm card rounded-4 bg-light">
         <div class="p-3 card-body">
             <form action="{{ route('bills.index') }}" method="GET">
-                {{-- Pertahankan parameter tab saat filter dijalankan --}}
-                @if(request()->has('tab'))
-                    <input type="hidden" name="tab" value="{{ request('tab') }}">
-                @endif
+                @if(request()->has('tab')) <input type="hidden" name="tab" value="{{ request('tab') }}"> @endif
+                @if(request()->has('overdue')) <input type="hidden" name="overdue" value="{{ request('overdue') }}"> @endif
 
-                <div class="row g-2 align-items-end">
-                    {{-- Filter Perusahaan --}}
+                {{-- BARIS 1: FILTER ATRIBUT --}}
+                <div class="mb-2 row g-2 align-items-end">
                     <div class="col-md-3">
-                        <label class="mb-1 small fw-bold text-muted" style="font-size: 0.75rem;">PT / PERUSAHAAN</label>
+                        <label class="mb-1 small fw-bold text-muted" style="font-size: 0.7rem;">PT / PERUSAHAAN</label>
                         <select name="company_id" class="border-0 shadow-sm form-select form-select-sm">
                             <option value="">-- Semua Perusahaan --</option>
                             @foreach($companies as $company)
@@ -63,16 +124,18 @@
                         </select>
                     </div>
 
-                    {{-- Filter Vendor --}}
-                    <div class="col-md-3">
-                        <label class="mb-1 small fw-bold text-muted" style="font-size: 0.75rem;">VENDOR / SUPPLIER</label>
-                        <input type="text" name="vendor" class="border-0 shadow-sm form-control form-control-sm"
-                               placeholder="Ketik nama vendor..." value="{{ request('vendor') }}">
+                    <div class="col-md-2">
+                        <label class="mb-1 small fw-bold text-muted" style="font-size: 0.7rem;">JENIS TAGIHAN</label>
+                        <select name="bill_type" class="border-0 shadow-sm form-select form-select-sm">
+                            <option value="">-- Semua Jenis --</option>
+                            <option value="parent" {{ request('bill_type') == 'parent' ? 'selected' : '' }}>Induk Berulang</option>
+                            <option value="auto" {{ request('bill_type') == 'auto' ? 'selected' : '' }}>Auto-Recurring (Turunan)</option>
+                            <option value="manual" {{ request('bill_type') == 'manual' ? 'selected' : '' }}>Manual (Sekali)</option>
+                        </select>
                     </div>
 
-                    {{-- Filter Status --}}
                     <div class="col-md-2">
-                        <label class="mb-1 small fw-bold text-muted" style="font-size: 0.75rem;">STATUS</label>
+                        <label class="mb-1 small fw-bold text-muted" style="font-size: 0.7rem;">STATUS</label>
                         <select name="status" class="border-0 shadow-sm form-select form-select-sm">
                             <option value="">-- Semua Status --</option>
                             <option value="draft" {{ request('status') == 'draft' ? 'selected' : '' }}>DRAFT</option>
@@ -84,29 +147,75 @@
                         </select>
                     </div>
 
-                    {{-- Global Search --}}
+                    <div class="col-md-2">
+                        <label class="mb-1 small fw-bold text-muted" style="font-size: 0.7rem;">VENDOR / SUPPLIER</label>
+                        <input type="text" name="vendor" class="border-0 shadow-sm form-control form-control-sm"
+                               placeholder="Nama vendor..." value="{{ request('vendor') }}">
+                    </div>
+
                     <div class="col-md-3">
-                        <label class="mb-1 small fw-bold text-muted" style="font-size: 0.75rem;">PENCARIAN</label>
+                        <label class="mb-1 small fw-bold text-muted" style="font-size: 0.7rem;">PENCARIAN CEPAT</label>
                         <div class="rounded shadow-sm input-group input-group-sm">
                             <span class="bg-white border-0 input-group-text text-muted"><i class="bi bi-search"></i></span>
                             <input type="text" name="search" class="border-0 form-control ps-0"
-                                   placeholder="No Tagihan / Deskripsi..." value="{{ request('search') }}">
+                                   placeholder="No Tagihan / Judul..." value="{{ request('search') }}">
                         </div>
-                    </div>
-
-                    {{-- Tombol Action --}}
-                    <div class="col-md-1">
-                        <button type="submit" class="shadow-sm btn btn-dark btn-sm w-100 fw-bold"><i class="bi bi-filter"></i> Filter</button>
                     </div>
                 </div>
 
-                @if(request()->anyFilled(['company_id', 'vendor', 'status', 'search']))
-                    <div class="mt-2 text-end">
-                        <a href="{{ route('bills.index', ['tab' => request('tab')]) }}" class="text-decoration-none small text-danger fw-bold">
-                            <i class="bi bi-x-circle me-1"></i> Reset Filter
-                        </a>
+                {{-- BARIS 2: FILTER WAKTU --}}
+                <div class="pt-2 mt-2 border-top row g-2 align-items-end">
+                    <div class="col-md-2">
+                        <label class="mb-1 small fw-bold text-primary" style="font-size: 0.7rem;"><i class="bi bi-calendar-event me-1"></i>ACUAN TANGGAL</label>
+                        <select name="date_type" class="border-0 shadow-sm form-select form-select-sm fw-semibold text-dark">
+                            <option value="invoice_date" {{ request('date_type', 'invoice_date') == 'invoice_date' ? 'selected' : '' }}>Tgl Tagihan (Invoice)</option>
+                            <option value="due_date" {{ request('date_type') == 'due_date' ? 'selected' : '' }}>Tgl Jatuh Tempo</option>
+                        </select>
                     </div>
-                @endif
+
+                    <div class="col-md-2">
+                        <label class="mb-1 small fw-bold text-muted" style="font-size: 0.7rem;">BULAN</label>
+                        <select name="month" id="filter_month" class="border-0 shadow-sm form-select form-select-sm">
+                            <option value="">-- Semua Bulan --</option>
+                            @php
+                                $months = [
+                                    1 => 'Januari', 2 => 'Februari', 3 => 'Maret', 4 => 'April',
+                                    5 => 'Mei', 6 => 'Juni', 7 => 'Juli', 8 => 'Agustus',
+                                    9 => 'September', 10 => 'Oktober', 11 => 'November', 12 => 'Desember'
+                                ];
+                            @endphp
+                            @foreach($months as $num => $name)
+                                <option value="{{ $num }}" {{ request('month') == $num ? 'selected' : '' }}>{{ $name }}</option>
+                            @endforeach
+                        </select>
+                    </div>
+
+                    <div class="col-md-2">
+                        <label class="mb-1 small fw-bold text-muted" style="font-size: 0.7rem;">TAHUN</label>
+                        <select name="year" id="filter_year" class="border-0 shadow-sm form-select form-select-sm">
+                            <option value="">-- Semua Tahun --</option>
+                            @foreach($availableYears as $yr)
+                                <option value="{{ $yr }}" {{ request('year') == $yr ? 'selected' : '' }}>{{ $yr }}</option>
+                            @endforeach
+                        </select>
+                    </div>
+
+                    <div class="col-md-2">
+                        <label class="mb-1 small fw-bold text-muted" style="font-size: 0.7rem;">DARI TANGGAL</label>
+                        <input type="date" name="start_date" id="filter_start_date" class="border-0 shadow-sm form-control form-control-sm" value="{{ request('start_date') }}">
+                    </div>
+
+                    <div class="col-md-2">
+                        <label class="mb-1 small fw-bold text-muted" style="font-size: 0.7rem;">SAMPAI TANGGAL</label>
+                        <input type="date" name="end_date" id="filter_end_date" class="border-0 shadow-sm form-control form-control-sm" value="{{ request('end_date') }}">
+                    </div>
+
+                    <div class="col-md-2">
+                        <button type="submit" class="shadow-sm btn btn-dark btn-sm w-100 fw-bold">
+                            <i class="bi bi-funnel-fill me-1"></i> Terapkan Filter
+                        </button>
+                    </div>
+                </div>
             </form>
         </div>
     </div>
@@ -118,12 +227,11 @@
                 <thead class="bg-secondary bg-opacity-10">
                     <tr>
                         <th class="px-4 py-3 text-secondary small text-uppercase fw-bold" width="18%">No. Dokumen</th>
-                        {{-- 🔥 KOLOM BARU: DESKRIPSI TAGIHAN 🔥 --}}
                         <th class="py-3 text-secondary small text-uppercase fw-bold" width="22%">Judul Tagihan</th>
                         <th class="py-3 text-secondary small text-uppercase fw-bold" width="18%">Vendor & PT</th>
-                        <th class="py-3 text-secondary small text-uppercase fw-bold text-end" width="12%">Nominal</th>
-                        <th class="py-3 text-center text-secondary small text-uppercase fw-bold" width="12%">Jatuh Tempo</th>
-                        <th class="py-3 text-center text-secondary small text-uppercase fw-bold" width="12%">Status</th>
+                        <th class="py-3 text-secondary small text-uppercase fw-bold text-end" width="13%">Nominal</th>
+                        <th class="py-3 text-center text-secondary small text-uppercase fw-bold" width="13%">Jatuh Tempo</th>
+                        <th class="py-3 text-center text-secondary small text-uppercase fw-bold" width="10%">Status</th>
                         <th class="px-4 py-3 text-secondary small text-uppercase fw-bold text-end" width="6%">Aksi</th>
                     </tr>
                 </thead>
@@ -134,10 +242,26 @@
                         $statusName = optional($bill->status)->name ?? 'UNKNOWN';
                         $statusColor = optional($bill->status)->color ?? 'secondary';
 
-                        $isOverdue = \Carbon\Carbon::parse($bill->due_date)->isPast() && !in_array($statusSlug, ['paid', 'rejected', 'cancelled']);
+                        $dueDate = $bill->due_date ? \Carbon\Carbon::parse($bill->due_date)->startOfDay() : null;
+                        $today = now()->startOfDay();
+                        $isUnpaid = !in_array($statusSlug, ['paid', 'rejected', 'cancelled']);
+                        $isOverdue = $dueDate && $dueDate->lt($today) && $isUnpaid;
+                        $daysDiff = $dueDate ? $today->diffInDays($dueDate, false) : null;
+
+                        // Deteksi apakah tagihan ini adalah anak/turunan dari Induk Berulang
+                        $billSig = strtolower(trim(($bill->title ?? '') . '|' . ($bill->vendor_name ?? '') . '|' . ($bill->company_id ?? '')));
+                        $isAutoChild = !$bill->is_recurring && (
+                            !empty($bill->parent_id)
+                            || !empty($bill->parent_bill_id)
+                            || str_contains(strtolower($bill->notes ?? ''), 'otomatis')
+                            || str_contains(strtolower($bill->notes ?? ''), 'recurring')
+                            || str_contains(strtolower($bill->description ?? ''), 'otomatis')
+                            || (isset($recurringSignatures) && in_array($billSig, $recurringSignatures))
+                        );
                     @endphp
                     <tr class="{{ $isOverdue ? 'overdue-row bg-danger bg-opacity-10' : 'normal-row' }}">
-                        {{-- KOLOM 1: NOMOR & INFO --}}
+
+                        {{-- KOLOM 1: NOMOR & IDENTITAS JENIS TAGIHAN --}}
                         <td class="px-4 py-3">
                             <a href="{{ route('bills.show', $bill->bill_number) }}" class="mb-1 fw-bold text-decoration-none text-primary d-block">
                                 {{ $bill->bill_number }}
@@ -145,14 +269,23 @@
                             <div class="small text-muted">
                                 <i class="bi bi-calendar-check me-1"></i> Tgl: {{ \Carbon\Carbon::parse($bill->invoice_date)->format('d M Y') }}
                             </div>
+
                             @if($bill->is_recurring)
-                                <span class="mt-1 border badge bg-info-subtle text-info-emphasis border-info-subtle" style="font-size: 0.65rem;">
-                                    <i class="bi bi-arrow-repeat"></i> Berulang
+                                <span class="mt-1 border badge bg-info-subtle text-info-emphasis border-info-subtle" style="font-size: 0.65rem;" title="Tagihan Induk Langganan Aktif (Setiap {{ $bill->recurring_interval }} {{ $bill->recurring_period }})">
+                                    <i class="bi bi-arrow-repeat me-1"></i> Induk Berulang
+                                </span>
+                            @elseif($isAutoChild)
+                                <span class="mt-1 border badge" style="background-color: #f3e8ff; color: #6b21a8; border-color: #d8b4fe !important; font-size: 0.65rem;" title="Dibuat otomatis oleh sistem dari siklus berulang">
+                                    <i class="bi bi-robot me-1"></i> Auto-Recurring
+                                </span>
+                            @else
+                                <span class="mt-1 border badge bg-light text-secondary border-secondary-subtle" style="font-size: 0.65rem;" title="Dibuat secara manual tanpa perulangan">
+                                    <i class="bi bi-pencil-square me-1"></i> Manual
                                 </span>
                             @endif
                         </td>
 
-                        {{-- 🔥 KOLOM 2: JUDUL & DESKRIPSI (BARU) 🔥 --}}
+                        {{-- KOLOM 2: JUDUL & DESKRIPSI --}}
                         <td class="py-3">
                             <div class="mb-1 fw-bold text-dark text-wrap" style="max-width: 250px;" title="{{ $bill->title }}">
                                 {{ str_ireplace('Tagihan Opex - ', '', $bill->title ?? '-') }}
@@ -168,7 +301,6 @@
                                 <i class="bi bi-shop text-warning me-1"></i> {{ $bill->vendor_name }}
                             </div>
                             <div class="small text-muted text-truncate" style="max-width: 200px;" title="{{ $bill->company->name ?? '-' }}">
-                                {{-- 🔥 PERBAIKAN: Cetak nama lengkap PT, bukan kodenya 🔥 --}}
                                 <i class="bi bi-building me-1"></i> {{ $bill->company->name ?? '-' }}
                             </div>
                         </td>
@@ -180,19 +312,25 @@
                             </div>
                         </td>
 
-                        {{-- KOLOM 5: JATUH TEMPO --}}
+                        {{-- KOLOM 5: JATUH TEMPO & HITUNG MUNDUR --}}
                         <td class="py-3 text-center">
-                            <div class="small fw-semibold {{ $isOverdue ? 'text-danger' : 'text-muted' }}">
-                                {{ $bill->due_date ? \Carbon\Carbon::parse($bill->due_date)->format('d M Y') : '-' }}
+                            <div class="small fw-semibold {{ $isOverdue ? 'text-danger' : 'text-dark' }}">
+                                {{ $dueDate ? $dueDate->format('d M Y') : '-' }}
                             </div>
-                            @if($isOverdue)
-                                <div class="px-2 mt-1 badge bg-danger" style="font-size: 0.65rem;">OVERDUE</div>
+                            @if($dueDate && $isUnpaid)
+                                @if($daysDiff < 0)
+                                    <div class="px-2 mt-1 badge bg-danger" style="font-size: 0.65rem;">Telat {{ abs($daysDiff) }} Hari</div>
+                                @elseif($daysDiff == 0)
+                                    <div class="px-2 mt-1 badge bg-warning text-dark" style="font-size: 0.65rem;">Jatuh Tempo Hari Ini</div>
+                                @elseif($daysDiff <= 7)
+                                    <div class="px-2 mt-1 border badge bg-warning-subtle text-warning-emphasis border-warning" style="font-size: 0.65rem;">H-{{ $daysDiff }}</div>
+                                @endif
                             @endif
                         </td>
 
                         {{-- KOLOM 6: STATUS --}}
                         <td class="py-3 text-center">
-                            <span class="badge bg-{{ $statusColor }}-subtle text-{{ $statusColor }} border border-{{ $statusColor }} rounded-pill px-3 py-2 text-uppercase">
+                            <span class="badge bg-{{ $statusColor }}-subtle text-{{ $statusColor }} border border-{{ $statusColor }} rounded-pill px-3 py-2 text-uppercase" style="font-size: 0.7rem;">
                                 {{ $statusName }}
                             </span>
                         </td>
@@ -271,7 +409,32 @@
 @push('scripts')
 <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
 <script>
-    // Konfirmasi Hapus Data
+    document.addEventListener('DOMContentLoaded', function() {
+        const monthEl = document.getElementById('filter_month');
+        const yearEl = document.getElementById('filter_year');
+        const startEl = document.getElementById('filter_start_date');
+        const endEl = document.getElementById('filter_end_date');
+
+        function clearMonthYear() {
+            if (startEl.value || endEl.value) {
+                monthEl.value = '';
+                yearEl.value = '';
+            }
+        }
+
+        function clearDateRange() {
+            if (monthEl.value || yearEl.value) {
+                startEl.value = '';
+                endEl.value = '';
+            }
+        }
+
+        startEl.addEventListener('change', clearMonthYear);
+        endEl.addEventListener('change', clearMonthYear);
+        monthEl.addEventListener('change', clearDateRange);
+        yearEl.addEventListener('change', clearDateRange);
+    });
+
     document.addEventListener('click', function (e) {
         if (e.target.closest('.btn-delete')) {
             const button = e.target.closest('.btn-delete');
