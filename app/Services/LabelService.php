@@ -44,13 +44,15 @@ class LabelService
                     }
                 }
 
-                // Lacak via goods_receipt_items
+                // Lacak via goods_receipt_items (Hanya cek kolom notes)
                 if (!$foundGrId) {
-                    $grItem = DB::table('goods_receipt_items')->where('item_id', $item->id ?? 0)
-                        ->where(function($q) use ($cleanSn) {
-                            $q->where('notes', 'like', '%' . $cleanSn . '%')->orWhere('serial_number', $cleanSn);
-                        })->first();
-                    if ($grItem && isset($grItem->goods_receipt_id)) $foundGrId = $grItem->goods_receipt_id;
+                    $grItem = DB::table('goods_receipt_items')
+                        ->where('item_id', $item->id ?? 0)
+                        ->where('notes', 'like', '%' . $cleanSn . '%')
+                        ->first();
+                    if ($grItem && isset($grItem->goods_receipt_id)) {
+                        $foundGrId = $grItem->goods_receipt_id;
+                    }
                 }
 
                 // Tarik Data PO dan Company

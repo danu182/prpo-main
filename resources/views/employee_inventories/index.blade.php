@@ -89,16 +89,11 @@
                 <tbody>
                     @forelse($allNames as $index => $employeeName)
                         @php
-                            // Filter data per nama
                             $minorItems = $inventories->get($employeeName, collect());
                             $majorItems = $fixedAssets->get($employeeName, collect());
 
-                            // 🔥 PERBAIKAN: Gunakan sum('qty') agar yang dihitung adalah TOTAL FISIK (2 pcs)
                             $activeMinorCount = $minorItems->where('qty', '>', 0)->sum('qty');
-
-                            // Major Asset tetap pakai count karena 1 baris = 1 unit
                             $majorCount = $majorItems->count();
-
                             $totalCount = $activeMinorCount + $majorCount;
                         @endphp
 
@@ -157,7 +152,22 @@
 
                                             {{-- KOLOM ASET TETAP --}}
                                             <div class="col-md-6">
-                                                <h6 class="mb-3 text-primary fw-bold small text-uppercase"><i class="bi bi-pc-display me-1"></i> Aset Tetap (Major)</h6>
+                                                <div class="mb-3 d-flex justify-content-between align-items-center">
+                                                    <h6 class="mb-0 text-primary fw-bold small text-uppercase">
+                                                        <i class="bi bi-pc-display me-1"></i> Aset Tetap (Major)
+                                                    </h6>
+
+                                                    {{-- 🔥 TOMBOL CETAK MASSAL ASET KARYAWAN 🔥 --}}
+                                                    @if($majorCount > 1)
+                                                        <a href="{{ route('inventory.print_label', ['ids' => implode(',', $majorItems->pluck('id')->toArray())]) }}"
+                                                           target="_blank"
+                                                           class="px-2 py-1 shadow-sm btn btn-sm btn-primary rounded-pill fw-bold"
+                                                           style="font-size: 0.7rem;">
+                                                            <i class="bi bi-printer-fill me-1"></i> Cetak Semua ({{ $majorCount }})
+                                                        </a>
+                                                    @endif
+                                                </div>
+
                                                 @if($majorCount > 0)
                                                     <div class="list-group item-list-group custom-scrollbar" style="max-height: 250px; overflow-y: auto;">
                                                         @foreach($majorItems as $asset)
@@ -178,10 +188,10 @@
                                                                         </div>
                                                                     </div>
 
-                                                                    {{-- Tombol Aksi Cetak Label --}}
+                                                                    {{-- 🔥 TOMBOL CETAK SATUAN (TERINTEGRASI LABEL SERVICE) 🔥 --}}
                                                                     <div>
-                                                                        <a href="{{ route('fixed-assets.print_qr', $asset->id) }}" target="_blank" class="btn btn-sm btn-outline-secondary rounded-pill fw-bold" style="font-size: 0.75rem;">
-                                                                            <i class="bi bi-qr-code me-1"></i> Print Label
+                                                                        <a href="{{ route('inventory.print_label', $asset->id) }}" target="_blank" class="btn btn-sm btn-outline-primary rounded-pill fw-bold" style="font-size: 0.75rem;">
+                                                                            <i class="bi bi-printer-fill me-1"></i> Print Label
                                                                         </a>
                                                                     </div>
                                                                 </div>
@@ -201,7 +211,6 @@
                                                                             </h2>
                                                                             <div id="collSpec-{{ $asset->id }}" class="accordion-collapse collapse" data-bs-parent="#accAsset-{{ $asset->id }}">
                                                                                 <div class="p-3 bg-white accordion-body border-top text-dark style-html-content" style="font-size: 0.85rem; line-height: 1.5; max-height: 250px; overflow-y: auto;">
-                                                                                    {{-- Menggunakan {!! !!} agar tag HTML dari Rich Editor merender cetak tebal dan bullet list dengan sempurna --}}
                                                                                     {!! $spekDetail !!}
                                                                                 </div>
                                                                             </div>
@@ -232,9 +241,17 @@
                                                                     </div>
                                                                     <div class="text-end">
                                                                         <div class="mb-1 border badge bg-light text-dark">{{ (float)$inv->qty }} {{ optional($inv->item)->unit ?? 'pcs' }}</div><br>
-                                                                        <a href="{{ route('employee-inventories.print_qr', $inv->id) }}" target="_blank" class="p-0 btn btn-sm btn-link text-secondary" style="font-size: 0.7rem; text-decoration: none;">
-                                                                            <i class="bi bi-qr-code"></i> Print Label
-                                                                        </a>
+
+                                                                        {{-- 🔥 CEK JIKA PUNYA SN MAKA PAKAI LABEL SERVICE, JIKA TIDAK PAKAI ROUTE BAWAAN 🔥 --}}
+                                                                        @if(!empty($inv->serial_number))
+                                                                            <a href="{{ route('inventory.print_label', ['item_id' => $inv->item_id, 'raw_sn' => $inv->serial_number]) }}" target="_blank" class="p-0 btn btn-sm btn-link text-primary fw-bold" style="font-size: 0.7rem; text-decoration: none;">
+                                                                                <i class="bi bi-printer-fill"></i> Print Label (T&J)
+                                                                            </a>
+                                                                        @else
+                                                                            <a href="{{ route('inventory.print_label', $inv->id) }}" target="_blank" class="p-0 btn btn-sm btn-link text-secondary" style="font-size: 0.7rem; text-decoration: none;">
+                                                                                <i class="bi bi-qr-code"></i> Print Label
+                                                                            </a>
+                                                                        @endif
                                                                     </div>
                                                                 </div>
                                                             @endif

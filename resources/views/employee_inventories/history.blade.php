@@ -48,13 +48,13 @@
 @endpush
 
 @section('content')
-<div class="container-fluid pb-5 text-dark">
+<div class="pb-5 container-fluid text-dark">
 
     {{-- HEADER: PROFILE BANNER --}}
     <div class="p-4 mb-4 text-white border-0 shadow-sm card rounded-4 profile-banner">
         <div class="position-relative z-1 d-flex flex-column flex-md-row justify-content-between align-items-md-center">
             <div class="d-flex align-items-center">
-                <div class="avatar-circle-lg me-3 flex-shrink-0">
+                <div class="flex-shrink-0 avatar-circle-lg me-3">
                     {{ strtoupper(substr($employee_name, 0, 2)) }}
                 </div>
                 <div>
@@ -64,11 +64,11 @@
                     </div>
                 </div>
             </div>
-            <div class="mt-3 mt-md-0 d-flex align-items-center gap-2">
-                <span class="px-3 py-2 border border-white shadow-sm badge bg-white text-info rounded-pill fw-bold border-opacity-25">
+            <div class="gap-2 mt-3 mt-md-0 d-flex align-items-center">
+                <span class="px-3 py-2 bg-white border border-white border-opacity-25 shadow-sm badge text-info rounded-pill fw-bold">
                     <i class="bi bi-radar me-1"></i> Tracking Active
                 </span>
-                <a href="{{ route('employee-inventories.index') }}" class="px-4 shadow-sm btn btn-dark rounded-pill fw-bold transition-all">
+                <a href="{{ route('employee-inventories.index') }}" class="px-4 transition-all shadow-sm btn btn-dark rounded-pill fw-bold">
                     <i class="bi bi-arrow-left me-1"></i> Kembali
                 </a>
             </div>
@@ -79,14 +79,14 @@
     <div class="overflow-hidden border-0 border-4 shadow-sm card rounded-4 border-top border-info">
         <div class="px-4 py-3 bg-white card-header border-bottom d-flex justify-content-between align-items-center">
             <h6 class="mb-0 fw-bold text-dark"><i class="bi bi-clock-history text-info me-2"></i> Timeline Transaksi</h6>
-            <span class="badge bg-light text-muted border">{{ count($allHistories) }} Record(s)</span>
+            <span class="border badge bg-light text-muted">{{ count($allHistories) }} Record(s)</span>
         </div>
         <div class="p-0 card-body">
             <div class="table-responsive">
                 <table class="table mb-0 align-middle table-hover">
                     <thead class="bg-light text-muted small text-uppercase fw-bold border-bottom" style="letter-spacing: 0.5px;">
                         <tr>
-                            <th class="py-3 ps-4 text-center" width="10%">Waktu</th>
+                            <th class="py-3 text-center ps-4" width="10%">Waktu</th>
                             <th class="py-3" width="15%">Transaksi</th>
                             <th class="py-3" width="30%">Rincian Barang</th>
                             <th class="py-3" width="20%">Kuantitas / S.N</th>
@@ -113,24 +113,24 @@
                             <td class="py-3">
                                 @if($log->action == 'TERIMA')
                                     <div class="mb-1">
-                                        <span class="px-3 py-1 border badge bg-success-subtle text-success border-success-subtle rounded-pill fw-bold shadow-sm">
+                                        <span class="px-3 py-1 border shadow-sm badge bg-success-subtle text-success border-success-subtle rounded-pill fw-bold">
                                             <i class="bi bi-arrow-down-left me-1"></i> DITERIMA
                                         </span>
                                     </div>
                                 @else
                                     <div class="mb-1">
-                                        <span class="px-3 py-1 border badge bg-danger-subtle text-danger border-danger-subtle rounded-pill fw-bold shadow-sm">
+                                        <span class="px-3 py-1 border shadow-sm badge bg-danger-subtle text-danger border-danger-subtle rounded-pill fw-bold">
                                             <i class="bi bi-arrow-up-right me-1"></i> DIKEMBALIKAN
                                         </span>
                                     </div>
                                 @endif
 
                                 @if($log->type == 'MAJOR')
-                                    <span class="badge bg-light text-primary border border-light fw-semibold" style="font-size: 0.65rem;">
+                                    <span class="border badge bg-light text-primary border-light fw-semibold" style="font-size: 0.65rem;">
                                         <i class="bi bi-pc-display me-1"></i> Aset Tetap
                                     </span>
                                 @else
-                                    <span class="badge bg-light text-secondary border border-light fw-semibold" style="font-size: 0.65rem;">
+                                    <span class="border badge bg-light text-secondary border-light fw-semibold" style="font-size: 0.65rem;">
                                         <i class="bi bi-box-seam me-1"></i> Inv. Minor
                                     </span>
                                 @endif
@@ -159,20 +159,50 @@
                                         </div>
                                     @endif
                                 @else
-                                    <div class="sn-chip mb-2 fs-6 py-1 px-2 border-info bg-info-subtle text-info-emphasis">
+                                    <div class="px-2 py-1 mb-2 sn-chip fs-6 border-info bg-info-subtle text-info-emphasis">
                                         <i class="bi bi-shield-check me-1"></i> {{ $log->qty_or_sn }}
                                     </div>
                                 @endif
 
-                                {{-- TOMBOL PRINT QR (Rapi di bawah item) --}}
+                                {{-- TOMBOL PRINT LABEL (TERINTEGRASI LABEL SERVICE) --}}
                                 @if(isset($log->print_id) && $log->print_id)
                                     <div class="mt-2">
                                         @php
-                                            $printRoute = ($log->type == 'MAJOR')
-                                                ? route('fixed-assets.print_qr', $log->print_id)
-                                                : route('employee-inventories.print_qr', $log->print_id);
+                                            $printRoute = '#';
+                                            if ($log->type == 'MAJOR') {
+                                                $printRoute = route('inventory.print_label', $log->print_id);
+                                            } else {
+                                                $empInv = \App\Models\EmployeeInventory::find($log->print_id);
+                                                $rawSn = '';
+
+                                                // 1. Cek dari kolom serial_number di tabel employee_inventories
+                                                if ($empInv && !empty($empInv->serial_number)) {
+                                                    $rawSn = $empInv->serial_number;
+                                                    if (str_contains($rawSn, 'SN:')) {
+                                                        $parts = explode('SN:', $rawSn);
+                                                        $rawSn = trim(end($parts));
+                                                    }
+                                                }
+
+                                                // 2. Jika masih kosong, ekstrak dari teks catatan log [SN: ...]
+                                                if (empty($rawSn)) {
+                                                    $noteText = $log->notes ?? $log->description ?? '';
+                                                    if (preg_match('/\[SN:\s*([^\]]+)\]/i', $noteText, $matches)) {
+                                                        $rawSn = trim($matches[1]);
+                                                    }
+                                                }
+
+                                                $itemId = $empInv->item_id ?? $log->item_id ?? 0;
+                                                $fallbackCode = $empInv->inventory_code ?? ('INV-' . $log->print_id);
+
+                                                $printRoute = route('inventory.print_label', [
+                                                    'item_id' => $itemId,
+                                                    'raw_sn'  => $rawSn ?: $fallbackCode
+                                                ]);
+                                            }
                                         @endphp
-                                        <a href="{{ $printRoute }}" target="_blank" class="btn btn-sm btn-outline-dark rounded-pill fw-bold" style="font-size: 0.65rem;" title="Cetak Label QR">
+
+                                        <a href="{{ $printRoute }}" target="_blank" class="btn btn-sm btn-outline-primary rounded-pill fw-bold" style="font-size: 0.65rem;" title="Cetak Label Tom & Jerry 127">
                                             <i class="bi bi-printer-fill me-1"></i> Print Label
                                         </a>
                                     </div>
@@ -182,11 +212,11 @@
                             {{-- KOLOM 5: CATATAN --}}
                             <td class="py-3 pe-4">
                                 @if($log->type == 'MINOR')
-                                    <div class="mb-1 badge bg-light text-dark border border-secondary-subtle">
+                                    <div class="mb-1 border badge bg-light text-dark border-secondary-subtle">
                                         <i class="bi bi-file-earmark-text me-1"></i> Ref: {{ $log->reference_number }}
                                     </div>
                                 @endif
-                                <div class="p-2 mt-1 rounded bg-light border text-muted" style="font-size: 0.75rem; line-height: 1.5;">
+                                <div class="p-2 mt-1 border rounded bg-light text-muted" style="font-size: 0.75rem; line-height: 1.5;">
                                     {!! nl2br(e($log->notes ?? 'Tidak ada catatan tambahan.')) !!}
                                 </div>
                             </td>
@@ -194,7 +224,7 @@
                         @empty
                         <tr>
                             <td colspan="5" class="py-5 text-center bg-light-subtle">
-                                <div class="p-4 mx-auto max-w-sm">
+                                <div class="max-w-sm p-4 mx-auto">
                                     <i class="mb-3 opacity-25 bi bi-journal-x text-muted display-4 d-block"></i>
                                     <h6 class="fw-bold text-dark">Data Riwayat Kosong</h6>
                                     <p class="mb-0 text-muted small">Belum ada riwayat transaksi serah terima aset maupun inventaris untuk personil ini.</p>
