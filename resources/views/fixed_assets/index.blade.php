@@ -64,6 +64,12 @@
         </div>
 
         <div class="flex-wrap gap-2 d-flex">
+            {{-- 🔥 TOMBOL CETAK MASSAL ASET 🔥 --}}
+            @if(count($assets) > 0)
+                <a href="{{ route('inventory.print_label') }}?ids={{ implode(',', $assets->pluck('id')->toArray()) }}" target="_blank" class="shadow-sm btn btn-outline-primary rounded-pill fw-bold">
+                    <i class="bi bi-printer-fill me-1"></i> Cetak Aset Halaman Ini ({{ count($assets) }})
+                </a>
+            @endif
             <form action="{{ route('fixed-assets.index') }}" method="GET" class="gap-2 d-flex" style="min-width: 500px;">
                 <select name="warehouse_id" class="shadow-sm form-select rounded-pill border-info" onchange="this.form.submit()" style="width: 200px;">
                     <option value="">-- Semua Lokasi / Gudang --</option>
@@ -131,7 +137,7 @@
                                         {{-- <div class="fw-bold text-dark fs-6 mb-1 {{ optional($ast->status)->slug === 'disposed' ? 'text-decoration-line-through text-danger' : '' }}">{{ $ast->name ?? optional($ast->item)->name }}</div>
                                         <div class="mb-1 text-muted small"><span class="badge-item-code me-1"><i class="bi bi-box me-1"></i>{{ optional($ast->item)->code ?? 'No Code' }}</span> {{ optional($ast->item)->name ?? 'Unknown Master' }}</div> --}}
 
-                                        
+
                                         {{-- 🔥 Logika Cerdas Menemukan Nama PO 🔥 --}}
                                         @php
                                             $poItemName = null;
@@ -150,10 +156,10 @@
                                         <div class="fw-bold text-dark fs-6 mb-1 {{ optional($ast->status)->slug === 'disposed' ? 'text-decoration-line-through text-danger' : '' }}">
                                             {{ $ast->name ?? optional($ast->item)->name }}
                                         </div>
-                                        
+
                                         {{-- Indikator Master Sistem --}}
                                         <div class="mb-1 text-muted small">
-                                            <span class="badge-item-code me-1" title="Kode Master"><i class="bi bi-box me-1"></i>{{ optional($ast->item)->code ?? 'No Code' }}</span> 
+                                            <span class="badge-item-code me-1" title="Kode Master"><i class="bi bi-box me-1"></i>{{ optional($ast->item)->code ?? 'No Code' }}</span>
                                             {{ optional($ast->item)->name ?? 'Unknown Master' }}
                                         </div>
 
@@ -180,7 +186,7 @@
                                             @endif
                                         </div>
 
-                                        
+
                                     </div>
                                 </div>
                             </td>
@@ -211,7 +217,8 @@
                                             <li><a class="dropdown-item text-primary" href="{{ route('fixed-assets.edit', $ast->id) }}"><i class="bi bi-pencil-square me-2"></i> Edit Data Aset</a></li>
                                             <li><a class="dropdown-item text-dark" href="#" data-bs-toggle="modal" data-bs-target="#modalHistory{{ $ast->id }}"><i class="bi bi-clock-history me-2"></i> Log Riwayat Aset</a></li>
                                             <li><hr class="my-1 dropdown-divider"></li>
-                                            <li><a class="dropdown-item text-dark" href="{{ route('fixed-assets.print_qr', $ast->id) }}" target="_blank"><i class="bi bi-qr-code me-2"></i> Cetak Label QR</a></li>
+                                            {{-- <li><a class="dropdown-item text-dark" href="{{ route('fixed-assets.print_qr', $ast->id) }}" target="_blank"><i class="bi bi-qr-code me-2"></i> Cetak Label QR</a></li> --}}
+                                            <li><a class="dropdown-item text-dark" href="{{ route('inventory.print_label', $ast->id) }}" target="_blank"><i class="bi bi-printer-fill me-2 text-primary"></i> Cetak Label Aset (T&J)</a></li>
                                             @if(optional($ast->status)->slug === 'in_use' && $ast->assigned_to) <li><a class="dropdown-item text-info" href="{{ route('fixed-assets.bast', $ast->id) }}" target="_blank"><i class="bi bi-file-earmark-check me-2"></i> Cetak BAST</a></li> @endif
                                             @if(optional($ast->status)->slug === 'disposed') <li><a class="dropdown-item text-danger fw-bold" href="{{ route('fixed-assets.bapp', $ast->id) }}" target="_blank"><i class="bi bi-file-earmark-x-fill me-2"></i> Cetak BAPP</a></li> @endif
                                             {{-- 🔥 TAMBAHKAN KODE TOMBOL HAPUS INI 🔥 --}}

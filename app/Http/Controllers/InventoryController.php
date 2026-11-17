@@ -14,6 +14,7 @@ use App\Exports\InventoryTemplateExport;
 use App\Imports\InventoryImport;
 use Illuminate\Support\Facades\Storage;
 use Maatwebsite\Excel\Facades\Excel;
+use App\Services\LabelService;
 
 class InventoryController extends Controller
 {
@@ -315,7 +316,7 @@ class InventoryController extends Controller
             foreach ($reversed as $mut) {
                 $isCapitalize = str_contains($mut->notes, '[CAPITALIZE]') || str_contains(strtolower($mut->notes), 'kapitalisasi');
                 $isDeCapitalize = str_contains($mut->notes, '[DE-CAPITALIZE]');
-                
+
                 $mut->is_capitalize = $isCapitalize;
                 $mut->is_decapitalize = $isDeCapitalize;
 
@@ -337,7 +338,7 @@ class InventoryController extends Controller
                         $mut->notes = preg_replace('/User ID:\s*\d+/i', $userName, $mut->notes);
                     }
                 }
-                
+
                 // =========================================================================
                 // 🔥 KECERDASAN BUATAN UNTUK MELACAK SN DI SEMUA TRANSAKSI 🔥
                 // =========================================================================
@@ -366,9 +367,9 @@ class InventoryController extends Controller
                             <div class="mt-1 fw-bold text-primary">' . $ad->asset_number . '</div>
                             ' . $accNo . '
                             ' . $snInfo . '
-                            
+
                             <!-- 🔥 TOMBOL CETAK INJECTED 🔥 -->
-                            <a href="' . $printUrl . '" target="_blank" class="position-absolute top-0 end-0 mt-1 me-1 btn btn-sm btn-light py-0 px-2 border shadow-sm" style="font-size: 0.6rem;" title="Cetak Label Tom & Jerry">
+                            <a href="' . $printUrl . '" target="_blank" class="top-0 px-2 py-0 mt-1 border shadow-sm position-absolute end-0 me-1 btn btn-sm btn-light" style="font-size: 0.6rem;" title="Cetak Label Tom & Jerry">
                                 <i class="bi bi-printer-fill text-primary"></i>
                             </a>
                         </div>';
@@ -441,9 +442,9 @@ class InventoryController extends Controller
                                     <div class="mt-1 fw-bold text-primary">' . $ad->asset_number . '</div>
                                     ' . $accNo . '
                                     ' . $snInfo . '
-                                    
+
                                     <!-- 🔥 TOMBOL CETAK INJECTED 🔥 -->
-                                    <a href="' . $printUrl . '" target="_blank" class="position-absolute top-0 end-0 mt-1 me-1 btn btn-sm btn-light py-0 px-2 border shadow-sm" style="font-size: 0.6rem;" title="Cetak Label Tom & Jerry">
+                                    <a href="' . $printUrl . '" target="_blank" class="top-0 px-2 py-0 mt-1 border shadow-sm position-absolute end-0 me-1 btn btn-sm btn-light" style="font-size: 0.6rem;" title="Cetak Label Tom & Jerry">
                                         <i class="bi bi-printer-fill text-primary"></i>
                                     </a>
                                 </div>';
@@ -459,7 +460,7 @@ class InventoryController extends Controller
                         }
                     }
                 }
-                
+
                 $mut->real_sns_html = $realSns; // Simpan di object $mut untuk digunakan di Blade
             }
         }
@@ -1327,150 +1328,22 @@ class InventoryController extends Controller
         }
     }
 
-    
+
     // =========================================================================
-    // 🔥 FITUR CETAK LABEL ASET / SERIAL NUMBER (MENDUKUNG TOM & JERRY) 🔥
+    // 🔥 FITUR CETAK LABEL MENGGUNAKAN SERVICE 🔥
     // =========================================================================
-    public function printLabel(\Illuminate\Http\Request $request, $assetId = null)
+    public function printLabel(\Illuminate\Http\Request $request, LabelService $labelService, $assetId = null)
     {
         $startPos = max(1, (int) $request->query('start_pos', 1));
-        $assets = collect();
-        
-        // 🔥 Skenario 1: Cetak SN Mentah (Stok Biasa)
-        if ($request->has('raw_sn') && $request->has('item_id')) {
-            $item = \App\Models\Item::find($request->item_id);
-            $rawSns = explode(',', $request->query('raw_sn'));
-            
-            foreach($rawSns as $sn) {
-                $cleanSn = trim($sn);
-                $companyName = null;
-                $tglIn = now()->format('d/m/Y');
-                $foundGrId = null;
-                $foundWarehouseId = null;
-                
-                $masterItemName = $item->name ?? 'Barang Umum';
-                $specificItemName = $masterItemName; // Default sama
-                $grNumber = '-';
 
-                // 1. Lacak via item_serials
-                $serialData = \DB::table('item_serials')->where('item_id', $item->id ?? 0)->where('serial_number', $cleanSn)->first();
-                if ($serialData) {
-                    if (isset($serialData->goods_receipt_id)) $foundGrId = $serialData->goods_receipt_id;
-                    if (isset($serialData->warehouse_id)) $foundWarehouseId = $serialData->warehouse_id;
-                    
-                    // Coba cari nama spesifik dari Goods Issue jika sudah dikeluarkan
-                    if (isset($serialData->goods_issue_id) && $serialData->goods_issue_id) {
-                        $giItemRow = \DB::table('goods_issue_items')->where('goods_issue_id', $serialData->goods_issue_id)->where('item_id', $item->id ?? 0)->first();
-                        if ($giItemRow && isset($giItemRow->item_name) && $giItemRow->item_name) {
-                            $specificItemName = $giItemRow->item_name;
-                        }
-                    }
-                }
+        // Panggil service untuk merakit datanya
+        $data = $labelService->generateLabelData($request, $assetId);
 
-                // 2. Lacak via goods_receipt_items
-                if (!$foundGrId) {
-                    $grItem = \DB::table('goods_receipt_items')->where('item_id', $item->id ?? 0)
-                        ->where(function($q) use ($cleanSn) {
-                            $q->where('notes', 'like', '%' . $cleanSn . '%')->orWhere('serial_number', $cleanSn);
-                        })->first();
-                        
-                    if ($grItem && isset($grItem->goods_receipt_id)) {
-                        $foundGrId = $grItem->goods_receipt_id;
-                    }
-                }
-
-                // 3. Tarik Data GR dan PO
-                if ($foundGrId) {
-                    $gr = \DB::table('goods_receipts')->where('id', $foundGrId)->first();
-                    if ($gr) {
-                        $grNumber = $gr->gr_number ?? '-';
-                        $tglIn = isset($gr->receipt_date) ? date('d/m/Y', strtotime($gr->receipt_date)) : (isset($gr->created_at) ? date('d/m/Y', strtotime($gr->created_at)) : $tglIn);
-                        if (isset($gr->warehouse_id) && !$foundWarehouseId) $foundWarehouseId = $gr->warehouse_id;
-
-                        if (isset($gr->purchase_order_id)) {
-                            $po = \DB::table('purchase_orders')->where('id', $gr->purchase_order_id)->first();
-                            if ($po) {
-                                $poArray = (array) $po;
-                                
-                                if (array_key_exists('company_id', $poArray) && $po->company_id) {
-                                    $companyName = \DB::table('companies')->where('id', $po->company_id)->value('name');
-                                } elseif (array_key_exists('purchase_request_id', $poArray) && $po->purchase_request_id) {
-                                    $pr = \DB::table('purchase_requests')->where('id', $po->purchase_request_id)->first();
-                                    $prArray = (array) $pr;
-                                    if ($pr && array_key_exists('company_id', $prArray) && $pr->company_id) $companyName = \DB::table('companies')->where('id', $pr->company_id)->value('name');
-                                }
-
-                                // Jika nama spesifik belum berubah (masih sama dengan master), cari di PO Items
-                                if ($specificItemName === $masterItemName) {
-                                    $poItemRow = \DB::table('purchase_order_items')->where('purchase_order_id', $po->id)->where('item_id', $item->id ?? 0)->first();
-                                    if ($poItemRow) {
-                                        $poItemArr = (array) $poItemRow;
-                                        if (array_key_exists('item_name', $poItemArr) && $poItemRow->item_name) {
-                                            $specificItemName = $poItemRow->item_name;
-                                        } elseif (array_key_exists('description', $poItemArr) && $poItemRow->description) {
-                                            $specificItemName = $poItemRow->description;
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-
-                if (!$companyName && $foundWarehouseId) {
-                    $stock = \DB::table('inventory_stocks')->where('item_id', $item->id ?? 0)->where('warehouse_id', $foundWarehouseId)->first();
-                    $stockArray = (array) $stock;
-                    if ($stock && array_key_exists('company_id', $stockArray) && $stock->company_id) {
-                        $companyName = \DB::table('companies')->where('id', $stock->company_id)->value('name');
-                    }
-                }
-
-                // Buat QR Cadangan: Kode Barang + Nomor GR
-                $fallbackQr = ($item->code ?? 'BRG') . '-' . ($grNumber !== '-' ? $grNumber : uniqid());
-
-                // Standarisasi Koleksi
-                $assets->push((object)[
-                    'master_item_name' => $item->name ?? '-',
-                    'po_item_name' => $specificItemName,
-                    'item_code' => $item->code ?? '-',
-                    'company_name' => $companyName ?: 'PERUSAHAAN INTERNAL',
-                    'serial_number' => $cleanSn ?: '-',
-                    'asset_number' => '-', 
-                    'tanggal_in' => $tglIn,
-                    'reference_number' => $grNumber,
-                    
-                    // 🔥 PERBAIKAN DI SINI 🔥
-                    'qr_data' => $cleanSn ?: $fallbackQr,
-                ]);
-            }
-            $assetIds = [];
-        } 
-        // 🔥 Skenario 2: Cetak Aset Resmi
-        else {
-            $assetIds = $request->query('ids') ? explode(',', $request->query('ids')) : [$assetId];
-            $assetsData = \App\Models\FixedAsset::with(['item', 'company'])->whereIn('id', $assetIds)->get();
-            
-            foreach ($assetsData as $ast) {
-                $grNumber = '-';
-                if (isset($ast->reference_number) && str_starts_with($ast->reference_number, 'GR-')) {
-                    $grNumber = $ast->reference_number;
-                }
-                
-                $assets->push((object)[
-                    'master_item_name' => optional($ast->item)->name ?? '-',
-                    'po_item_name' => $ast->name ?? '-',
-                    'item_code' => optional($ast->item)->code ?? '-',
-                    'company_name' => optional($ast->company)->name ?? 'PERUSAHAAN INTERNAL',
-                    'serial_number' => $ast->serial_number ?: '-',
-                    'asset_number' => $ast->asset_number ?: '-',
-                    'tanggal_in' => $ast->acquisition_date ? date('d/m/Y', strtotime($ast->acquisition_date)) : '-',
-                    'reference_number' => $grNumber,
-                    'qr_data' => $ast->serial_number ?: $ast->asset_number,
-                ]);
-            }
-        }
-
-        return view('inventory.print_label', compact('assets', 'startPos', 'assetIds'));
+        return view('shared.print_label', [
+            'assets' => $data['assets'],
+            'assetIds' => $data['assetIds'],
+            'startPos' => $startPos
+        ]);
     }
 
 

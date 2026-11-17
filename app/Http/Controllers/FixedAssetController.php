@@ -55,8 +55,164 @@ class FixedAssetController extends Controller
         return view('fixed_assets.index', compact('assets', 'search', 'users', 'items', 'companies', 'statuses', 'warehouses', 'currencies', 'assetCategories'));
     }
 
+
     // =========================================================================
     // 🔥 PROSES SIMPAN ASET MANUAL (CLEAN CODE & SMART MUTATION) 🔥
+    // =========================================================================
+    // public function store(Request $request)
+    // {
+    //     $request->validate([
+    //         'item_id'                 => 'required|exists:items,id',
+    //         'asset_category_id'       => 'required|exists:asset_categories,id',
+    //         'warehouse_id'            => 'required|exists:warehouses,id',
+    //         'quantity'                => 'required|integer|min:1',
+    //         'status_id'               => 'required|exists:statuses,id',
+    //         'company_id'              => 'required|exists:companies,id',
+    //         'asset_name'              => 'nullable|string|max:255',
+    //         'serial_number'           => 'nullable|string|max:255',
+    //         'accounting_asset_number' => 'nullable|string|max:255',
+    //         'spesifikasi_detail'      => 'required|string',
+    //         'notes'                   => 'nullable|string',
+    //         'acquisition_date'        => 'required|date',
+    //         'purchase_price'          => 'nullable|numeric|min:0',
+    //         'currency_id'             => 'required|exists:currencies,id',
+    //         'supporting_document'     => 'nullable|file|mimes:pdf,jpg,jpeg,png|max:5120',
+    //         // 🔥 KUNCI PERBAIKAN: Ubah 'image' menjadi 'file', tambahkan ekstensi PDF/Excel dll 🔥
+    //         'photos.*'                => 'nullable|file|mimes:jpeg,png,jpg,gif,pdf,doc,docx,xls,xlsx,zip,rar|max:5120',
+    //     ], [
+    //         'photos.*.mimes' => 'File lampiran harus berupa Gambar, PDF, Word, Excel, atau ZIP.',
+    //         'photos.*.max' => 'Ukuran setiap file lampiran maksimal 5MB.',
+    //     ]);
+    //     $selectedStatus = \App\Models\Status::find($request->status_id);
+    //     $statusSlug = optional($selectedStatus)->slug; // Menggunakan slug murni
+
+    //     // BLOKIR JIKA STATUS "IN USE" TAPI TIDAK ADA KARYAWAN
+    //     if ($statusSlug === 'in_use' && empty($request->assigned_to)) {
+    //         return back()->withInput()->with('error', 'VALIDASI GAGAL: Anda mengatur status aset menjadi "In Use", maka Anda WAJIB memilih Karyawan/User pada kolom Penanggung Jawab!');
+    //     }
+
+    //     try {
+    //         DB::transaction(function () use ($request, $selectedStatus, $statusSlug) {
+    //             $qty = $request->quantity;
+    //             $itemMaster = \App\Models\Item::lockForUpdate()->findOrFail($request->item_id);
+    //             $yearMonth = date('Y/m');
+
+    //             $finalAssetName = $request->filled('asset_name') ? $request->asset_name : $itemMaster->name;
+    //             $currentStock = (float) $itemMaster->current_stock;
+
+    //             $nomorPenerimaanHibah = 'HIBAH-' . date('Ymd-His');
+    //             $documentPath = null;
+
+    //             if ($request->hasFile('supporting_document')) {
+    //                 $file = $request->file('supporting_document');
+    //                 $filename = time() . '_' . uniqid() . '_' . str_replace(' ', '_', $file->getClientOriginalName());
+    //                 $folderPath = 'input_asset_manual_hibah/' . $nomorPenerimaanHibah;
+    //                 $documentPath = $file->storeAs($folderPath, $filename, 'public');
+    //             }
+
+    //             for ($i = 1; $i <= $qty; $i++) {
+    //                 $lastAsset = \App\Models\FixedAsset::where('asset_number', 'like', "AST/{$yearMonth}/%")
+    //                                 ->orderBy('id', 'desc')->lockForUpdate()->first();
+    //                 $nextSeq = $lastAsset ? ((int) substr($lastAsset->asset_number, -4)) + 1 : 1;
+    //                 $assetNumber = "AST/{$yearMonth}/" . str_pad($nextSeq, 4, '0', STR_PAD_LEFT);
+
+    //                 $assignedTo = ($statusSlug !== 'in_use') ? null : $request->assigned_to;
+
+    //                 $asset = \App\Models\FixedAsset::create([
+    //                     'asset_number'            => $assetNumber,
+    //                     'item_id'                 => $request->item_id,
+    //                     'asset_category_id'       => $request->asset_category_id,
+    //                     'name'                    => $finalAssetName,
+    //                     'warehouse_id'            => $request->warehouse_id,
+    //                     'company_id'              => $request->company_id,
+    //                     'serial_number'           => $qty > 1 ? null : $request->serial_number,
+    //                     'accounting_asset_number' => $qty > 1 ? null : $request->accounting_asset_number,
+    //                     'status_id'               => $request->status_id,
+    //                     'assigned_to'             => $assignedTo,
+    //                     'spesifikasi_detail'      => $request->spesifikasi_detail,
+    //                     'notes'                   => $request->notes ?? 'Aset didaftarkan secara manual (Hibah)',
+    //                     'acquisition_date'        => $request->acquisition_date,
+    //                     'purchase_price'          => $request->purchase_price ?? 0,
+    //                     'currency_id'             => $request->currency_id,
+    //                     'batch_id'                => $nomorPenerimaanHibah,
+    //                     'supporting_document'     => $documentPath,
+    //                 ]);
+
+    //                 $historyNote = 'Registrasi Manual/Hibah (Unit ke-' . $i . ' dari ' . $qty . '). ' . $request->notes;
+    //                 if ($assignedTo) {
+    //                     $user = \App\Models\User::find($assignedTo);
+    //                     $historyNote .= ' [Aset langsung diserahkan kepada: ' . optional($user)->name . ']';
+    //                 }
+
+    //                 \App\Models\FixedAssetHistory::create([
+    //                     'fixed_asset_id' => $asset->id,
+    //                     'status'         => optional($selectedStatus)->name ?? 'Unknown',
+    //                     'assigned_to'    => $assignedTo,
+    //                     'notes'          => $historyNote,
+    //                     'created_by'     => auth()->id(),
+    //                 ]);
+
+    //                 if ($request->hasFile('photos')) {
+    //                     $safeFolderName = str_replace('/', '-', $assetNumber);
+    //                     $folderPathPhotos = "FixAsset/{$safeFolderName}";
+
+    //                     foreach ($request->file('photos') as $photoFile) {
+    //                         $filenamePhoto = time() . '_' . uniqid() . '.' . $photoFile->getClientOriginalExtension();
+    //                         $pathPhoto = $photoFile->storeAs($folderPathPhotos, $filenamePhoto, 'public');
+
+    //                         \App\Models\AssetPhoto::create([
+    //                             'fixed_asset_id' => $asset->id,
+    //                             'file_path'      => $pathPhoto
+    //                         ]);
+    //                     }
+    //                 }
+
+    //                 // PENCATATAN MUTASI STOK (SMART IN & OUT)
+    //                 $balanceBefore = $currentStock;
+    //                 $balanceAfter  = $currentStock + 1;
+
+    //                 \App\Models\StockMutation::create([
+    //                     'item_id'          => $request->item_id,
+    //                     'warehouse_id'     => $request->warehouse_id,
+    //                     'type'             => 'IN',
+    //                     'qty'              => 1,
+    //                     'balance_before'   => $balanceBefore,
+    //                     'balance_after'    => $balanceAfter,
+    //                     'reference_number' => $assetNumber,
+    //                     'notes'            => "Penerimaan Hibah/Manual Aset",
+    //                     'created_by'       => auth()->id(),
+    //                 ]);
+
+    //                 if ($assignedTo) {
+    //                     \App\Models\StockMutation::create([
+    //                         'item_id'          => $request->item_id,
+    //                         'warehouse_id'     => $request->warehouse_id,
+    //                         'type'             => 'OUT',
+    //                         'qty'              => 1,
+    //                         'balance_before'   => $balanceAfter,
+    //                         'balance_after'    => $balanceAfter - 1,
+    //                         'reference_number' => 'GI-' . $assetNumber,
+    //                         'notes'            => "Aset langsung diserahkan ke pengguna (Input Manual)",
+    //                         'created_by'       => auth()->id(),
+    //                     ]);
+    //                     $currentStock = $balanceAfter - 1;
+    //                 } else {
+    //                     $currentStock = $balanceAfter;
+    //                 }
+    //             }
+
+    //             $itemMaster->update(['current_stock' => $currentStock]);
+    //         });
+
+    //         return redirect()->route('fixed-assets.index')->with('success', $request->quantity . ' Unit Aset berhasil didaftarkan dan kartu stok disesuaikan!');
+    //     } catch (\Exception $e) {
+    //         return back()->withInput()->with('error', 'Gagal mendaftarkan aset: ' . $e->getMessage());
+    //     }
+    // }
+
+
+// =========================================================================
+    // 🔥 PROSES SIMPAN ASET MANUAL (CLEAN CODE, SMART MUTATION & DYNAMIC BATCH) 🔥
     // =========================================================================
     public function store(Request $request)
     {
@@ -76,12 +232,15 @@ class FixedAssetController extends Controller
             'purchase_price'          => 'nullable|numeric|min:0',
             'currency_id'             => 'required|exists:currencies,id',
             'supporting_document'     => 'nullable|file|mimes:pdf,jpg,jpeg,png|max:5120',
-            // 🔥 KUNCI PERBAIKAN: Ubah 'image' menjadi 'file', tambahkan ekstensi PDF/Excel dll 🔥
             'photos.*'                => 'nullable|file|mimes:jpeg,png,jpg,gif,pdf,doc,docx,xls,xlsx,zip,rar|max:5120',
+
+            // 🔥 VALIDASI KE DATABASE MASTER ACQUISITION TYPES 🔥
+            'acquisition_type_id'     => 'required|exists:acquisition_types,id',
         ], [
             'photos.*.mimes' => 'File lampiran harus berupa Gambar, PDF, Word, Excel, atau ZIP.',
             'photos.*.max' => 'Ukuran setiap file lampiran maksimal 5MB.',
         ]);
+
         $selectedStatus = \App\Models\Status::find($request->status_id);
         $statusSlug = optional($selectedStatus)->slug; // Menggunakan slug murni
 
@@ -99,13 +258,19 @@ class FixedAssetController extends Controller
                 $finalAssetName = $request->filled('asset_name') ? $request->asset_name : $itemMaster->name;
                 $currentStock = (float) $itemMaster->current_stock;
 
-                $nomorPenerimaanHibah = 'HIBAH-' . date('Ymd-His');
+                // 🔥 AMBIL DATA JENIS PEROLEHAN DARI DATABASE 🔥
+                $acqType = \App\Models\AcquisitionType::find($request->acquisition_type_id);
+                $kodePerolehan = $acqType ? $acqType->code : 'MANUAL';
+                $namaPerolehan = $acqType ? $acqType->name : 'Registrasi Aset Lama';
+
+                // 🔥 BATCH ID DINAMIS DARI KODE DATABASE 🔥
+                $nomorPenerimaanManual = $kodePerolehan . '-' . date('Ymd-His');
                 $documentPath = null;
 
                 if ($request->hasFile('supporting_document')) {
                     $file = $request->file('supporting_document');
                     $filename = time() . '_' . uniqid() . '_' . str_replace(' ', '_', $file->getClientOriginalName());
-                    $folderPath = 'input_asset_manual_hibah/' . $nomorPenerimaanHibah;
+                    $folderPath = 'input_asset_manual/' . $nomorPenerimaanManual;
                     $documentPath = $file->storeAs($folderPath, $filename, 'public');
                 }
 
@@ -129,15 +294,22 @@ class FixedAssetController extends Controller
                         'status_id'               => $request->status_id,
                         'assigned_to'             => $assignedTo,
                         'spesifikasi_detail'      => $request->spesifikasi_detail,
-                        'notes'                   => $request->notes ?? 'Aset didaftarkan secara manual (Hibah)',
+
+                        // 🔥 CATATAN MENGGUNAKAN NAMA DARI DATABASE 🔥
+                        'notes'                   => $request->notes ?? "Aset didaftarkan secara manual ($namaPerolehan)",
+
                         'acquisition_date'        => $request->acquisition_date,
                         'purchase_price'          => $request->purchase_price ?? 0,
                         'currency_id'             => $request->currency_id,
-                        'batch_id'                => $nomorPenerimaanHibah,
+
+                        // 🔥 SIMPAN BATCH ID DINAMIS 🔥
+                        'batch_id'                => $nomorPenerimaanManual,
+
                         'supporting_document'     => $documentPath,
                     ]);
 
-                    $historyNote = 'Registrasi Manual/Hibah (Unit ke-' . $i . ' dari ' . $qty . '). ' . $request->notes;
+                    // LOG HISTORY
+                    $historyNote = 'Input Manual: ' . $namaPerolehan . ' (Unit ke-' . $i . ' dari ' . $qty . '). ' . $request->notes;
                     if ($assignedTo) {
                         $user = \App\Models\User::find($assignedTo);
                         $historyNote .= ' [Aset langsung diserahkan kepada: ' . optional($user)->name . ']';
@@ -151,6 +323,7 @@ class FixedAssetController extends Controller
                         'created_by'     => auth()->id(),
                     ]);
 
+                    // PROSES FOTO MULTIPLE
                     if ($request->hasFile('photos')) {
                         $safeFolderName = str_replace('/', '-', $assetNumber);
                         $folderPathPhotos = "FixAsset/{$safeFolderName}";
@@ -178,7 +351,10 @@ class FixedAssetController extends Controller
                         'balance_before'   => $balanceBefore,
                         'balance_after'    => $balanceAfter,
                         'reference_number' => $assetNumber,
-                        'notes'            => "Penerimaan Hibah/Manual Aset",
+
+                        // 🔥 CATATAN MUTASI SESUAI JENIS 🔥
+                        'notes'            => "Penerimaan Manual: $namaPerolehan",
+
                         'created_by'       => auth()->id(),
                     ]);
 
@@ -208,6 +384,7 @@ class FixedAssetController extends Controller
             return back()->withInput()->with('error', 'Gagal mendaftarkan aset: ' . $e->getMessage());
         }
     }
+
 
 
     // =========================================================================
@@ -1290,8 +1467,10 @@ class FixedAssetController extends Controller
         $statuses = \App\Models\Status::where('type', 'AST')->orderBy('sequence', 'asc')->get();
         $currencies = \App\Models\Currency::where('is_active', 1)->get();
         $users = \App\Models\User::with(['company', 'department'])->orderBy('name', 'asc')->get();
+        // 🔥 AMBIL DATA JENIS PEROLEHAN DARI DATABASE 🔥
+        $acquisitionTypes = \App\Models\AcquisitionType::where('is_active', true)->orderBy('id', 'asc')->get();
 
-        return view('fixed_assets.create_manual', compact('warehouses', 'assetCategories', 'companies', 'statuses', 'currencies', 'users'));
+        return view('fixed_assets.create_manual', compact('warehouses', 'assetCategories', 'companies', 'statuses', 'currencies', 'users','acquisitionTypes' ));
     }
 
     public function createImport()

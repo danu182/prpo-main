@@ -96,7 +96,20 @@
                     @foreach($gr->items as $item)
                     <tr>
                         <td class="py-3 ps-4">
+                            {{-- Nama Master Barang --}}
                             <div class="mb-1 fw-bold text-dark text-uppercase">{{ optional($item->item)->name ?? 'Item Terhapus' }}</div>
+
+                            {{-- 🔥 NAMA SPESIFIK SESUAI PO (Seperti di Label) 🔥 --}}
+                            @php
+                                $poSpecificName = optional($item->purchaseOrderItem)->item_name ?? optional($item->purchaseOrderItem)->description;
+                            @endphp
+                            @if($poSpecificName && $poSpecificName !== optional($item->item)->name)
+                                <div class="mb-2 text-secondary fw-semibold" style="font-size: 0.8rem; line-height: 1.2;">
+                                    <i class="bi bi-arrow-return-right me-1"></i> {{ $poSpecificName }}
+                                </div>
+                            @endif
+
+                            {{-- Kode SKU dan Badge --}}
                             <span class="border badge bg-secondary-subtle text-secondary border-secondary-subtle">{{ optional($item->item)->code ?? '-' }}</span>
                             @if(optional($item->item)->is_trackable)
                                 <span class="border badge bg-warning-subtle text-warning-emphasis border-warning"><i class="bi bi-upc-scan me-1"></i>Tracked (SN)</span>
@@ -131,19 +144,43 @@
                                 <div class="mb-2 text-muted" style="font-size: 0.85rem;">Tidak ada catatan khusus.</div>
                             @endif
 
-                            {{-- 🔥 TAMPILAN SERIAL NUMBER (SN) SANGAT JELAS 🔥 --}}
+                            {{-- 🔥 TAMPILAN SERIAL NUMBER (DENGAN TOMBOL CETAK) 🔥 --}}
                             @if(!empty($item->sn_list) && count($item->sn_list) > 0)
                                 <div class="pt-2 mt-2 border-top border-secondary-subtle">
-                                    <div class="mb-1 fw-bold text-dark" style="font-size: 0.75rem;">
-                                        <i class="bi bi-upc-scan me-1 text-primary"></i> SERIAL NUMBER ({{ count($item->sn_list) }} Unit):
+
+                                    {{-- HEADER SN & TOMBOL CETAK MASSAL --}}
+                                    <div class="mb-2 d-flex justify-content-between align-items-center">
+                                        <div class="fw-bold text-dark" style="font-size: 0.75rem;">
+                                            <i class="bi bi-upc-scan me-1 text-primary"></i> SERIAL NUMBER ({{ count($item->sn_list) }} Unit):
+                                        </div>
+
+                                        <a href="{{ route('inventory.print_label', ['item_id' => $item->item_id, 'raw_sn' => implode(',', $item->sn_list)]) }}"
+                                           target="_blank"
+                                           class="px-2 py-1 shadow-sm btn btn-sm btn-primary rounded-pill fw-bold"
+                                           style="font-size: 0.7rem;"
+                                           title="Cetak Semua Label SN untuk Barang Ini">
+                                            <i class="bi bi-printer-fill me-1"></i> Cetak Massal ({{ count($item->sn_list) }})
+                                        </a>
                                     </div>
-                                    <div class="flex-wrap gap-1 d-flex">
+
+                                    {{-- LIST SN & TOMBOL CETAK SATUAN --}}
+                                    <div class="flex-wrap gap-2 d-flex">
                                         @foreach($item->sn_list as $sn)
-                                            <span class="border fw-normal badge bg-light text-dark border-secondary-subtle" style="font-size: 0.75rem;">
-                                                <i class="bi bi-hash text-muted"></i>{{ $sn }}
-                                            </span>
+                                            <div class="px-2 py-1 bg-white border shadow-sm d-flex align-items-center rounded-pill border-secondary-subtle">
+                                                <span class="fw-normal text-dark me-2" style="font-size: 0.75rem;">
+                                                    <i class="bi bi-hash text-muted"></i>{{ $sn }}
+                                                </span>
+                                                <a href="{{ route('inventory.print_label', ['item_id' => $item->item_id, 'raw_sn' => $sn]) }}"
+                                                   target="_blank"
+                                                   class="p-1 bg-light btn btn-sm rounded-circle d-flex align-items-center justify-content-center"
+                                                   style="width: 22px; height: 22px; border: 1px solid #dee2e6;"
+                                                   title="Cetak Label Ini Saja">
+                                                    <i class="bi bi-printer-fill text-primary" style="font-size: 0.65rem;"></i>
+                                                </a>
+                                            </div>
                                         @endforeach
                                     </div>
+
                                 </div>
                             @endif
                         </td>

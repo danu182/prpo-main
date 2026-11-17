@@ -47,6 +47,109 @@ class FixedAssetController extends Controller
         return view('fixed_assets.index', compact('assets', 'search', 'users', 'items', 'companies', 'statuses', 'warehouses', 'currencies'));
     }
 
+    // public function store(Request $request)
+    // {
+    //     $request->validate([
+    //         'item_id'                 => 'required|exists:items,id',
+    //         'warehouse_id'            => 'required|exists:warehouses,id',
+    //         'quantity'                => 'required|integer|min:1',
+    //         'status_id'               => 'required|exists:statuses,id',
+    //         'company_id'              => 'required|exists:companies,id',
+    //         'asset_name'              => 'nullable|string|max:255',
+    //         'serial_number'           => 'nullable|string|max:255',
+    //         'accounting_asset_number' => 'nullable|string|max:255',
+    //         'spesifikasi_detail'      => 'required|string',
+    //         'notes'                   => 'nullable|string',
+    //         'acquisition_date'        => 'required|date',
+    //         'purchase_price'          => 'nullable|numeric|min:0',
+    //         'currency_id'             => 'required|exists:currencies,id',
+    //         'supporting_document'     => 'nullable|file|mimes:pdf,jpg,jpeg,png|max:5120',
+    //     ]);
+
+    //     try {
+    //         DB::transaction(function () use ($request) {
+    //             $qty = $request->quantity;
+    //             $itemMaster = \App\Models\Item::lockForUpdate()->findOrFail($request->item_id);
+    //             $selectedStatus = \App\Models\Status::find($request->status_id);
+    //             $yearMonth = date('Y/m');
+
+    //             $finalAssetName = $request->filled('asset_name') ? $request->asset_name : $itemMaster->name;
+    //             $currentStock = (float) $itemMaster->current_stock;
+
+    //             $nomorPenerimaanHibah = 'HIBAH-' . date('Ymd-His');
+    //             $documentPath = null;
+
+    //             if ($request->hasFile('supporting_document')) {
+    //                 $file = $request->file('supporting_document');
+    //                 $filename = time() . '_' . uniqid() . '_' . str_replace(' ', '_', $file->getClientOriginalName());
+    //                 $folderPath = 'input_asset_manual_hibah/' . $nomorPenerimaanHibah;
+    //                 $documentPath = $file->storeAs($folderPath, $filename, 'public');
+    //             }
+
+    //             for ($i = 1; $i <= $qty; $i++) {
+    //                 $lastAsset = \App\Models\FixedAsset::where('asset_number', 'like', "AST/{$yearMonth}/%")
+    //                                 ->orderBy('id', 'desc')->lockForUpdate()->first();
+    //                 $nextSeq = $lastAsset ? ((int) substr($lastAsset->asset_number, -4)) + 1 : 1;
+    //                 $assetNumber = "AST/{$yearMonth}/" . str_pad($nextSeq, 4, '0', STR_PAD_LEFT);
+
+    //                 $assignedTo = in_array(optional($selectedStatus)->slug, ['available', 'disposed', 'maintenance', 'returned']) ? null : $request->assigned_to;
+
+    //                 $asset = \App\Models\FixedAsset::create([
+    //                     'asset_number'            => $assetNumber,
+    //                     'item_id'                 => $request->item_id,
+    //                     'name'                    => $finalAssetName,
+    //                     'warehouse_id'            => $request->warehouse_id,
+    //                     'company_id'              => $request->company_id,
+    //                     'serial_number'           => $qty > 1 ? null : $request->serial_number,
+    //                     'accounting_asset_number' => $qty > 1 ? null : $request->accounting_asset_number,
+    //                     'status_id'               => $request->status_id,
+    //                     'assigned_to'             => $assignedTo,
+    //                     'spesifikasi_detail'      => $request->spesifikasi_detail,
+    //                     'notes'                   => $request->notes ?? 'Aset didaftarkan secara manual (Hibah)',
+    //                     'acquisition_date'        => $request->acquisition_date,
+    //                     'purchase_price'          => $request->purchase_price ?? 0,
+    //                     'currency_id'             => $request->currency_id,
+    //                     'batch_id'                => $nomorPenerimaanHibah,
+    //                     'supporting_document'     => $documentPath,
+    //                 ]);
+
+    //                 \App\Models\FixedAssetHistory::create([
+    //                     'fixed_asset_id' => $asset->id,
+    //                     'status'         => optional($selectedStatus)->name ?? 'Unknown',
+    //                     'assigned_to'    => $assignedTo,
+    //                     'notes'          => 'Registrasi Manual/Hibah (Unit ke-' . $i . ' dari ' . $qty . '). ' . $request->notes,
+    //                     'created_by'     => auth()->id(),
+    //                 ]);
+
+    //                 // PENCATATAN MUTASI STOK YANG BENAR (HANYA INI, TANPA INVENTORY_STOCKS)
+    //                 $balanceBefore = $currentStock;
+    //                 $balanceAfter  = $currentStock + 1;
+    //                 $currentStock  = $balanceAfter;
+
+    //                 \App\Models\StockMutation::create([
+    //                     'item_id'          => $request->item_id,
+    //                     'warehouse_id'     => $request->warehouse_id,
+    //                     'type'             => 'IN',
+    //                     'qty'              => 1,
+    //                     'balance_before'   => $balanceBefore,
+    //                     'balance_after'    => $balanceAfter,
+    //                     'reference_number' => $assetNumber,
+    //                     'notes'            => "Penerimaan Hibah/Manual Aset",
+    //                     'created_by'       => auth()->id(),
+    //                 ]);
+    //             }
+
+    //             // Update total stok terakhir di Master Barang
+    //             $itemMaster->update(['current_stock' => $currentStock]);
+    //         });
+
+    //         return back()->with('success', $request->quantity . ' Unit Aset berhasil didaftarkan beserta Dokumen Pendukungnya!');
+    //     } catch (\Exception $e) {
+    //         return back()->with('error', 'Gagal mendaftarkan aset: ' . $e->getMessage());
+    //     }
+    // }
+
+
     public function store(Request $request)
     {
         $request->validate([
@@ -64,6 +167,9 @@ class FixedAssetController extends Controller
             'purchase_price'          => 'nullable|numeric|min:0',
             'currency_id'             => 'required|exists:currencies,id',
             'supporting_document'     => 'nullable|file|mimes:pdf,jpg,jpeg,png|max:5120',
+
+            // 🔥 Tambahan Validasi Baru
+            'acquisition_type'        => 'required|string|in:MANUAL,TEMUAN,HIBAH,HADIAH',
         ]);
 
         try {
@@ -76,15 +182,25 @@ class FixedAssetController extends Controller
                 $finalAssetName = $request->filled('asset_name') ? $request->asset_name : $itemMaster->name;
                 $currentStock = (float) $itemMaster->current_stock;
 
-                $nomorPenerimaanHibah = 'HIBAH-' . date('Ymd-His');
-                $documentPath = null;
+                // 🔥 PERUBAHAN: BATCH ID DINAMIS SESUAI PILIHAN 🔥
+                $tipePerolehan = $request->input('acquisition_type', 'MANUAL');
+                $nomorPenerimaanManual = $tipePerolehan . '-' . date('Ymd-His');
 
+                $documentPath = null;
                 if ($request->hasFile('supporting_document')) {
                     $file = $request->file('supporting_document');
                     $filename = time() . '_' . uniqid() . '_' . str_replace(' ', '_', $file->getClientOriginalName());
-                    $folderPath = 'input_asset_manual_hibah/' . $nomorPenerimaanHibah;
+                    $folderPath = 'input_asset_manual/' . $nomorPenerimaanManual;
                     $documentPath = $file->storeAs($folderPath, $filename, 'public');
                 }
+
+                // Terjemahan tipe untuk label history
+                $jenisLabel = [
+                    'MANUAL' => 'Registrasi Aset Lama',
+                    'TEMUAN' => 'Temuan Gudang',
+                    'HIBAH'  => 'Hibah/Pemberian Pihak Lain',
+                    'HADIAH' => 'Hadiah/Reward'
+                ][$tipePerolehan];
 
                 for ($i = 1; $i <= $qty; $i++) {
                     $lastAsset = \App\Models\FixedAsset::where('asset_number', 'like', "AST/{$yearMonth}/%")
@@ -105,11 +221,17 @@ class FixedAssetController extends Controller
                         'status_id'               => $request->status_id,
                         'assigned_to'             => $assignedTo,
                         'spesifikasi_detail'      => $request->spesifikasi_detail,
-                        'notes'                   => $request->notes ?? 'Aset didaftarkan secara manual (Hibah)',
+
+                        // 🔥 PERUBAHAN: DEFAULT NOTES SESUAI JENIS 🔥
+                        'notes'                   => $request->notes ?? "Aset didaftarkan secara manual ($jenisLabel)",
+
                         'acquisition_date'        => $request->acquisition_date,
                         'purchase_price'          => $request->purchase_price ?? 0,
                         'currency_id'             => $request->currency_id,
-                        'batch_id'                => $nomorPenerimaanHibah,
+
+                        // 🔥 PERUBAHAN: SIMPAN BATCH ID DINAMIS 🔥
+                        'batch_id'                => $nomorPenerimaanManual,
+
                         'supporting_document'     => $documentPath,
                     ]);
 
@@ -117,11 +239,10 @@ class FixedAssetController extends Controller
                         'fixed_asset_id' => $asset->id,
                         'status'         => optional($selectedStatus)->name ?? 'Unknown',
                         'assigned_to'    => $assignedTo,
-                        'notes'          => 'Registrasi Manual/Hibah (Unit ke-' . $i . ' dari ' . $qty . '). ' . $request->notes,
+                        'notes'          => 'Input Manual: ' . $jenisLabel . ' (Unit ke-' . $i . ' dari ' . $qty . '). ' . $request->notes,
                         'created_by'     => auth()->id(),
                     ]);
 
-                    // PENCATATAN MUTASI STOK YANG BENAR (HANYA INI, TANPA INVENTORY_STOCKS)
                     $balanceBefore = $currentStock;
                     $balanceAfter  = $currentStock + 1;
                     $currentStock  = $balanceAfter;
@@ -134,12 +255,14 @@ class FixedAssetController extends Controller
                         'balance_before'   => $balanceBefore,
                         'balance_after'    => $balanceAfter,
                         'reference_number' => $assetNumber,
-                        'notes'            => "Penerimaan Hibah/Manual Aset",
+
+                        // 🔥 PERUBAHAN: CATATAN MUTASI SESUAI JENIS 🔥
+                        'notes'            => "Penerimaan Manual: $jenisLabel",
+
                         'created_by'       => auth()->id(),
                     ]);
                 }
 
-                // Update total stok terakhir di Master Barang
                 $itemMaster->update(['current_stock' => $currentStock]);
             });
 
@@ -710,7 +833,7 @@ class FixedAssetController extends Controller
                             ->latest()
                             ->paginate(15)
                             ->withQueryString();
-        
+
         // 6. Hitung Nilai Buku hanya untuk halaman yang sedang aktif
         $totalCurrentValue = collect($assets->items())->sum('purchase_price');
 

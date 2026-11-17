@@ -60,6 +60,19 @@
                     <div class="col-md-6 border-end pe-md-5">
                         <h6 class="pb-2 mb-4 border-bottom text-primary fw-bold"><i class="bi bi-box-seam me-2"></i>Informasi Fisik Aset</h6>
 
+                        {{-- 🔥 JENIS PEROLEHAN ASET (DINAMIS DARI DATABASE) 🔥 --}}
+                        <div class="mb-3">
+                            <label class="form-label fw-bold small text-muted text-uppercase">Jenis Perolehan <span class="text-danger">*</span></label>
+                            <select name="acquisition_type_id" class="shadow-sm form-select border-info" required>
+                                <option value="">-- Pilih Jenis Perolehan --</option>
+                                @foreach($acquisitionTypes as $type)
+                                    <option value="{{ $type->id }}" {{ old('acquisition_type_id') == $type->id ? 'selected' : '' }}>
+                                        {{ $type->name }}
+                                    </option>
+                                @endforeach
+                            </select>
+                        </div>
+
                         <div class="mb-3">
                             <label class="form-label fw-bold small text-muted text-uppercase">Gudang Penerima <span class="text-danger">*</span></label>
                             <select name="warehouse_id" class="shadow-sm form-select" required>
