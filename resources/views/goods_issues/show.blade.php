@@ -32,12 +32,29 @@
 @endpush
 
 @section('content')
-<div class="container-fluid pb-5 text-dark position-relative {{ optional($gi->status)->slug === 'void' ? 'is-void' : '' }}">
+<div class="pb-5 container-fluid text-dark position-relative {{ optional($gi->status)->slug === 'void' ? 'is-void' : '' }}">
 
     {{-- Elemen Stempel --}}
     <div class="void-stamp-container">
         <div class="void-stamp">VOID</div>
     </div>
+
+    @php
+        // =========================================================================
+        // 🔥 KUMPULKAN SEMUA ASET TETAP UNTUK TOMBOL CETAK MASSAL DI HEADER 🔥
+        // =========================================================================
+        $allGiAssetIds = [];
+        foreach($gi->items as $giItem) {
+            if ($giItem->notes) {
+                preg_match_all('/AST\/[0-9]{4}\/[0-9]{2}\/[0-9]{4}/', $giItem->notes, $m);
+                if (!empty($m[0])) {
+                    $ids = \App\Models\FixedAsset::whereIn('asset_number', $m[0])->pluck('id')->toArray();
+                    $allGiAssetIds = array_merge($allGiAssetIds, $ids);
+                }
+            }
+        }
+        $allGiAssetIds = array_unique($allGiAssetIds);
+    @endphp
 
     {{-- HEADER HALAMAN & TOMBOL AKSI --}}
     <div class="mb-4 d-flex justify-content-between align-items-end">
@@ -62,9 +79,12 @@
                     </button>
                 </form>
 
-                <a href="{{ route('goods-issues.print_labels', $gi->gi_number) }}" target="_blank" class="shadow-sm btn btn-dark rounded-pill fw-bold">
-                    <i class="bi bi-upc-scan me-1"></i> Cetak Label
-                </a>
+                {{-- 🔥 TOMBOL CETAK MASSAL SEMUA ASET DI DOKUMEN INI (JIKA ADA ASET TETAP) 🔥 --}}
+                @if(count($allGiAssetIds) > 0)
+                    <a href="{{ route('inventory.print_label', ['ids' => implode(',', $allGiAssetIds)]) }}" target="_blank" class="shadow-sm btn btn-primary rounded-pill fw-bold" title="Cetak Semua Label Aset Tetap (Tom & Jerry 127)">
+                        <i class="bi bi-printer-fill me-1"></i> Cetak Semua Aset ({{ count($allGiAssetIds) }})
+                    </a>
+                @endif
 
                 <a href="{{ route('goods-issues.print', $gi->gi_number) }}" target="_blank" class="px-3 shadow-sm btn btn-warning rounded-pill fw-bold text-dark">
                     <i class="bi bi-printer-fill me-1"></i> Cetak Bukti Keluar
@@ -88,7 +108,6 @@
                 <div class="col-md-5 border-end">
                     <h6 class="mb-3 fw-bold text-secondary text-uppercase" style="font-size: 0.8rem;">Informasi Penyerahan</h6>
                     <table class="table mb-0 table-sm table-borderless small">
-
                         <tr>
                             <td class="align-middle text-muted" width="35%">Waktu Keluar</td>
                             <td class="align-middle fw-bold">:
@@ -98,10 +117,8 @@
                                 </span>
                             </td>
                         </tr>
-
                         <tr><td class="align-middle text-muted">Penerima</td><td class="align-middle fw-bold text-primary">: {{ $gi->requester_name }}</td></tr>
                         <tr><td class="align-middle text-muted">Departemen</td><td class="align-middle fw-bold">: {{ $gi->department ?? '-' }}</td></tr>
-
                         <tr>
                             <td class="align-middle text-muted">Gudang Asal</td>
                             <td class="align-middle fw-bold">:
@@ -110,7 +127,6 @@
                                 </span>
                             </td>
                         </tr>
-
                         <tr>
                             <td class="align-middle text-muted">Status Dokumen</td>
                             <td class="align-middle fw-bold">:
@@ -145,50 +161,51 @@
                 <thead class="bg-light text-muted small text-uppercase">
                     <tr>
                         <th class="py-3 ps-4" width="5%">No</th>
-                        <th class="py-3" width="35%">Nama Barang & Kode</th>
+                        <th class="py-3" width="32%">Nama Barang & Kode</th>
                         <th class="py-3 text-center" width="10%">Qty Keluar</th>
                         <th class="py-3 text-center" width="10%">Qty Retur</th>
-                        <th class="py-3 pe-4" width="40%">Catatan / SN Aset</th>
+                        <th class="py-3 pe-4" width="43%">Catatan / SN Aset & Cetak Label</th>
                     </tr>
                 </thead>
                 <tbody>
                     @foreach($gi->items as $index => $item)
                         @php
-                            // =========================================================================
-                            // 🔥 OTAK BARU: MENDETEKSI APAKAH INI ASET ATAU STOK FISIK BIASA 🔥
-                            // =========================================================================
                             $isRealAsset = false;
-                            $finalNotes = '-';
+                            $liveAssets = collect();
+                            $snList = [];
+                            $cleanTextNotes = '';
 
                             if ($item->notes) {
-                                // Cek apakah di catatannya terdapat format AST/xxxx/xx/xxxx
+                                // 1. Deteksi Aset Tetap (Format AST/xxxx/xx/xxxx)
                                 preg_match_all('/AST\/[0-9]{4}\/[0-9]{2}\/[0-9]{4}/', $item->notes, $matches);
                                 $astNumbers = $matches[0];
 
                                 if (!empty($astNumbers)) {
-                                    $isRealAsset = true; // Fix: Ini benar-benar Aset!
-
+                                    $isRealAsset = true;
                                     $liveAssets = \App\Models\FixedAsset::whereIn('asset_number', $astNumbers)->get();
-                                    $formattedNotes = [];
-
-                                    foreach ($liveAssets as $liveAst) {
-                                        $info = "<strong class='text-dark'>" . $liveAst->asset_number . "</strong>";
-                                        if($liveAst->serial_number) { $info .= " (SN: <span class='text-primary'>" . $liveAst->serial_number . "</span>)"; }
-                                        if($liveAst->accounting_asset_number) { $info .= " [FA: " . $liveAst->accounting_asset_number . "]"; }
-                                        if($liveAst->spesifikasi_detail) {
-                                            $info .= "<br><span class='text-muted' style='font-size:0.7rem;'>Spek: " . $liveAst->spesifikasi_detail . "</span>";
-                                        }
-                                        $formattedNotes[] = '• ' . $info;
+                                } else {
+                                    // 2. Deteksi Serial Number Stok Minor
+                                    // Cek dari tabel item_serials jika ada relasi goods_issue_id
+                                    if (\Schema::hasColumn('item_serials', 'goods_issue_id')) {
+                                        $snList = \DB::table('item_serials')
+                                            ->where('goods_issue_id', $gi->id)
+                                            ->where('item_id', $item->item_id)
+                                            ->pluck('serial_number')
+                                            ->toArray();
                                     }
 
-                                    $finalNotes = empty($formattedNotes)
-                                        ? str_replace("\n", '<br>', $item->notes)
-                                        : implode('<br><br>', $formattedNotes);
+                                    // Jika belum ketemu di item_serials, ekstrak dari teks catatan (misal: "SN: AAA, BBB | ...")
+                                    if (empty($snList) && preg_match('/SN:\s*([^|\n\]]+)/i', $item->notes, $snMatch)) {
+                                        $extracted = array_map('trim', explode(',', $snMatch[1]));
+                                        $snList = array_filter($extracted, function($v) {
+                                            return !empty($v) && stripos($v, 'Auto-Trace') === false;
+                                        });
+                                    }
 
-                                } else {
-                                    // Berarti ini Stok Biasa atau Stok dengan SN
-                                    $finalNotes = str_replace(' | ', '<br>• ', '• ' . $item->notes);
-                                    $finalNotes = nl2br($finalNotes);
+                                    // Bersihkan teks catatan biasa (buang bagian SN: ... atau Auto-Trace agar rapi)
+                                    $cleanTextNotes = preg_replace('/\|?\s*SN:\s*[^|\n]+/i', '', $item->notes);
+                                    $cleanTextNotes = preg_replace('/\|?\s*Auto-Trace:[^|\n]+/i', '', $cleanTextNotes);
+                                    $cleanTextNotes = trim($cleanTextNotes, " |\t\n\r\0\x0B");
                                 }
                             }
                         @endphp
@@ -199,10 +216,10 @@
                                 <h6 class="mb-1 fw-bold text-dark">{{ $item->item_name ?? optional($item->item)->name }}</h6>
                                 <span class="border badge bg-secondary-subtle text-secondary border-secondary-subtle">{{ optional($item->item)->code }}</span>
 
-                                {{-- 🔥 LABEL JUJUR: MENAMPILKAN STATUS SESUAI DATA TRANSAKSI 🔥 --}}
+                                {{-- LABEL STATUS TRANSAKSI --}}
                                 @if($isRealAsset)
                                     <span class="border badge bg-primary-subtle text-primary border-primary-subtle ms-1">Aset Tetap</span>
-                                @elseif(str_contains($item->notes, 'SN:'))
+                                @elseif(count($snList) > 0 || str_contains($item->notes ?? '', 'SN:'))
                                     <span class="border badge bg-warning-subtle text-warning-emphasis border-warning-subtle ms-1">Stok Serial (SN)</span>
                                 @else
                                     <span class="border badge bg-secondary-subtle text-secondary border-secondary-subtle ms-1">Stok Biasa</span>
@@ -224,8 +241,94 @@
                                 @endif
                             </td>
 
-                            <td class="pe-4 small text-muted" style="line-height: 1.5;">
-                                {!! $finalNotes !!}
+                            <td class="py-3 pe-4 small">
+                                {{-- SKENARIO A: JIKA BARANG ADALAH ASET TETAP (MAJOR) --}}
+                                @if($isRealAsset && $liveAssets->count() > 0)
+                                    @if($liveAssets->count() > 1)
+                                        <div class="mb-2 text-end">
+                                            <a href="{{ route('inventory.print_label', ['ids' => implode(',', $liveAssets->pluck('id')->toArray())]) }}"
+                                               target="_blank"
+                                               class="px-2 py-1 shadow-sm btn btn-sm btn-primary rounded-pill fw-bold"
+                                               style="font-size: 0.7rem;">
+                                                <i class="bi bi-printer-fill me-1"></i> Cetak Massal Aset ({{ $liveAssets->count() }})
+                                            </a>
+                                        </div>
+                                    @endif
+
+                                    <div class="gap-2 d-flex flex-column">
+                                        @foreach($liveAssets as $liveAst)
+                                            <div class="p-2 bg-white border rounded shadow-sm d-flex justify-content-between align-items-center">
+                                                <div>
+                                                    <strong class="text-dark">{{ $liveAst->asset_number }}</strong>
+                                                    @if($liveAst->serial_number)
+                                                        <span class="text-primary ms-1">(SN: {{ $liveAst->serial_number }})</span>
+                                                    @endif
+                                                    @if($liveAst->accounting_asset_number)
+                                                        <span class="badge bg-light text-dark border ms-1">FA: {{ $liveAst->accounting_asset_number }}</span>
+                                                    @endif
+                                                    @if($liveAst->spesifikasi_detail)
+                                                        <div class="mt-1 text-muted" style="font-size: 0.72rem;">Spek: {!! strip_tags($liveAst->spesifikasi_detail) !!}</div>
+                                                    @endif
+                                                </div>
+                                                {{-- TOMBOL CETAK SATUAN ASET --}}
+                                                <a href="{{ route('inventory.print_label', $liveAst->id) }}"
+                                                   target="_blank"
+                                                   class="px-2 py-1 shadow-sm btn btn-sm btn-outline-primary rounded-pill fw-bold ms-2 text-nowrap"
+                                                   style="font-size: 0.7rem;"
+                                                   title="Cetak Label Tom & Jerry 127">
+                                                    <i class="bi bi-printer-fill me-1"></i> Cetak
+                                                </a>
+                                            </div>
+                                        @endforeach
+                                    </div>
+
+                                {{-- SKENARIO B: JIKA BARANG ADALAH STOK MINOR DENGAN SERIAL NUMBER --}}
+                                @elseif(count($snList) > 0)
+                                    @if(!empty($cleanTextNotes))
+                                        <div class="mb-2 text-dark">• {{ $cleanTextNotes }}</div>
+                                    @endif
+
+                                    <div class="p-2 border rounded bg-light border-secondary-subtle">
+                                        <div class="mb-2 d-flex justify-content-between align-items-center">
+                                            <span class="fw-bold text-dark" style="font-size: 0.75rem;">
+                                                <i class="bi bi-upc-scan me-1 text-primary"></i> SERIAL NUMBER ({{ count($snList) }} Unit):
+                                            </span>
+                                            {{-- TOMBOL CETAK MASSAL SN --}}
+                                            @if(count($snList) > 1)
+                                                <a href="{{ route('inventory.print_label', ['item_id' => $item->item_id, 'raw_sn' => implode(',', $snList)]) }}"
+                                                   target="_blank"
+                                                   class="px-2 py-1 shadow-sm btn btn-sm btn-primary rounded-pill fw-bold"
+                                                   style="font-size: 0.68rem;">
+                                                    <i class="bi bi-printer-fill me-1"></i> Cetak Massal ({{ count($snList) }})
+                                                </a>
+                                            @endif
+                                        </div>
+
+                                        <div class="flex-wrap gap-2 d-flex">
+                                            @foreach($snList as $sn)
+                                                <div class="px-2 py-1 bg-white border shadow-sm d-flex align-items-center rounded-pill border-secondary-subtle">
+                                                    <span class="fw-semibold text-dark me-2" style="font-size: 0.75rem;">
+                                                        <i class="bi bi-hash text-muted"></i>{{ $sn }}
+                                                    </span>
+                                                    {{-- TOMBOL CETAK SATUAN SN --}}
+                                                    <a href="{{ route('inventory.print_label', ['item_id' => $item->item_id, 'raw_sn' => $sn]) }}"
+                                                       target="_blank"
+                                                       class="p-1 bg-light btn btn-sm rounded-circle d-flex align-items-center justify-content-center"
+                                                       style="width: 22px; height: 22px; border: 1px solid #dee2e6;"
+                                                       title="Cetak Label Ini Saja">
+                                                        <i class="bi bi-printer-fill text-primary" style="font-size: 0.65rem;"></i>
+                                                    </a>
+                                                </div>
+                                            @endforeach
+                                        </div>
+                                    </div>
+
+                                {{-- SKENARIO C: STOK BIASA TANPA SN --}}
+                                @else
+                                    <div class="text-muted">
+                                        {!! $item->notes ? nl2br(e(str_replace(' | ', "\n• ", '• ' . $item->notes))) : '-' !!}
+                                    </div>
+                                @endif
                             </td>
                         </tr>
                     @endforeach
@@ -259,16 +362,13 @@
                                     <i class="bi bi-link-45deg me-1"></i>{{ $ret->return_number }}
                                 </a>
                             </td>
-
                             <td class="py-3">
                                 <div class="text-dark fw-bold">{{ \Carbon\Carbon::parse($ret->return_date)->format('d M Y') }}</div>
                                 <div class="mt-1 small text-muted">
                                     <i class="bi bi-clock me-1"></i>{{ \Carbon\Carbon::parse($ret->created_at)->format('H:i') }} WIB
                                 </div>
                             </td>
-
                             <td class="py-3 text-dark"><i class="bi bi-person-badge text-info me-1"></i> {{ $ret->returned_by_name }}</td>
-
                             <td class="py-3 pe-4">
                                 <span class="px-3 py-2 border shadow-sm badge bg-warning-subtle text-warning-emphasis border-warning-subtle rounded-pill">
                                     <i class="bi bi-shop me-1"></i> {{ optional($ret->warehouse)->name ?? '-' }}
