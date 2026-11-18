@@ -70,7 +70,8 @@
         </tr>
         <tr>
             <td>Department</td><td>:</td><td>{{ optional($bill->user->department)->name ?? 'Umum' }}</td>
-            <td style="padding-left: 12px;">Bill Ref.</td><td>:</td><td class="fw-bold">{{ $bill->bill_number }}</td>
+            {{-- <td style="padding-left: 12px;">Bill Ref.</td><td>:</td><td class="fw-bold">{{ $bill->bill_number }}</td> --}}
+            <td style="padding-left: 12px;">Bill Ref.</td><td>:</td><td >{{ $bill->bill_number }}</td>
         </tr>
         <tr>
             <td style="padding-bottom: 8px;">Request Date</td><td style="padding-bottom: 8px;">:</td>
@@ -126,7 +127,7 @@
                     </td>
                     @if($index === 0)
                     {{-- 🔥 PERBAIKAN 1: Tambahkan border-bottom: none; agar garis bawah sel ini menghilang 🔥 --}}
-                    <td rowspan="{{ $bill->items->count() }}" class="text-center break-text fw-bold" style="vertical-align: middle; border-bottom: none !important;">
+                    <td rowspan="{{ $bill->items->count() }}" class="text-center break-text" style="vertical-align: middle; border-bottom: none !important;">
                         {{ !empty($bill->account_number) ? wordwrap($bill->account_number, 14, " ", true) : '-' }}
                     </td>
                     @endif
@@ -271,7 +272,8 @@
                     @endif
                 </div>
                 <div style="position: absolute; bottom: 25px; left: 0; width: 100%; text-align: center;">
-                    <span class="fw-bold" style="text-decoration: underline;">{{ $bill->user->name ?? 'Requester' }}</span>
+                    {{-- <span class="fw-bold" style="text-decoration: underline;">{{ $bill->user->name ?? 'Requester' }}</span> --}}
+                    <span style="text-decoration: underline;">{{ $bill->user->name ?? 'Requester' }}</span>
                 </div>
                 <div style="position: absolute; bottom: 10px; left: 0; width: 100%; text-align: center; font-size: 7pt; color: #666;">
                     {{ $sigMode != 'manual' && $bill->created_at ? $bill->created_at->format('d/m/y H:i') : '' }}
@@ -299,6 +301,7 @@
                             <img src="{{ $apprSigBase64 }}" style="max-height: 70px; max-width: 140px; object-fit: contain;">
                         @elseif($sigMode != 'manual' && $approval->status == 'APPROVED')
                             <div style="display: inline-block; padding: 5px 10px; font-weight: bold; font-size: 10pt; border: 2px solid #198754; color: #198754; margin-top: 15px;">APPROVED</div>
+
                         @elseif($sigMode != 'manual' && $approval->status != 'APPROVED')
                             {{-- <div style="color: gray; font-size: 10px; margin-top: 15px;">[ PENDING ]</div> --}}
                         @endif
@@ -308,7 +311,7 @@
                         $namaTtd = $userTtd ? $userTtd->name : trim((optional($approval->role)->name ?? 'Manager') . ' ' . (optional(\DB::table('departments')->where('id', $approval->target_department_id)->first())->name ?? ''));
                     @endphp
                     <div style="position: absolute; bottom: 25px; left: 0; width: 100%; text-align: center;">
-                        <strong><u>{{ $namaTtd }}</u></strong>
+                        <span style="text-decoration: underline;">{{ $namaTtd }}</span>
                     </div>
                     <div style="position: absolute; bottom: 10px; left: 0; width: 100%; text-align: center; font-size: 7pt; color: #666;">
                         {{-- {{ ($sigMode != 'manual' && $approval->status == 'APPROVED' && $approval->approved_at) ? \Carbon\Carbon::parse($approval->approved_at)->format('d/m/y H:i') : '&nbsp;' }} --}}
@@ -317,5 +320,7 @@
             @endforeach
         </tr>
     </table>
+
+
 </body>
 </html>
