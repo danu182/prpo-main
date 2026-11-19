@@ -385,6 +385,60 @@ class FixedAssetController extends Controller
     // =========================================================================
     // 1. PROSES BACA EXCEL & LEMPAR KE KARANTINA (STAGING)
     // =========================================================================
+    // public function processImport(Request $request)
+    // {
+    //     $request->validate([
+    //         'import_file' => 'required|file|max:10240|mimes:xlsx,xls,csv',
+    //         'support_doc' => 'nullable|file|mimes:pdf,jpg,jpeg,png|max:5120',
+    //     ]);
+
+    //     try {
+    //         $file = $request->file('import_file');
+    //         $originalName = str_replace(['(', ')', ' '], '_', $file->getClientOriginalName());
+    //         $fileName = time() . '_' . $originalName;
+
+    //         if (!Storage::disk('local')->exists('temp_imports')) {
+    //             Storage::disk('local')->makeDirectory('temp_imports');
+    //         }
+
+    //         $filePath = $file->storeAs('temp_imports', $fileName, 'local');
+    //         $fullPath = Storage::disk('local')->path($filePath);
+
+    //         $batchNumber = 'AST-IMP-' . date('Ymd-His');
+
+    //         // Tangani Dokumen Pendukung BAST
+    //         $finalDocPath = null;
+    //         if ($request->hasFile('support_doc')) {
+    //             $doc = $request->file('support_doc');
+    //             $docName = time() . '_DOC_' . str_replace(['(', ')', ' '], '_', $doc->getClientOriginalName());
+    //             $finalDocPath = $doc->storeAs('Upload_asset/' . $batchNumber, $docName, 'public');
+    //         }
+
+    //         // 1. Buat Header Batch Karantina
+    //         $batch = \App\Models\FixedAssetImportBatch::create([
+    //             'batch_number' => $batchNumber,
+    //             'user_id'      => auth()->id(),
+    //             'status'       => 'draft',
+    //             'file_path'    => $filePath,
+    //             'support_doc'  => $finalDocPath,
+    //         ]);
+
+    //         // 2. Gunakan Kurir Import untuk baca Excel ke Tabel Karantina
+    //         \Maatwebsite\Excel\Facades\Excel::import(new \App\Imports\FixedAssetImport($batch->id), $fullPath);
+
+    //         Storage::disk('local')->delete($filePath);
+
+    //         return redirect()->route('fixed-assets.import_staging', $batch->id)->with('success', 'Data berhasil masuk ke Ruang Karantina!');
+    //     } catch (\Exception $e) {
+    //         if (isset($filePath)) Storage::disk('local')->delete($filePath);
+    //         return redirect()->route('fixed-assets.index')->with('error', 'Gagal memproses excel: ' . $e->getMessage());
+    //     }
+    // }
+
+
+    // =========================================================================
+    // 1. PROSES BACA EXCEL & LEMPAR KE KARANTINA (STAGING)
+    // =========================================================================
     public function processImport(Request $request)
     {
         $request->validate([
@@ -406,7 +460,6 @@ class FixedAssetController extends Controller
 
             $batchNumber = 'AST-IMP-' . date('Ymd-His');
 
-            // Tangani Dokumen Pendukung BAST
             $finalDocPath = null;
             if ($request->hasFile('support_doc')) {
                 $doc = $request->file('support_doc');
@@ -414,7 +467,6 @@ class FixedAssetController extends Controller
                 $finalDocPath = $doc->storeAs('Upload_asset/' . $batchNumber, $docName, 'public');
             }
 
-            // 1. Buat Header Batch Karantina
             $batch = \App\Models\FixedAssetImportBatch::create([
                 'batch_number' => $batchNumber,
                 'user_id'      => auth()->id(),
@@ -423,17 +475,269 @@ class FixedAssetController extends Controller
                 'support_doc'  => $finalDocPath,
             ]);
 
-            // 2. Gunakan Kurir Import untuk baca Excel ke Tabel Karantina
             \Maatwebsite\Excel\Facades\Excel::import(new \App\Imports\FixedAssetImport($batch->id), $fullPath);
-
             Storage::disk('local')->delete($filePath);
 
-            return redirect()->route('fixed-assets.import_staging', $batch->id)->with('success', 'Data berhasil masuk ke Ruang Karantina!');
+            // 🔥 VALIDASI KELENGKAPAN BATCH SETELAH BACA EXCEL 🔥
+            $totalRows = $batch->details()->count();
+            if ($totalRows === 0) {
+                $batch->delete();
+                return redirect()->route('fixed-assets.index')->with('error', 'File Excel kosong atau tidak memiliki baris data yang terbaca.');
+            }
+
+            $invalidCount = $batch->details()->where('is_valid', 0)->count();
+            if ($invalidCount > 0) {
+                return redirect()->route('fixed-assets.import_staging', $batch->id)
+                    ->with('error', "Ditemukan {$invalidCount} baris data tidak valid! Harap perbaiki file Excel Anda, batalkan batch ini, dan upload ulang.");
+            }
+
+            return redirect()->route('fixed-assets.import_staging', $batch->id)->with('success', 'Data berhasil masuk ke Ruang Karantina dan seluruh baris lolos validasi!');
         } catch (\Exception $e) {
             if (isset($filePath)) Storage::disk('local')->delete($filePath);
             return redirect()->route('fixed-assets.index')->with('error', 'Gagal memproses excel: ' . $e->getMessage());
         }
     }
+
+    public function submitApproval($batch_id)
+    {
+        DB::beginTransaction();
+        try {
+            $batch = \App\Models\FixedAssetImportBatch::with('details')->findOrFail($batch_id);
+
+            if ($batch->details->count() === 0) {
+                throw new \Exception("Batch kosong. Tidak ada data aset yang dapat diajukan.");
+            }
+
+            if ($batch->details->where('is_valid', 0)->count() > 0) {
+                throw new \Exception("Validasi Gagal: Masih ada baris data yang tidak valid. Harap perbaiki Excel Anda dan upload ulang.");
+            }
+
+            $needsApproval = \App\Services\ApprovalService::generateWorkflow($batch);
+
+            if ($needsApproval) {
+                $batch->update(['status' => 'waiting_approval']);
+                DB::commit();
+                return back()->with('success', 'Draft berhasil diajukan ke Atasan!');
+            } else {
+                $this->processAssetImport($batch);
+                $batch->update(['status' => 'approved']);
+
+                DB::commit();
+                return redirect()->route('fixed-assets.index')->with('success', 'Buku Aset Resmi disahkan otomatis! Item baru telah digenerate.');
+            }
+        } catch (\Exception $e) {
+            DB::rollBack();
+            return back()->with('error', $e->getMessage());
+        }
+    }
+
+    public function decide(Request $request, $batch_id)
+    {
+        DB::beginTransaction();
+        try {
+            $batch = \App\Models\FixedAssetImportBatch::with('details')->findOrFail($batch_id);
+            $action = strtoupper($request->input('action', ''));
+            $currentApproval = \App\Models\DocumentApproval::with('role')->where('document_id', $batch->id)
+                ->where('document_type', get_class($batch))->where('status', 'PENDING')->orderBy('step_order', 'asc')->first();
+
+            if (!$currentApproval && $action !== 'REJECT') {
+                DB::rollBack();
+                return back()->with('error', 'Tidak menunggu persetujuan Anda.');
+            }
+
+            if ($action === 'REJECT') {
+                $currentApproval->update(['status' => 'REJECTED', 'approved_by' => auth()->id(), 'approved_at' => now()]);
+                $batch->update(['status' => 'draft']);
+                DB::commit();
+                return back()->with('error', 'Pengajuan dikembalikan ke Draft.');
+            }
+
+            // 🔥 BLOKIR APPROVE JIKA ADA BARIS TIDAK VALID 🔥
+            if ($batch->details->where('is_valid', 0)->count() > 0) {
+                DB::rollBack();
+                return back()->with('error', 'Gagal menyetujui: Terdapat baris data yang tidak valid di dalam batch ini.');
+            }
+
+            $currentApproval->update(['status' => 'APPROVED', 'approved_by' => auth()->id(), 'approved_at' => now()]);
+            $nextApproval = \App\Models\DocumentApproval::where('document_id', $batch->id)->where('document_type', get_class($batch))
+                ->where('status', 'PENDING')->orderBy('step_order', 'asc')->first();
+
+            if ($nextApproval) {
+                DB::commit();
+                return back()->with('success', 'Disetujui. Diteruskan ke atasan berikutnya.');
+            } else {
+                $this->processAssetImport($batch);
+                $batch->update(['status' => 'approved']);
+
+                DB::commit();
+                return redirect()->route('fixed-assets.index')->with('success', 'Buku Aset Resmi disahkan! Item baru telah digenerate otomatis.');
+            }
+        } catch (\Exception $e) {
+            DB::rollBack();
+            return back()->with('error', 'Terjadi kesalahan sistem: ' . $e->getMessage());
+        }
+    }
+
+    private function processAssetImport($batch)
+    {
+        $yearMonth = date('Y/m');
+        $details = \App\Models\FixedAssetImportDetail::where('batch_id', $batch->id)->get();
+
+        // 🔥 KUNCI PENGAMAN: Pastikan tidak memproses jika ada satupun baris invalid 🔥
+        if ($details->where('is_valid', 0)->count() > 0) {
+            throw new \Exception("Proses import dibatalkan karena masih terdapat data yang tidak valid.");
+        }
+
+        // Ambil status default tipe AST (Available di Gudang & In Use)
+        $defaultAvailableStatus = \App\Models\Status::where('type', 'AST')
+            ->whereIn('slug', ['available', 'ready', 'in_warehouse', 'active', 'good'])
+            ->orderBy('sequence', 'asc')
+            ->first();
+
+        $defaultInUseStatus = \App\Models\Status::where('type', 'AST')
+            ->where('slug', 'in_use')
+            ->first();
+
+        foreach ($details as $row) {
+            $item = null;
+
+            // 1. Cari atau Buat Master Barang
+            if (!empty($row->kode_barang)) {
+                $item = \App\Models\Item::lockForUpdate()->where('code', $row->kode_barang)->first();
+            }
+
+            if (!$item) {
+                $namaAsetBaru = $row->nama_spesifik_aset ?? 'Aset Import Tanpa Nama';
+                $item = \App\Models\Item::lockForUpdate()->where('name', $namaAsetBaru)->first();
+
+                if (!$item) {
+                    $lastItem = \App\Models\Item::orderBy('id', 'desc')->lockForUpdate()->first();
+                    $nextId   = $lastItem ? $lastItem->id + 1 : 1;
+                    $newCode  = 'ITM-' . str_pad($nextId, 4, '0', STR_PAD_LEFT);
+                    $slug     = \Illuminate\Support\Str::slug($namaAsetBaru) . '-' . \Illuminate\Support\Str::random(4);
+
+                    $cat = \App\Models\Category::firstOrCreate(
+                        ['name' => 'Umum'], ['code' => 'UMU']
+                    );
+                    $uom = \App\Models\Uom::firstOrCreate(['code' => 'PCS'], ['name' => 'Pieces']);
+
+                    $item = \App\Models\Item::create([
+                        'code'           => $newCode,
+                        'slug'           => $slug,
+                        'name'           => $namaAsetBaru,
+                        'category_id'    => $cat->id,
+                        'uom_id'         => $uom->id,
+                        'item_type_code' => 'AST',
+                        'is_trackable'   => 1,
+                        'is_active'      => 1,
+                        'current_stock'  => 0,
+                        'specification'  => 'Item dibuat otomatis dari Import Aset'
+                    ]);
+                }
+            }
+
+            $companyId       = !empty($row->nama_pt) ? (int) $row->nama_pt : 1;
+            $warehouseId     = !empty($row->nama_gudang) ? (int) $row->nama_gudang : 1;
+            $assetCategoryId = !empty($row->kategori_aset) ? (int) $row->kategori_aset : null;
+            $assignedTo      = !empty($row->nama_peminjam) ? (int) $row->nama_peminjam : null;
+
+            // 🔥 KUNCI PERBAIKAN STATUS: Hanya terima Status bertipe 'AST' 🔥
+            $rawStatusId = !empty($row->status_aset) ? (int) $row->status_aset : null;
+            $status = $rawStatusId ? \App\Models\Status::where('id', $rawStatusId)->where('type', 'AST')->first() : null;
+
+            // Jika ID status di Excel bukan tipe AST (misal nyasar ke ID 'Menunggu Approval'), paksa pakai status AST yang sah!
+            if (!$status) {
+                $status = $assignedTo ? $defaultInUseStatus : $defaultAvailableStatus;
+            }
+            $statusId = $status ? $status->id : 1;
+
+            // Sinkronkan kembali assigned_to jika status bukan 'in_use'
+            if ($status && $status->slug !== 'in_use') {
+                $assignedTo = null;
+            }
+
+            $userPenerima = $assignedTo ? \App\Models\User::find($assignedTo) : null;
+
+            // 3. Format Tanggal Perolehan
+            $formattedDate = date('Y-m-d');
+            if (!empty($row->tanggal_perolehan)) {
+                if (is_numeric($row->tanggal_perolehan)) {
+                    $formattedDate = \PhpOffice\PhpSpreadsheet\Shared\Date::excelToDateTimeObject($row->tanggal_perolehan)->format('Y-m-d');
+                } else {
+                    $formattedDate = date('Y-m-d', strtotime($row->tanggal_perolehan));
+                }
+            }
+
+            $currency = \App\Models\Currency::where('code', strtoupper($row->mata_uang))->first();
+
+            $lastAsset = \App\Models\FixedAsset::where('asset_number', 'like', "AST/{$yearMonth}/%")->orderBy('id', 'desc')->lockForUpdate()->first();
+            $nextSeq = $lastAsset ? ((int) substr($lastAsset->asset_number, -4)) + 1 : 1;
+            $assetNumber = "AST/{$yearMonth}/" . str_pad($nextSeq, 4, '0', STR_PAD_LEFT);
+
+            $asset = \App\Models\FixedAsset::create([
+                'asset_number'            => $assetNumber,
+                'item_id'                 => $item->id,
+                'asset_category_id'       => $assetCategoryId,
+                'name'                    => $row->nama_spesifik_aset ?: $item->name,
+                'warehouse_id'            => $warehouseId,
+                'company_id'              => $companyId,
+                'department_id'           => $userPenerima ? $userPenerima->department_id : null,
+                'serial_number'           => $row->serial_number,
+                'accounting_asset_number' => $row->label_akuntansi,
+                'status_id'               => $statusId,
+                'assigned_to'             => $assignedTo,
+                'spesifikasi_detail'      => $row->spesifikasi,
+                'notes'                   => trim($row->catatan),
+                'acquisition_date'        => $formattedDate,
+                'purchase_price'          => $row->harga_beli ?: 0,
+                'currency_id'             => $currency ? $currency->id : 1,
+                'supporting_document'     => $batch->support_doc,
+                'batch_id'                => $batch->batch_number,
+            ]);
+
+            \App\Models\FixedAssetHistory::create([
+                'fixed_asset_id' => $asset->id,
+                'status'         => $status ? $status->name : 'Registered',
+                'assigned_to'    => $assignedTo,
+                'notes'          => 'Di-import via Karantina (Batch: '.$batch->batch_number.')',
+                'created_by'     => auth()->id()
+            ]);
+
+            // 4. Mutasi Stok Pintar
+            $currStock = (float) $item->current_stock;
+            $balanceAfter = $currStock + 1;
+
+            \App\Models\StockMutation::create([
+                'item_id'          => $item->id,
+                'warehouse_id'     => $warehouseId,
+                'type'             => 'IN',
+                'qty'              => 1,
+                'balance_before'   => $currStock,
+                'balance_after'    => $balanceAfter,
+                'reference_number' => $assetNumber,
+                'notes'            => "Penerimaan Aset Import",
+                'created_by'       => auth()->id()
+            ]);
+
+            if ($status && $status->slug === 'in_use') {
+                \App\Models\StockMutation::create([
+                    'item_id'          => $item->id,
+                    'warehouse_id'     => $warehouseId,
+                    'type'             => 'OUT',
+                    'qty'              => 1,
+                    'balance_before'   => $balanceAfter,
+                    'balance_after'    => $balanceAfter - 1,
+                    'reference_number' => 'GI-' . $assetNumber,
+                    'notes'            => "Aset langsung diserahkan ke pengguna (Import)",
+                    'created_by'       => auth()->id()
+                ]);
+                $item->update(['current_stock' => $balanceAfter - 1]);
+            } else {
+                $item->update(['current_stock' => $balanceAfter]);
+            }
+        }
+    }
+
 
     // =========================================================================
     // 2. TAMPILKAN HALAMAN KARANTINA

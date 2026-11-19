@@ -37,6 +37,11 @@ class CategorySeeder extends Seeder
             ['name' => 'Furniture & Fixture',     'code' => 'FNR', 'parent_id' => $astParent->id],
             ['name' => 'Laptops',                 'code' => 'LAP', 'parent_id' => $astParent->id], // Sesuai Excel
             ['name' => 'Handphone',               'code' => 'HPN', 'parent_id' => $astParent->id], // Sesuai Excel
+            ['name' => 'Kamera',                  'code' => 'CAM', 'parent_id' => $astParent->id], // Sesuai Excel
+            ['name' => 'Kamera CCTV',             'code' => 'CTV', 'parent_id' => $astParent->id], // Sesuai Excel
+            ['name' => 'UPS Batrai',                'code' => 'UPS', 'parent_id' => $astParent->id], // Sesuai Excel
+            ['name' => 'Printer',                   'code' => 'PRN', 'parent_id' => $astParent->id], // Sesuai Excel
+            ['name' => 'Network / Jaringan',                   'code' => 'NET', 'parent_id' => $astParent->id], // Sesuai Excel
 
             // Anak dari Jasa
             ['name' => 'Jasa Profesional',        'code' => 'JSA', 'parent_id' => $svcParent->id],

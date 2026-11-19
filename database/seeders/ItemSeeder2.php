@@ -30,6 +30,16 @@ class ItemSeeder2 extends Seeder
                 'specification' => 'Spesifikasi detail untuk Komputer Desktop Core i7',
             ],
             [
+                'name' => 'Kamera Profesional',
+                'code' => 'SKU-CAM-00001',
+                'uom_id' => 2,
+                'category_id' => 17,
+                'item_type_code' => 'STK',
+                'is_trackable' => 1,
+                'current_stock' => 0,
+                'specification' => 'Spesifikasi detail untuk kamera profesional',
+            ],
+            [
                 'name' => 'Kendaraan Operasional Motor',
                 'code' => 'SKU-CNS-00001',
                 'uom_id' => 2,
@@ -205,6 +215,24 @@ class ItemSeeder2 extends Seeder
                 'uom_id' => 1, 'category_id' => 13, 'item_type_code' => 'STK', 'is_trackable' => 1, 'current_stock' => 0,
                 'specification' => 'External',
             ],
+            [
+                'name' => 'UPS Batrai',
+                'code' => 'SKU-ELK-00009',
+                'uom_id' => 1, 'category_id' => 13, 'item_type_code' => 'STK', 'is_trackable' => 1, 'current_stock' => 0,
+                'specification' => 'External',
+            ],
+            [
+                'name' => 'Mic Set',
+                'code' => 'SKU-ELK-00010',
+                'uom_id' => 1, 'category_id' => 13, 'item_type_code' => 'STK', 'is_trackable' => 1, 'current_stock' => 0,
+                'specification' => 'External',
+            ],
+            [
+                'name' => 'HandPhoone',
+                'code' => 'SKU-TLP-00001',
+                'uom_id' => 1, 'category_id' => 12, 'item_type_code' => 'STK', 'is_trackable' => 1, 'current_stock' => 0,
+                'specification' => 'External',
+            ],
 
             // ===============================================
             // DATA BARU DARI EXCEL (ATK / AKSESORIS KOMPUTER)
@@ -238,6 +266,24 @@ class ItemSeeder2 extends Seeder
                 'code' => 'SKU-ATK-00015',
                 'uom_id' => 1, 'category_id' => 4, 'item_type_code' => 'STK', 'is_trackable' => 0, 'current_stock' => 0,
                 'specification' => 'Wireless',
+            ],
+            [
+                'name' => 'UPS Batrai',
+                'code' => 'SKU-UPS-00001',
+                'uom_id' => 2, 'category_id' => 20, 'item_type_code' => 'STK', 'is_trackable' => 0, 'current_stock' => 0,
+                'specification' => 'Batrai ups',
+            ],
+            [
+                'name' => 'Printer Inkjet',
+                'code' => 'SKU-PRN-00001',
+                'uom_id' => 2, 'category_id' => 21, 'item_type_code' => 'STK', 'is_trackable' => 0, 'current_stock' => 0,
+                'specification' => 'Printer Inkjet',
+            ],
+            [
+                'name' => 'Mikrotik',
+                'code' => 'SKU-NET-00001',
+                'uom_id' => 1, 'category_id' => 22, 'item_type_code' => 'STK', 'is_trackable' => 0, 'current_stock' => 0,
+                'specification' => 'Mikrotik',
             ],
         ];
 

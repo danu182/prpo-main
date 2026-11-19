@@ -188,23 +188,64 @@
             </span>
         </div>
         <div class="p-0 card-body table-responsive">
+
             <table class="table align-middle table-modern">
                 <thead>
                     <tr>
-                        <th class="ps-4" width="15%">Item Master</th>
+                        <th class="ps-4" width="17%">Item Master</th>
                         <th width="25%">Nama Aset Fisik</th>
-                        <th width="20%">Akuntansi & S/N</th>
+                        <th width="18%">Akuntansi & S/N</th>
                         <th width="15%">Lokasi & Status</th>
                         <th width="15%">Harga Beli</th>
                         <th class="text-center pe-4" width="10%">Validasi</th>
                     </tr>
                 </thead>
+
                 <tbody>
+                    @php
+                        $currencySymbols = \App\Models\Currency::pluck('symbol', 'code')
+                            ->mapWithKeys(fn($symbol, $code) => [strtoupper(trim($code)) => $symbol]);
+
+                        // Ambil mapping code => name dari Master Item sekaligus (1x query)
+                        $itemCodes = $batch->details->pluck('kode_barang')->filter()->map(fn($c) => trim($c))->unique();
+                        $masterItems = \App\Models\Item::whereIn('code', $itemCodes)->pluck('name', 'code');
+                    @endphp
                     @foreach($batch->details as $d)
+                    @php
+                        $listErrors = [];
+                        $cleanCatatan = $d->catatan ?? '';
+
+                        // 1. Tangkap format baru: [ERR_LIST]err1||err2[/ERR_LIST]
+                        if (preg_match('/\[ERR_LIST\](.*?)\[\/ERR_LIST\]/s', $cleanCatatan, $m)) {
+                            $listErrors = array_filter(array_map('trim', explode('||', $m[1])));
+                            $cleanCatatan = trim(str_replace($m[0], '', $cleanCatatan));
+                        }
+                        // 2. Tangkap format lama yang sudah terlanjur masuk di batch sebelumnya: [ERROR VALIDASI: ...]
+                        elseif (preg_match('/\[ERROR VALIDASI:\s*(.*?)\]/s', $cleanCatatan, $m)) {
+                            $listErrors = array_filter(array_map('trim', explode('|', $m[1])));
+                            $cleanCatatan = trim(str_replace($m[0], '', $cleanCatatan));
+                        }
+                        // 3. Fallback jika masih kosong
+                        if (!$d->is_valid && empty($listErrors)) {
+                            $listErrors = [$d->validation_error ?? $d->error_message ?? 'Data baris tidak sesuai format/master.'];
+                        }
+
+                        $cleanKode = trim($d->kode_barang ?? '');
+                        $masterItemName = $cleanKode ? ($masterItems[$cleanKode] ?? null) : null;
+                    @endphp
                     <tr>
                         <td class="ps-4">
-                            @if($d->kode_barang)
-                                <span class="px-2 py-1 shadow-sm badge bg-primary">{{ $d->kode_barang }}</span>
+                            @if($cleanKode)
+                                <span class="px-2 py-1 mb-1 shadow-sm badge bg-primary">{{ $cleanKode }}</span>
+                                @if($masterItemName)
+                                    <div class="small fw-semibold text-dark" style="line-height: 1.3;">
+                                        {{ $masterItemName }}
+                                    </div>
+                                @else
+                                    <div class="small text-danger fst-italic" style="line-height: 1.3;">
+                                        Tidak ada di Master
+                                    </div>
+                                @endif
                             @else
                                 <span class="px-2 py-1 shadow-sm badge bg-warning text-dark"><i class="bi bi-stars"></i> Auto-Create</span>
                             @endif
@@ -212,7 +253,6 @@
                         <td>
                             <div class="mb-1 fw-bold text-dark">{{ $d->nama_spesifik_aset ?: 'Sesuai Master' }}</div>
 
-                            {{-- 🔥 MENAMPILKAN SPESIFIKASI 🔥 --}}
                             @if(!empty($d->spesifikasi))
                                 <div class="mb-1 text-muted" style="font-size: 0.8rem; line-height: 1.4;">
                                     <span class="fw-bold text-secondary"><i class="bi bi-card-text me-1"></i>Spek:</span>
@@ -220,11 +260,11 @@
                                 </div>
                             @endif
 
-                            {{-- 🔥 MENAMPILKAN CATATAN 🔥 --}}
-                            @if(!empty($d->catatan))
+                            {{-- Tampilkan catatan bersih tanpa tag error --}}
+                            @if(!empty($cleanCatatan))
                                 <div class="text-muted fst-italic" style="font-size: 0.8rem; line-height: 1.4;">
                                     <span class="fw-bold text-secondary"><i class="bi bi-journal-text me-1"></i>Note:</span>
-                                    {{ Str::limit($d->catatan, 100) }}
+                                    {{ Str::limit($cleanCatatan, 100) }}
                                 </div>
                             @endif
                         </td>
@@ -242,7 +282,6 @@
                                 {{ optional($d->warehouse)->name ?? 'Gudang Tidak Valid (' . $d->nama_gudang . ')' }}
                             </div>
 
-                            {{-- 🔥 MENAMPILKAN NAMA USER JIKA ADA 🔥 --}}
                             @if($d->nama_peminjam)
                                 <div class="mb-1 small text-success fw-bold" title="ID: {{ $d->nama_peminjam }}">
                                     <i class="bi bi-person-badge-fill me-1"></i>
@@ -254,21 +293,53 @@
                                 {{ optional($d->statusAsset)->name ?? 'Status Tidak Valid (' . $d->status_aset . ')' }}
                             </span>
                         </td>
-                        <td class="fw-bold text-success">
-                            {{ $d->mata_uang }} {{ number_format((float)$d->harga_beli, 0, ',', '.') }}
+
+                        {{-- HARGA & TANGGAL --}}
+                        <td>
+                            @php
+                                $harga = (float) $d->harga_beli;
+                                $adaDesimal = round($harga - floor($harga), 2) > 0;
+
+                                $kodeCurr = strtoupper(trim($d->mata_uang ?? 'IDR'));
+                                $simbol = $currencySymbols[$kodeCurr] ?? $kodeCurr;
+
+                                $tglTampil = '-';
+                                if (!empty($d->tanggal_perolehan)) {
+                                    if (is_numeric($d->tanggal_perolehan)) {
+                                        $tglTampil = \PhpOffice\PhpSpreadsheet\Shared\Date::excelToDateTimeObject((float) $d->tanggal_perolehan)->format('d M Y');
+                                    } else {
+                                        $tglTampil = date('d M Y', strtotime($d->tanggal_perolehan));
+                                    }
+                                }
+                            @endphp
+                            <div class="fw-bold text-success">{{ $simbol }} {{ number_format($harga, $adaDesimal ? 2 : 0, ',', '.') }}</div>
+                            <div class="small text-muted"><i class="bi bi-calendar-check me-1"></i> {{ $tglTampil }}</div>
                         </td>
-                        <td class="text-center pe-4">
+
+                        <td class="pe-4" style="min-width: 230px;">
                             @if($d->is_valid)
-                                <i class="bi bi-check-circle-fill text-success fs-4 drop-shadow"></i>
+                                <div class="text-center">
+                                    <i class="bi bi-check-circle-fill text-success fs-4 drop-shadow"></i>
+                                </div>
                             @else
-                                <i class="bi bi-x-circle-fill text-danger fs-4 drop-shadow" title="{{ $d->validation_error }}"></i>
-                                <div class="mt-1 small fw-bold text-danger">{{ $d->validation_error }}</div>
+                                <div class="p-2 border border-danger-subtle rounded-3 bg-danger-subtle text-danger" style="font-size: 0.75rem; line-height: 1.35;">
+                                    <div class="mb-1 fw-bold d-flex align-items-center">
+                                        <i class="bi bi-x-circle-fill me-1 fs-6"></i> Ditemukan {{ count($listErrors) }} Kesalahan:
+                                    </div>
+                                    <ul class="mb-0 ps-3">
+                                        @foreach($listErrors as $err)
+                                            <li>{{ $err }}</li>
+                                        @endforeach
+                                    </ul>
+                                </div>
                             @endif
                         </td>
                     </tr>
                     @endforeach
                 </tbody>
+
             </table>
+
         </div>
     </div>
 </div>
