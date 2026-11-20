@@ -20,14 +20,14 @@ class ItemSeeder2 extends Seeder
             // DATA LAMA BAWAAN SEEDER (6 ITEM AWAL)
             // ===============================================
             [
-                'name' => 'Komputer Desktop Core i7',
+                'name' => 'Komputer Desktop',
                 'code' => 'SKU-ELK-00001',
                 'uom_id' => 2,
                 'category_id' => 13,
                 'item_type_code' => 'STK',
                 'is_trackable' => 1,
                 'current_stock' => 10,
-                'specification' => 'Spesifikasi detail untuk Komputer Desktop Core i7',
+                'specification' => 'Spesifikasi detail untuk Komputer Desktop',
             ],
             [
                 'name' => 'Kamera Profesional',
@@ -189,25 +189,25 @@ class ItemSeeder2 extends Seeder
                 'name' => 'Sodim DDR 3',
                 'code' => 'SKU-ELK-00004',
                 'uom_id' => 1, 'category_id' => 13, 'item_type_code' => 'STK', 'is_trackable' => 0, 'current_stock' => 0,
-                'specification' => 'DDR3',
+                'specification' => 'DDR3 Untuk laptop',
             ],
             [
                 'name' => 'Sodim DDR 4',
                 'code' => 'SKU-ELK-00005',
                 'uom_id' => 1, 'category_id' => 13, 'item_type_code' => 'STK', 'is_trackable' => 0, 'current_stock' => 0,
-                'specification' => 'DDR4',
+                'specification' => 'DDR4 Untuk laptop',
             ],
             [
-                'name' => 'Hard Disk SSD',
+                'name' => 'Hard Disk SSD Internal',
                 'code' => 'SKU-ELK-00006',
                 'uom_id' => 1, 'category_id' => 13, 'item_type_code' => 'STK', 'is_trackable' => 0, 'current_stock' => 0,
-                'specification' => 'SSD',
+                'specification' => 'SSD Internal',
             ],
             [
-                'name' => 'Hard Disk NvME',
+                'name' => 'Hard Disk NvME Internal',
                 'code' => 'SKU-ELK-00007',
                 'uom_id' => 1, 'category_id' => 13, 'item_type_code' => 'STK', 'is_trackable' => 0, 'current_stock' => 0,
-                'specification' => 'NvMe',
+                'specification' => 'NvMe Internal',
             ],
             [
                 'name' => 'Hard Disk External',
@@ -219,19 +219,19 @@ class ItemSeeder2 extends Seeder
                 'name' => 'UPS Batrai',
                 'code' => 'SKU-ELK-00009',
                 'uom_id' => 1, 'category_id' => 13, 'item_type_code' => 'STK', 'is_trackable' => 1, 'current_stock' => 0,
-                'specification' => 'External',
+                'specification' => 'UPS Batrai',
             ],
             [
                 'name' => 'Mic Set',
                 'code' => 'SKU-ELK-00010',
                 'uom_id' => 1, 'category_id' => 13, 'item_type_code' => 'STK', 'is_trackable' => 1, 'current_stock' => 0,
-                'specification' => 'External',
+                'specification' => 'Mic full Set',
             ],
             [
-                'name' => 'HandPhoone',
+                'name' => 'Hand Phone',
                 'code' => 'SKU-TLP-00001',
                 'uom_id' => 1, 'category_id' => 12, 'item_type_code' => 'STK', 'is_trackable' => 1, 'current_stock' => 0,
-                'specification' => 'External',
+                'specification' => 'Hand Phone',
             ],
 
             // ===============================================

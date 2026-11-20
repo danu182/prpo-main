@@ -42,11 +42,11 @@
     .ck-toolbar { border-top-left-radius: 8px !important; border-top-right-radius: 8px !important; background-color: #f8fafc !important; }
     .ck.ck-balloon-panel { z-index: 1056 !important; }
 
-    /* 🔥 FOTO GALLERY HOVER 🔥 */
+    /* FOTO GALLERY HOVER */
     .photo-gallery-item { transition: transform 0.2s ease-in-out; border: 1px solid #dee2e6; border-radius: 8px; overflow: hidden; background: #fff; padding: 3px; display: inline-block; }
     .photo-gallery-item:hover { transform: scale(1.1); z-index: 10; border-color: #0dcaf0; box-shadow: 0 4px 8px rgba(0,0,0,0.1); }
 
-    /* 🔥 KUSTOMISASI MODAL EDUKASI 🔥 */
+    /* KUSTOMISASI MODAL EDUKASI */
     .math-formula { font-family: 'Courier New', Courier, monospace; background: #f1f5f9; padding: 10px 15px; border-left: 4px solid #0d6efd; border-radius: 4px; font-weight: 600; color: #334155; margin-bottom: 1rem; }
 </style>
 @endpush
@@ -64,7 +64,7 @@
         </div>
 
         <div class="flex-wrap gap-2 d-flex">
-            {{-- 🔥 TOMBOL CETAK MASSAL ASET 🔥 --}}
+            {{-- TOMBOL CETAK MASSAL ASET --}}
             @if(count($assets) > 0)
                 <a href="{{ route('inventory.print_label') }}?ids={{ implode(',', $assets->pluck('id')->toArray()) }}" target="_blank" class="shadow-sm btn btn-outline-primary rounded-pill fw-bold">
                     <i class="bi bi-printer-fill me-1"></i> Cetak Aset Halaman Ini ({{ count($assets) }})
@@ -79,7 +79,7 @@
                 </select>
 
                 <div class="overflow-hidden border shadow-sm input-group rounded-pill">
-                    <input type="text" name="search" class="px-4 bg-white border-0 form-control" placeholder="Cari No Aset, Master, S/N..." value="{{ request('search') }}">
+                    <input type="text" name="search" class="px-4 bg-white border-0 form-control" placeholder="Cari No Aset, PT, Karyawan, S/N..." value="{{ request('search') }}">
                     <button class="px-4 text-white border-0 btn btn-info fw-bold" type="submit"><i class="bi bi-search"></i></button>
                     @if(request('search') || request('warehouse_id'))
                         <a href="{{ route('fixed-assets.index') }}" class="px-3 btn btn-light border-start text-danger" title="Reset"><i class="bi bi-x-lg"></i></a>
@@ -123,36 +123,33 @@
                     <tr>
                         <th width="45%">Identitas, Perolehan & Nilai Buku</th>
                         <th width="15%" class="text-center">Status</th>
-                        <th width="25%">Lokasi / Penanggung Jawab</th>
+                        <th width="25%">Lokasi / Penanggung Jawab & PT</th>
                         <th width="15%" class="text-end">Aksi</th>
                     </tr>
                 </thead>
                 <tbody>
                     @forelse($assets as $ast)
+                        @php
+                            $poItemName = null;
+                            if ($ast->goodsReceipt) {
+                                $poData = $ast->goodsReceipt->po ?? $ast->goodsReceipt->purchaseOrder;
+                                if ($poData && $poData->items) {
+                                    $foundPoItem = $poData->items->where('item_id', $ast->item_id)->first();
+                                    if ($foundPoItem) {
+                                        $poItemName = $foundPoItem->item_name;
+                                    }
+                                }
+                            }
+
+                            $currCode   = strtoupper(optional($ast->currency)->code ?? 'IDR');
+                            $currSymbol = optional($ast->currency)->symbol ?? ($currCode === 'IDR' ? 'Rp' : $currCode);
+                            $currDec    = ($currCode === 'IDR') ? 0 : 2;
+                        @endphp
                         <tr class="main-row">
                             <td>
                                 <div class="d-flex align-items-center">
                                     <div class="flex-shrink-0 avatar-circle-modern me-3">{{ strtoupper(substr($ast->name ?? optional($ast->item)->name, 0, 2)) }}</div>
                                     <div>
-                                        {{-- <div class="fw-bold text-dark fs-6 mb-1 {{ optional($ast->status)->slug === 'disposed' ? 'text-decoration-line-through text-danger' : '' }}">{{ $ast->name ?? optional($ast->item)->name }}</div>
-                                        <div class="mb-1 text-muted small"><span class="badge-item-code me-1"><i class="bi bi-box me-1"></i>{{ optional($ast->item)->code ?? 'No Code' }}</span> {{ optional($ast->item)->name ?? 'Unknown Master' }}</div> --}}
-
-
-                                        {{-- 🔥 Logika Cerdas Menemukan Nama PO 🔥 --}}
-                                        @php
-                                            $poItemName = null;
-                                            if ($ast->goodsReceipt) {
-                                                $poData = $ast->goodsReceipt->po ?? $ast->goodsReceipt->purchaseOrder;
-                                                if ($poData && $poData->items) {
-                                                    $foundPoItem = $poData->items->where('item_id', $ast->item_id)->first();
-                                                    if ($foundPoItem) {
-                                                        // 🔥 PERBAIKAN: Gunakan $foundPoItem, bukan $poItem 🔥
-                                                        $poItemName = $foundPoItem->item_name;
-                                                    }
-                                                }
-                                            }
-                                        @endphp
-
                                         <div class="fw-bold text-dark fs-6 mb-1 {{ optional($ast->status)->slug === 'disposed' ? 'text-decoration-line-through text-danger' : '' }}">
                                             {{ $ast->name ?? optional($ast->item)->name }}
                                         </div>
@@ -163,14 +160,14 @@
                                             {{ optional($ast->item)->name ?? 'Unknown Master' }}
                                         </div>
 
-                                        {{-- 🔥 Indikator Nama Asli dari Dokumen PO 🔥 --}}
+                                        {{-- Indikator Nama Asli dari Dokumen PO --}}
                                         @if($poItemName)
                                             <div class="mb-1 small" style="color: #0284c7; font-weight: 500;">
                                                 <i class="bi bi-cart-check me-1"></i> Asal PO: {{ $poItemName }}
                                             </div>
                                         @endif
 
-                                        {{-- 🔥 TANGGAL PEROLEHAN & NILAI MUNCUL DI BARIS DEPAN 🔥 --}}
+                                        {{-- TANGGAL PEROLEHAN & NILAI MUNCUL DI BARIS DEPAN --}}
                                         <div class="flex-wrap gap-2 mt-2 d-flex">
                                             <span class="border badge-soft bg-primary-subtle text-primary border-primary-subtle" title="Nomor Registrasi Aset">
                                                 <i class="bi bi-tag-fill me-1"></i>{{ $ast->asset_number }}
@@ -179,14 +176,12 @@
                                                 <i class="bi bi-calendar-check-fill me-1 text-warning" style="filter: brightness(0.8);"></i>Tgl: {{ $ast->acquisition_date ? \Carbon\Carbon::parse($ast->acquisition_date)->format('d M Y') : '-' }}
                                             </span>
                                             <span class="border badge-soft bg-danger-subtle text-danger border-danger-subtle" title="Nilai Buku Saat Ini">
-                                                <i class="bi bi-cash-coin me-1"></i>Rp {{ number_format($ast->net_book_value ?? $ast->purchase_price ?? 0, 0, ',', '.') }}
+                                                <i class="bi bi-cash-coin me-1"></i>{{ $currSymbol }} {{ number_format($ast->net_book_value ?? $ast->purchase_price ?? 0, $currDec, ',', '.') }}
                                             </span>
                                             @if($ast->serial_number)
                                                 <span class="border badge-soft bg-light text-secondary border-light" title="Serial Number (S/N)"><i class="bi bi-upc-scan me-1"></i>S/N: {{ $ast->serial_number }}</span>
                                             @endif
                                         </div>
-
-
                                     </div>
                                 </div>
                             </td>
@@ -202,11 +197,18 @@
                                     <div class="fw-bold text-danger"><i class="bi bi-trash-fill me-1"></i> Dihancurkan / Dijual</div>
                                 @elseif($ast->assigned_to)
                                     <div class="fw-bold text-dark"><i class="bi bi-person-badge me-2 text-primary"></i>{{ optional($ast->assignee)->name }}</div>
-                                    <div class="mt-1 small text-muted"><i class="bi bi-building me-2"></i>{{ optional($ast->assignee->company)->name ?? 'Kantor Pusat' }}</div>
+                                    <div class="mt-1 small text-muted"><i class="bi bi-diagram-3 me-2"></i>{{ optional(optional($ast->assignee)->department)->name ?? '-' }}</div>
                                 @else
                                     <div class="fw-bold text-success"><i class="bi bi-box-seam me-2"></i>{{ optional($ast->warehouse)->name ?? 'Belum Diset' }}</div>
                                     <div class="mt-1 small text-muted"><i class="bi bi-geo-alt me-2"></i>Lokasi Gudang</div>
                                 @endif
+
+                                {{-- BADGE PERUSAHAAN PEMILIK ASET SELALU TAMPIL --}}
+                                <div class="mt-2">
+                                    <span class="border badge bg-light text-dark border-secondary-subtle text-wrap text-start" style="font-size: 0.72rem;" title="Entitas Perusahaan Pemilik Aset">
+                                        <i class="bi bi-building text-primary me-1"></i>{{ optional($ast->company)->name ?? 'Perusahaan Belum Diset' }}
+                                    </span>
+                                </div>
                             </td>
                             <td class="text-end">
                                 <div class="gap-1 d-flex justify-content-end">
@@ -217,11 +219,9 @@
                                             <li><a class="dropdown-item text-primary" href="{{ route('fixed-assets.edit', $ast->id) }}"><i class="bi bi-pencil-square me-2"></i> Edit Data Aset</a></li>
                                             <li><a class="dropdown-item text-dark" href="#" data-bs-toggle="modal" data-bs-target="#modalHistory{{ $ast->id }}"><i class="bi bi-clock-history me-2"></i> Log Riwayat Aset</a></li>
                                             <li><hr class="my-1 dropdown-divider"></li>
-                                            {{-- <li><a class="dropdown-item text-dark" href="{{ route('fixed-assets.print_qr', $ast->id) }}" target="_blank"><i class="bi bi-qr-code me-2"></i> Cetak Label QR</a></li> --}}
                                             <li><a class="dropdown-item text-dark" href="{{ route('inventory.print_label', $ast->id) }}" target="_blank"><i class="bi bi-printer-fill me-2 text-primary"></i> Cetak Label Aset (T&J)</a></li>
                                             @if(optional($ast->status)->slug === 'in_use' && $ast->assigned_to) <li><a class="dropdown-item text-info" href="{{ route('fixed-assets.bast', $ast->id) }}" target="_blank"><i class="bi bi-file-earmark-check me-2"></i> Cetak BAST</a></li> @endif
                                             @if(optional($ast->status)->slug === 'disposed') <li><a class="dropdown-item text-danger fw-bold" href="{{ route('fixed-assets.bapp', $ast->id) }}" target="_blank"><i class="bi bi-file-earmark-x-fill me-2"></i> Cetak BAPP</a></li> @endif
-                                            {{-- 🔥 TAMBAHKAN KODE TOMBOL HAPUS INI 🔥 --}}
                                             @if(empty($ast->assigned_to))
                                             <li><hr class="my-1 dropdown-divider"></li>
                                             <li>
@@ -251,8 +251,8 @@
                                                     <tr><td width="35%" class="pb-2 text-muted">Pemilik PT</td><td class="pb-2 fw-bold text-dark">: {{ optional($ast->company)->name ?? '-' }}</td></tr>
                                                     <tr><td class="pb-2 text-muted">Label Akuntansi</td><td class="pb-2 fw-bold text-dark">: {{ $ast->accounting_asset_number ?? '-' }}</td></tr>
                                                     <tr><td class="pb-2 text-muted">Kategori</td><td class="pb-2 fw-bold text-dark">: {{ $ast->assetCategory ? $ast->assetCategory->name . ' (' . $ast->assetCategory->useful_life_years . ' Tahun)' : 'Kelompok 1 (Default)' }}</td></tr>
-                                                    <tr><td class="pb-2 text-muted">Harga Perolehan</td><td class="pb-2 fw-bold text-dark">: {{ optional($ast->currency)->symbol ?? 'Rp' }} {{ number_format($ast->purchase_price ?? 0, 0, ',', '.') }}</td></tr>
-                                                    <tr><td class="pb-2 text-muted">Nilai Buku Saat Ini</td><td class="pb-2 fw-bold text-danger">: {{ optional($ast->currency)->symbol ?? 'Rp' }} {{ number_format($ast->net_book_value ?? $ast->purchase_price ?? 0, 0, ',', '.') }}</td></tr>
+                                                    <tr><td class="pb-2 text-muted">Harga Perolehan</td><td class="pb-2 fw-bold text-dark">: {{ $currSymbol }} {{ number_format($ast->purchase_price ?? 0, $currDec, ',', '.') }}</td></tr>
+                                                    <tr><td class="pb-2 text-muted">Nilai Buku Saat Ini</td><td class="pb-2 fw-bold text-danger">: {{ $currSymbol }} {{ number_format($ast->net_book_value ?? $ast->purchase_price ?? 0, $currDec, ',', '.') }}</td></tr>
                                                     <tr><td class="align-top text-muted">Spesifikasi</td><td class="align-top text-dark d-flex"><span class="me-2">:</span><div class="content-html" style="font-size: 0.85rem; line-height: 1.5;">{!! $ast->spesifikasi_detail ?? optional($ast->item)->specification ?? '-' !!}</div></td></tr>
                                                 </table>
                                             </div>
@@ -264,7 +264,6 @@
                                                         <div>
                                                             <div class="small text-muted">Tgl Perolehan (Mulai Susut)</div>
                                                             <div class="fw-bold text-dark">{{ $ast->acquisition_date ? \Carbon\Carbon::parse($ast->acquisition_date)->format('d M Y') : '-' }}</div>
-                                                           {{-- 🔥 INDIKATOR KHUSUS ASAL USUL TANGGAL 🔥 --}}
                                                             @if($ast->batch_id && str_contains($ast->batch_id, 'IMP'))
                                                                 <div class="mt-1" style="font-size: 0.68rem; line-height: 1.2; color: #0369a1; font-weight: 600;">
                                                                     <i class="bi bi-info-circle-fill"></i> Tgl asli dibeli sebelum di-import ke sistem.
@@ -302,35 +301,34 @@
                                             </div>
 
                                             <div class="flex-wrap gap-3 d-flex">
-                                            @foreach($ast->photos as $photo)
-                                                @php
-                                                    $extension = strtolower(pathinfo($photo->file_path, PATHINFO_EXTENSION));
-                                                    $isImage = in_array($extension, ['jpg', 'jpeg', 'png', 'gif']);
-                                                @endphp
+                                                @foreach($ast->photos as $photo)
+                                                    @php
+                                                        $extension = strtolower(pathinfo($photo->file_path, PATHINFO_EXTENSION));
+                                                        $isImage = in_array($extension, ['jpg', 'jpeg', 'png', 'gif']);
+                                                    @endphp
 
-                                                @if($isImage)
-                                                    <a href="{{ asset('storage/' . $photo->file_path) }}" target="_blank" class="photo-gallery-item">
-                                                        <img src="{{ asset('storage/' . $photo->file_path) }}" class="rounded-2" style="width: 100px; height: 100px; object-fit: cover;">
-                                                    </a>
-                                                @else
-                                                    {{-- Kotak Ikon Dokumen untuk file PDF/Word/Excel di halaman Index --}}
-                                                    <a href="{{ asset('storage/' . $photo->file_path) }}" target="_blank" class="text-decoration-none">
-                                                        <div class="border shadow-sm rounded-2 d-flex flex-column align-items-center justify-content-center bg-light" style="width: 100px; height: 100px;">
-                                                            @if($extension == 'pdf')
-                                                                <i class="bi bi-file-earmark-pdf-fill text-danger fs-1"></i>
-                                                            @elseif(in_array($extension, ['doc', 'docx']))
-                                                                <i class="bi bi-file-earmark-word-fill text-primary fs-1"></i>
-                                                            @elseif(in_array($extension, ['xls', 'xlsx']))
-                                                                <i class="bi bi-file-earmark-excel-fill text-success fs-1"></i>
-                                                            @else
-                                                                <i class="bi bi-file-earmark-zip-fill text-secondary fs-1"></i>
-                                                            @endif
-                                                            <span class="mt-1 small text-dark" style="font-size: 0.65rem;">{{ strtoupper($extension) }}</span>
-                                                        </div>
-                                                    </a>
-                                                @endif
-                                            @endforeach
-                                        </div>
+                                                    @if($isImage)
+                                                        <a href="{{ asset('storage/' . $photo->file_path) }}" target="_blank" class="photo-gallery-item">
+                                                            <img src="{{ asset('storage/' . $photo->file_path) }}" class="rounded-2" style="width: 100px; height: 100px; object-fit: cover;">
+                                                        </a>
+                                                    @else
+                                                        <a href="{{ asset('storage/' . $photo->file_path) }}" target="_blank" class="text-decoration-none">
+                                                            <div class="border shadow-sm rounded-2 d-flex flex-column align-items-center justify-content-center bg-light" style="width: 100px; height: 100px;">
+                                                                @if($extension == 'pdf')
+                                                                    <i class="bi bi-file-earmark-pdf-fill text-danger fs-1"></i>
+                                                                @elseif(in_array($extension, ['doc', 'docx']))
+                                                                    <i class="bi bi-file-earmark-word-fill text-primary fs-1"></i>
+                                                                @elseif(in_array($extension, ['xls', 'xlsx']))
+                                                                    <i class="bi bi-file-earmark-excel-fill text-success fs-1"></i>
+                                                                @else
+                                                                    <i class="bi bi-file-earmark-zip-fill text-secondary fs-1"></i>
+                                                                @endif
+                                                                <span class="mt-1 small text-dark" style="font-size: 0.65rem;">{{ strtoupper($extension) }}</span>
+                                                            </div>
+                                                        </a>
+                                                    @endif
+                                                @endforeach
+                                            </div>
 
                                         </div>
                                     </div>
@@ -391,7 +389,7 @@
     </div>
 </div>
 
-{{-- 🔥 MODAL EDUKASI / PANDUAN PENYUSUTAN ASET 🔥 --}}
+{{-- MODAL EDUKASI / PANDUAN PENYUSUTAN ASET --}}
 <div class="modal fade" id="modalEdukasiPenyusutan" tabindex="-1">
     <div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable">
         <div class="border-0 shadow-lg modal-content rounded-4">
@@ -401,7 +399,6 @@
             </div>
             <div class="p-4 modal-body bg-light text-start" style="font-size: 0.95rem;">
 
-                {{-- Dasar Hukum & Tanggal Perolehan --}}
                 <div class="p-3 mb-4 bg-white border shadow-sm rounded-3 border-primary-subtle">
                     <h6 class="mb-2 fw-bold text-primary"><i class="bi bi-bank me-2"></i>Dasar Hukum & Waktu Mulai Penyusutan</h6>
                     <p class="mb-2 text-dark">Penyusutan aset <strong>TIDAK</strong> dihitung berdasarkan tanggal Purchase Order (PO), melainkan dari <strong>Tanggal Perolehan (Acquisition Date)</strong>, yaitu saat barang fisik diterima dan siap digunakan.</p>
@@ -412,7 +409,6 @@
                     <p class="pt-2 mb-0 text-muted small border-top">Sistem ini mengacu pada Standar Akuntansi & Pajak Indonesia (UU PPh Pasal 11 & PMK No 72 Tahun 2023).</p>
                 </div>
 
-                {{-- Rumus Matematika --}}
                 <h6 class="mb-3 fw-bold text-dark"><i class="bi bi-calculator me-2 text-success"></i>Metode Penyusutan: Garis Lurus (Straight-Line)</h6>
                 <div class="math-formula">
                     <span class="mb-1 text-muted d-block small">1. Menghitung Penyusutan Bulanan:</span>
@@ -427,14 +423,13 @@
                     Nilai Buku Saat Ini = <span class="text-dark">Harga Perolehan</span> - <span class="text-dark">Akumulasi Penyusutan</span>
                 </div>
 
-                {{-- Simulasi Kasus --}}
                 <h6 class="mt-4 mb-3 fw-bold text-dark"><i class="bi bi-laptop me-2 text-warning"></i>Contoh Simulasi Kasus</h6>
                 <div class="p-3 bg-white border shadow-sm rounded-3 text-muted">
                     <div class="pb-2 mb-3 row border-bottom">
                         <div class="col-6"><strong>Harga Perolehan:</strong> Rp 10.000.000</div>
                         <div class="col-6"><strong>Kategori:</strong> Kelompok 1 (Masa 4 Tahun / 48 Bulan)</div>
                         <div class="mt-2 col-6"><strong>Tgl Perolehan (GR/Input):</strong> 01 Jan 2024</div>
-                        <div class="mt-2 col-6 text-danger"><strong>Waktu Pengecekan:</strong> Hari ini (Jeda $\approx$ 30,93 Bulan)</div>
+                        <div class="mt-2 col-6 text-danger"><strong>Waktu Pengecekan:</strong> Hari ini (Jeda &approx; 30,93 Bulan)</div>
                     </div>
 
                     <div class="mb-2">
@@ -459,22 +454,17 @@
         </div>
     </div>
 </div>
-
 @endsection
 
 @push('scripts')
-{{-- Pastikan jQuery dan SweetAlert2 dipanggil --}}
 <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
 
 <script>
     $(document).ready(function() {
-
-        // 🔥 MENGGUNAKAN EVENT DELEGATION: $(document).on('click', ...) 🔥
-        // Ini memastikan tombol tetap bisa diklik walaupun berada di halaman 2, 3 (Paginasi)
         $(document).on('click', '.btn-delete-asset', function(e) {
-            e.preventDefault(); // Mencegah dropdown tertutup otomatis
-            e.stopPropagation(); // Mencegah event tumpang tindih
+            e.preventDefault();
+            e.stopPropagation();
 
             let form = $(this).closest('form');
 
@@ -483,14 +473,13 @@
                 text: "Aset yang salah input ini akan dihapus secara permanen beserta log riwayat dan fotonya. Tindakan ini tidak bisa dibatalkan!",
                 icon: 'warning',
                 showCancelButton: true,
-                confirmButtonColor: '#dc3545', // Merah Bootstrap
-                cancelButtonColor: '#6c757d',  // Abu-abu Bootstrap
+                confirmButtonColor: '#dc3545',
+                cancelButtonColor: '#6c757d',
                 confirmButtonText: '<i class="bi bi-trash3-fill me-1"></i> Ya, Hapus Aset!',
                 cancelButtonText: 'Batal',
                 customClass: { popup: 'rounded-4 shadow-lg border-0' }
             }).then((result) => {
                 if (result.isConfirmed) {
-                    // Munculkan loading agar user tidak klik 2x
                     Swal.fire({
                         title: 'Menghapus Data...',
                         html: 'Mohon tunggu sebentar.',
@@ -501,103 +490,10 @@
                         }
                     });
 
-                    // Eksekusi form hapus ke server
                     form.submit();
                 }
             });
         });
-
     });
-
-
-    // =========================================================================
-    // 🔥 FUNGSI AJAX: MENGAMBIL ITEM GR UNTUK LANGKAH 2 (FILTER VOID AKTIF) 🔥
-    // =========================================================================
-    // public function getItems($id)
-    // {
-    //     $gr = \App\Models\GoodsReceipt::with(['items.item', 'items.uom', 'warehouse'])->findOrFail($id);
-
-    //     // 1. Kumpulkan ID Status yang berbau "Void" / "Batal"
-    //     $voidStatusIds = \App\Models\Status::where('type', 'AST')
-    //         ->where(function($q) {
-    //             $q->where('slug', 'like', '%void%')
-    //               ->orWhere('slug', 'like', '%batal%')
-    //               ->orWhere('name', 'like', '%Void%')
-    //               ->orWhere('name', 'like', '%Batal%');
-    //         })->pluck('id')->toArray();
-
-    //     $items = [];
-
-    //     foreach ($gr->items as $grItem) {
-    //         // Hitung konversi satuan (UOM)
-    //         $grConvRate = 1;
-    //         $rawUom = $grItem->getRawOriginal('uom') ?: '';
-    //         if (preg_match('/Isi\s*[:=]?\s*([0-9.]+)/i', $rawUom, $matches)) {
-    //             $grConvRate = (float) $matches[1];
-    //         } elseif ($grItem->uom_id) {
-    //             $uomDb = \App\Models\ItemUom::find($grItem->uom_id);
-    //             if ($uomDb) $grConvRate = (float) $uomDb->conversion_qty;
-    //         }
-
-    //         $baseQtyReceived = ($grItem->qty_received - ($grItem->qty_returned ?? 0)) * $grConvRate;
-
-    //         // =========================================================================
-    //         // 🔥 HITUNG ASET YANG SUDAH DIKAPITALISASI (ABAIKAN VOID) 🔥
-    //         // =========================================================================
-    //         $queryCap = \App\Models\FixedAsset::where('goods_receipt_id', $gr->id)
-    //                         ->where('item_id', $grItem->item_id);
-
-    //         // Filter Lapis 1: Tolak ID Status Void
-    //         if (!empty($voidStatusIds)) {
-    //             $queryCap->whereNotIn('status_id', $voidStatusIds);
-    //         }
-
-    //         // Filter Lapis 2: Tolak yang punya catatan [DIBATALKAN]
-    //         $queryCap->where(function($q) {
-    //             $q->whereNull('notes')
-    //               ->orWhere('notes', 'NOT LIKE', '%[DIBATALKAN%');
-    //         });
-
-    //         $alreadyCapitalized = $queryCap->count();
-    //         // =========================================================================
-
-    //         $maxCapitalizable = $baseQtyReceived - $alreadyCapitalized;
-
-    //         // Masukkan ke array jika sisa masih ada
-    //         if ($maxCapitalizable > 0) {
-
-    //             // (Opsional) Jika sistem Komandan memiliki fitur ambil Serial Number yang tersedia
-    //             $availableSns = [];
-    //             if (\Schema::hasTable('item_serials')) {
-    //                 $availableSns = \DB::table('item_serials')
-    //                     ->where('item_id', $grItem->item_id)
-    //                     ->where('goods_receipt_id', $gr->id)
-    //                     ->where('status', 'AVAILABLE') // Pastikan SN yang Void juga ditarik
-    //                     ->pluck('serial_number')
-    //                     ->toArray();
-    //             }
-
-    //             $items[] = [
-    //                 'item_id' => $grItem->item_id,
-    //                 'item_code' => optional($grItem->item)->code,
-    //                 'item_name' => optional($grItem->item)->name,
-    //                 'specific_name' => $grItem->specific_name ?? optional($grItem->item)->name,
-    //                 'gr_qty' => $baseQtyReceived,
-    //                 'max_capitalizable' => $maxCapitalizable, // 🔥 INI ANGKA YANG TAMPIL DI LAYAR! 🔥
-    //                 'base_uom' => optional($grItem->uom)->name ?? 'Pieces',
-    //                 'default_price' => $grItem->unit_price ?? 0,
-    //                 'default_date' => date('Y-m-d', strtotime($gr->received_date)),
-    //                 'default_spec' => $grItem->notes ?? optional($grItem->item)->specification ?? '',
-    //                 'available_sns' => $availableSns
-    //             ];
-    //         }
-    //     }
-
-    //     return response()->json([
-    //         'warehouse_id' => $gr->warehouse_id,
-    //         'items' => $items
-    //     ]);
-    // }
-
 </script>
 @endpush

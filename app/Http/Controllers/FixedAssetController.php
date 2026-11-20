@@ -14,44 +14,49 @@ use Maatwebsite\Excel\Facades\Excel;
 class FixedAssetController extends Controller
 {
 
-    public function index(Request $request)
+   public function index(Request $request)
     {
-        $search = $request->input('search');
-        $warehouseId = $request->input('warehouse_id');
+        $search =$request->input('search');
+        $warehouseId =$request->input('warehouse_id');
 
         $assets = FixedAsset::with([
-                'item', 'company', 'status', 'assignee.company', 'warehouse', 'assetCategory',
-                // 🔥 KUNCI PERBAIKAN: Tarik relasi PO secara lengkap agar bisa dibaca di Blade 🔥
+                'item', 'company', 'status', 'assignee.company', 'assignee.department',
+                'warehouse', 'assetCategory', 'currency',
                 'goodsReceipt.po.items', 'goodsReceipt.purchaseOrder.items',
-                'histories' => function($q) { $q->orderBy('created_at', 'desc'); },
+                'histories' => function ($q) {$q->orderBy('created_at', 'desc'); },
                 'histories.assignee', 'histories.creator'
             ])
-            ->where('notes', 'not like', '%[DIBATALKAN%')
-            ->whereHas('status', function($q) {
-                $q->whereNotIn('slug', ['void', 'batal', 'canceled', 'cancelled']);
+            ->where(function ($q) {$q->whereNull('notes')
+                  ->orWhere('notes', 'not like', '%[DIBATALKAN%');
+            })
+            ->whereHas('status', function ($q) {$q->whereNotIn('slug', ['void', 'batal', 'canceled', 'cancelled']);
             })
             ->when($warehouseId, function ($query) use ($warehouseId) {
-                $query->where('warehouse_id', $warehouseId);
+                $query->where('warehouse_id',$warehouseId);
             })
-            ->when($search, function ($query) use ($search) {
-                $query->where(function ($q1) use ($search) {
-                    $q1->where('asset_number', 'like', "%{$search}%")
-                       ->orWhere('serial_number', 'like', "%{$search}%")
-                       ->orWhere('accounting_asset_number', 'like', "%{$search}%")
-                       ->orWhere('name', 'like', "%{$search}%");
+            ->when($search, function ($query) use ($search) {$query->where(function ($q1) use ($search) {
+                    $q1->where('asset_number', 'like', "\%{$search}%")
+                       ->orWhere('serial_number', 'like', "%{\$search}%")
+                       ->orWhere('accounting_asset_number', 'like', "%{\$search}%")
+                       ->orWhere('name', 'like', "%{\$search}%")
+                       ->orWhereHas('company', function ($qc) use ($search) {
+                           $qc->where('name', 'like', "\%{$search}%");
+                       })
+                       ->orWhereHas('assignee', function ($qa) use ($search) {
+                           $qa->where('name', 'like', "\%{$search}%");
+                       });
                 });
             })
             ->latest()->paginate(10)->withQueryString();
 
         $users = User::with('company')->orderBy('name', 'asc')->get();
-        $items = \App\Models\Item::where('item_type_code', 'AST')->orderBy('name', 'asc')->get();
-        $companies = \App\Models\Company::orderBy('name', 'asc')->get();
-        $statuses = Status::where('type', 'AST')->orderBy('sequence', 'asc')->get();
-        $warehouses = \App\Models\Warehouse::orderBy('name', 'asc')->get();
-        $currencies = \App\Models\Currency::where('is_active', 1)->get();
-        $assetCategories = \App\Models\AssetCategory::where('is_active', true)->orderBy('useful_life_years', 'asc')->get();
+        $items = \App\Models\Item::where('item_type_code', 'AST')->orderBy('name', 'asc')->get();$companies = \App\Models\Company::orderBy('name', 'asc')->get();
+        $statuses = Status::where('type', 'AST')->orderBy('sequence', 'asc')->get();$warehouses = \App\Models\Warehouse::orderBy('name', 'asc')->get();
+        $currencies = \App\Models\Currency::where('is_active', 1)->get();$assetCategories = \App\Models\AssetCategory::where('is_active', true)->orderBy('useful_life_years', 'asc')->get();
 
-        return view('fixed_assets.index', compact('assets', 'search', 'users', 'items', 'companies', 'statuses', 'warehouses', 'currencies', 'assetCategories'));
+        return view('fixed_assets.index', compact(
+            'assets', 'search', 'users', 'items', 'companies', 'statuses', 'warehouses', 'currencies', 'assetCategories'
+        ));
     }
 
     // =========================================================================
