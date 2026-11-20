@@ -79,14 +79,46 @@
                         <thead class="bg-light small text-uppercase">
                             <tr>
                                 <th width="5%" class="text-center">No</th>
-                                <th width="25%">No. Aset & Label FA</th>
+                                <th width="22%">No. Aset & Label FA</th>
                                 <th>Nama Barang</th>
-                                <th width="20%">Serial Number</th>
-                                <th width="12%" class="text-center">Timeline</th>
+                                <th width="16%">Serial Number</th>
+                                <th width="20%">
+                                    {{ $transaction->transaction_type === 'HANDOVER' ? 'Status / Ref. BAPA' : ($transaction->transaction_type === 'RETURN' ? 'Ref. BAST Asal' : 'Referensi') }}
+                                </th>
+                                <th width="10%" class="text-center">Timeline</th>
                             </tr>
                         </thead>
                         <tbody>
                             @foreach($transaction->details as $idx => $det)
+                            @php
+                                $refTrx = null;
+                                if ($det->asset) {
+                                    if ($transaction->transaction_type === 'HANDOVER') {
+                                        // Cari BAPA pengembalian setelah BAST ini oleh penerima BAST ini
+                                        $refTrx = \App\Models\FixedAssetTransaction::where('transaction_type', 'RETURN')
+                                            ->where('id', '>', $transaction->id)
+                                            ->when($transaction->to_user_id, function ($q) use ($transaction) {
+                                                $q->where('from_user_id', $transaction->to_user_id);
+                                            })
+                                            ->where(function ($q) use ($det) {
+                                                $q->where('fixed_asset_id', $det->asset->id)
+                                                  ->orWhereHas('details', fn($qd) => $qd->where('fixed_asset_id', $det->asset->id));
+                                            })
+                                            ->orderBy('id', 'asc')
+                                            ->first();
+                                    } elseif ($transaction->transaction_type === 'RETURN') {
+                                        // Cari BAST penyerahan sebelum BAPA ini
+                                        $refTrx = \App\Models\FixedAssetTransaction::where('transaction_type', 'HANDOVER')
+                                            ->where('id', '<', $transaction->id)
+                                            ->where(function ($q) use ($det) {
+                                                $q->where('fixed_asset_id', $det->asset->id)
+                                                  ->orWhereHas('details', fn($qd) => $qd->where('fixed_asset_id', $det->asset->id));
+                                            })
+                                            ->orderBy('id', 'desc')
+                                            ->first();
+                                    }
+                                }
+                            @endphp
                             <tr>
                                 <td class="text-center text-muted">{{ $idx + 1 }}</td>
                                 <td>
@@ -97,7 +129,36 @@
                                     <div class="fw-bold text-dark">{{ optional($det->asset)->name ?? '-' }}</div>
                                     <div class="small text-muted">Master: {{ optional(optional($det->asset)->item)->name ?? '-' }}</div>
                                 </td>
-                                <td class="font-monospace small">{{ optional($det->asset)->serial_number ?? '-' }}</td>
+                                <td class="font-monospace small">{{ optional($det->asset)->serial_number ?: '-' }}</td>
+                                <td>
+                                    @if($transaction->transaction_type === 'HANDOVER')
+                                        @if($refTrx)
+                                            <a href="{{ route('fixed-assets.transactions.show', $refTrx->id) }}" class="border badge bg-danger-subtle text-danger border-danger-subtle text-decoration-none font-monospace">
+                                                <i class="bi bi-box-arrow-in-left me-1"></i>{{ $refTrx->transaction_number }}
+                                            </a>
+                                            <div class="mt-1 small text-muted" style="font-size: 0.75rem;">
+                                                Tgl Retur: {{ \Carbon\Carbon::parse($refTrx->transaction_date)->format('d M Y') }}
+                                            </div>
+                                        @else
+                                            <span class="border badge bg-success-subtle text-success border-success-subtle">
+                                                Aktif / Belum Retur
+                                            </span>
+                                        @endif
+                                    @elseif($transaction->transaction_type === 'RETURN')
+                                        @if($refTrx)
+                                            <a href="{{ route('fixed-assets.transactions.show', $refTrx->id) }}" class="border badge bg-primary-subtle text-primary border-primary-subtle text-decoration-none font-monospace">
+                                                <i class="bi bi-box-arrow-up-right me-1"></i>{{ $refTrx->transaction_number }}
+                                            </a>
+                                            <div class="mt-1 small text-muted" style="font-size: 0.75rem;">
+                                                Tgl Serah: {{ \Carbon\Carbon::parse($refTrx->transaction_date)->format('d M Y') }}
+                                            </div>
+                                        @else
+                                            <span class="small text-muted">-</span>
+                                        @endif
+                                    @else
+                                        <span class="small text-muted">-</span>
+                                    @endif
+                                </td>
                                 <td class="text-center">
                                     @if($det->asset)
                                         <a href="{{ route('fixed-assets.history', $det->asset->id) }}" class="btn btn-sm btn-outline-dark rounded-pill" title="Lihat Timeline Aset">

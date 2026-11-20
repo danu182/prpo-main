@@ -1021,7 +1021,7 @@ class FixedAssetController extends Controller
     }
 
     // =========================================================================
-    // 🔥 MASTER LIST ASET (PENGGUNAAN SLUG MURNI) 🔥
+    // 🔥 MASTER LIST ASET (GROUPING MATA UANG & FILTER PERUSAHAAN) 🔥
     // =========================================================================
     public function masterList(\Illuminate\Http\Request $request)
     {
@@ -1033,19 +1033,27 @@ class FixedAssetController extends Controller
             ->where('slug', 'disposed')
             ->pluck('id')->toArray();
 
+        $companies = \App\Models\Company::orderBy('name')->get();
+
         $query = \App\Models\FixedAsset::with([
             'item.category', 'assetCategory', 'assignee.department',
-            'company', 'department', 'status', 'warehouse'
+            'company', 'department', 'status', 'warehouse', 'currency'
         ]);
 
         if (!empty($voidStatusIds)) {
             $query->whereNotIn('status_id', $voidStatusIds);
         }
-        $query->where(function($q) {
+        $query->where(function ($q) {
             $q->whereNull('notes')
               ->orWhere('notes', 'not like', '%[DIBATALKAN%');
         });
 
+        // Filter Perusahaan
+        if ($request->filled('company_id')) {
+            $query->where('company_id', $request->company_id);
+        }
+
+        // Filter Status Keberadaan
         if ($request->filled('status')) {
             if ($request->status === 'in_use') {
                 $query->whereNotNull('assigned_to');
@@ -1054,49 +1062,71 @@ class FixedAssetController extends Controller
             }
         }
 
+        // Pencarian Universal
         if ($request->filled('search')) {
             $search = $request->search;
-            $query->where(function($q) use ($search) {
+            $query->where(function ($q) use ($search) {
                 $q->where('asset_number', 'like', "%{$search}%")
                   ->orWhere('accounting_asset_number', 'like', "%{$search}%")
                   ->orWhere('serial_number', 'like', "%{$search}%")
                   ->orWhere('name', 'like', "%{$search}%")
                   ->orWhere('spesifikasi_detail', 'like', "%{$search}%")
-                  ->orWhereHas('assignee', function($userQ) use ($search) {
+                  ->orWhereHas('assignee', function ($userQ) use ($search) {
                       $userQ->where('name', 'like', "%{$search}%");
                   })
-                  ->orWhereHas('item', function($itemQ) use ($search) {
-                      $itemQ->where('code', 'like', "%{$search}%");
+                  ->orWhereHas('item', function ($itemQ) use ($search) {
+                      $itemQ->where('code', 'like', "%{$search}%")
+                            ->orWhere('name', 'like', "%{$search}%");
+                  })
+                  ->orWhereHas('company', function ($compQ) use ($search) {
+                      $compQ->where('name', 'like', "%{$search}%");
                   });
             });
         }
 
         $assets = $query->latest()->paginate(15)->withQueryString();
 
-        $kpiQuery = \App\Models\FixedAsset::query();
+        // KPI mengikuti filter Perusahaan yang dipilih
+        $kpiQuery = \App\Models\FixedAsset::with('currency');
         $excludeKpiIds = array_merge($voidStatusIds, $disposedStatusIds);
 
         if (!empty($excludeKpiIds)) {
             $kpiQuery->whereNotIn('status_id', $excludeKpiIds);
         }
-        $kpiQuery->where(function($q) {
+        $kpiQuery->where(function ($q) {
             $q->whereNull('notes')
               ->orWhere('notes', 'not like', '%[DIBATALKAN%');
         });
+        if ($request->filled('company_id')) {
+            $kpiQuery->where('company_id', $request->company_id);
+        }
 
-        $totalAssets = (clone $kpiQuery)->count();
-        $inUse = (clone $kpiQuery)->whereNotNull('assigned_to')->count();
-        $inWarehouse = (clone $kpiQuery)->whereNull('assigned_to')->count();
-        $totalValue = (clone $kpiQuery)->sum('purchase_price');
+        $allKpiAssets = (clone $kpiQuery)->get();
+        $totalAssets  = $allKpiAssets->count();
+        $inUse        = $allKpiAssets->whereNotNull('assigned_to')->count();
+        $inWarehouse  = $allKpiAssets->whereNull('assigned_to')->count();
 
-        $totalCurrentValue = $assets->reject(function ($asset) use ($disposedStatusIds) {
-            return in_array($asset->status_id, $disposedStatusIds);
-        })->sum(function ($asset) {
-            return $asset->net_book_value ?? $asset->purchase_price ?? 0;
-        });
+        // Grouping Total Nilai Perolehan & Nilai Buku berdasarkan relasi Currency
+        $currencyTotals = [];
+        foreach ($allKpiAssets as $kpiItem) {
+            $currObj  = is_object($kpiItem->currency) ? $kpiItem->currency : null;
+            $currCode = strtoupper($currObj->code ?? (is_string($kpiItem->currency) ? $kpiItem->currency : 'IDR'));
+            $symbol   = $currObj->symbol ?? ($currCode === 'IDR' ? 'Rp' : $currCode);
+
+            if (!isset($currencyTotals[$currCode])) {
+                $currencyTotals[$currCode] = [
+                    'symbol'   => $symbol,
+                    'purchase' => 0,
+                    'book'     => 0,
+                ];
+            }
+            $currencyTotals[$currCode]['purchase'] += (float) ($kpiItem->purchase_price ?? 0);
+            $currencyTotals[$currCode]['book']     += (float) ($kpiItem->net_book_value ?? $kpiItem->purchase_price ?? 0);
+        }
 
         return view('fixed_assets.list_asset', compact(
-            'assets', 'totalAssets', 'inUse', 'inWarehouse', 'totalValue', 'totalCurrentValue', 'disposedStatusIds'
+            'assets', 'companies', 'totalAssets', 'inUse', 'inWarehouse',
+            'currencyTotals', 'disposedStatusIds'
         ));
     }
 
