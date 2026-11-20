@@ -156,7 +156,7 @@ Route::middleware('auth')->group(function () {
         Route::get('/create-import', [FixedAssetController::class, 'createImport'])->name('create_import');
         Route::get('/master-list', [FixedAssetController::class, 'masterList'])->name('master_list');
         Route::get('/master-list/export', [FixedAssetController::class, 'exportMasterList'])->name('master_list_export');
-        Route::get('/transactions', [FixedAssetController::class, 'transactions'])->name('transactions');
+        // Route::get('/transactions', [FixedAssetController::class, 'transactions'])->name('transactions');
         Route::get('/hibah-history', [FixedAssetController::class, 'hibahHistory'])->name('hibah_history');
         Route::get('/import-history', [FixedAssetController::class, 'importHistory'])->name('import_history');
         Route::get('/template/download', [FixedAssetController::class, 'downloadTemplate'])->name('download_template');
@@ -186,6 +186,14 @@ Route::middleware('auth')->group(function () {
         Route::get('/{id}/print-qr', [FixedAssetController::class, 'printQrLabel'])->name('print_qr');
         Route::get('/{id}/edit', [FixedAssetController::class, 'edit'])->name('edit');
         Route::delete('/{id}', [FixedAssetController::class, 'destroy'])->name('destroy');
+
+        Route::get('/transactions', [FixedAssetController::class, 'transactions'])->name('transactions');
+        Route::get('/transactions/create', [FixedAssetController::class, 'createTransaction'])->name('transactions.create');
+        Route::post('/transactions', [FixedAssetController::class, 'storeTransaction'])->name('transactions.store');
+        Route::get('/transactions/{id}', [FixedAssetController::class, 'showTransaction'])->name('transactions.show');
+        Route::get('/transactions/{id}/print', [FixedAssetController::class, 'printTransactionDocument'])->name('transactions.print');
+        
+        
     });
 
 

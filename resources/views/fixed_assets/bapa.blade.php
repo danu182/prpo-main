@@ -4,51 +4,77 @@
     <meta charset="UTF-8">
     <title>Berita Acara Pengembalian Aset</title>
     <style>
-        body { font-family: 'Helvetica', 'Arial', sans-serif; font-size: 11pt; line-height: 1.5; color: #000; }
-        @page { margin: 40px 50px 70px 50px; }
-        .header { text-align: center; border-bottom: 2px solid #000; padding-bottom: 10px; margin-bottom: 20px; }
-        .header h2 { margin: 0; font-size: 16pt; text-transform: uppercase; text-decoration: underline; }
-        .header p { margin: 5px 0 0 0; font-size: 10pt; }
-        .content { margin-top: 20px; }
-        .table-info { width: 100%; border-collapse: collapse; margin-top: 10px; margin-bottom: 20px; }
-        .table-info td { vertical-align: top; padding: 5px 0; }
-        .table-info td:first-child { width: 30%; font-weight: bold; }
-        .table-info td:nth-child(2) { width: 3%; }
-        .table-asset { width: 100%; border-collapse: collapse; margin-top: 15px; margin-bottom: 20px; }
-        .table-asset th, .table-asset td { border: 1px solid #000; padding: 8px; text-align: left; }
-        .table-asset th { background-color: #ffe6e6; }
-        .signature-box { width: 100%; margin-top: 40px; table-layout: fixed; }
-        .signature-box td { text-align: center; vertical-align: bottom; }
-        .signature-name { font-weight: bold; text-decoration: underline; margin-top: 70px; }
-        footer { position: fixed; bottom: -40px; left: 0px; right: 0px; height: 30px; border-top: 1px solid #888; text-align: right; font-size: 8.5pt; color: #555; padding-top: 5px; font-style: italic; }
-        .pagenum:before { content: "Halaman " counter(page); }
+        @page { margin: 28px 40px 45px 40px; }
+        body { font-family: 'Helvetica', 'Arial', sans-serif; font-size: 9.5pt; line-height: 1.35; color: #000; }
+        .header { text-align: center; border-bottom: 2px solid #000; padding-bottom: 6px; margin-bottom: 12px; }
+        .header h2 { margin: 0; font-size: 13.5pt; text-transform: uppercase; text-decoration: underline; letter-spacing: 0.5px; }
+        .header p { margin: 3px 0 0 0; font-size: 9.5pt; font-weight: bold; }
+        .content { margin-top: 8px; }
+        .content p { margin: 0 0 8px 0; }
+        .table-info { width: 100%; border-collapse: collapse; margin-top: 4px; margin-bottom: 10px; }
+        .table-info td { vertical-align: top; padding: 2px 0; font-size: 9.5pt; }
+        .table-info td:first-child { width: 26%; font-weight: bold; }
+        .table-info td:nth-child(2) { width: 2%; }
+        .party-label { font-style: italic; font-size: 9pt; padding-top: 3px !important; }
+        .table-asset { width: 100%; border-collapse: collapse; margin-top: 8px; margin-bottom: 12px; page-break-inside: auto; }
+        .table-asset th, .table-asset td { border: 1px solid #000; padding: 5px 7px; text-align: left; vertical-align: top; font-size: 8.8pt; }
+        .table-asset th { background-color: #ffe6e6; font-weight: bold; }
+        .table-asset tr { page-break-inside: avoid; page-break-after: auto; }
+        .item-spec { font-size: 7.6pt; color: #444; margin-top: 2px; line-height: 1.25; }
+        .bast-ref { font-size: 7.6pt; color: #1e3a8a; font-weight: bold; }
+        .notes-box { border: 1px dashed #000; padding: 7px 10px; font-style: italic; background-color: #f9f9f9; font-size: 9pt; margin-bottom: 10px; }
+        .signature-box { width: 100%; margin-top: 14px; table-layout: fixed; page-break-inside: avoid; }
+        .signature-box td { text-align: center; vertical-align: top; padding: 4px; font-size: 9pt; }
+        .signature-space { height: 52px; position: relative; text-align: center; }
+        .signature-img { max-height: 48px; max-width: 130px; object-fit: contain; margin-top: 2px; }
+        .signature-name { font-weight: bold; text-decoration: underline; }
+        footer { position: fixed; bottom: -25px; left: 0px; right: 0px; height: 20px; border-top: 1px solid #aaa; font-size: 7.5pt; color: #666; padding-top: 4px; font-style: italic; }
     </style>
 </head>
 <body>
 
     @php
-        $returnLog = $asset->histories->where('status', 'Returned')->first();
-        if(!$returnLog) $returnLog = $asset->histories->where('status', 'RETURNED')->first();
-        $tanggalPengembalian = $returnLog ? $returnLog->created_at : $asset->updated_at;
+        $returnLog = $asset->histories->whereIn('status', ['Returned', 'RETURNED'])->sortByDesc('created_at')->first();
+        $tanggalPengembalian = isset($transaction) ? $transaction->transaction_date : ($returnLog ? $returnLog->created_at : $asset->updated_at);
+        $nomorDokumen = $documentNumber ?? ('BAPA/' . \Carbon\Carbon::parse($tanggalPengembalian)->format('Y/m/d') . '/' . substr($asset->asset_number, -4));
 
-        // TANGKAP NAMA PIHAK 1 & PIHAK 2 DARI PILIHAN POP-UP
+        // Tangkap Pihak 1 & Pihak 2
         $p1 = $signers[0] ?? null;
         $p2 = $signers[1] ?? null;
 
-        $p1Name = $p1->name ?? '-';
+        $p1Name  = $p1->name ?? '-';
         $p1Title = $p1->job_title ?? 'Karyawan';
-        $p1Dept = isset($p1->department) ? optional($p1->department)->name : '';
+        $p1Dept  = isset($p1->department) ? optional($p1->department)->name : '';
 
-        $p2Name = $p2->name ?? '-';
+        $p2Name  = $p2->name ?? '-';
         $p2Title = $p2->job_title ?? 'Karyawan';
-        $p2Dept = isset($p2->department) ? optional($p2->department)->name : '';
+        $p2Dept  = isset($p2->department) ? optional($p2->department)->name : '';
+
+        $assetItems = (isset($transaction) && $transaction->details->count() > 0)
+            ? $transaction->details->map(fn($d) => $d->asset)->filter()
+            : collect([$asset]);
+
+        $catatanPengembalian = isset($transaction) && !empty($transaction->notes)
+            ? $transaction->notes
+            : ($asset->notes ?? 'Dikembalikan ke gudang dalam kondisi baik.');
     @endphp
 
-    <footer>Dokumen BAPA Aset: {{ $asset->asset_number }} &nbsp; | &nbsp; <span class="pagenum"></span></footer>
+    <footer>
+        <table style="width: 100%; border-collapse: collapse;">
+            <tr>
+                <td style="text-align: left; font-size: 7.5pt; color: #666; font-style: italic; padding: 0;">
+                    Dicetak otomatis oleh sistem pada {{ \Carbon\Carbon::now()->translatedFormat('d F Y H:i:s') }} WIB
+                </td>
+                <td style="text-align: right; font-size: 7.5pt; color: #666; font-style: italic; padding: 0; padding-right: 75px;">
+                    Dokumen BAPA Aset: {{ $nomorDokumen }} &nbsp;|
+                </td>
+            </tr>
+        </table>
+    </footer>
 
     <div class="header">
         <h2>BERITA ACARA PENGEMBALIAN ASET</h2>
-        <p>Nomor: BAPA/{{ \Carbon\Carbon::parse($tanggalPengembalian)->format('Y/m/d') }}/{{ substr($asset->asset_number, -4) }}</p>
+        <p>Nomor: {{ $nomorDokumen }}</p>
     </div>
 
     <div class="content">
@@ -68,10 +94,10 @@
             <tr>
                 <td>Entitas / PT</td>
                 <td>:</td>
-                <td>{{ optional(optional($lastAssignee)->company)->name ?? 'Kantor Pusat' }}</td>
+                <td>{{ optional(optional($lastAssignee ?? $p1)->company)->name ?? 'Kantor Pusat' }}</td>
             </tr>
             <tr>
-                <td colspan="3"><br><i>Selanjutnya disebut sebagai <strong>PIHAK PERTAMA (Yang Mengembalikan)</strong>.</i></td>
+                <td colspan="3" class="party-label">Selanjutnya disebut sebagai <strong>PIHAK PERTAMA (Yang Mengembalikan)</strong>.</td>
             </tr>
         </table>
 
@@ -86,8 +112,15 @@
                 <td>:</td>
                 <td>{{ $p2Title }}{{ $p2Dept ? ' - ' . $p2Dept : '' }}</td>
             </tr>
+            @if(isset($transaction) && $transaction->warehouse)
             <tr>
-                <td colspan="3"><br><i>Selanjutnya disebut sebagai <strong>PIHAK KEDUA (Yang Menerima)</strong>.</i></td>
+                <td>Gudang Tujuan</td>
+                <td>:</td>
+                <td>{{ $transaction->warehouse->name }}</td>
+            </tr>
+            @endif
+            <tr>
+                <td colspan="3" class="party-label">Selanjutnya disebut sebagai <strong>PIHAK KEDUA (Yang Menerima)</strong>.</td>
             </tr>
         </table>
 
@@ -96,43 +129,119 @@
         <table class="table-asset">
             <thead>
                 <tr>
-                    <th width="25%">No. Aset / Label</th>
-                    <th width="45%">Nama & Spesifikasi Barang</th>
-                    <th width="30%">Serial Number</th>
+                    <th width="5%" style="text-align: center;">No</th>
+                    <th width="22%">No. Aset / Label</th>
+                    <th width="43%">Nama & Spesifikasi Barang</th>
+                    <th width="16%">Serial Number</th>
+                    <th width="14%">Ref. BAST</th>
                 </tr>
             </thead>
             <tbody>
-                <tr>
-                    <td style="vertical-align: top;">
-                        {{ $asset->asset_number }}<br>
-                        <small style="color: #555;">{{ $asset->accounting_asset_number ? 'Tag: '.$asset->accounting_asset_number : '' }}</small>
-                    </td>
-                    <td style="vertical-align: top;">
-                        <strong>{{ $asset->name ?? optional($asset->item)->name }}</strong><br>
-                        <small>{!! strip_tags($asset->spesifikasi_detail ?? optional($asset->item)->specification) !!}</small>
-                    </td>
-                    <td style="vertical-align: top;">{{ $asset->serial_number ?? 'N/A' }}</td>
-                </tr>
+                @foreach($assetItems as $idx => $itemAsset)
+                    @php
+                        $rawSpek = $itemAsset->spesifikasi_detail ?: optional($itemAsset->item)->specification;
+                        $cleanSpek = trim(preg_replace('/\s+/', ' ', strip_tags(html_entity_decode((string) $rawSpek))));
+                        $masterItemCode = optional($itemAsset->item)->code;
+                        $masterItemName = optional($itemAsset->item)->name;
+
+                        $lastBastTrx = \App\Models\FixedAssetTransaction::where('transaction_type', 'HANDOVER')
+                            ->where('id', '<', isset($transaction) ? $transaction->id : PHP_INT_MAX)
+                            ->where(function ($q) use ($itemAsset) {
+                                $q->where('fixed_asset_id', $itemAsset->id)
+                                  ->orWhereHas('details', fn($qd) => $qd->where('fixed_asset_id', $itemAsset->id));
+                            })
+                            ->orderBy('id', 'desc')
+                            ->first();
+                    @endphp
+                    <tr>
+                        <td style="text-align: center;">{{ $idx + 1 }}</td>
+                        <td>
+                            <strong>{{ $itemAsset->asset_number }}</strong>
+                            @if($itemAsset->accounting_asset_number)
+                                <br><small style="color: #555;">Tag: {{ $itemAsset->accounting_asset_number }}</small>
+                            @endif
+                        </td>
+                        <td>
+                            <strong>{{ $itemAsset->name ?? $masterItemName }}</strong>
+                            @if($masterItemName && $masterItemName !== $itemAsset->name)
+                                <div style="font-size: 7.8pt; color: #1e3a8a; margin-top: 1px;">
+                                    Item: {{ $masterItemCode ? '[' . $masterItemCode . '] ' : '' }}{{ $masterItemName }}
+                                </div>
+                            @elseif($masterItemCode)
+                                <div style="font-size: 7.8pt; color: #1e3a8a; margin-top: 1px;">
+                                    Kode Item: {{ $masterItemCode }}
+                                </div>
+                            @endif
+                            @if(!empty($cleanSpek) && strtolower($cleanSpek) !== 'item dibuat otomatis dari import aset')
+                                <div class="item-spec">Spek: {{ \Illuminate\Support\Str::limit($cleanSpek, 120) }}</div>
+                            @endif
+                        </td>
+                        <td>{{ $itemAsset->serial_number ?: 'N/A' }}</td>
+                        <td>
+                            @if($lastBastTrx)
+                                <div class="bast-ref">{{ $lastBastTrx->transaction_number }}</div>
+                                <small style="color: #555;">Tgl: {{ \Carbon\Carbon::parse($lastBastTrx->transaction_date)->format('d/m/Y') }}</small>
+                            @else
+                                <small style="color: #777;">-</small>
+                            @endif
+                        </td>
+                    </tr>
+                @endforeach
             </tbody>
         </table>
 
-        <p><strong>Keterangan Pengembalian:</strong></p>
-        <p style="border: 1px dashed #000; padding: 10px; font-style: italic; background-color: #f9f9f9;">
-            {{ $asset->notes ?? 'Dikembalikan ke gudang dalam kondisi baik.' }}
-        </p>
+        <p style="margin-bottom: 3px;"><strong>Keterangan Pengembalian:</strong></p>
+        <div class="notes-box">
+            {{ $catatanPengembalian }}
+        </div>
 
         <p>Dengan ditandatanganinya Berita Acara Pengembalian Aset ini, maka tanggung jawab <strong>PIHAK PERTAMA</strong> terhadap pemeliharaan aset tersebut dinyatakan telah <strong>selesai/gugur</strong>.</p>
 
-        {{-- 🔥 KOTAK TANDA TANGAN DINAMIS DARI POP-UP 🔥 --}}
         <table class="signature-box">
             <tr>
                 @foreach($signers as $index => $signer)
-                <td style="width: {{ 100 / count($signers) }}%; padding: 10px;">
+                @php
+                    $rawSigPath = $signer->signature_path
+                        ?? $signer->signature
+                        ?? $signer->digital_signature
+                        ?? $signer->ttd
+                        ?? null;
+
+                    $sigBase64 = null;
+
+                    if (($signatureMode ?? 'digital') === 'digital' && !empty($rawSigPath)) {
+                        if (str_starts_with($rawSigPath, 'data:image')) {
+                            $sigBase64 = $rawSigPath;
+                        } else {
+                            $cleanPath = ltrim(str_replace(['storage/', 'public/'], '', $rawSigPath), '/');
+                            $candidates = [
+                                storage_path('app/public/' . $cleanPath),
+                                public_path('storage/' . $cleanPath),
+                                public_path(ltrim($rawSigPath, '/')),
+                                storage_path('app/' . ltrim($rawSigPath, '/')),
+                            ];
+
+                            foreach ($candidates as $path) {
+                                if (file_exists($path) && is_file($path)) {
+                                    $ext = strtolower(pathinfo($path, PATHINFO_EXTENSION)) ?: 'png';
+                                    if ($ext === 'jpg') $ext = 'jpeg';
+                                    $sigBase64 = 'data:image/' . $ext . ';base64,' . base64_encode(file_get_contents($path));
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                @endphp
+                <td style="width: {{ 100 / max(1, count($signers)) }}%;">
                     <strong>{{ $index == 0 ? 'YANG MENGEMBALIKAN,' : ($index == 1 ? 'YANG MENERIMA,' : 'MENGETAHUI,') }}</strong><br>
-                    <span style="font-size: 9pt;">{{ $index == 0 ? 'PIHAK PERTAMA' : ($index == 1 ? 'PIHAK KEDUA' : 'SAKSI') }}</span>
-                    <br><br><br><br><br>
+                    <span style="font-size: 8pt;">{{ $index == 0 ? 'PIHAK PERTAMA' : ($index == 1 ? 'PIHAK KEDUA' : 'SAKSI') }}</span>
+                    <div class="signature-space">
+                        @if($sigBase64)
+                            <img src="{{ $sigBase64 }}" alt="TTD {{ $signer->name }}" class="signature-img">
+                        @endif
+                    </div>
                     <div class="signature-name">{{ $signer->name }}</div>
-                    <div style="font-size: 9pt;">
+                    <div style="font-size: 8pt;">
                         {{ $signer->job_title ?? 'Karyawan' }}
                         @if(isset($signer->department) && optional($signer->department)->name)
                             - {{ $signer->department->name }}
@@ -142,10 +251,21 @@
                 @endforeach
             </tr>
         </table>
-
-        <div style="margin-top: 40px; font-size: 8pt; color: #555; text-align: left; font-style: italic;">
-            * Dokumen ini dicetak otomatis oleh sistem pada {{ \Carbon\Carbon::now()->translatedFormat('d F Y H:i:s') }} WIB
-        </div>
     </div>
+
+    <script type="text/php">
+        if (isset($pdf)) {
+            $text = "Halaman {PAGE_NUM} of {PAGE_COUNT}";
+            $font = $fontMetrics->get_font("Helvetica", "italic");
+            $size = 7.5;
+            $color = array(0.4, 0.4, 0.4);
+            $width = $fontMetrics->get_text_width($text, $font, $size);
+
+            $x = $pdf->get_width() - $width - 40;
+            $y = $pdf->get_height() - 36;
+
+            $pdf->page_text($x, $y, $text, $font, $size, $color);
+        }
+    </script>
 </body>
 </html>
