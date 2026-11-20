@@ -6,6 +6,17 @@
 @endpush
 
 @section('content')
+@php
+    $isPrintable = in_array($transaction->transaction_type, ['HANDOVER', 'RETURN', 'REPAIR_SEND', 'REPAIR_FINISH']);
+    $docLabel = match ($transaction->transaction_type) {
+        'HANDOVER'      => 'BAST',
+        'RETURN'        => 'BAPA',
+        'REPAIR_SEND'   => 'BASP (Perbaikan)',
+        'REPAIR_FINISH' => 'BAPA-SRV (Selesai Servis)',
+        default         => 'Dokumen',
+    };
+@endphp
+
 <div class="pb-5 container-fluid px-md-4">
     @if(session('success'))
         <div class="border-0 border-4 shadow-sm alert alert-success alert-dismissible fade show rounded-4 border-start border-success">
@@ -24,9 +35,9 @@
         </div>
 
         <div class="gap-2 mt-3 d-flex mt-md-0">
-            @if(in_array($transaction->transaction_type, ['HANDOVER', 'RETURN']))
+            @if($isPrintable)
                 <button type="button" class="px-4 shadow-sm btn btn-dark fw-bold rounded-pill" data-bs-toggle="modal" data-bs-target="#printSignersModal">
-                    <i class="bi bi-printer me-1"></i> Cetak Dokumen {{ $transaction->transaction_type === 'HANDOVER' ? 'BAST' : 'BAPA' }}
+                    <i class="bi bi-printer me-1"></i> Cetak Dokumen {{ $docLabel }}
                 </button>
             @endif
         </div>
@@ -54,15 +65,21 @@
                         <td class="fw-bold">{{ optional($transaction->fromUser)->name ?? '-' }}</td>
                     </tr>
                     <tr>
-                        <td class="text-muted">Pihak Kedua</td>
-                        <td class="fw-bold">{{ optional($transaction->toUser)->name ?? optional($transaction->warehouse)->name ?? '-' }}</td>
+                        <td class="text-muted">Pihak Kedua / Tujuan</td>
+                        <td class="fw-bold">
+                            @if($transaction->transaction_type === 'REPAIR_SEND')
+                                <span class="text-warning-emphasis"><i class="bi bi-tools me-1"></i>Service Center / Vendor</span>
+                            @else
+                                {{ optional($transaction->toUser)->name ?? optional($transaction->warehouse)->name ?? '-' }}
+                            @endif
+                        </td>
                     </tr>
                     <tr>
                         <td class="text-muted">Status Aset</td>
                         <td><span class="badge bg-secondary">{{ optional($transaction->status)->name ?? '-' }}</span></td>
                     </tr>
                     <tr>
-                        <td class="text-muted">Catatan</td>
+                        <td class="text-muted">Catatan / Detail</td>
                         <td>{{ $transaction->notes ?: '-' }}</td>
                     </tr>
                 </table>
@@ -82,8 +99,16 @@
                                 <th width="22%">No. Aset & Label FA</th>
                                 <th>Nama Barang</th>
                                 <th width="16%">Serial Number</th>
-                                <th width="20%">
-                                    {{ $transaction->transaction_type === 'HANDOVER' ? 'Status / Ref. BAPA' : ($transaction->transaction_type === 'RETURN' ? 'Ref. BAST Asal' : 'Referensi') }}
+                                <th width="22%">
+                                    @if($transaction->transaction_type === 'HANDOVER')
+                                        Status / Ref. BAPA
+                                    @elseif($transaction->transaction_type === 'RETURN')
+                                        Ref. BAST Asal
+                                    @elseif(in_array($transaction->transaction_type, ['REPAIR_SEND', 'REPAIR_FINISH']))
+                                        Pemegang / Gudang Asal
+                                    @else
+                                        Referensi
+                                    @endif
                                 </th>
                                 <th width="10%" class="text-center">Timeline</th>
                             </tr>
@@ -94,7 +119,6 @@
                                 $refTrx = null;
                                 if ($det->asset) {
                                     if ($transaction->transaction_type === 'HANDOVER') {
-                                        // Cari BAPA pengembalian setelah BAST ini oleh penerima BAST ini
                                         $refTrx = \App\Models\FixedAssetTransaction::where('transaction_type', 'RETURN')
                                             ->where('id', '>', $transaction->id)
                                             ->when($transaction->to_user_id, function ($q) use ($transaction) {
@@ -107,7 +131,6 @@
                                             ->orderBy('id', 'asc')
                                             ->first();
                                     } elseif ($transaction->transaction_type === 'RETURN') {
-                                        // Cari BAST penyerahan sebelum BAPA ini
                                         $refTrx = \App\Models\FixedAssetTransaction::where('transaction_type', 'HANDOVER')
                                             ->where('id', '<', $transaction->id)
                                             ->where(function ($q) use ($det) {
@@ -155,6 +178,18 @@
                                         @else
                                             <span class="small text-muted">-</span>
                                         @endif
+                                    @elseif(in_array($transaction->transaction_type, ['REPAIR_SEND', 'REPAIR_FINISH']))
+                                        @if($det->previous_user_id)
+                                            <span class="border badge bg-warning-subtle text-warning-emphasis border-warning-subtle">
+                                                <i class="bi bi-person me-1"></i>{{ optional(\App\Models\User::find($det->previous_user_id))->name ?? '-' }}
+                                            </span>
+                                        @elseif($det->previous_warehouse_id)
+                                            <span class="border badge bg-light text-dark border-secondary-subtle">
+                                                <i class="bi bi-shop me-1"></i>{{ optional(\App\Models\Warehouse::find($det->previous_warehouse_id))->name ?? 'Gudang' }}
+                                            </span>
+                                        @else
+                                            <span class="small text-muted">-</span>
+                                        @endif
                                     @else
                                         <span class="small text-muted">-</span>
                                     @endif
@@ -176,14 +211,14 @@
     </div>
 </div>
 
-{{-- MODAL PILIH PENANDA TANGAN DOKUMEN BAST / BAPA --}}
-@if(in_array($transaction->transaction_type, ['HANDOVER', 'RETURN']))
+{{-- MODAL PILIH PENANDA TANGAN DOKUMEN BAST / BAPA / BASP --}}
+@if($isPrintable)
 <div class="modal fade" id="printSignersModal" tabindex="-1" aria-hidden="true">
     <div class="modal-dialog modal-dialog-centered">
         <div class="border-0 shadow-lg modal-content rounded-4">
             <div class="modal-header {{ $transaction->transaction_type === 'HANDOVER' ? 'bg-dark text-white' : 'bg-warning text-dark' }} border-bottom-0 rounded-top-4">
                 <h6 class="modal-title fw-bold">
-                    <i class="bi bi-printer me-2"></i> Cetak {{ $transaction->transaction_type === 'HANDOVER' ? 'BAST' : 'BAPA' }} ({{ $transaction->transaction_number }})
+                    <i class="bi bi-printer me-2"></i> Cetak {{ $docLabel }} ({{ $transaction->transaction_number }})
                 </h6>
                 <button type="button" class="btn-close {{ $transaction->transaction_type === 'HANDOVER' ? 'btn-close-white' : '' }}" data-bs-dismiss="modal"></button>
             </div>
@@ -204,7 +239,11 @@
                         </select>
                         <div class="mt-2 form-text small">
                             <i class="bi bi-info-circle text-primary"></i>
-                            <strong>Otomatis Terisi:</strong> Pihak Pertama (<strong>{{ optional($transaction->fromUser)->name ?? auth()->user()->name }}</strong>) &amp; Pihak Kedua (<strong>{{ optional($transaction->toUser)->name ?? '-' }}</strong>). Tambahkan nama lain jika memerlukan kolom <strong>Saksi / Mengetahui</strong>.
+                            @if($transaction->transaction_type === 'REPAIR_SEND')
+                                <strong>Info BASP:</strong> Pihak Pertama diisi oleh staf IT/Perusahaan (<strong>{{ optional($transaction->fromUser)->name ?? auth()->user()->name }}</strong>), sedangkan kolom Pihak Kedua disiapkan kosong untuk tanda tangan basah/stempel <strong>Service Center / Kurir</strong>.
+                            @else
+                                <strong>Otomatis Terisi:</strong> Pihak Pertama (<strong>{{ optional($transaction->fromUser)->name ?? auth()->user()->name }}</strong>) &amp; Pihak Kedua (<strong>{{ optional($transaction->toUser)->name ?? '-' }}</strong>). Tambahkan nama lain jika memerlukan kolom <strong>Saksi / Mengetahui</strong>.
+                            @endif
                         </div>
                     </div>
 

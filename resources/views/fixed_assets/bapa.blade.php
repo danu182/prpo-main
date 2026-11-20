@@ -5,29 +5,29 @@
     <title>Berita Acara Pengembalian Aset</title>
     <style>
         @page { margin: 28px 40px 45px 40px; }
-        body { font-family: 'Helvetica', 'Arial', sans-serif; font-size: 9.5pt; line-height: 1.35; color: #000; }
-        .header { text-align: center; border-bottom: 2px solid #000; padding-bottom: 6px; margin-bottom: 12px; }
-        .header h2 { margin: 0; font-size: 13.5pt; text-transform: uppercase; text-decoration: underline; letter-spacing: 0.5px; }
-        .header p { margin: 3px 0 0 0; font-size: 9.5pt; font-weight: bold; }
+        body { font-family: 'Helvetica', 'Arial', sans-serif; font-size: 9.5pt; line-height: 1.4; color: #111; font-weight: normal; }
+        .header { text-align: center; border-bottom: 1.5px solid #000; padding-bottom: 6px; margin-bottom: 12px; }
+        .header h2 { margin: 0; font-size: 13.5pt; text-transform: uppercase; text-decoration: underline; letter-spacing: 0.5px; font-weight: bold; }
+        .header p { margin: 3px 0 0 0; font-size: 9.5pt; font-weight: normal; }
         .content { margin-top: 8px; }
         .content p { margin: 0 0 8px 0; }
         .table-info { width: 100%; border-collapse: collapse; margin-top: 4px; margin-bottom: 10px; }
-        .table-info td { vertical-align: top; padding: 2px 0; font-size: 9.5pt; }
-        .table-info td:first-child { width: 26%; font-weight: bold; }
+        .table-info td { vertical-align: top; padding: 2px 0; font-size: 9.5pt; font-weight: normal; }
+        .table-info td:first-child { width: 26%; }
         .table-info td:nth-child(2) { width: 2%; }
-        .party-label { font-style: italic; font-size: 9pt; padding-top: 3px !important; }
+        .party-label { font-style: italic; font-size: 9pt; padding-top: 3px !important; color: #333; }
         .table-asset { width: 100%; border-collapse: collapse; margin-top: 8px; margin-bottom: 12px; page-break-inside: auto; }
-        .table-asset th, .table-asset td { border: 1px solid #000; padding: 5px 7px; text-align: left; vertical-align: top; font-size: 8.8pt; }
-        .table-asset th { background-color: #ffe6e6; font-weight: bold; }
+        .table-asset th, .table-asset td { border: 1px solid #333; padding: 5px 7px; text-align: left; vertical-align: top; font-size: 8.8pt; font-weight: normal; }
+        /* .table-asset th { background-color: #ffe6e6; } */
         .table-asset tr { page-break-inside: avoid; page-break-after: auto; }
         .item-spec { font-size: 7.6pt; color: #444; margin-top: 2px; line-height: 1.25; }
-        .bast-ref { font-size: 7.6pt; color: #1e3a8a; font-weight: bold; }
-        .notes-box { border: 1px dashed #000; padding: 7px 10px; font-style: italic; background-color: #f9f9f9; font-size: 9pt; margin-bottom: 10px; }
+        .bast-ref { font-size: 7.6pt; color: #111; }
+        .notes-box { border: 1px dashed #333; padding: 7px 10px; font-style: italic; background-color: #f9f9f9; font-size: 9pt; margin-bottom: 10px; }
         .signature-box { width: 100%; margin-top: 14px; table-layout: fixed; page-break-inside: avoid; }
-        .signature-box td { text-align: center; vertical-align: top; padding: 4px; font-size: 9pt; }
+        .signature-box td { text-align: center; vertical-align: top; padding: 4px; font-size: 9pt; font-weight: normal; }
         .signature-space { height: 52px; position: relative; text-align: center; }
         .signature-img { max-height: 48px; max-width: 130px; object-fit: contain; margin-top: 2px; }
-        .signature-name { font-weight: bold; text-decoration: underline; }
+        .signature-name { text-decoration: underline; }
         footer { position: fixed; bottom: -25px; left: 0px; right: 0px; height: 20px; border-top: 1px solid #aaa; font-size: 7.5pt; color: #666; padding-top: 4px; font-style: italic; }
     </style>
 </head>
@@ -65,7 +65,7 @@
                 <td style="text-align: left; font-size: 7.5pt; color: #666; font-style: italic; padding: 0;">
                     Dicetak otomatis oleh sistem pada {{ \Carbon\Carbon::now()->translatedFormat('d F Y H:i:s') }} WIB
                 </td>
-                <td style="text-align: right; font-size: 7.5pt; color: #666; font-style: italic; padding: 0; padding-right: 75px;">
+                <td style="text-align: right; font-size: 7.5pt; color: #666; font-style: italic; padding: 0; padding-right: 85px;">
                     Dokumen BAPA Aset: {{ $nomorDokumen }} &nbsp;|
                 </td>
             </tr>
@@ -78,13 +78,13 @@
     </div>
 
     <div class="content">
-        <p>Pada hari ini, tanggal <strong>{{ \Carbon\Carbon::parse($tanggalPengembalian)->translatedFormat('d F Y') }}</strong>, telah dilakukan pengembalian barang/aset perusahaan dengan rincian pihak sebagai berikut:</p>
+        <p>Pada hari ini, tanggal {{ \Carbon\Carbon::parse($tanggalPengembalian)->translatedFormat('d F Y') }}, telah dilakukan pengembalian barang/aset perusahaan dengan rincian pihak sebagai berikut:</p>
 
         <table class="table-info">
             <tr>
                 <td>Nama Pengembali</td>
                 <td>:</td>
-                <td><strong>{{ $p1Name }}</strong></td>
+                <td>{{ $p1Name }}</td>
             </tr>
             <tr>
                 <td>Jabatan / Departemen</td>
@@ -97,7 +97,7 @@
                 <td>{{ optional(optional($lastAssignee ?? $p1)->company)->name ?? 'Kantor Pusat' }}</td>
             </tr>
             <tr>
-                <td colspan="3" class="party-label">Selanjutnya disebut sebagai <strong>PIHAK PERTAMA (Yang Mengembalikan)</strong>.</td>
+                <td colspan="3" class="party-label">Selanjutnya disebut sebagai PIHAK PERTAMA (Yang Mengembalikan).</td>
             </tr>
         </table>
 
@@ -105,7 +105,7 @@
             <tr>
                 <td>Nama Penerima</td>
                 <td>:</td>
-                <td><strong>{{ $p2Name }}</strong></td>
+                <td>{{ $p2Name }}</td>
             </tr>
             <tr>
                 <td>Jabatan / Departemen</td>
@@ -120,11 +120,11 @@
             </tr>
             @endif
             <tr>
-                <td colspan="3" class="party-label">Selanjutnya disebut sebagai <strong>PIHAK KEDUA (Yang Menerima)</strong>.</td>
+                <td colspan="3" class="party-label">Selanjutnya disebut sebagai PIHAK KEDUA (Yang Menerima).</td>
             </tr>
         </table>
 
-        <p><strong>PIHAK PERTAMA</strong> telah menyerahkan kembali barang/aset milik Perusahaan kepada <strong>PIHAK KEDUA</strong> dalam kondisi yang telah diperiksa dan disetujui bersama, dengan rincian barang sebagai berikut:</p>
+        <p>PIHAK PERTAMA telah menyerahkan kembali barang/aset milik Perusahaan kepada PIHAK KEDUA dalam kondisi yang telah diperiksa dan disetujui bersama, dengan rincian barang sebagai berikut:</p>
 
         <table class="table-asset">
             <thead>
@@ -156,19 +156,19 @@
                     <tr>
                         <td style="text-align: center;">{{ $idx + 1 }}</td>
                         <td>
-                            <strong>{{ $itemAsset->asset_number }}</strong>
+                            {{ $itemAsset->asset_number }}
                             @if($itemAsset->accounting_asset_number)
-                                <br><small style="color: #555;">Tag: {{ $itemAsset->accounting_asset_number }}</small>
+                                <br><small style="color: #111;">Tag: {{ $itemAsset->accounting_asset_number }}</small>
                             @endif
                         </td>
                         <td>
-                            <strong>{{ $itemAsset->name ?? $masterItemName }}</strong>
+                            {{ $itemAsset->name ?? $masterItemName }}
                             @if($masterItemName && $masterItemName !== $itemAsset->name)
-                                <div style="font-size: 7.8pt; color: #1e3a8a; margin-top: 1px;">
+                                <div style="font-size: 7.8pt; color: #111; margin-top: 1px;">
                                     Item: {{ $masterItemCode ? '[' . $masterItemCode . '] ' : '' }}{{ $masterItemName }}
                                 </div>
                             @elseif($masterItemCode)
-                                <div style="font-size: 7.8pt; color: #1e3a8a; margin-top: 1px;">
+                                <div style="font-size: 7.8pt; color: #111; margin-top: 1px;">
                                     Kode Item: {{ $masterItemCode }}
                                 </div>
                             @endif
@@ -180,9 +180,9 @@
                         <td>
                             @if($lastBastTrx)
                                 <div class="bast-ref">{{ $lastBastTrx->transaction_number }}</div>
-                                <small style="color: #555;">Tgl: {{ \Carbon\Carbon::parse($lastBastTrx->transaction_date)->format('d/m/Y') }}</small>
+                                <small style="color: #111;">Tgl: {{ \Carbon\Carbon::parse($lastBastTrx->transaction_date)->format('d/m/Y') }}</small>
                             @else
-                                <small style="color: #777;">-</small>
+                                <small style="color: #111;">-</small>
                             @endif
                         </td>
                     </tr>
@@ -190,12 +190,12 @@
             </tbody>
         </table>
 
-        <p style="margin-bottom: 3px;"><strong>Keterangan Pengembalian:</strong></p>
+        <p style="margin-bottom: 3px;">Keterangan Pengembalian:</p>
         <div class="notes-box">
             {{ $catatanPengembalian }}
         </div>
 
-        <p>Dengan ditandatanganinya Berita Acara Pengembalian Aset ini, maka tanggung jawab <strong>PIHAK PERTAMA</strong> terhadap pemeliharaan aset tersebut dinyatakan telah <strong>selesai/gugur</strong>.</p>
+        <p>Dengan ditandatanganinya Berita Acara Pengembalian Aset ini, maka tanggung jawab PIHAK PERTAMA terhadap pemeliharaan aset tersebut dinyatakan telah selesai/gugur.</p>
 
         <table class="signature-box">
             <tr>
@@ -233,7 +233,7 @@
                     }
                 @endphp
                 <td style="width: {{ 100 / max(1, count($signers)) }}%;">
-                    <strong>{{ $index == 0 ? 'YANG MENGEMBALIKAN,' : ($index == 1 ? 'YANG MENERIMA,' : 'MENGETAHUI,') }}</strong><br>
+                    {{ $index == 0 ? 'YANG MENGEMBALIKAN,' : ($index == 1 ? 'YANG MENERIMA,' : 'MENGETAHUI,') }}<br>
                     <span style="font-size: 8pt;">{{ $index == 0 ? 'PIHAK PERTAMA' : ($index == 1 ? 'PIHAK KEDUA' : 'SAKSI') }}</span>
                     <div class="signature-space">
                         @if($sigBase64)

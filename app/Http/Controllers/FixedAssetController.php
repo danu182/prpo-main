@@ -1778,20 +1778,238 @@ class FixedAssetController extends Controller
         return view('fixed_assets.transactions', compact('transactions'));
     }
 
+    // public function createTransaction()
+    // {
+    //     $voidDisposedIds = Status::where('type', 'AST')
+    //         ->whereIn('slug', ['void', 'batal', 'canceled', 'cancelled', 'disposed'])
+    //         ->pluck('id');
+
+    //     $availableAssets = FixedAsset::with(['item', 'warehouse', 'status'])
+    //         ->whereNull('assigned_to')
+    //         ->whereNotIn('status_id', $voidDisposedIds)
+    //         ->orderBy('asset_number', 'asc')
+    //         ->get();
+
+    //     $inUseAssets = FixedAsset::with(['item', 'assignee.department', 'status'])
+    //         ->whereNotNull('assigned_to')
+    //         ->whereNotIn('status_id', $voidDisposedIds)
+    //         ->orderBy('asset_number', 'asc')
+    //         ->get();
+
+    //     $warehouses = \App\Models\Warehouse::orderBy('name')->get();
+    //     $statuses   = Status::where('type', 'AST')->orderBy('sequence')->get();
+    //     $users      = User::with(['department', 'company'])->orderBy('name')->get();
+
+    //     return view('fixed_assets.create_transaction', compact(
+    //         'availableAssets', 'inUseAssets', 'warehouses', 'statuses', 'users'
+    //     ));
+    // }
+
+    // public function storeTransaction(Request $request)
+    // {
+    //     $request->validate([
+    //         'transaction_type' => 'required|in:HANDOVER,RETURN,STATUS_CHANGE',
+    //         'transaction_date' => 'required|date',
+    //         'asset_ids'        => 'required|array|min:1',
+    //         'asset_ids.*'      => 'exists:fixed_assets,id',
+    //         'status_id'        => 'required|exists:statuses,id',
+    //         'to_user_id'       => 'required_if:transaction_type,HANDOVER|nullable|exists:users,id',
+    //         'warehouse_id'     => 'required_if:transaction_type,RETURN|nullable|exists:warehouses,id',
+    //         'notes'            => 'nullable|string',
+    //     ], [
+    //         'asset_ids.required'       => 'Pilih minimal 1 unit aset untuk diproses.',
+    //         'to_user_id.required_if'   => 'Staf penerima wajib dipilih untuk transaksi Serah Terima (BAST).',
+    //         'warehouse_id.required_if' => 'Gudang tujuan wajib dipilih untuk transaksi Pengembalian (BAPA).',
+    //     ]);
+
+    //     try {
+    //         $trxCreated = null;
+
+    //         DB::transaction(function () use ($request, &$trxCreated) {
+    //             $type = $request->transaction_type;
+    //             $prefix = match ($type) {
+    //                 'HANDOVER' => 'BAST',
+    //                 'RETURN'   => 'BAPA',
+    //                 default    => 'AST-TRX',
+    //             };
+
+    //             $trxNumber = $this->generateTransactionNumber($prefix);
+    //             $newStatus = Status::findOrFail($request->status_id);
+    //             $userPenerima = $request->to_user_id ? User::find($request->to_user_id) : null;
+
+    //             $firstAsset = FixedAsset::findOrFail($request->asset_ids[0]);
+    //             $fromUserId = ($type === 'RETURN') ? $firstAsset->assigned_to : auth()->id();
+
+    //             $trxCreated = \App\Models\FixedAssetTransaction::create([
+    //                 'transaction_number' => $trxNumber,
+    //                 'transaction_type'   => $type,
+    //                 'transaction_date'   => $request->transaction_date,
+    //                 'fixed_asset_id'     => $firstAsset->id,
+    //                 'from_user_id'       => $fromUserId,
+    //                 'to_user_id'         => ($type === 'HANDOVER') ? $request->to_user_id : (($type === 'RETURN') ? auth()->id() : null),
+    //                 'warehouse_id'       => ($type === 'RETURN') ? $request->warehouse_id : null,
+    //                 'status_id'          => $request->status_id,
+    //                 'notes'              => $request->notes,
+    //                 'created_by'         => auth()->id(),
+    //             ]);
+
+    //             foreach ($request->asset_ids as $assetId) {
+    //                 $asset = FixedAsset::lockForUpdate()->findOrFail($assetId);
+    //                 $prevWarehouseId = $asset->warehouse_id;
+    //                 $prevUserId = $asset->assigned_to;
+
+    //                 \App\Models\FixedAssetTransactionDetail::create([
+    //                     'fixed_asset_transaction_id' => $trxCreated->id,
+    //                     'fixed_asset_id'             => $asset->id,
+    //                     'previous_warehouse_id'      => $prevWarehouseId,
+    //                     'previous_user_id'           => $prevUserId,
+    //                 ]);
+
+    //                 if ($type === 'HANDOVER') {
+    //                     if (!empty($asset->assigned_to)) {
+    //                         throw new \Exception("Aset {$asset->asset_number} sedang dipakai staf lain.");
+    //                     }
+
+    //                     $asset->update([
+    //                         'assigned_to'   => $userPenerima->id,
+    //                         'department_id' => $userPenerima->department_id,
+    //                         'status_id'     => $newStatus->id,
+    //                         'warehouse_id'  => null,
+    //                         'notes'         => $request->notes ?: $asset->notes,
+    //                     ]);
+
+    //                     \App\Models\FixedAssetHistory::create([
+    //                         'fixed_asset_id' => $asset->id,
+    //                         'status'         => 'HANDOVER',
+    //                         'assigned_to'    => $userPenerima->id,
+    //                         'notes'          => "[{$trxNumber}] Diserahkan ke {$userPenerima->name} | Catatan: " . ($request->notes ?: '-'),
+    //                         'created_by'     => auth()->id(),
+    //                     ]);
+
+    //                     if ($prevWarehouseId && $asset->item_id) {
+    //                         $item = \App\Models\Item::lockForUpdate()->find($asset->item_id);
+    //                         if ($item) {
+    //                             $before = (float) $item->current_stock;
+    //                             $item->update(['current_stock' => max(0, $before - 1)]);
+    //                             \App\Models\StockMutation::create([
+    //                                 'item_id' => $item->id, 'warehouse_id' => $prevWarehouseId,
+    //                                 'type' => 'OUT', 'qty' => 1, 'balance_before' => $before, 'balance_after' => $item->current_stock,
+    //                                 'reference_number' => $trxNumber, 'notes' => "Serah Terima Aset ({$asset->asset_number}) ke {$userPenerima->name}",
+    //                                 'created_by' => auth()->id(),
+    //                             ]);
+    //                         }
+    //                     }
+    //                 } elseif ($type === 'RETURN') {
+    //                     if (empty($asset->assigned_to)) {
+    //                         throw new \Exception("Aset {$asset->asset_number} sudah berada di gudang.");
+    //                     }
+    //                     $prevUser = User::find($prevUserId);
+
+    //                     $asset->update([
+    //                         'assigned_to'   => null,
+    //                         'department_id' => null,
+    //                         'warehouse_id'  => $request->warehouse_id,
+    //                         'status_id'     => $newStatus->id,
+    //                         'notes'         => $request->notes ?: $asset->notes,
+    //                     ]);
+
+    //                     \App\Models\FixedAssetHistory::create([
+    //                         'fixed_asset_id' => $asset->id,
+    //                         'status'         => 'RETURNED',
+    //                         'assigned_to'    => null,
+    //                         'notes'          => "[{$trxNumber}] Dikembalikan oleh " . (optional($prevUser)->name ?? 'User') . " | Alasan: " . ($request->notes ?: '-'),
+    //                         'created_by'     => auth()->id(),
+    //                     ]);
+
+    //                     if ($asset->item_id) {
+    //                         $item = \App\Models\Item::lockForUpdate()->find($asset->item_id);
+    //                         if ($item) {
+    //                             $before = (float) $item->current_stock;
+    //                             $item->update(['current_stock' => $before + 1]);
+    //                             \App\Models\StockMutation::create([
+    //                                 'item_id' => $item->id, 'warehouse_id' => $request->warehouse_id,
+    //                                 'type' => 'IN', 'qty' => 1, 'balance_before' => $before, 'balance_after' => $item->current_stock,
+    //                                 'reference_number' => $trxNumber, 'notes' => "Pengembalian Aset ({$asset->asset_number})",
+    //                                 'created_by' => auth()->id(),
+    //                             ]);
+    //                         }
+    //                     }
+    //                 } else {
+    //                     $isDisposed = in_array($newStatus->slug, ['disposed', 'void']);
+    //                     $asset->update([
+    //                         'status_id'    => $newStatus->id,
+    //                         'warehouse_id' => $isDisposed ? null : $asset->warehouse_id,
+    //                         'notes'        => $request->notes ?: $asset->notes,
+    //                     ]);
+
+    //                     \App\Models\FixedAssetHistory::create([
+    //                         'fixed_asset_id' => $asset->id,
+    //                         'status'         => $newStatus->name,
+    //                         'assigned_to'    => null,
+    //                         'notes'          => "[{$trxNumber}] Perubahan Status: {$newStatus->name} | Alasan: " . ($request->notes ?: '-'),
+    //                         'created_by'     => auth()->id(),
+    //                     ]);
+    //                 }
+    //             }
+    //         });
+
+    //         return redirect()->route('fixed-assets.transactions.show', $trxCreated->id)
+    //             ->with('success', "Transaksi {$trxCreated->transaction_number} berhasil diproses!");
+
+    //     } catch (\Exception $e) {
+    //         return back()->withInput()->with('error', 'Gagal memproses transaksi: ' . $e->getMessage());
+    //     }
+    // }
+
+
     public function createTransaction()
     {
         $voidDisposedIds = Status::where('type', 'AST')
             ->whereIn('slug', ['void', 'batal', 'canceled', 'cancelled', 'disposed'])
             ->pluck('id');
 
+        $maintenanceStatusIds = Status::where('type', 'AST')
+            ->where(function ($q) {
+                $q->whereIn('slug', ['maintenance', 'repair', 'in_repair', 'service', 'rusak', 'broken'])
+                  ->orWhere('name', 'like', '%Maintenance%')
+                  ->orWhere('name', 'like', '%Servis%')
+                  ->orWhere('name', 'like', '%Perbaikan%')
+                  ->orWhere('name', 'like', '%Rusak%');
+            })
+            ->pluck('id');
+
+        // 1. Aset siap serah terima di Gudang (Hanya yang siap pakai / bukan rusak & bukan servis)
         $availableAssets = FixedAsset::with(['item', 'warehouse', 'status'])
             ->whereNull('assigned_to')
+            ->whereNotIn('status_id', $voidDisposedIds)
+            ->when($maintenanceStatusIds->isNotEmpty(), fn($q) => $q->whereNotIn('status_id', $maintenanceStatusIds))
+            ->whereNotNull('warehouse_id')
+            ->orderBy('asset_number', 'asc')
+            ->get();
+
+        // 2. Aset sedang dipakai Staf (Untuk Return / BAPA)
+        $inUseAssets = FixedAsset::with(['item', 'assignee.department', 'status'])
+            ->whereNotNull('assigned_to')
             ->whereNotIn('status_id', $voidDisposedIds)
             ->orderBy('asset_number', 'asc')
             ->get();
 
-        $inUseAssets = FixedAsset::with(['item', 'assignee.department', 'status'])
-            ->whereNotNull('assigned_to')
+        // 3. Aset yang sedang di Service Center / Maintenance (Khusus Selesai Perbaikan / BAPA-SRV)
+        $repairAssets = FixedAsset::with(['item', 'warehouse', 'status'])
+            ->whereNull('assigned_to')
+            ->whereNotIn('status_id', $voidDisposedIds)
+            ->where(function ($q) use ($maintenanceStatusIds) {
+                if ($maintenanceStatusIds->isNotEmpty()) {
+                    $q->whereIn('status_id', $maintenanceStatusIds);
+                }
+                $q->orWhere('notes', 'like', 'Service Center:%')
+                  ->orWhereNull('warehouse_id');
+            })
+            ->orderBy('asset_number', 'asc')
+            ->get();
+
+        // 4. Semua aset aktif (Untuk Kirim Perbaikan ke Service Center / BASP & Update Status / Disposal)
+        $allActiveAssets = FixedAsset::with(['item', 'warehouse', 'assignee.department', 'status'])
             ->whereNotIn('status_id', $voidDisposedIds)
             ->orderBy('asset_number', 'asc')
             ->get();
@@ -1801,25 +2019,29 @@ class FixedAssetController extends Controller
         $users      = User::with(['department', 'company'])->orderBy('name')->get();
 
         return view('fixed_assets.create_transaction', compact(
-            'availableAssets', 'inUseAssets', 'warehouses', 'statuses', 'users'
+            'availableAssets', 'inUseAssets', 'repairAssets', 'allActiveAssets', 'warehouses', 'statuses', 'users'
         ));
     }
+
 
     public function storeTransaction(Request $request)
     {
         $request->validate([
-            'transaction_type' => 'required|in:HANDOVER,RETURN,STATUS_CHANGE',
-            'transaction_date' => 'required|date',
-            'asset_ids'        => 'required|array|min:1',
-            'asset_ids.*'      => 'exists:fixed_assets,id',
-            'status_id'        => 'required|exists:statuses,id',
-            'to_user_id'       => 'required_if:transaction_type,HANDOVER|nullable|exists:users,id',
-            'warehouse_id'     => 'required_if:transaction_type,RETURN|nullable|exists:warehouses,id',
-            'notes'            => 'nullable|string',
+            'transaction_type'    => 'required|in:HANDOVER,RETURN,REPAIR_SEND,REPAIR_FINISH,STATUS_CHANGE',
+            'transaction_date'    => 'required|date',
+            'asset_ids'           => 'required|array|min:1',
+            'asset_ids.*'         => 'exists:fixed_assets,id',
+            'status_id'           => 'required|exists:statuses,id',
+            'to_user_id'          => 'required_if:transaction_type,HANDOVER|nullable|exists:users,id',
+            'warehouse_id'        => 'required_if:transaction_type,RETURN,REPAIR_FINISH|nullable|exists:warehouses,id',
+            'service_center_name' => 'required_if:transaction_type,REPAIR_SEND|nullable|string|max:255',
+            'rma_number'          => 'nullable|string|max:100',
+            'notes'               => 'nullable|string',
         ], [
-            'asset_ids.required'       => 'Pilih minimal 1 unit aset untuk diproses.',
-            'to_user_id.required_if'   => 'Staf penerima wajib dipilih untuk transaksi Serah Terima (BAST).',
-            'warehouse_id.required_if' => 'Gudang tujuan wajib dipilih untuk transaksi Pengembalian (BAPA).',
+            'asset_ids.required'              => 'Pilih minimal 1 unit aset untuk diproses.',
+            'to_user_id.required_if'          => 'Staf penerima wajib dipilih untuk transaksi Serah Terima (BAST).',
+            'warehouse_id.required_if'        => 'Gudang tujuan wajib dipilih untuk transaksi Pengembalian / Selesai Servis.',
+            'service_center_name.required_if' => 'Nama Service Center / Vendor wajib diisi saat mengirim aset perbaikan.',
         ]);
 
         try {
@@ -1828,17 +2050,28 @@ class FixedAssetController extends Controller
             DB::transaction(function () use ($request, &$trxCreated) {
                 $type = $request->transaction_type;
                 $prefix = match ($type) {
-                    'HANDOVER' => 'BAST',
-                    'RETURN'   => 'BAPA',
-                    default    => 'AST-TRX',
+                    'HANDOVER'      => 'BAST',
+                    'RETURN'        => 'BAPA',
+                    'REPAIR_SEND'   => 'BASP',
+                    'REPAIR_FINISH' => 'BAPA-SRV',
+                    default         => 'AST-TRX',
                 };
 
-                $trxNumber = $this->generateTransactionNumber($prefix);
-                $newStatus = Status::findOrFail($request->status_id);
+                $trxNumber    = $this->generateTransactionNumber($prefix);
+                $newStatus    = Status::findOrFail($request->status_id);
                 $userPenerima = $request->to_user_id ? User::find($request->to_user_id) : null;
 
                 $firstAsset = FixedAsset::findOrFail($request->asset_ids[0]);
-                $fromUserId = ($type === 'RETURN') ? $firstAsset->assigned_to : auth()->id();
+                $fromUserId = in_array($type, ['RETURN']) ? $firstAsset->assigned_to : auth()->id();
+
+                // Susun catatan terstruktur khusus jika transaksi pengiriman ke Service Center
+                $compiledNotes = $request->notes ?: '';
+                if ($type === 'REPAIR_SEND') {
+                    $scName  = trim($request->service_center_name);
+                    $rmaNo   = trim($request->rma_number ?: '-');
+                    $keluhan = trim($request->notes ?: '-');
+                    $compiledNotes = "Service Center: {$scName} | No. RMA/Tiket: {$rmaNo} | Keluhan/Keterangan: {$keluhan}";
+                }
 
                 $trxCreated = \App\Models\FixedAssetTransaction::create([
                     'transaction_number' => $trxNumber,
@@ -1847,16 +2080,16 @@ class FixedAssetController extends Controller
                     'fixed_asset_id'     => $firstAsset->id,
                     'from_user_id'       => $fromUserId,
                     'to_user_id'         => ($type === 'HANDOVER') ? $request->to_user_id : (($type === 'RETURN') ? auth()->id() : null),
-                    'warehouse_id'       => ($type === 'RETURN') ? $request->warehouse_id : null,
+                    'warehouse_id'       => in_array($type, ['RETURN', 'REPAIR_FINISH']) ? $request->warehouse_id : null,
                     'status_id'          => $request->status_id,
-                    'notes'              => $request->notes,
+                    'notes'              => $compiledNotes,
                     'created_by'         => auth()->id(),
                 ]);
 
                 foreach ($request->asset_ids as $assetId) {
                     $asset = FixedAsset::lockForUpdate()->findOrFail($assetId);
                     $prevWarehouseId = $asset->warehouse_id;
-                    $prevUserId = $asset->assigned_to;
+                    $prevUserId      = $asset->assigned_to;
 
                     \App\Models\FixedAssetTransactionDetail::create([
                         'fixed_asset_transaction_id' => $trxCreated->id,
@@ -1934,6 +2167,73 @@ class FixedAssetController extends Controller
                                 ]);
                             }
                         }
+                    } elseif ($type === 'REPAIR_SEND') {
+                        // Kirim unit ke Service Center: fisik keluar dari gudang/user sementara ke pihak servis eksternal
+                        $prevHolderInfo = $prevUserId
+                            ? 'Pemegang sebelumnya: ' . (optional(User::find($prevUserId))->name ?? '-')
+                            : 'Dari Gudang';
+
+                        $asset->update([
+                            'assigned_to'   => null,
+                            'department_id' => null,
+                            'warehouse_id'  => null,
+                            'status_id'     => $newStatus->id,
+                            'notes'         => $compiledNotes,
+                        ]);
+
+                        \App\Models\FixedAssetHistory::create([
+                            'fixed_asset_id' => $asset->id,
+                            'status'         => 'REPAIR_SEND',
+                            'assigned_to'    => null,
+                            'notes'          => "[{$trxNumber}] Dikirim ke {$compiledNotes} ({$prevHolderInfo})",
+                            'created_by'     => auth()->id(),
+                        ]);
+
+                        // Jika sebelumnya ada di stok gudang fisik, catat mutasi keluar sementara untuk servis
+                        if ($prevWarehouseId && $asset->item_id) {
+                            $item = \App\Models\Item::lockForUpdate()->find($asset->item_id);
+                            if ($item) {
+                                $before = (float) $item->current_stock;
+                                $item->update(['current_stock' => max(0, $before - 1)]);
+                                \App\Models\StockMutation::create([
+                                    'item_id' => $item->id, 'warehouse_id' => $prevWarehouseId,
+                                    'type' => 'OUT', 'qty' => 1, 'balance_before' => $before, 'balance_after' => $item->current_stock,
+                                    'reference_number' => $trxNumber, 'notes' => "Pengiriman Servis Aset ({$asset->asset_number}) ke {$request->service_center_name}",
+                                    'created_by' => auth()->id(),
+                                ]);
+                            }
+                        }
+                    } elseif ($type === 'REPAIR_FINISH') {
+                        // Unit selesai diperbaiki dari Service Center dan diterima kembali di Gudang
+                        $asset->update([
+                            'assigned_to'   => null,
+                            'department_id' => null,
+                            'warehouse_id'  => $request->warehouse_id,
+                            'status_id'     => $newStatus->id,
+                            'notes'         => $request->notes ?: 'Selesai perbaikan dari Service Center.',
+                        ]);
+
+                        \App\Models\FixedAssetHistory::create([
+                            'fixed_asset_id' => $asset->id,
+                            'status'         => 'REPAIR_FINISH',
+                            'assigned_to'    => null,
+                            'notes'          => "[{$trxNumber}] Selesai Perbaikan & Masuk Gudang | Catatan: " . ($request->notes ?: '-'),
+                            'created_by'     => auth()->id(),
+                        ]);
+
+                        if ($asset->item_id) {
+                            $item = \App\Models\Item::lockForUpdate()->find($asset->item_id);
+                            if ($item) {
+                                $before = (float) $item->current_stock;
+                                $item->update(['current_stock' => $before + 1]);
+                                \App\Models\StockMutation::create([
+                                    'item_id' => $item->id, 'warehouse_id' => $request->warehouse_id,
+                                    'type' => 'IN', 'qty' => 1, 'balance_before' => $before, 'balance_after' => $item->current_stock,
+                                    'reference_number' => $trxNumber, 'notes' => "Penerimaan Kembali Hasil Servis ({$asset->asset_number})",
+                                    'created_by' => auth()->id(),
+                                ]);
+                            }
+                        }
                     } else {
                         $isDisposed = in_array($newStatus->slug, ['disposed', 'void']);
                         $asset->update([
@@ -1961,6 +2261,85 @@ class FixedAssetController extends Controller
         }
     }
 
+    public function printTransactionDocument(Request $request, $id)
+    {
+        $transaction = \App\Models\FixedAssetTransaction::with([
+            'details.asset.item', 'details.asset.company',
+            'fromUser.department', 'toUser.department',
+            'warehouse', 'status'
+        ])->findOrFail($id);
+
+        $firstDetail = $transaction->details->first();
+        $asset = $firstDetail ? $firstDetail->asset : FixedAsset::find($transaction->fixed_asset_id);
+
+        if (!$asset) {
+            return back()->with('error', 'Data aset pada transaksi ini tidak ditemukan.');
+        }
+
+        $defaultP1 = $transaction->fromUser ?? auth()->user();
+        $defaultP2 = $transaction->toUser ?? auth()->user();
+
+        $signerIds = $request->input('signers', []);
+
+        if (empty($signerIds)) {
+            $signers = collect([$defaultP1, $defaultP2]);
+        } else {
+            $selectedUsers = User::with('department')->whereIn('id', $signerIds)->get();
+            $signers = collect();
+
+            // 1. Kunci Pihak Pertama
+            $pihak1 = $defaultP1 ? $selectedUsers->where('id', $defaultP1->id)->first() : null;
+            if (!$pihak1) $pihak1 = $selectedUsers->first();
+
+            if ($pihak1) {
+                $signers->push($pihak1);
+                $selectedUsers = $selectedUsers->reject(fn($u) => $u->id == $pihak1->id);
+            }
+
+            // 2. Kunci Pihak Kedua
+            $pihak2 = $defaultP2 ? $selectedUsers->where('id', $defaultP2->id)->first() : null;
+            if (!$pihak2) $pihak2 = $selectedUsers->first();
+
+            if ($pihak2) {
+                $signers->push($pihak2);
+                $selectedUsers = $selectedUsers->reject(fn($u) => $u->id == $pihak2->id);
+            }
+
+            // 3. Sisanya otomatis masuk sebagai Saksi / Mengetahui
+            foreach ($selectedUsers as $extraSigner) {
+                $signers->push($extraSigner);
+            }
+        }
+
+        $signatureMode  = $request->input('signature_mode', 'digital');
+        $documentNumber = $transaction->transaction_number;
+
+        // 1. Dokumen Pengembalian (BAPA) & Selesai Perbaikan Masuk Gudang (BAPA-SRV)
+        if (in_array($transaction->transaction_type, ['RETURN', 'REPAIR_FINISH'])) {
+            $lastAssignee = $transaction->fromUser;
+            $pdf = Pdf::loadView('fixed_assets.bapa', compact('asset', 'lastAssignee', 'signers', 'documentNumber', 'transaction', 'signatureMode'))
+                ->setOptions(['isPhpEnabled' => true, 'isRemoteEnabled' => true])
+                ->setPaper('A4', 'portrait');
+            return $pdf->stream(str_replace('/', '_', $documentNumber) . '.pdf');
+        }
+
+        // 2. Dokumen Serah Terima Perbaikan ke Service Center (BASP)
+        if ($transaction->transaction_type === 'REPAIR_SEND') {
+            $pdf = Pdf::loadView('fixed_assets.basp', compact('asset', 'signers', 'documentNumber', 'transaction', 'signatureMode'))
+                ->setOptions(['isPhpEnabled' => true, 'isRemoteEnabled' => true])
+                ->setPaper('A4', 'portrait');
+            return $pdf->stream('BASP_' . str_replace('/', '_', $documentNumber) . '.pdf');
+        }
+
+        // 3. Dokumen Serah Terima ke Karyawan (BAST)
+        $pdf = Pdf::loadView('fixed_assets.bast', compact('asset', 'signers', 'documentNumber', 'transaction', 'signatureMode'))
+            ->setOptions(['isPhpEnabled' => true, 'isRemoteEnabled' => true])
+            ->setPaper('A4', 'portrait');
+        return $pdf->stream('BAST_' . str_replace('/', '_', $documentNumber) . '.pdf');
+    }
+
+
+
     public function showTransaction($id)
     {
         $transaction = \App\Models\FixedAssetTransaction::with([
@@ -1974,63 +2353,63 @@ class FixedAssetController extends Controller
         return view('fixed_assets.transaction_show', compact('transaction', 'users'));
     }
 
-    public function printTransactionDocument(Request $request,$id)
-    {
-        $transaction = \App\Models\FixedAssetTransaction::with([ 'details.asset.item', 'details.asset.company', 'fromUser.department', 'toUser.department', 'warehouse', 'status' ])->findOrFail($id);
+    // public function printTransactionDocument(Request $request,$id)
+    // {
+    //     $transaction = \App\Models\FixedAssetTransaction::with([ 'details.asset.item', 'details.asset.company', 'fromUser.department', 'toUser.department', 'warehouse', 'status' ])->findOrFail($id);
 
-        $firstDetail =$transaction->details->first();
-        $asset =$firstDetail ? $firstDetail->asset : FixedAsset::find($transaction->fixed_asset_id);
+    //     $firstDetail =$transaction->details->first();
+    //     $asset =$firstDetail ? $firstDetail->asset : FixedAsset::find($transaction->fixed_asset_id);
 
-        if (!$asset) {
-            return back()->with('error', 'Data aset pada transaksi ini tidak ditemukan.');
-        }
+    //     if (!$asset) {
+    //         return back()->with('error', 'Data aset pada transaksi ini tidak ditemukan.');
+    //     }
 
-        // Tentukan default Pihak 1 & Pihak 2 sesuai jenis transaksi
-        $defaultP1 =$transaction->fromUser ?? auth()->user();
-        $defaultP2 =$transaction->toUser ?? auth()->user();
+    //     // Tentukan default Pihak 1 & Pihak 2 sesuai jenis transaksi
+    //     $defaultP1 =$transaction->fromUser ?? auth()->user();
+    //     $defaultP2 =$transaction->toUser ?? auth()->user();
 
-        $signerIds =$request->input('signers', []);
+    //     $signerIds =$request->input('signers', []);
 
-        if (empty($signerIds)) {$signers = collect([$defaultP1,$defaultP2]);
-        } else {
-            $selectedUsers = User::with('department')->whereIn('id', $signerIds)->get();$signers = collect();
+    //     if (empty($signerIds)) {$signers = collect([$defaultP1,$defaultP2]);
+    //     } else {
+    //         $selectedUsers = User::with('department')->whereIn('id', $signerIds)->get();$signers = collect();
 
-            // 1. Kunci Pihak Pertama
-            $pihak1 =$defaultP1 ? $selectedUsers->where('id',$defaultP1->id)->first() : null;
-            if (!$pihak1) $pihak1 =$selectedUsers->first();
+    //         // 1. Kunci Pihak Pertama
+    //         $pihak1 =$defaultP1 ? $selectedUsers->where('id',$defaultP1->id)->first() : null;
+    //         if (!$pihak1) $pihak1 =$selectedUsers->first();
 
-            if ($pihak1) {$signers->push($pihak1);$selectedUsers = $selectedUsers->reject(fn($u) => $u->id ==$pihak1->id);
-            }
+    //         if ($pihak1) {$signers->push($pihak1);$selectedUsers = $selectedUsers->reject(fn($u) => $u->id ==$pihak1->id);
+    //         }
 
-            // 2. Kunci Pihak Kedua
-            $pihak2 =$defaultP2 ? $selectedUsers->where('id',$defaultP2->id)->first() : null;
-            if (!$pihak2) $pihak2 =$selectedUsers->first();
+    //         // 2. Kunci Pihak Kedua
+    //         $pihak2 =$defaultP2 ? $selectedUsers->where('id',$defaultP2->id)->first() : null;
+    //         if (!$pihak2) $pihak2 =$selectedUsers->first();
 
-            if ($pihak2) {$signers->push($pihak2);$selectedUsers = $selectedUsers->reject(fn($u) => $u->id ==$pihak2->id);
-            }
+    //         if ($pihak2) {$signers->push($pihak2);$selectedUsers = $selectedUsers->reject(fn($u) => $u->id ==$pihak2->id);
+    //         }
 
-            // 3. Sisanya otomatis masuk sebagai Saksi / Mengetahui
-            foreach ($selectedUsers as$extraSigner) {
-                $signers->push($extraSigner);
-            }
-        }
+    //         // 3. Sisanya otomatis masuk sebagai Saksi / Mengetahui
+    //         foreach ($selectedUsers as$extraSigner) {
+    //             $signers->push($extraSigner);
+    //         }
+    //     }
 
-        $signatureMode  =$request->input('signature_mode', 'digital');
-        $documentNumber =$transaction->transaction_number;
+    //     $signatureMode  =$request->input('signature_mode', 'digital');
+    //     $documentNumber =$transaction->transaction_number;
 
-        if ($transaction->transaction_type === 'RETURN') {
-            $lastAssignee =$transaction->fromUser;
-            $pdf = Pdf::loadView('fixed_assets.bapa', compact('asset', 'lastAssignee', 'signers', 'documentNumber', 'transaction', 'signatureMode'))
-                ->setOptions(['isPhpEnabled' => true, 'isRemoteEnabled' => true])
-                ->setPaper('A4', 'portrait');
-            return $pdf->stream('BAPA_' . str_replace('/', '_', $documentNumber) . '.pdf');
-        }
+    //     if ($transaction->transaction_type === 'RETURN') {
+    //         $lastAssignee =$transaction->fromUser;
+    //         $pdf = Pdf::loadView('fixed_assets.bapa', compact('asset', 'lastAssignee', 'signers', 'documentNumber', 'transaction', 'signatureMode'))
+    //             ->setOptions(['isPhpEnabled' => true, 'isRemoteEnabled' => true])
+    //             ->setPaper('A4', 'portrait');
+    //         return $pdf->stream('BAPA_' . str_replace('/', '_', $documentNumber) . '.pdf');
+    //     }
 
-        $pdf = Pdf::loadView('fixed_assets.bast', compact('asset', 'signers', 'documentNumber', 'transaction', 'signatureMode'))
-            ->setOptions(['isPhpEnabled' => true, 'isRemoteEnabled' => true])
-            ->setPaper('A4', 'portrait');
-        return $pdf->stream('BAST_' . str_replace('/', '_', $documentNumber) . '.pdf');
-    }
+    //     $pdf = Pdf::loadView('fixed_assets.bast', compact('asset', 'signers', 'documentNumber', 'transaction', 'signatureMode'))
+    //         ->setOptions(['isPhpEnabled' => true, 'isRemoteEnabled' => true])
+    //         ->setPaper('A4', 'portrait');
+    //     return $pdf->stream('BAST_' . str_replace('/', '_', $documentNumber) . '.pdf');
+    // }
 
 
 

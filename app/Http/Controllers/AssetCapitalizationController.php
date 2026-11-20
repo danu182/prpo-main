@@ -70,11 +70,15 @@ class AssetCapitalizationController extends Controller
 
 
     // =========================================================================
-    // 🔥 1. FUNGSI CREATE: MENAMPILKAN HALAMAN & DOKUMEN GR (DENGAN DETEKTIF GUDANG) 🔥
+    // 🔥 1. FUNGSI CREATE: MENAMPILKAN DAFTAR ITEM PER GR (1 BARIS = 1 ITEM) 🔥
     // =========================================================================
     public function create()
     {
-        $rawGrs = \App\Models\GoodsReceipt::with(['items.item', 'po.vendor'])
+        $rawGrs = \App\Models\GoodsReceipt::with([
+                        'items.item.uom',
+                        'po.vendor', 'po.items',
+                        'purchaseOrder.vendor', 'purchaseOrder.items'
+                    ])
                     ->orderBy('received_date', 'desc')
                     ->limit(100)
                     ->get();
@@ -84,11 +88,13 @@ class AssetCapitalizationController extends Controller
             ->whereIn('goods_receipt_id', $grIds)
             ->get();
 
-        $validGrs = collect();
+        $pendingGrItems = collect();
 
         foreach ($rawGrs as $gr) {
-            $hasSisa = false;
-            $whNames = [];
+            $po = $gr->purchaseOrder ?? $gr->po;
+            $poItems = $po ? ($po->items ?? $po->details ?? collect([])) : collect([]);
+            $vendorName = optional(optional($po)->vendor)->name ?? 'Vendor Internal';
+            $poNumber   = optional($po)->po_number ?? '-';
 
             foreach ($gr->items as $grItem) {
                 $grConvRate = 1;
@@ -103,7 +109,7 @@ class AssetCapitalizationController extends Controller
 
                 $baseQtyReceived = ($grItem->qty_received - ($grItem->qty_returned ?? 0)) * $grConvRate;
 
-                $alreadyCapitalized = $allCapitalizedAssets->filter(function($ast) use ($gr, $grItem) {
+                $alreadyCapitalized = $allCapitalizedAssets->filter(function ($ast) use ($gr, $grItem) {
                     if ($ast->goods_receipt_id != $gr->id || $ast->item_id != $grItem->item_id) return false;
                     $statusString = strtolower(optional($ast->status)->name . ' ' . optional($ast->status)->slug);
                     $notes = strtolower($ast->notes ?? '');
@@ -111,12 +117,10 @@ class AssetCapitalizationController extends Controller
                     return true;
                 })->count();
 
-                $grItem->sisa_bisa_diakui = $baseQtyReceived - $alreadyCapitalized;
+                $sisaBisaDiakui = floor($baseQtyReceived - $alreadyCapitalized);
 
-                if ($grItem->sisa_bisa_diakui > 0) {
-                    $hasSisa = true;
-
-                    // 🔥 DETEKTIF GUDANG AKTIF 🔥
+                if ($sisaBisaDiakui > 0) {
+                    // Detektif Gudang per Item
                     $whId = $grItem->warehouse_id;
                     if (!$whId) {
                         $mut = \Illuminate\Support\Facades\DB::table('stock_mutations')
@@ -126,17 +130,34 @@ class AssetCapitalizationController extends Controller
                             ->first();
                         if ($mut) $whId = $mut->warehouse_id;
                     }
+                    $whName = 'Gudang Utama';
                     if ($whId) {
                         $wh = \Illuminate\Support\Facades\DB::table('warehouses')->where('id', $whId)->first();
-                        if ($wh) $whNames[] = $wh->name;
+                        if ($wh) $whName = $wh->name;
                     }
-                }
-            }
 
-            if ($hasSisa) {
-                $whNames = array_unique($whNames);
-                $gr->warehouse_name_display = empty($whNames) ? 'Gudang Utama' : implode(', ', $whNames);
-                $validGrs->push($gr);
+                    // Ambil nama spesifik dari PO jika ada, fallback ke Master Item
+                    $matchedPoItem = $poItems->where('item_id', $grItem->item_id)->first();
+                    $displayItemName = $matchedPoItem->item_name
+                        ?? optional($grItem->item)->name
+                        ?? 'Item Tanpa Nama';
+
+                    $pendingGrItems->push((object) [
+                        'gr_id'          => $gr->id,
+                        'gr_number'      => $gr->gr_number,
+                        'received_date'  => $gr->received_date,
+                        'po_number'      => $poNumber,
+                        'vendor_name'    => $vendorName,
+                        'item_id'        => $grItem->item_id,
+                        'item_code'      => optional($grItem->item)->code ?? '-',
+                        'item_name'      => $displayItemName,
+                        'master_name'    => optional($grItem->item)->name ?? '-',
+                        'sisa_qty'       => $sisaBisaDiakui,
+                        'total_qty'      => floor($baseQtyReceived),
+                        'uom'            => optional(optional($grItem->item)->uom)->name ?? 'Unit',
+                        'warehouse_name' => $whName,
+                    ]);
+                }
             }
         }
 
@@ -144,9 +165,9 @@ class AssetCapitalizationController extends Controller
         $companies = \App\Models\Company::orderBy('name', 'asc')->get();
 
         return view('asset_capitalizations.create', [
-            'grs' => $validGrs,
+            'pendingGrItems'  => $pendingGrItems,
             'assetCategories' => $assetCategories,
-            'companies' => $companies, // 🔥 KIRIM KE BLADE 🔥
+            'companies'       => $companies,
         ]);
     }
 

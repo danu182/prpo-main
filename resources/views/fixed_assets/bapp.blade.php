@@ -105,7 +105,16 @@
     <div class="stamp-disposed">DISPOSED</div>
 
     <footer>
-        Dokumen BAPP Aset: {{ $asset->asset_number }} &nbsp; | &nbsp; <span class="pagenum"></span>
+        <table style="width: 100%; border-collapse: collapse;">
+            <tr>
+                <td style="text-align: left; font-size: 7.5pt; color: #666; font-style: italic; padding: 0;">
+                    Dicetak otomatis oleh sistem pada {{ \Carbon\Carbon::now()->translatedFormat('d F Y H:i:s') }} WIB
+                </td>
+                <td style="text-align: right; font-size: 7.5pt; color: #666; font-style: italic; padding: 0; padding-right: 85px;">
+                    Dokumen BAPA Aset: {{ $nomorDokumen }} &nbsp;|
+                </td>
+            </tr>
+        </table>
     </footer>
 
     <div class="header">

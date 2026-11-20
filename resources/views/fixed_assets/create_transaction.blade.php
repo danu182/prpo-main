@@ -31,7 +31,7 @@
                 <i class="bi bi-arrow-left me-1"></i> Kembali ke Daftar Transaksi
             </a>
             <h3 class="mb-0 fw-bold text-dark"><i class="bi bi-file-earmark-plus text-primary me-2"></i>Buat Transaksi Aset Baru</h3>
-            <p class="mb-0 text-muted small">Terbitkan dokumen BAST (Penyerahan), BAPA (Pengembalian), atau Perubahan Status untuk 1 maupun beberapa aset sekaligus.</p>
+            <p class="mb-0 text-muted small">Terbitkan dokumen BAST (Penyerahan), BAPA (Pengembalian), BASP (Serah Terima Perbaikan), atau Perubahan Status / Disposal.</p>
         </div>
     </div>
 
@@ -63,8 +63,10 @@
                         <label class="form-label fw-bold small">Jenis Transaksi <span class="text-danger">*</span></label>
                         <select name="transaction_type" id="transaction_type" class="form-select fw-bold" required>
                             <option value="HANDOVER" {{ old('transaction_type') == 'HANDOVER' ? 'selected' : '' }}>Penyerahan Aset ke Staf (Terbit BAST)</option>
-                            <option value="RETURN" {{ old('transaction_type') == 'RETURN' ? 'selected' : '' }}>Pengembalian Aset ke Gudang (Terbit BAPA)</option>
-                            <option value="STATUS_CHANGE" {{ old('transaction_type') == 'STATUS_CHANGE' ? 'selected' : '' }}>Update Status / Maintenance / Disposal</option>
+                            <option value="RETURN" {{ old('transaction_type') == 'RETURN' ? 'selected' : '' }}>Pengembalian Aset ke Gudang / Tarik Rusak (Terbit BAPA)</option>
+                            <option value="REPAIR_SEND" {{ old('transaction_type') == 'REPAIR_SEND' ? 'selected' : '' }}>Kirim Perbaikan ke Service Center (Terbit BASP)</option>
+                            <option value="REPAIR_FINISH" {{ old('transaction_type') == 'REPAIR_FINISH' ? 'selected' : '' }}>Selesai Perbaikan / Masuk Gudang (Terbit BAPA-SRV)</option>
+                            <option value="STATUS_CHANGE" {{ old('transaction_type') == 'STATUS_CHANGE' ? 'selected' : '' }}>Update Status / Disposal</option>
                         </select>
                     </div>
 
@@ -94,9 +96,9 @@
                         </select>
                     </div>
 
-                    {{-- FIELD KHUSUS RETURN --}}
+                    {{-- FIELD KHUSUS RETURN & REPAIR_FINISH --}}
                     <div class="mb-3 d-none" id="box-return-warehouse">
-                        <label class="form-label fw-bold small text-danger">Gudang Tujuan Pengembalian <span class="text-danger">*</span></label>
+                        <label class="form-label fw-bold small text-danger" id="lbl-warehouse-target">Gudang Tujuan Pengembalian <span class="text-danger">*</span></label>
                         <select name="warehouse_id" id="warehouse_id" class="form-select select2-basic" style="width: 100%;">
                             <option value="">-- Pilih Gudang Penerima --</option>
                             @foreach($warehouses as $wh)
@@ -105,30 +107,44 @@
                         </select>
                     </div>
 
+                    {{-- FIELD KHUSUS REPAIR_SEND (SERVICE CENTER) --}}
+                    <div class="p-3 mb-3 border rounded-3 bg-warning-subtle border-warning d-none" id="box-repair-send">
+                        <div class="mb-2">
+                            <label class="form-label fw-bold small text-dark">Nama Service Center / Vendor <span class="text-danger">*</span></label>
+                            <input type="text" name="service_center_name" id="service_center_name" class="bg-white form-control" value="{{ old('service_center_name') }}" placeholder="Contoh: Apple Authorized Service / Dell Service Center">
+                        </div>
+                        <div class="mb-0">
+                            <label class="form-label fw-bold small text-dark">No. RMA / Tanda Terima Servis</label>
+                            <input type="text" name="rma_number" id="rma_number" class="bg-white form-control" value="{{ old('rma_number') }}" placeholder="Opsional (bisa diisi jika sudah ada tiket)...">
+                        </div>
+                    </div>
+
                     <div class="mb-0">
-                        <label class="form-label fw-bold small">Catatan / Keterangan Resmi</label>
-                        <textarea name="notes" class="form-control" rows="3" placeholder="Contoh: Serah terima perlengkapan kerja karyawan baru / Pengembalian karena mutasi...">{{ old('notes') }}</textarea>
+                        <label class="form-label fw-bold small" id="lbl-notes">Catatan / Keterangan Resmi</label>
+                        <textarea name="notes" id="notes_field" class="form-control" rows="3" placeholder="Contoh: Serah terima perlengkapan kerja / Alasan penghapusan atau kerusakan aset...">{{ old('notes') }}</textarea>
                     </div>
                 </div>
             </div>
 
-            {{-- KOLOM KANAN: PILIH DAFTAR ASET (PENCARIAN DETAIL & MULTI-ITEM) --}}
+            {{-- KOLOM KANAN: PILIH DAFTAR ASET --}}
             <div class="col-lg-8">
                 <div class="p-4 bg-white border shadow-sm rounded-4 h-100 d-flex flex-column justify-content-between">
                     <div>
                         <h6 class="pb-2 mb-3 fw-bold text-uppercase text-secondary border-bottom">2. Pilih Unit Aset yang Diproses</h6>
 
-                        {{-- Dropdown Aset Tersedia di Gudang (Untuk Handover & Status Change) --}}
+                        {{-- Dropdown 1: Aset Siap Pakai di Gudang (Untuk Handover) --}}
                         <div class="mb-3" id="select-available-wrapper">
-                            <label class="form-label fw-bold small">Cari & Pilih Aset dari Gudang (Bisa pilih lebih dari 1) <span class="text-danger">*</span></label>
+                            <label class="form-label fw-bold small">Cari & Pilih Aset Siap Pakai dari Gudang (Bisa pilih lebih dari 1) <span class="text-danger">*</span></label>
                             <select name="asset_ids[]" id="available_asset_ids" class="form-select select2-asset-detail" multiple style="width: 100%;">
                                 @foreach($availableAssets as $ast)
                                     @php
-                                        $kodeItem = optional($ast->item)->code ?? '-';
-                                        $namaItem = optional($ast->item)->name ?? '-';
-                                        $sn       = $ast->serial_number ?: '-';
-                                        $faNo     = $ast->accounting_asset_number ?: '-';
-                                        $gudang   = optional($ast->warehouse)->name ?? 'Gudang';
+                                        $kodeItem   = optional($ast->item)->code ?? '-';
+                                        $namaItem   = optional($ast->item)->name ?? '-';
+                                        $sn         = $ast->serial_number ?: '-';
+                                        $faNo       = $ast->accounting_asset_number ?: '-';
+                                        $gudang     = optional($ast->warehouse)->name ?? 'Gudang';
+                                        $statusName = optional($ast->status)->name ?? 'Available';
+                                        $statusSlug = optional($ast->status)->slug ?? 'available';
                                     @endphp
                                     <option value="{{ $ast->id }}"
                                         data-asset-number="{{ $ast->asset_number }}"
@@ -137,25 +153,29 @@
                                         data-item-name="{{ $namaItem }}"
                                         data-asset-name="{{ $ast->name }}"
                                         data-sn="{{ $sn }}"
+                                        data-status-name="{{ $statusName }}"
+                                        data-status-slug="{{ $statusSlug }}"
                                         data-location="{{ $gudang }}"
                                         data-location-type="warehouse">
-                                        [{{ $ast->asset_number }}] {{ $kodeItem }} - {{ $ast->name }} (S/N: {{ $sn }})
+                                        [{{ $ast->asset_number }}] {{ $kodeItem }} - {{ $ast->name }} [{{ $statusName }}]
                                     </option>
                                 @endforeach
                             </select>
                         </div>
 
-                        {{-- Dropdown Aset Dipakai Staf (Untuk Return) --}}
+                        {{-- Dropdown 2: Aset Dipakai Staf (Untuk Return) --}}
                         <div class="mb-3 d-none" id="select-inuse-wrapper">
                             <label class="form-label fw-bold small text-danger">Cari & Pilih Aset yang Sedang Dipakai Staf (Bisa pilih lebih dari 1) <span class="text-danger">*</span></label>
                             <select id="inuse_asset_ids" class="form-select select2-asset-detail" multiple style="width: 100%;" disabled>
                                 @foreach($inUseAssets as $ast)
                                     @php
-                                        $kodeItem = optional($ast->item)->code ?? '-';
-                                        $namaItem = optional($ast->item)->name ?? '-';
-                                        $sn       = $ast->serial_number ?: '-';
-                                        $faNo     = $ast->accounting_asset_number ?: '-';
-                                        $pemegang = optional($ast->assignee)->name ?? '-';
+                                        $kodeItem   = optional($ast->item)->code ?? '-';
+                                        $namaItem   = optional($ast->item)->name ?? '-';
+                                        $sn         = $ast->serial_number ?: '-';
+                                        $faNo       = $ast->accounting_asset_number ?: '-';
+                                        $pemegang   = optional($ast->assignee)->name ?? '-';
+                                        $statusName = optional($ast->status)->name ?? 'In Use';
+                                        $statusSlug = optional($ast->status)->slug ?? 'in_use';
                                     @endphp
                                     <option value="{{ $ast->id }}"
                                         data-asset-number="{{ $ast->asset_number }}"
@@ -164,17 +184,94 @@
                                         data-item-name="{{ $namaItem }}"
                                         data-asset-name="{{ $ast->name }}"
                                         data-sn="{{ $sn }}"
+                                        data-status-name="{{ $statusName }}"
+                                        data-status-slug="{{ $statusSlug }}"
                                         data-location="{{ $pemegang }}"
                                         data-location-type="user">
-                                        [{{ $ast->asset_number }}] {{ $kodeItem }} - {{ $ast->name }} (S/N: {{ $sn }}) — Pemegang: {{ $pemegang }}
+                                        [{{ $ast->asset_number }}] {{ $kodeItem }} - {{ $ast->name }} [{{ $statusName }}] — {{ $pemegang }}
+                                    </option>
+                                @endforeach
+                            </select>
+                        </div>
+
+                        {{-- Dropdown 3: Semua Aset Aktif (Untuk Kirim Service Center & Update Status / Disposal) --}}
+                        <div class="mb-3 d-none" id="select-all-active-wrapper">
+                            <label class="form-label fw-bold small text-dark" id="lbl-all-active">Cari & Pilih Unit Aset (Menampilkan Status Kondisi & Lokasi) <span class="text-danger">*</span></label>
+                            <select id="all_active_asset_ids" class="form-select select2-asset-detail" multiple style="width: 100%;" disabled>
+                                @foreach($allActiveAssets as $ast)
+                                    @php
+                                        $kodeItem   = optional($ast->item)->code ?? '-';
+                                        $namaItem   = optional($ast->item)->name ?? '-';
+                                        $sn         = $ast->serial_number ?: '-';
+                                        $faNo       = $ast->accounting_asset_number ?: '-';
+                                        $statusName = optional($ast->status)->name ?? 'Normal';
+                                        $statusSlug = optional($ast->status)->slug ?? 'available';
+                                        $lokasi     = !empty($ast->assigned_to)
+                                            ? (optional($ast->assignee)->name ?? '-')
+                                            : (optional($ast->warehouse)->name ?? 'Gudang / Servis');
+                                        $locType    = !empty($ast->assigned_to) ? 'user' : 'warehouse';
+                                    @endphp
+                                    <option value="{{ $ast->id }}"
+                                        data-asset-number="{{ $ast->asset_number }}"
+                                        data-fa-number="{{ $faNo }}"
+                                        data-item-code="{{ $kodeItem }}"
+                                        data-item-name="{{ $namaItem }}"
+                                        data-asset-name="{{ $ast->name }}"
+                                        data-sn="{{ $sn }}"
+                                        data-status-name="{{ $statusName }}"
+                                        data-status-slug="{{ $statusSlug }}"
+                                        data-location="{{ $lokasi }}"
+                                        data-location-type="{{ $locType }}">
+                                        [{{ $ast->asset_number }}] {{ $kodeItem }} - {{ $ast->name }} [{{ $statusName }}]
+                                    </option>
+                                @endforeach
+                            </select>
+                        </div>
+
+                        {{-- Dropdown 4: Khusus Aset di Service Center / Maintenance (Untuk Selesai Perbaikan / BAPA-SRV) --}}
+                        <div class="mb-3 d-none" id="select-repair-wrapper">
+                            <label class="form-label fw-bold small text-success">Cari & Pilih Aset yang Sedang di Service Center / Perbaikan <span class="text-danger">*</span></label>
+                            <select id="repair_asset_ids" class="form-select select2-asset-detail" multiple style="width: 100%;" disabled>
+                                @foreach($repairAssets as $ast)
+                                    @php
+                                        $kodeItem   = optional($ast->item)->code ?? '-';
+                                        $namaItem   = optional($ast->item)->name ?? '-';
+                                        $sn         = $ast->serial_number ?: '-';
+                                        $faNo       = $ast->accounting_asset_number ?: '-';
+                                        $statusName = optional($ast->status)->name ?? 'Maintenance';
+                                        $statusSlug = optional($ast->status)->slug ?? 'maintenance';
+
+                                        $scLabel = 'Service Center / Maintenance';
+                                        if (str_contains((string) $ast->notes, 'Service Center:')) {
+                                            $parts = explode('|', $ast->notes);
+                                            $scLabel = trim($parts[0]);
+                                        }
+                                    @endphp
+                                    <option value="{{ $ast->id }}"
+                                        data-asset-number="{{ $ast->asset_number }}"
+                                        data-fa-number="{{ $faNo }}"
+                                        data-item-code="{{ $kodeItem }}"
+                                        data-item-name="{{ $namaItem }}"
+                                        data-asset-name="{{ $ast->name }}"
+                                        data-sn="{{ $sn }}"
+                                        data-status-name="{{ $statusName }}"
+                                        data-status-slug="{{ $statusSlug }}"
+                                        data-location="{{ $scLabel }}"
+                                        data-location-type="user">
+                                        [{{ $ast->asset_number }}] {{ $kodeItem }} - {{ $ast->name }} [{{ $statusName }}] — {{ $scLabel }}
                                     </option>
                                 @endforeach
                             </select>
                         </div>
 
                         <div class="p-3 border-0 alert alert-info bg-info-subtle rounded-3 small">
-                            <i class="bi bi-search me-1 text-info"></i>
-                            <strong>Pencarian Multi-Kriteria:</strong> Anda bisa mencari berdasarkan <strong>Kode Aset</strong> (<code>AST/...</code>), <strong>Tag Akuntansi</strong> (<code>FA</code>), <strong>Kode Master Item</strong> (<code>SKU-...</code>), <strong>Nama Item</strong>, <strong>Nama Aset</strong>, maupun <strong>Serial Number (S/N)</strong>.
+                            <i class="bi bi-info-circle-fill me-1 text-info"></i>
+                            <strong>Panduan Kondisi & Perbaikan Aset:</strong>
+                            <ol class="mt-1 mb-0 ps-3">
+                                <li>Tarik unit rusak dari staf ke IT/Gudang via <strong>Pengembalian Aset (BAPA)</strong> dengan status <em>Maintenance / Rusak</em>.</li>
+                                <li>Kirim unit ke vendor servis via <strong>Kirim Perbaikan ke Service Center (BASP)</strong> untuk mencetak bukti serah terima perbaikan.</li>
+                                <li>Saat unit kembali dari servis, proses <strong>Selesai Perbaikan (BAPA-SRV)</strong> (ubah status ke <em>Available</em> jika baik, atau <em>Rusak</em> jika tidak dapat diperbaiki lalu lanjutkan ke <strong>Disposal</strong>).</li>
+                            </ol>
                         </div>
                     </div>
 
@@ -198,14 +295,9 @@
     $(document).ready(function() {
         $('.select2-basic').select2({ theme: 'bootstrap-5' });
 
-        // Custom Matcher: Cari ke seluruh atribut (Kode Aset, FA, Kode Item, Nama Item, Nama Aset, S/N, Pemegang/Gudang)
         function customAssetMatcher(params, data) {
-            if ($.trim(params.term) === '') {
-                return data;
-            }
-            if (!data.element) {
-                return null;
-            }
+            if ($.trim(params.term) === '') return data;
+            if (!data.element) return null;
 
             const el = $(data.element);
             const searchableText = [
@@ -215,36 +307,45 @@
                 el.data('item-name'),
                 el.data('asset-name'),
                 el.data('sn'),
+                el.data('status-name'),
                 el.data('location'),
                 data.text
             ].join(' ').toLowerCase();
 
-            // Mendukung pencarian multi-kata (misal: "laptop 1014" atau "sku-lap paolo")
             const terms = params.term.toLowerCase().split(/\s+/);
-            const isMatch = terms.every(term => searchableText.includes(term));
-
-            return isMatch ? data : null;
+            return terms.every(term => searchableText.includes(term)) ? data : null;
         }
 
-        // Custom Template: Tampilkan kartu informasi lengkap di dalam list dropdown
         function formatAssetResult(state) {
-            if (!state.id || !state.element) {
-                return state.text;
+            if (!state.id || !state.element) return state.text;
+
+            const el         = $(state.element);
+            const assetNo    = el.data('asset-number') || '-';
+            const faNo       = el.data('fa-number') || '-';
+            const itemCode   = el.data('item-code') || '-';
+            const itemName   = el.data('item-name') || '-';
+            const assetName  = el.data('asset-name') || '-';
+            const sn         = el.data('sn') || '-';
+            const statusName = el.data('status-name') || 'Normal';
+            const statusSlug = (el.data('status-slug') || '').toLowerCase();
+            const location   = el.data('location') || '-';
+            const locType    = el.data('location-type');
+
+            // Warna badge status aset agar langsung terlihat kondisi unitnya
+            let statusBadgeClass = 'bg-secondary-subtle text-secondary border-secondary-subtle';
+            if (statusSlug.includes('available') || statusSlug.includes('ready')) {
+                statusBadgeClass = 'bg-success-subtle text-success border-success-subtle';
+            } else if (statusSlug.includes('use')) {
+                statusBadgeClass = 'bg-primary-subtle text-primary border-primary-subtle';
+            } else if (statusSlug.includes('rusak') || statusSlug.includes('broken') || statusSlug.includes('hilang')) {
+                statusBadgeClass = 'bg-danger text-white border-danger';
+            } else if (statusSlug.includes('maintenance') || statusSlug.includes('repair') || statusSlug.includes('servis')) {
+                statusBadgeClass = 'bg-warning text-dark border-warning';
             }
 
-            const el        = $(state.element);
-            const assetNo   = el.data('asset-number') || '-';
-            const faNo      = el.data('fa-number') || '-';
-            const itemCode  = el.data('item-code') || '-';
-            const itemName  = el.data('item-name') || '-';
-            const assetName = el.data('asset-name') || '-';
-            const sn        = el.data('sn') || '-';
-            const location  = el.data('location') || '-';
-            const locType   = el.data('location-type');
-
             const locBadge = locType === 'user'
-                ? `<span class="border badge bg-warning-subtle text-warning-emphasis border-warning-subtle"><i class="bi bi-person-fill me-1"></i>${location}</span>`
-                : `<span class="border badge bg-success-subtle text-success border-success-subtle"><i class="bi bi-shop me-1"></i>${location}</span>`;
+                ? `<span class="border badge bg-light text-dark border-secondary-subtle"><i class="bi bi-person-fill text-primary me-1"></i>${location}</span>`
+                : `<span class="border badge bg-light text-dark border-secondary-subtle"><i class="bi bi-shop text-success me-1"></i>${location}</span>`;
 
             return $(`
                 <div class="py-1">
@@ -254,7 +355,10 @@
                             <span class="border badge bg-secondary-subtle text-dark font-monospace">FA: ${faNo}</span>
                             <span class="border badge bg-info-subtle text-info-emphasis border-info-subtle font-monospace">${itemCode} — ${itemName}</span>
                         </div>
-                        <div>${locBadge}</div>
+                        <div class="gap-1 d-flex align-items-center">
+                            <span class="border badge ${statusBadgeClass}">${statusName}</span>
+                            ${locBadge}
+                        </div>
                     </div>
                     <div class="fw-bold text-dark" style="font-size: 0.88rem;">${assetName}</div>
                     <div class="text-muted font-monospace" style="font-size: 0.78rem;">
@@ -266,40 +370,60 @@
 
         $('.select2-asset-detail').select2({
             theme: 'bootstrap-5',
-            placeholder: 'Ketik Kode Aset / FA / Kode Item / Nama Item / Nama Aset / S/N...',
+            placeholder: 'Ketik Kode Aset / FA / Kode Item / Nama Item / Status (Rusak/Available) / S/N...',
             allowClear: true,
             closeOnSelect: false,
             matcher: customAssetMatcher,
             templateResult: formatAssetResult
         });
 
+        function activateAssetDropdown(targetId) {
+            const allIds = ['available_asset_ids', 'inuse_asset_ids', 'all_active_asset_ids', 'repair_asset_ids'];
+            const wrappers = {
+                'available_asset_ids': '#select-available-wrapper',
+                'inuse_asset_ids': '#select-inuse-wrapper',
+                'all_active_asset_ids': '#select-all-active-wrapper',
+                'repair_asset_ids': '#select-repair-wrapper'
+            };
+
+            allIds.forEach(id => {
+                if (id === targetId) {
+                    $(wrappers[id]).removeClass('d-none');
+                    $('#' + id).prop('disabled', false).attr('name', 'asset_ids[]').prop('required', true);
+                } else {
+                    $(wrappers[id]).addClass('d-none');
+                    $('#' + id).prop('disabled', true).removeAttr('name').prop('required', false);
+                }
+            });
+        }
+
         function toggleTransactionForm() {
             const type = $('#transaction_type').val();
+
+            $('#box-handover-user').addClass('d-none');
+            $('#to_user_id').prop('required', false);
+
+            $('#box-return-warehouse').addClass('d-none');
+            $('#warehouse_id').prop('required', false);
+
+            $('#box-repair-send').addClass('d-none');
+            $('#service_center_name').prop('required', false);
+
+            $('#lbl-notes').text('Catatan / Keterangan Resmi');
 
             if (type === 'HANDOVER') {
                 $('#box-handover-user').removeClass('d-none');
                 $('#to_user_id').prop('required', true);
-                $('#box-return-warehouse').addClass('d-none');
-                $('#warehouse_id').prop('required', false);
-
-                $('#select-available-wrapper').removeClass('d-none');
-                $('#available_asset_ids').prop('disabled', false).attr('name', 'asset_ids[]').prop('required', true);
-                $('#select-inuse-wrapper').addClass('d-none');
-                $('#inuse_asset_ids').prop('disabled', true).removeAttr('name').prop('required', false);
+                activateAssetDropdown('available_asset_ids');
 
                 $('#status_id option').each(function() {
                     if ($(this).data('slug') === 'in_use') $('#status_id').val($(this).val());
                 });
             } else if (type === 'RETURN') {
-                $('#box-handover-user').addClass('d-none');
-                $('#to_user_id').prop('required', false);
                 $('#box-return-warehouse').removeClass('d-none');
+                $('#lbl-warehouse-target').html('Gudang Tujuan Pengembalian <span class="text-danger">*</span>');
                 $('#warehouse_id').prop('required', true);
-
-                $('#select-available-wrapper').addClass('d-none');
-                $('#available_asset_ids').prop('disabled', true).removeAttr('name').prop('required', false);
-                $('#select-inuse-wrapper').removeClass('d-none');
-                $('#inuse_asset_ids').prop('disabled', false).attr('name', 'asset_ids[]').prop('required', true);
+                activateAssetDropdown('inuse_asset_ids');
 
                 $('#status_id option').each(function() {
                     if ($(this).data('slug') === 'available' || $(this).data('slug') === 'returned') {
@@ -307,16 +431,42 @@
                         return false;
                     }
                 });
-            } else {
-                $('#box-handover-user').addClass('d-none');
-                $('#to_user_id').prop('required', false);
-                $('#box-return-warehouse').addClass('d-none');
-                $('#warehouse_id').prop('required', false);
+            } else if (type === 'REPAIR_SEND') {
+                $('#box-repair-send').removeClass('d-none');
+                $('#service_center_name').prop('required', true);
+                $('#lbl-notes').text('Keluhan Kerusakan / Deskripsi Perbaikan');
+                $('#lbl-all-active').html('Cari & Pilih Aset yang Akan Dikirim ke Service Center <span class="text-danger">*</span>');
+                activateAssetDropdown('all_active_asset_ids');
 
-                $('#select-available-wrapper').removeClass('d-none');
-                $('#available_asset_ids').prop('disabled', false).attr('name', 'asset_ids[]').prop('required', true);
-                $('#select-inuse-wrapper').addClass('d-none');
-                $('#inuse_asset_ids').prop('disabled', true).removeAttr('name').prop('required', false);
+                $('#status_id option').each(function() {
+                    const slug = $(this).data('slug') || '';
+                    if (slug.includes('maintenance') || slug.includes('repair') || slug.includes('rusak')) {
+                        $('#status_id').val($(this).val());
+                        return false;
+                    }
+                });
+            } else if (type === 'REPAIR_FINISH') {
+                $('#box-return-warehouse').removeClass('d-none');
+                $('#lbl-warehouse-target').html('Gudang Penerima Hasil Perbaikan <span class="text-danger">*</span>');
+                $('#warehouse_id').prop('required', true);
+                activateAssetDropdown('repair_asset_ids');
+
+                $('#status_id option').each(function() {
+                    if ($(this).data('slug') === 'available') {
+                        $('#status_id').val($(this).val());
+                        return false;
+                    }
+                });
+            } else {
+                $('#lbl-all-active').html('Cari & Pilih Aset yang Akan Diubah Statusnya / Disposal (Perhatikan Badge Status) <span class="text-danger">*</span>');
+                activateAssetDropdown('all_active_asset_ids');
+
+                $('#status_id option').each(function() {
+                    if ($(this).data('slug') === 'disposed') {
+                        $('#status_id').val($(this).val());
+                        return false;
+                    }
+                });
             }
         }
 

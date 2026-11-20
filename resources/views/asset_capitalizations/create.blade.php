@@ -3,7 +3,6 @@
 @push('css')
 <link href="https://cdn.quilljs.com/1.3.6/quill.snow.css" rel="stylesheet">
 <style>
-    /* 🔥 UI/UX ENHANCEMENTS 🔥 */
     .asset-card { transition: all 0.3s ease; border-left: 5px solid #0dcaf0; }
     .asset-card:hover { transform: translateY(-4px); box-shadow: 0 10px 20px rgba(0,0,0,.08)!important; }
     .quill-editor { background: #fff; min-height: 100px; max-height: 200px; overflow-y: auto; border-radius: 0 0 8px 8px; }
@@ -14,13 +13,12 @@
     .photo-preview-item { transition: transform 0.2s ease-in-out; border: 1px solid #e2e8f0; }
     .photo-preview-item:hover { transform: scale(1.15); z-index: 10; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
 
-    /* Wizard Steps CSS (Smooth Transition) */
-    .step-container { display: none; animation: fadeIn 0.4s cubic-bezier(0.4, 0, 0.2, 1); }
+    .step-container { display: none; animation: fadeIn 0.35s cubic-bezier(0.4, 0, 0.2, 1); }
     .step-active { display: block; }
-    @keyframes fadeIn { from { opacity: 0; transform: translateY(15px); } to { opacity: 1; transform: translateY(0); } }
+    @keyframes fadeIn { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: translateY(0); } }
 
     .table-hover tbody tr { transition: background-color 0.2s; }
-    .table-hover tbody tr:hover { background-color: #f8fafc; cursor: pointer; }
+    .table-hover tbody tr:hover { background-color: #f8fafc; }
     .btn-dashed { border-style: dashed !important; border-width: 2px !important; }
 </style>
 @endpush
@@ -35,7 +33,7 @@
                 </div>
                 Pengakuan Aset (Capitalization)
             </h4>
-            <div class="mt-2 text-muted small">Alur kapitalisasi aset bertahap untuk akurasi data inventaris yang presisi.</div>
+            <div class="mt-2 text-muted small">Pilih item barang dari dokumen penerimaan (GR) untuk diregistrasikan menjadi aset tetap.</div>
         </div>
         <button type="button" class="bg-white shadow-sm btn btn-sm btn-outline-secondary rounded-pill fw-bold" data-bs-toggle="modal" data-bs-target="#modalAturan">
             <i class="bi bi-info-circle me-1"></i> Dasar Hukum & Akuntansi
@@ -56,9 +54,6 @@
         </div>
     @endif
 
-    {{-- ========================================================== --}}
-    {{-- PENANGKAP ERROR VALIDASI FORMULIR --}}
-    {{-- ========================================================== --}}
     @if($errors->any())
         <div class="border-0 border-4 shadow-sm alert alert-danger fw-bold rounded-4 border-start border-danger alert-dismissible fade show">
             <i class="bi bi-exclamation-triangle-fill me-2 text-danger"></i> <strong>Gagal Memproses Data:</strong>
@@ -72,15 +67,18 @@
     @endif
 
     {{-- ========================================================== --}}
-    {{-- LANGKAH 1: TABEL PILIH DOKUMEN GR --}}
+    {{-- LANGKAH 1: DAFTAR ITEM SIAP KAPITALISASI (1 BARIS = 1 ITEM) --}}
     {{-- ========================================================== --}}
     <div id="step-1" class="step-container step-active">
         <div class="mb-4 border-0 shadow-sm card rounded-4">
             <div class="flex-wrap gap-3 p-4 bg-white card-header border-bottom d-flex justify-content-between align-items-center rounded-top-4">
-                <h5 class="mb-0 fw-bold text-primary"><i class="bi bi-1-circle-fill me-2"></i>Langkah 1: Pilih Dokumen Penerimaan (GR)</h5>
-                <div class="shadow-sm input-group rounded-pill" style="max-width: 350px;">
+                <div>
+                    <h5 class="mb-0 fw-bold text-primary"><i class="bi bi-1-circle-fill me-2"></i>Langkah 1: Pilih Item Barang dari Penerimaan (GR)</h5>
+                    <div class="mt-1 small text-muted">Menampilkan {{ $pendingGrItems->count() }} item yang masih memiliki sisa untuk diakui sebagai aset.</div>
+                </div>
+                <div class="shadow-sm input-group rounded-pill" style="max-width: 380px;">
                     <span class="bg-white input-group-text border-end-0 text-muted rounded-start-pill ps-3"><i class="bi bi-search"></i></span>
-                    <input type="text" id="search-gr" class="form-control border-start-0 rounded-end-pill" placeholder="Cari No GR, PO, atau Vendor...">
+                    <input type="text" id="search-gr" class="form-control border-start-0 rounded-end-pill" placeholder="Cari Nama Item, Kode, No GR, PO, Vendor...">
                 </div>
             </div>
             <div class="p-0 card-body">
@@ -88,45 +86,58 @@
                     <table class="table mb-0 align-middle table-hover" id="table-gr">
                         <thead class="table-light">
                             <tr>
-                                <th class="px-4 py-3 text-muted small text-uppercase fw-bold">Dokumen GR</th>
-                                <th class="py-3 text-muted small text-uppercase fw-bold">Dokumen PO & Vendor</th>
-                                <th class="py-3 text-muted small text-uppercase fw-bold">Gudang Penyimpanan</th>
-                                <th class="px-4 py-3 text-muted small text-uppercase fw-bold text-end">Aksi</th>
+                                <th class="px-4 py-3 text-muted small text-uppercase fw-bold" width="32%">Nama & Kode Barang</th>
+                                <th class="py-3 text-muted small text-uppercase fw-bold" width="16%">Dokumen GR</th>
+                                <th class="py-3 text-muted small text-uppercase fw-bold" width="18%">Dokumen PO & Vendor</th>
+                                <th class="py-3 text-muted small text-uppercase fw-bold" width="12%">Gudang</th>
+                                <th class="py-3 text-center text-muted small text-uppercase fw-bold" width="10%">Sisa Aset</th>
+                                <th class="px-4 py-3 text-muted small text-uppercase fw-bold text-end" width="12%">Aksi</th>
                             </tr>
                         </thead>
                         <tbody>
-                            @forelse($grs as $gr)
-                                @php
-                                    $po = $gr->po ?? $gr->purchaseOrder;
-                                    $vendorName = optional($po->vendor)->name ?? 'Vendor Internal';
-                                    $poNumber =$po->po_number ?? '-';
-                                    $poDate =$po->po_date ? date('d M Y', strtotime($po->po_date)) : '-';
-                                @endphp
+                            @forelse($pendingGrItems as $row)
                                 <tr class="gr-row">
-                                    <td class="px-4 py-3">
-                                        <div class="fw-bold text-dark fs-6 searchable">{{ $gr->gr_number }}</div>
-                                        <div class="mt-1 small text-muted font-monospace"><i class="bi bi-calendar3 me-1"></i>{{ date('d M Y', strtotime($gr->received_date)) }}</div>
+                                    <td class="px-4 py-3 searchable">
+                                        <div class="fw-bold text-dark" style="font-size: 0.9rem; line-height: 1.3;">{{ $row->item_name }}</div>
+                                        <div class="mt-1 small text-muted font-monospace">
+                                            <span class="border badge bg-light text-primary border-primary-subtle">{{ $row->item_code }}</span>
+                                            @if(strtolower(trim($row->item_name)) !== strtolower(trim($row->master_name)))
+                                                <span class="ms-1">Master: {{ $row->master_name }}</span>
+                                            @endif
+                                        </div>
                                     </td>
                                     <td class="py-3 searchable">
-                                        <div class="fw-bold text-primary">{{ $poNumber }}</div>
-                                        <div class="mt-1 small text-muted"><i class="bi bi-building me-1"></i>{{ $vendorName }}</div>
+                                        <div class="fw-bold text-dark">{{ $row->gr_number }}</div>
+                                        <div class="mt-1 small text-muted font-monospace"><i class="bi bi-calendar3 me-1"></i>{{ date('d M Y', strtotime($row->received_date)) }}</div>
                                     </td>
                                     <td class="py-3 searchable">
-                                        <span class="px-2 py-1 border badge bg-secondary-subtle text-secondary">
-                                            <i class="bi bi-box-seam me-1"></i>{{ $gr->warehouse_name_display ?? 'Gudang Utama' }}
+                                        <div class="fw-bold text-primary">{{ $row->po_number }}</div>
+                                        <div class="mt-1 small text-muted"><i class="bi bi-building me-1"></i>{{ $row->vendor_name }}</div>
+                                    </td>
+                                    <td class="py-3 searchable">
+                                        <span class="px-2 py-1 border badge bg-secondary-subtle text-secondary text-wrap text-start">
+                                            <i class="bi bi-box-seam me-1"></i>{{ $row->warehouse_name }}
+                                        </span>
+                                    </td>
+                                    <td class="py-3 text-center">
+                                        <span class="px-3 py-1.5 shadow-sm badge bg-danger rounded-pill" title="Sisa dari total {{ $row->total_qty }} {{ $row->uom }}">
+                                            {{ $row->sisa_qty }} {{ $row->uom }}
                                         </span>
                                     </td>
                                     <td class="px-4 py-3 text-end">
-                                        <button type="button" class="px-4 shadow-sm btn btn-primary btn-sm rounded-pill fw-bold btn-select-gr" data-id="{{ $gr->id }}" data-gr="{{ $gr->gr_number }}">
-                                            Pilih Dokumen <i class="bi bi-arrow-right ms-1"></i>
+                                        <button type="button" class="px-3 shadow-sm btn btn-primary btn-sm rounded-pill fw-bold btn-select-direct-item text-nowrap"
+                                            data-gr-id="{{ $row->gr_id }}"
+                                            data-gr-num="{{ $row->gr_number }}"
+                                            data-item-id="{{ $row->item_id }}">
+                                            Kapitalisasi <i class="bi bi-arrow-right ms-1"></i>
                                         </button>
                                     </td>
                                 </tr>
                             @empty
                                 <tr>
-                                    <td colspan="4" class="py-5 text-center text-muted fw-bold">
+                                    <td colspan="6" class="py-5 text-center text-muted fw-bold">
                                         <i class="mb-3 opacity-25 bi bi-inbox display-4 d-block text-secondary"></i>
-                                        <h6 class="text-dark">Tidak ada dokumen GR tersedia.</h6>
+                                        <h6 class="text-dark">Tidak ada item GR yang menunggu kapitalisasi.</h6>
                                         <p class="small fw-normal">Semua dokumen sudah habis dikapitalisasi atau belum ada penerimaan baru.</p>
                                     </td>
                                 </tr>
@@ -139,52 +150,17 @@
     </div>
 
     {{-- ========================================================== --}}
-    {{-- LANGKAH 2: TABEL PILIH ITEM DI DALAM GR --}}
+    {{-- LANGKAH 2: FORM KAPITALISASI UNIT ASET --}}
     {{-- ========================================================== --}}
     <div id="step-2" class="step-container">
-        <div class="mb-3 d-flex align-items-center">
+        <div class="mb-3 d-flex align-items-center justify-content-between">
             <button type="button" class="px-4 bg-white border shadow-sm btn btn-white rounded-pill fw-bold text-secondary" onclick="goToStep(1)">
-                <i class="bi bi-arrow-left me-1"></i> Kembali
+                <i class="bi bi-arrow-left me-1"></i> Kembali ke Daftar Item
             </button>
-        </div>
-        <div class="mb-4 border-0 border-4 shadow-sm card rounded-4 border-top border-primary">
-            <div class="flex-wrap gap-2 p-4 bg-white card-header border-bottom rounded-top-4 d-flex justify-content-between align-items-center">
-                <div>
-                    <h5 class="mb-1 fw-bold text-primary"><i class="bi bi-2-circle-fill me-2"></i>Langkah 2: Pilih Item Barang</h5>
-                    <div class="small text-muted">Dari Dokumen: <strong class="px-2 py-1 rounded text-dark bg-light" id="lbl-selected-gr"></strong></div>
-                </div>
-                <div class="text-end">
-                    <span class="border badge bg-light text-dark"><i class="bi bi-geo-alt me-1"></i> <span id="lbl-selected-wh"></span></span>
-                </div>
+            <div class="small text-muted">
+                Dokumen GR: <strong class="px-2 py-1 bg-white border rounded text-dark" id="lbl-selected-gr"></strong>
+                &bull; Gudang: <strong class="px-2 py-1 bg-white border rounded text-dark" id="lbl-selected-wh"></strong>
             </div>
-            <div class="p-0 card-body">
-                <div class="table-responsive">
-                    <table class="table mb-0 align-middle table-hover">
-                        <thead class="table-light">
-                            <tr>
-                                <th class="px-4 py-3 text-muted small text-uppercase fw-bold">Spesifikasi Item</th>
-                                <th class="py-3 text-center text-muted small text-uppercase fw-bold">Total Diterima (GR)</th>
-                                <th class="py-3 text-center text-muted small text-uppercase fw-bold">Sisa Belum Aset</th>
-                                <th class="px-4 py-3 text-muted small text-uppercase fw-bold text-end">Aksi</th>
-                            </tr>
-                        </thead>
-                        <tbody id="tbody-items">
-                            <!-- Diisi oleh AJAX -->
-                        </tbody>
-                    </table>
-                </div>
-            </div>
-        </div>
-    </div>
-
-    {{-- ========================================================== --}}
-    {{-- LANGKAH 3: FORM KAPITALISASI UNTUK 1 ITEM --}}
-    {{-- ========================================================== --}}
-    <div id="step-3" class="step-container">
-        <div class="mb-3 d-flex align-items-center">
-            <button type="button" class="px-4 bg-white border shadow-sm btn btn-white rounded-pill fw-bold text-secondary" onclick="goToStep(2)">
-                <i class="bi bi-arrow-left me-1"></i> Batal
-            </button>
         </div>
 
         <form action="{{ route('asset-capitalizations.store') }}" method="POST" id="form-capitalize" enctype="multipart/form-data">
@@ -194,7 +170,7 @@
 
             <div class="border-0 border-4 shadow-sm card border-top border-info rounded-4">
                 <div class="p-4 bg-white card-header border-bottom rounded-top-4">
-                    <h5 class="mb-0 fw-bold text-info"><i class="bi bi-3-circle-fill me-2"></i>Langkah 3: Registrasi Rincian Unit Aset</h5>
+                    <h5 class="mb-0 fw-bold text-info"><i class="bi bi-2-circle-fill me-2"></i>Langkah 2: Registrasi Rincian Unit Aset</h5>
                 </div>
 
                 <div class="p-4 card-body" style="background-color: #f8fafc;">
@@ -247,37 +223,36 @@
         categoryOptions += `<option value="${cat.id}">${cat.name} (${cat.useful_life_years} Thn)</option>`;
     });
 
-    // 🔥 DATA PT DARI CONTROLLER 🔥
     let companiesList = @json($companies ?? []);
     let globalCompanyId = null;
 
-    let currentGrItems = [];
     let globalSnData = {};
     let globalSpecData = {};
 
     function goToStep(step) {
-        $('.step-container').removeClass('step-active');$('#step-' + step).addClass('step-active');
+        $('.step-container').removeClass('step-active');
+        $('#step-' + step).addClass('step-active');
         window.scrollTo({ top: 0, behavior: 'smooth' });
     }
 
     $('#search-gr').on('keyup', function() {
-        let value = $(this).val().toLowerCase();$("#table-gr tbody tr.gr-row").filter(function() {
-            let text = $(this).find('.searchable').text().toLowerCase();$(this).toggle(text.indexOf(value) > -1);
+        let value = $(this).val().toLowerCase();
+        $("#table-gr tbody tr.gr-row").filter(function() {
+            let text = $(this).find('.searchable').text().toLowerCase();
+            $(this).toggle(text.indexOf(value) > -1);
         });
     });
 
-    $(document).on('click', '.btn-select-gr', function() {
-        let grId = $(this).data('id');
-        let grNum = $(this).data('gr');
+    // Klik tombol Kapitalisasi langsung masuk ke form pengisian unit (Langkah 2)
+    $(document).on('click', '.btn-select-direct-item', function() {
         let btn = $(this);
+        let grId = btn.data('gr-id');
+        let grNum = btn.data('gr-num');
+        let targetItemId = btn.data('item-id');
         let originalText = btn.html();
 
-        btn.html('<span class="spinner-border spinner-border-sm me-1"></span> Menarik Data...');
+        btn.html('<span class="spinner-border spinner-border-sm me-1"></span> Memuat...');
         btn.prop('disabled', true);
-
-        $('#form_gr_id').val(grId);
-        $('#lbl-selected-gr').text(grNum);
-        $('#lbl-selected-wh').html('<span class="spinner-border spinner-border-sm text-secondary"></span> Mencari Gudang...');
 
         $.ajax({
             url: `/asset-capitalizations/get-items/${grId}?t=` + new Date().getTime(),
@@ -286,90 +261,61 @@
             success: function(res) {
                 btn.html(originalText).prop('disabled', false);
 
+                $('#form_gr_id').val(grId);
                 $('#form_warehouse_id').val(res.warehouse_id);
+                $('#lbl-selected-gr').text(grNum);
                 $('#lbl-selected-wh').text(res.warehouse_name);
-
-                // 🔥 SIMPAN ID PT DEFAULT DARI PO 🔥
                 globalCompanyId = res.default_company_id;
 
-                let tbody = $('#tbody-items');
-                tbody.empty();
-                currentGrItems = res.items;
                 globalSnData = {};
                 globalSpecData = {};
 
-                if (!res.items || res.items.length === 0) {
-                    tbody.append(`<tr><td colspan="4" class="py-5 text-center text-danger fw-bold"><i class="mb-3 opacity-50 bi bi-check-circle display-4 d-block text-success"></i>Semua item di dokumen GR ini sudah dikapitalisasi 100%.</td></tr>`);
-                } else {
-                    res.items.forEach((item, index) => {
-                        globalSnData[item.item_id] = item.available_sns || [];
-                        globalSpecData[item.item_id] = item.default_spec || '';
-
-                        let specificName = item.specific_name || item.item_name;
-                        let masterName = item.master_name || item.item_name;
-                        let masterHtml = specificName.toLowerCase().trim() !== masterName.toLowerCase().trim() ? `<div class="mt-1 small text-muted"><i class="bi bi-box me-1"></i>Master: ${masterName}</div>` : '';
-
-                        tbody.append(`
-                            <tr>
-                                <td class="px-4 py-3">
-                                    <div class="fw-bold text-dark fs-6">${specificName}</div>
-                                    ${masterHtml}
-                                    <div class="mt-1 small text-muted">Kode: <span class="border badge bg-secondary-subtle text-secondary border-secondary-subtle">${item.item_code}</span></div>
-                                </td>
-                                <td class="py-3 text-center fw-bold text-secondary">${item.gr_qty} ${item.base_uom}</td>
-                                <td class="py-3 text-center">
-                                    <span class="px-3 py-2 shadow-sm badge bg-danger fs-6 rounded-pill">${item.max_capitalizable} ${item.base_uom}</span>
-                                </td>
-                                <td class="px-4 py-3 text-end">
-                                    <button type="button" class="px-4 btn btn-outline-primary btn-sm rounded-pill fw-bold btn-select-item" data-idx="${index}">
-                                        Kapitalisasi <i class="bi bi-magic ms-1"></i>
-                                    </button>
-                                </td>
-                            </tr>
-                        `);
-                    });
+                let item = (res.items || []).find(it => it.item_id == targetItemId);
+                if (!item) {
+                    Swal.fire('Info', 'Item ini sudah selesai dikapitalisasi.', 'info');
+                    return;
                 }
+
+                globalSnData[item.item_id] = item.available_sns || [];
+                globalSpecData[item.item_id] = item.default_spec || '';
+
+                let specificName = item.specific_name || item.item_name;
+
+                $('#dynamic-spec-container').empty();
+                $('#btn-submit').prop('disabled', true);
+
+                let headerHtml = `
+                    <div class="mb-3 col-md-7 mb-md-0">
+                        <div class="fw-bolder fs-4 text-dark text-uppercase">${specificName}</div>
+                        <div class="gap-2 mt-2 text-muted d-flex align-items-center">
+                            <span class="border badge bg-secondary-subtle text-secondary fs-6"><i class="bi bi-upc-scan"></i> ${item.item_code}</span>
+                            <span class="border badge bg-light text-danger border-danger">Maks: ${item.max_capitalizable} Sisa</span>
+                        </div>
+                    </div>
+                    <div class="col-md-5">
+                        <div class="p-3 bg-white border border-2 shadow-sm d-flex align-items-center justify-content-between justify-content-md-end border-info rounded-4">
+                            <label class="mb-0 fw-bold text-info me-3 text-nowrap"><i class="bi bi-boxes me-1"></i> Jadikan Aset :</label>
+                            <div class="input-group input-group-lg" style="width: 200px; flex-wrap: nowrap;">
+                                <input type="number" name="items[${item.item_id}][qty]" class="text-center form-control fw-bolder border-info text-dark qty-input fs-4"
+                                    data-item="${item.item_id}" data-name="${specificName}" data-price="${item.default_price}" data-date="${item.default_date}"
+                                    min="0" max="${item.max_capitalizable}" value="1" style="min-width: 80px;">
+                                <span class="text-white input-group-text bg-info fw-bold border-info fs-6">${item.base_uom}</span>
+                            </div>
+                        </div>
+                    </div>
+                `;
+
+                $('#item-header-container').html(headerHtml);
                 goToStep(2);
+
+                // Otomatis tampilkan form untuk minimal 1 unit agar user tidak perlu mengetik angka 1 lagi
+                $('.qty-input').trigger('input');
             },
             error: function() {
                 btn.html(originalText).prop('disabled', false);
-                $('#lbl-selected-wh').text('Gagal memuat gudang');
-                Swal.fire('Koneksi Terputus', 'Gagal memuat data item dari server.', 'error');
+                Swal.fire('Koneksi Terputus', 'Gagal memuat detail item dari server.', 'error');
             }
         });
-    });
-
-    $(document).on('click', '.btn-select-item', function() {
-        let index = $(this).data('idx');
-        let item = currentGrItems[index];
-        let specificName = item.specific_name || item.item_name;
-
-        $('#dynamic-spec-container').empty();
-        $('#btn-submit').prop('disabled', true);
-
-        let headerHtml = `
-            <div class="mb-3 col-md-7 mb-md-0">
-                <div class="fw-bolder fs-4 text-dark text-uppercase">${specificName}</div>
-                <div class="gap-2 mt-2 text-muted d-flex align-items-center">
-                    <span class="border badge bg-secondary-subtle text-secondary fs-6"><i class="bi bi-upc-scan"></i> ${item.item_code}</span>
-                    <span class="border badge bg-light text-danger border-danger">Maks: ${item.max_capitalizable} Sisa</span>
-                </div>
-            </div>
-            <div class="col-md-5">
-                <div class="p-3 bg-white border border-2 shadow-sm d-flex align-items-center justify-content-between justify-content-md-end border-info rounded-4">
-                    <label class="mb-0 fw-bold text-info me-3 text-nowrap"><i class="bi bi-boxes me-1"></i> Jadikan Aset :</label>
-                    <div class="input-group input-group-lg" style="width: 200px; flex-wrap: nowrap;">
-                        <input type="number" name="items[${item.item_id}][qty]" class="text-center form-control fw-bolder border-info text-dark qty-input fs-4"
-                            data-item="${item.item_id}" data-name="${specificName}" data-price="${item.default_price}" data-date="${item.default_date}"
-                            min="0" max="${item.max_capitalizable}" value="0" style="min-width: 80px;">
-                        <span class="text-white input-group-text bg-info fw-bold border-info fs-6">${item.base_uom}</span>
-                    </div>
-                </div>
-            </div>
-        `;
-
-        $('#item-header-container').html(headerHtml);
-        goToStep(3);
     });
 
     $(document).on('input', '.qty-input', function() {
@@ -405,7 +351,6 @@
                 snInputHtml = `<input type="text" name="items[${itemId}][details][${i}][serial_number]" class="form-control form-control-sm bg-warning-subtle text-dark fw-bold border-warning sn-input-select" value="" placeholder="Isi manual (Opsional)...">`;
             }
 
-            // 🔥 BUAT OPSI DROPDOWN PT 🔥
             let companyOptionsHtml = '<option value="">-- Pilih Kepemilikan PT --</option>';
             if (typeof companiesList !== 'undefined') {
                 companiesList.forEach(function(c) {
@@ -455,12 +400,10 @@
                                     <input type="date" name="items[${itemId}][details][${i}][acquisition_date]" class="form-control form-control-sm border-primary-subtle" value="${defaultDate}" required>
                                 </div>
                                 <div class="col-md-6">
-                                    <label class="mb-1 small text-primary-emphasis fw-bold" style="font-size:0.75rem;">Harga Satuan (Rp) <span class="text-danger">*</span></label>
-                                    {{-- 🔥 INPUT VISUAL DENGAN PEMISAH RIBUAN 🔥 --}}
+                                    <label class="mb-1 small text-primary-emphasis fw-bold" style="font-size:0.75rem;">Harga Satuan <span class="text-danger">*</span></label>
                                     <input type="text" class="form-control form-control-sm border-primary-subtle price-format-input fw-bold" 
                                            value="${parseFloat(defaultPrice || 0).toLocaleString('id-ID')}" 
                                            data-target="hidden-price-${itemId}-${i}">
-                                    {{-- 🔥 INPUT HIDDEN UNTUK MENYIMPAN NILAI MURNI KE DATABASE 🔥 --}}
                                     <input type="hidden" name="items[${itemId}][details][${i}][accounting_value]" id="hidden-price-${itemId}-${i}" value="${defaultPrice || 0}">
                                 </div>
                             </div>
@@ -521,14 +464,17 @@
         });
 
         $('.sn-input-select').each(function() {
-            let currentSelectValue = $(this).val();$(this).find('option').each(function() {
+            let currentSelectValue = $(this).val();
+            $(this).find('option').each(function() {
                 let optionValue = $(this).val();
                 if (!optionValue) return;
 
                 if (selectedSns.includes(optionValue) && optionValue !== currentSelectValue) {
-                    $(this).prop('disabled', true);$(this).text(optionValue + " (Terpakai)");
+                    $(this).prop('disabled', true);
+                    $(this).text(optionValue + " (Terpakai)");
                 } else {
-                    $(this).prop('disabled', false);$(this).text(optionValue);
+                    $(this).prop('disabled', false);
+                    $(this).text(optionValue);
                 }
             });
         });
@@ -596,10 +542,10 @@
         if (!hasFiles) { previewDiv.html('<span class="text-muted small fst-italic"><i class="bi bi-file-earmark-text me-1"></i> Preview gambar/dokumen muncul di sini...</span>'); }
     }
 
-    // 🔥 EVENT LISTENER: Format Titik Ribuan Otomatis Saat Mengetik 🔥
     $(document).on('input', '.price-format-input', function() {
         let rawValue = $(this).val().replace(/[^0-9]/g, '');
-        let targetId = $(this).data('target');$('#' + targetId).val(rawValue);
+        let targetId = $(this).data('target');
+        $('#' + targetId).val(rawValue);
 
         if(rawValue) {
             $(this).val(parseInt(rawValue, 10).toLocaleString('id-ID'));
