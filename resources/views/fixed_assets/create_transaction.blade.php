@@ -20,6 +20,12 @@
         padding: 4px 8px;
         border-radius: 8px;
     }
+    select.status-locked {
+        background-color: #f1f5f9 !important;
+        pointer-events: none;
+        font-weight: 700;
+        color: #0f172a;
+    }
 </style>
 @endpush
 
@@ -76,7 +82,12 @@
                             <input type="date" name="transaction_date" class="form-control" value="{{ old('transaction_date', date('Y-m-d')) }}" required>
                         </div>
                         <div class="mb-3 col-md-6">
-                            <label class="form-label fw-bold small">Status Aset Baru <span class="text-danger">*</span></label>
+                            <label class="form-label fw-bold small d-flex justify-content-between align-items-center">
+                                <span>Status Aset Baru <span class="text-danger">*</span></span>
+                                <span id="badge-status-lock" class="badge bg-secondary-subtle text-secondary d-none" style="font-size: 0.65rem;">
+                                    <i class="bi bi-lock-fill"></i> Terkunci
+                                </span>
+                            </label>
                             <select name="status_id" id="status_id" class="form-select" required>
                                 @foreach($statuses as $st)
                                     <option value="{{ $st->id }}" data-slug="{{ $st->slug }}">{{ $st->name }}</option>
@@ -268,9 +279,9 @@
                             <i class="bi bi-info-circle-fill me-1 text-info"></i>
                             <strong>Panduan Kondisi & Perbaikan Aset:</strong>
                             <ol class="mt-1 mb-0 ps-3">
-                                <li>Tarik unit rusak dari staf ke IT/Gudang via <strong>Pengembalian Aset (BAPA)</strong> dengan status <em>Maintenance / Rusak</em>.</li>
+                                <li>Tarik unit rusak dari staf ke IT/Gudang via <strong>Pengembalian Aset (BAPA)</strong> dengan status <em>Maintenance / Returned</em>.</li>
                                 <li>Kirim unit ke vendor servis via <strong>Kirim Perbaikan ke Service Center (BASP)</strong> untuk mencetak bukti serah terima perbaikan.</li>
-                                <li>Saat unit kembali dari servis, proses <strong>Selesai Perbaikan (BAPA-SRV)</strong> (ubah status ke <em>Available</em> jika baik, atau <em>Rusak</em> jika tidak dapat diperbaiki lalu lanjutkan ke <strong>Disposal</strong>).</li>
+                                <li>Saat unit kembali dari servis, proses <strong>Selesai Perbaikan (BAPA-SRV)</strong> (pilih <em>Available</em> jika normal, atau <em>Returned / Maintenance</em> jika tidak bisa diperbaiki lalu lanjutkan ke <strong>Disposal</strong>).</li>
                             </ol>
                         </div>
                     </div>
@@ -331,7 +342,6 @@
             const location   = el.data('location') || '-';
             const locType    = el.data('location-type');
 
-            // Warna badge status aset agar langsung terlihat kondisi unitnya
             let statusBadgeClass = 'bg-secondary-subtle text-secondary border-secondary-subtle';
             if (statusSlug.includes('available') || statusSlug.includes('ready')) {
                 statusBadgeClass = 'bg-success-subtle text-success border-success-subtle';
@@ -370,7 +380,7 @@
 
         $('.select2-asset-detail').select2({
             theme: 'bootstrap-5',
-            placeholder: 'Ketik Kode Aset / FA / Kode Item / Nama Item / Status (Rusak/Available) / S/N...',
+            placeholder: 'Ketik Kode Aset / FA / Kode Item / Nama Item / Status / S/N...',
             allowClear: true,
             closeOnSelect: false,
             matcher: customAssetMatcher,
@@ -397,6 +407,67 @@
             });
         }
 
+        // Aturan daftar status yang diizinkan dan status default untuk setiap jenis transaksi
+        const statusRules = {
+            'HANDOVER': {
+                allowed: ['in_use'],
+                defaultSlug: 'in_use',
+                lock: true
+            },
+            'RETURN': {
+                allowed: ['available', 'returned', 'maintenance', 'repair', 'rusak'],
+                defaultSlug: 'available',
+                lock: false
+            },
+            'REPAIR_SEND': {
+                allowed: ['maintenance', 'repair', 'in_repair', 'service', 'rusak'],
+                defaultSlug: 'maintenance',
+                lock: true
+            },
+            'REPAIR_FINISH': {
+                allowed: ['available', 'returned', 'maintenance', 'repair', 'rusak'],
+                defaultSlug: 'available',
+                lock: false
+            },
+            'STATUS_CHANGE': {
+                allowed: ['disposed', 'maintenance', 'repair', 'rusak', 'available', 'returned'],
+                defaultSlug: 'disposed',
+                lock: false
+            }
+        };
+
+        function filterAndLockStatuses(type) {
+            const rule = statusRules[type] || statusRules['STATUS_CHANGE'];
+            const $statusSelect = $('#status_id');
+            let firstAllowedVal = null;
+            let defaultVal = null;
+
+            $statusSelect.find('option').each(function() {
+                const slug = ($(this).data('slug') || '').toLowerCase();
+                const isAllowed = rule.allowed.some(a => slug === a || slug.includes(a));
+
+                if (isAllowed) {
+                    $(this).prop('disabled', false).removeClass('d-none');
+                    if (!firstAllowedVal) firstAllowedVal = $(this).val();
+                    if (slug === rule.defaultSlug || slug.includes(rule.defaultSlug)) {
+                        defaultVal = $(this).val();
+                    }
+                } else {
+                    $(this).prop('disabled', true).addClass('d-none');
+                }
+            });
+
+            $statusSelect.val(defaultVal || firstAllowedVal);
+
+            if (rule.lock) {
+                $statusSelect.addClass('status-locked');
+                $('#badge-status-lock').removeClass('d-none');
+            } else {
+                $statusSelect.removeClass('status-locked');
+                $('#badge-status-lock').addClass('d-none');
+            }
+        }
+
         function toggleTransactionForm() {
             const type = $('#transaction_type').val();
 
@@ -411,62 +482,32 @@
 
             $('#lbl-notes').text('Catatan / Keterangan Resmi');
 
+            // Terapkan filter & penguncian status sesuai jenis transaksi
+            filterAndLockStatuses(type);
+
             if (type === 'HANDOVER') {
                 $('#box-handover-user').removeClass('d-none');
                 $('#to_user_id').prop('required', true);
                 activateAssetDropdown('available_asset_ids');
-
-                $('#status_id option').each(function() {
-                    if ($(this).data('slug') === 'in_use') $('#status_id').val($(this).val());
-                });
             } else if (type === 'RETURN') {
                 $('#box-return-warehouse').removeClass('d-none');
                 $('#lbl-warehouse-target').html('Gudang Tujuan Pengembalian <span class="text-danger">*</span>');
                 $('#warehouse_id').prop('required', true);
                 activateAssetDropdown('inuse_asset_ids');
-
-                $('#status_id option').each(function() {
-                    if ($(this).data('slug') === 'available' || $(this).data('slug') === 'returned') {
-                        $('#status_id').val($(this).val());
-                        return false;
-                    }
-                });
             } else if (type === 'REPAIR_SEND') {
                 $('#box-repair-send').removeClass('d-none');
                 $('#service_center_name').prop('required', true);
                 $('#lbl-notes').text('Keluhan Kerusakan / Deskripsi Perbaikan');
                 $('#lbl-all-active').html('Cari & Pilih Aset yang Akan Dikirim ke Service Center <span class="text-danger">*</span>');
                 activateAssetDropdown('all_active_asset_ids');
-
-                $('#status_id option').each(function() {
-                    const slug = $(this).data('slug') || '';
-                    if (slug.includes('maintenance') || slug.includes('repair') || slug.includes('rusak')) {
-                        $('#status_id').val($(this).val());
-                        return false;
-                    }
-                });
             } else if (type === 'REPAIR_FINISH') {
                 $('#box-return-warehouse').removeClass('d-none');
                 $('#lbl-warehouse-target').html('Gudang Penerima Hasil Perbaikan <span class="text-danger">*</span>');
                 $('#warehouse_id').prop('required', true);
                 activateAssetDropdown('repair_asset_ids');
-
-                $('#status_id option').each(function() {
-                    if ($(this).data('slug') === 'available') {
-                        $('#status_id').val($(this).val());
-                        return false;
-                    }
-                });
             } else {
                 $('#lbl-all-active').html('Cari & Pilih Aset yang Akan Diubah Statusnya / Disposal (Perhatikan Badge Status) <span class="text-danger">*</span>');
                 activateAssetDropdown('all_active_asset_ids');
-
-                $('#status_id option').each(function() {
-                    if ($(this).data('slug') === 'disposed') {
-                        $('#status_id').val($(this).val());
-                        return false;
-                    }
-                });
             }
         }
 

@@ -2,107 +2,56 @@
 <html lang="id">
 <head>
     <meta charset="UTF-8">
-    <title>Berita Acara Penghapusan Aset (BAPP)</title>
+    <title>Berita Acara Penghapusan Aset</title>
     <style>
-        body { font-family: 'Helvetica', 'Arial', sans-serif; font-size: 11pt; line-height: 1.5; color: #000; }
-        @page { margin: 40px 50px 70px 50px; }
-
-        /* Kop Dokumen */
-        .header { text-align: center; border-bottom: 3px double #000; padding-bottom: 10px; margin-bottom: 20px; }
-        .header h2 { margin: 0; font-size: 16pt; text-transform: uppercase; text-decoration: underline; color: #b30000; }
-        .header p { margin: 5px 0 0 0; font-size: 10pt; font-weight: bold; }
-
-        .content { margin-top: 20px; text-align: justify; }
-
-        /* Tabel Informasi Pemilik */
-        .table-info { width: 100%; border-collapse: collapse; margin-top: 10px; margin-bottom: 20px; }
-        .table-info td { vertical-align: top; padding: 5px 0; }
-        .table-info td:first-child { width: 30%; font-weight: bold; }
-        .table-info td:nth-child(2) { width: 3%; }
-
-        /* Tabel Detail Aset */
-        .table-asset { width: 100%; border-collapse: collapse; margin-top: 15px; margin-bottom: 20px; }
-        .table-asset th, .table-asset td { border: 1px solid #000; padding: 8px; text-align: left; }
-        .table-asset th { background-color: #e6e6e6; }
-
-        /* Tanda Tangan */
-        .signature-box { width: 100%; margin-top: 50px; table-layout: fixed; }
-        .signature-box td { text-align: center; vertical-align: bottom; width: 33.33%; }
-        .signature-name { font-weight: bold; text-decoration: underline; margin-top: 80px; }
-
-        /* Cap Disposed */
-        .stamp-disposed {
-            position: absolute; top: 150px; right: 20px; color: rgba(220, 53, 69, 0.2);
-            font-size: 60pt; font-weight: bold; text-transform: uppercase;
-            transform: rotate(-15deg); z-index: -1; border: 5px solid rgba(220, 53, 69, 0.2);
-            padding: 10px 20px; border-radius: 10px;
-        }
-
-        /* Kotak Alasan Disposal */
-        .reason-box {
-            border: 2px dashed #b30000;
-            background-color: #fff0f0;
-            padding: 15px;
-            font-weight: bold;
-            color: #b30000;
-            text-align: center;
-            margin: 15px 0;
-            border-radius: 5px;
-        }
-
-        /* Footer */
-        footer {
-            position: fixed; bottom: -40px; left: 0px; right: 0px; height: 30px;
-            border-top: 1px solid #888; text-align: right; font-size: 8.5pt; color: #555;
-            padding-top: 5px; font-style: italic;
-        }
-        .pagenum:before { content: "Halaman " counter(page); }
+        @page { margin: 28px 40px 45px 40px; }
+        body { font-family: 'Helvetica', 'Arial', sans-serif; font-size: 9.5pt; line-height: 1.4; color: #111; font-weight: normal; }
+        .header { text-align: center; border-bottom: 1.5px solid #000; padding-bottom: 6px; margin-bottom: 12px; }
+        .header h2 { margin: 0; font-size: 13.5pt; text-transform: uppercase; text-decoration: underline; letter-spacing: 0.5px; font-weight: bold; }
+        .header p { margin: 3px 0 0 0; font-size: 9.5pt; font-weight: normal; }
+        .content { margin-top: 8px; }
+        .content p { margin: 0 0 8px 0; }
+        .table-info { width: 100%; border-collapse: collapse; margin-top: 4px; margin-bottom: 10px; }
+        .table-info td { vertical-align: top; padding: 2px 0; font-size: 9.5pt; font-weight: normal; }
+        .table-info td:first-child { width: 26%; }
+        .table-info td:nth-child(2) { width: 2%; }
+        .table-asset { width: 100%; border-collapse: collapse; margin-top: 8px; margin-bottom: 12px; page-break-inside: auto; }
+        .table-asset th, .table-asset td { border: 1px solid #333; padding: 5px 7px; text-align: left; vertical-align: top; font-size: 8.6pt; font-weight: normal; }
+        .table-asset th { background-color: #f3f4f6; }
+        .table-asset tr { page-break-inside: avoid; page-break-after: auto; }
+        .item-spec { font-size: 7.5pt; color: #444; margin-top: 2px; line-height: 1.25; }
+        .notes-box { border: 1px dashed #333; padding: 7px 10px; background-color: #fafafa; font-size: 9pt; margin-bottom: 10px; }
+        .signature-box { width: 100%; margin-top: 16px; table-layout: fixed; page-break-inside: avoid; }
+        .signature-box td { text-align: center; vertical-align: top; padding: 4px; font-size: 9pt; font-weight: normal; }
+        .signature-space { height: 52px; position: relative; text-align: center; }
+        .signature-img { max-height: 48px; max-width: 130px; object-fit: contain; margin-top: 2px; }
+        .signature-name { text-decoration: underline; }
+        footer { position: fixed; bottom: -25px; left: 0px; right: 0px; height: 20px; border-top: 1px solid #aaa; font-size: 7.5pt; color: #666; padding-top: 4px; font-style: italic; }
     </style>
 </head>
 <body>
 
-    {{-- 🔥 LOGIKA AMAN & PENCARIAN VAR PEMEGANG ASET TERAKHIR 🔥 --}}
     @php
-        // 1. Log Riwayat Disposal Terakhir
-        $disposeLog = optional($asset->histories)->first(function($log) {
-            $noteLower = strtolower($log->notes);
-            return str_contains($noteLower, 'disposed') || str_contains($noteLower, 'penghapusan') || str_contains($noteLower, 'dihapus');
-        });
+        $tanggalDisposal = isset($transaction) ? $transaction->transaction_date : ($asset->updated_at ?? now());
+        $nomorDokumen    = $documentNumber ?? ('BAPP/' . \Carbon\Carbon::parse($tanggalDisposal)->format('Y/m/d') . '/' . substr($asset->asset_number, -4));
 
-        $tanggalPenghapusan = $disposeLog ? $disposeLog->created_at : $asset->updated_at;
-        $adminPembuat = $disposeLog ? optional($disposeLog->creator)->name : auth()->user()->name;
-        $jabatanAdmin = $disposeLog ? optional($disposeLog->creator)->job_title : (auth()->user()->job_title ?? 'Admin Aset');
+        $p1 = isset($signers) && $signers->count() > 0 ? $signers[0] : auth()->user();
+        $p1Name  = $p1->name ?? '-';
+        $p1Title = $p1->job_title ?? 'IT / GA';
+        $p1Dept  = isset($p1->department) ? optional($p1->department)->name : '';
 
-        // 2. Definisi Variabel $lastAssignee agar tidak Undefined Error
-        $lastAssignee = $asset->assignee;
-        if (!$lastAssignee) {
-            $historyUser = optional($asset->histories)->first(function($h) {
-                return !empty($h->assigned_to);
-            });
-            if ($historyUser) {
-                $lastAssignee = \App\Models\User::find($historyUser->assigned_to);
-            }
-        }
+        $assetItems = (isset($transaction) && $transaction->details->count() > 0)
+            ? $transaction->details->map(fn($d) => $d->asset)->filter()
+            : collect([$asset]);
 
-        // 3. Pembersihan Teks Alasan
-        $alasanDisposal = '';
-        if ($disposeLog) {
-            $rawNotes = $disposeLog->notes;
-            if (str_contains($rawNotes, '| Alasan Resmi: ')) {
-                $parts = explode('| Alasan Resmi: ', $rawNotes);
-                $alasanDisposal = trim(end($parts));
-            } elseif (str_contains($rawNotes, '| Catatan: ')) {
-                $parts = explode('| Catatan: ', $rawNotes);
-                $alasanDisposal = trim(end($parts));
-            } else {
-                $alasanDisposal = trim($rawNotes);
-            }
-        }
+        $alasanDisposal = isset($transaction) && !empty($transaction->notes)
+            ? $transaction->notes
+            : ($asset->notes ?? 'Aset rusak berat / sudah tidak layak digunakan.');
 
-        $alasanDisposal = $alasanDisposal ?: ($asset->notes ?? 'Aset rusak berat / tidak dapat diperbaiki / sudah tidak memiliki nilai ekonomis.');
+        $activeSigners = (isset($signers) && $signers->count() > 0)
+            ? $signers
+            : collect([$p1]);
     @endphp
-
-    <div class="stamp-disposed">DISPOSED</div>
 
     <footer>
         <table style="width: 100%; border-collapse: collapse;">
@@ -110,93 +59,170 @@
                 <td style="text-align: left; font-size: 7.5pt; color: #666; font-style: italic; padding: 0;">
                     Dicetak otomatis oleh sistem pada {{ \Carbon\Carbon::now()->translatedFormat('d F Y H:i:s') }} WIB
                 </td>
-                <td style="text-align: right; font-size: 7.5pt; color: #666; font-style: italic; padding: 0; padding-right: 85px;">
-                    Dokumen BAPA Aset: {{ $nomorDokumen }} &nbsp;|
+                <td style="text-align: right; font-size: 7.5pt; color: #666; font-style: italic; padding: 0; padding-right: 78px;">
+                    Dokumen BAPP Aset: {{ $nomorDokumen }} &nbsp;|
                 </td>
             </tr>
         </table>
     </footer>
 
     <div class="header">
-        <h2>BERITA ACARA PENGHAPUSAN / PEMUSNAHAN ASET</h2>
-        <p>Nomor: BAPP/{{ \Carbon\Carbon::parse($tanggalPenghapusan)->format('Y/m/d') }}/{{ substr($asset->asset_number, -4) }}</p>
+        <h2>BERITA ACARA PENGHAPUSAN ASET (DISPOSAL)</h2>
+        <p>Nomor: {{ $nomorDokumen }}</p>
     </div>
 
     <div class="content">
-        <p>Pada hari ini, tanggal <strong>{{ \Carbon\Carbon::parse($tanggalPenghapusan)->translatedFormat('d F Y') }}</strong>, menerangkan bahwa Perusahaan telah melakukan PENGHAPUSAN / PEMUSNAHAN / PENJUALAN RONGSOKAN terhadap Barang Inventaris / Aset Tetap Perusahaan dengan rincian sebagai berikut:</p>
+        <p>Pada hari ini, tanggal {{ \Carbon\Carbon::parse($tanggalDisposal)->translatedFormat('d F Y') }}, telah dilakukan pemeriksaan dan penghapusan (disposal) terhadap aset tetap milik Perusahaan dengan rincian sebagai berikut:</p>
 
         <table class="table-info">
             <tr>
-                <td>Entitas Pemilik Aset (PT)</td>
+                <td>Diajukan Oleh</td>
                 <td>:</td>
-                <td style="font-size: 12pt;"><strong>{{ optional($asset->company)->name ?? 'Kantor Pusat / Umum' }}</strong></td>
+                <td>{{ $p1Name }} ({{ $p1Title }}{{ $p1Dept ? ' - ' . $p1Dept : '' }})</td>
+            </tr>
+            <tr>
+                <td>Perusahaan Pemilik</td>
+                <td>:</td>
+                <td>{{ optional($asset->company)->name ?? 'Kantor Pusat' }}</td>
+            </tr>
+            <tr>
+                <td>Status Akhir Aset</td>
+                <td>:</td>
+                <td>Disposed (Dihapuskan dari Inventaris Aktif)</td>
             </tr>
         </table>
 
         <table class="table-asset">
             <thead>
                 <tr>
-                    <th width="25%">No. Aset / Label</th>
-                    <th width="45%">Nama & Spesifikasi Barang</th>
-                    <th width="30%">Serial Number</th>
+                    <th width="5%" style="text-align: center;">No</th>
+                    <th width="20%">No. Aset / Label</th>
+                    <th width="35%">Nama Barang & Spesifikasi</th>
+                    <th width="14%">Tgl Perolehan</th>
+                    <th width="13%" style="text-align: right;">Harga Perolehan</th>
+                    <th width="13%" style="text-align: right;">Nilai Buku Akhir</th>
                 </tr>
             </thead>
             <tbody>
-                <tr>
-                    <td>
-                        {{ $asset->asset_number }}<br>
-                        <small style="color: #555;">{{ $asset->accounting_asset_number ? 'Tag: '.$asset->accounting_asset_number : '' }}</small>
-                    </td>
-                    <td>
-                        <strong>{{ $asset->name ?? optional($asset->item)->name }}</strong><br>
-                        <small>{!! strip_tags($asset->spesifikasi_detail ?? optional($asset->item)->specification) !!}</small>
-                    </td>
-                    <td>{{ $asset->serial_number ?? 'N/A' }}</td>
-                </tr>
+                @foreach($assetItems as $idx => $itemAsset)
+                    @php
+                        $rawSpek = $itemAsset->spesifikasi_detail ?: optional($itemAsset->item)->specification;
+                        $cleanSpek = trim(preg_replace('/\s+/', ' ', strip_tags(html_entity_decode((string) $rawSpek))));
+                        $masterItemCode = optional($itemAsset->item)->code;
+                        $masterItemName = optional($itemAsset->item)->name;
+
+                        $currCode = strtoupper(optional($itemAsset->currency)->code ?? 'IDR');
+                        $currSym  = optional($itemAsset->currency)->symbol ?? ($currCode === 'IDR' ? 'Rp' : $currCode);
+                        $currDec  = ($currCode === 'IDR') ? 0 : 2;
+                    @endphp
+                    <tr>
+                        <td style="text-align: center;">{{ $idx + 1 }}</td>
+                        <td>
+                            {{ $itemAsset->asset_number }}
+                            @if($itemAsset->accounting_asset_number)
+                                <br><small style="color: #111;">Tag: {{ $itemAsset->accounting_asset_number }}</small>
+                            @endif
+                            @if($itemAsset->serial_number)
+                                <br><small style="color: #444;">S/N: {{ $itemAsset->serial_number }}</small>
+                            @endif
+                        </td>
+                        <td>
+                            {{ $itemAsset->name ?? $masterItemName }}
+                            @if($masterItemCode)
+                                <div style="font-size: 7.6pt; color: #111; margin-top: 1px;">
+                                    Item: [{{ $masterItemCode }}] {{ $masterItemName }}
+                                </div>
+                            @endif
+                            @if(!empty($cleanSpek) && strtolower($cleanSpek) !== 'item dibuat otomatis dari import aset')
+                                <div class="item-spec">Spek: {{ \Illuminate\Support\Str::limit($cleanSpek, 100) }}</div>
+                            @endif
+                        </td>
+                        <td>{{ $itemAsset->acquisition_date ? \Carbon\Carbon::parse($itemAsset->acquisition_date)->format('d/m/Y') : '-' }}</td>
+                        <td style="text-align: right;">{{ $currSym }} {{ number_format($itemAsset->purchase_price ?? 0, $currDec, ',', '.') }}</td>
+                        <td style="text-align: right;">{{ $currSym }} {{ number_format($itemAsset->net_book_value ?? $itemAsset->purchase_price ?? 0, $currDec, ',', '.') }}</td>
+                    </tr>
+                @endforeach
             </tbody>
         </table>
 
-        <p>Penghapusan / Pemusnahan aset tersebut di atas dilakukan berdasarkan hasil evaluasi dan pemeriksaan dengan alasan / keterangan sebagai berikut:</p>
-
-        <div class="reason-box">
-            "{{ $alasanDisposal }}"
+        <p style="margin-bottom: 3px;">Alasan & Keterangan Penghapusan Aset:</p>
+        <div class="notes-box">
+            {{ $alasanDisposal }}
         </div>
 
-        <p>Dengan ditandatanganinya Berita Acara ini, maka aset tersebut secara resmi <strong>DIHAPUSBUKUKAN</strong> dari daftar inventaris kekayaan Perusahaan, dan segala nilai buku yang terkait dengan aset ini akan disesuaikan oleh Departemen Keuangan / Akuntansi.</p>
-
-        <p>Demikian Berita Acara ini dibuat dengan sebenar-benarnya untuk dapat dipergunakan sebagai dokumen audit dan penyesuaian laporan keuangan Perusahaan.</p>
+        <p>Demikian Berita Acara Penghapusan Aset ini dibuat dengan sebenarnya sebagai dasar penghapusan fisik barang maupun pencatatan pembukuan aset Perusahaan.</p>
 
         <table class="signature-box">
             <tr>
-                <td>
-                    <strong>Dibuat & Dieksekusi Oleh,</strong><br>
-                    Dept. IT / General Affair
-                    <br><br><br><br>
-                    <div class="signature-name">{{ $adminPembuat }}</div>
-                    <div style="font-size: 9pt;">{{ $jabatanAdmin }}</div>
+                @foreach($activeSigners as $index => $signer)
+                @php
+                    $rawSigPath = $signer->signature_path
+                        ?? $signer->signature
+                        ?? $signer->digital_signature
+                        ?? $signer->ttd
+                        ?? null;
+
+                    $sigBase64 = null;
+
+                    if (($signatureMode ?? 'digital') === 'digital' && !empty($rawSigPath)) {
+                        if (str_starts_with($rawSigPath, 'data:image')) {
+                            $sigBase64 = $rawSigPath;
+                        } else {
+                            $cleanPath = ltrim(str_replace(['storage/', 'public/'], '', $rawSigPath), '/');
+                            foreach ([
+                                storage_path('app/public/' . $cleanPath),
+                                public_path('storage/' . $cleanPath),
+                                public_path(ltrim($rawSigPath, '/')),
+                            ] as $path) {
+                                if (file_exists($path) && is_file($path)) {
+                                    $ext = strtolower(pathinfo($path, PATHINFO_EXTENSION)) ?: 'png';
+                                    if ($ext === 'jpg') $ext = 'jpeg';
+                                    $sigBase64 = 'data:image/' . $ext . ';base64,' . base64_encode(file_get_contents($path));
+                                    break;
+                                }
+                            }
+                        }
+                    }
+
+                    $roleTitle = match ($index) {
+                        0 => 'YANG MENGAJUKAN,',
+                        1 => 'DIPERIKSA (FINANCE / GA),',
+                        default => 'MENYETUJUI,',
+                    };
+                @endphp
+                <td style="width: {{ 100 / max(1, count($activeSigners)) }}%;">
+                    {{ $roleTitle }}<br>
+                    <div class="signature-space">
+                        @if($sigBase64)
+                            <img src="{{ $sigBase64 }}" alt="TTD {{ $signer->name }}" class="signature-img">
+                        @endif
+                    </div>
+                    <div class="signature-name">{{ $signer->name }}</div>
+                    <div style="font-size: 8pt;">
+                        {{ $signer->job_title ?? 'Karyawan' }}
+                        @if(isset($signer->department) && optional($signer->department)->name)
+                            - {{ $signer->department->name }}
+                        @endif
+                    </div>
                 </td>
-                <td>
-                    <strong>Mengetahui / Saksi,</strong><br>
-                    Dept. Finance / Accounting
-                    <br><br><br><br>
-                    <div class="signature-name">______________________</div>
-                    <div style="font-size: 9pt;">Manager Keuangan</div>
-                </td>
-                <td>
-                    <strong>Disetujui Oleh,</strong><br>
-                    Manajemen / Direksi
-                    <br><br><br><br>
-                    <div class="signature-name">______________________</div>
-                    <div style="font-size: 9pt;">Direktur / General Manager</div>
-                </td>
+                @endforeach
             </tr>
         </table>
-
-        {{-- TIMESTAMP WAKTU CETAK DOKUMEN --}}
-        <div style="margin-top: 40px; font-size: 8pt; color: #555; text-align: left; font-style: italic;">
-            * Dokumen ini dicetak otomatis oleh sistem pada {{ \Carbon\Carbon::now()->translatedFormat('d F Y H:i:s') }} WIB
-        </div>
     </div>
 
+    <script type="text/php">
+        if (isset($pdf)) {
+            $text = "Halaman {PAGE_NUM} dari {PAGE_COUNT}";
+            $font = $fontMetrics->get_font("Helvetica", "italic");
+            $size = 7.5;
+            $color = array(0.4, 0.4, 0.4);
+            $width = $fontMetrics->get_text_width($text, $font, $size);
+
+            $x = $pdf->get_width() - $width - 40;
+            $y = $pdf->get_height() - 24;
+
+            $pdf->page_text($x, $y, $text, $font, $size, $color);
+        }
+    </script>
 </body>
 </html>
