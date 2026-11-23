@@ -42,4 +42,11 @@ class FixedAssetTransaction extends Model
     {
         return $this->belongsTo(User::class, 'created_by');
     }
+
+    public function signers()
+    {
+        return $this->hasMany(FixedAssetTransactionSigner::class, 'fixed_asset_transaction_id')
+                    ->orderBy('sequence', 'asc');
+    }
+
 }

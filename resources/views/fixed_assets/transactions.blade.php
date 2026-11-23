@@ -277,8 +277,16 @@
                         <td class="text-end pe-4 text-nowrap">
                             <div class="gap-1 d-inline-flex">
                                 @if($isPrintable)
-                                    <a href="{{ route('fixed-assets.transactions.print', $trx->id) }}" target="_blank" class="border btn btn-sm btn-light text-dark rounded-pill fw-semibold" title="Cetak Langsung PDF">
+                                    @php
+                                        $signerNames = $trx->signers->count() > 0
+                                            ? $trx->signers->map(fn($s) => optional($s->user)->name)->filter()->implode(', ')
+                                            : 'Default (' . (optional($trx->fromUser)->name ?? '-') . ' & ' . (optional($trx->toUser)->name ?? '-') . ')';
+                                    @endphp
+                                    <a href="{{ route('fixed-assets.transactions.print', $trx->id) }}" target="_blank" class="border btn btn-sm btn-light text-dark rounded-pill fw-semibold" title="Cetak Langsung PDF | Penanda Tangan: {{ $signerNames }}">
                                         <i class="bi bi-printer text-danger"></i>
+                                        @if($trx->signers->count() > 0)
+                                            <span class="ms-1 badge bg-secondary-subtle text-dark" style="font-size: 0.65rem;">{{ $trx->signers->count() }} TTD</span>
+                                        @endif
                                     </a>
                                 @endif
                                 <a href="{{ route('fixed-assets.transactions.show', $trx->id) }}" class="px-3 btn btn-sm btn-outline-primary fw-bold rounded-pill">

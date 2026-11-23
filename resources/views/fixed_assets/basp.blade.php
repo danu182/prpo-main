@@ -96,8 +96,8 @@
                 <td style="text-align: left; font-size: 7.5pt; color: #666; font-style: italic; padding: 0;">
                     Dicetak otomatis oleh sistem pada {{ \Carbon\Carbon::now()->translatedFormat('d F Y H:i:s') }} WIB
                 </td>
-                <td style="text-align: right; font-size: 7.5pt; color: #666; font-style: italic; padding: 0; padding-right: 85px;">
-                    Dokumen BAPA Aset: {{ $nomorDokumen }} &nbsp;|
+                <td style="text-align: right; font-size: 7.5pt; color: #666; font-style: italic; padding: 0; padding-right: 95px;">
+                    Dokumen BASP Aset: {{ $nomorDokumen }} &nbsp;|
                 </td>
             </tr>
         </table>
@@ -172,6 +172,23 @@
                         $prevUserName = ($detailRow && $detailRow->previous_user_id)
                             ? (optional(\App\Models\User::find($detailRow->previous_user_id))->name ?? '-')
                             : 'Stok Gudang';
+
+                        // Cari nomor dokumen transaksi asal (BAST jika dari pemegang, atau BAPA terakhir jika dari gudang)
+                        $originTrx = null;
+                        if (isset($transaction)) {
+                            $targetTypes = ($detailRow && $detailRow->previous_user_id)
+                                ? ['HANDOVER']
+                                : ['RETURN', 'HANDOVER'];
+
+                            $originTrx = \App\Models\FixedAssetTransaction::whereIn('transaction_type', $targetTypes)
+                                ->where('id', '<', $transaction->id)
+                                ->where(function ($q) use ($itemAsset) {
+                                    $q->where('fixed_asset_id', $itemAsset->id)
+                                      ->orWhereHas('details', fn($qd) => $qd->where('fixed_asset_id', $itemAsset->id));
+                                })
+                                ->orderBy('id', 'desc')
+                                ->first();
+                        }
                     @endphp
                     <tr>
                         <td style="text-align: center;">{{ $idx + 1 }}</td>
@@ -197,7 +214,14 @@
                             @endif
                         </td>
                         <td>{{ $itemAsset->serial_number ?: 'N/A' }}</td>
-                        <td>{{ $prevUserName }}</td>
+                        <td>
+                            {{ $prevUserName }}
+                            @if($originTrx)
+                                <div style="font-size: 7.5pt; color: #333; margin-top: 2px;">
+                                    Ref: {{ $originTrx->transaction_number }}
+                                </div>
+                            @endif
+                        </td>
                     </tr>
                 @endforeach
             </tbody>
@@ -210,43 +234,224 @@
 
         <p>Demikian Berita Acara Serah Terima Perbaikan ini dibuat sebagai bukti keluarnya aset perusahaan untuk proses servis hingga unit dikembalikan kembali ke Perusahaan.</p>
 
-        <table class="signature-box">
+        @php
+            // Susun daftar slot tanda tangan BASP:
+            // Index 0 = Pihak Pertama (Staf Perusahaan)
+            // Index 1 = Pihak Kedua (Service Center / Kurir -> null agar kolom kosong TTD basah & stempel)
+            // Index 2+ = Saksi / Mengetahui (dari sisa pilihan user di modal)
+            $baspSlots = collect();
+            $p1Signer = isset($signers) && $signers->count() > 0 ? $signers[0] : null;
+            $baspSlots->push($p1Signer);
+            $baspSlots->push(null);
+
+            if (isset($signers) && $signers->count() > 1) {
+                foreach ($signers->slice(1) as $witness) {
+                    $baspSlots->push($witness);
+                }
+            }
+        @endphp
+
+        {{-- <table class="signature-box">
+            @foreach($baspSlots->chunk(3) as $rowIndex => $slotRow)
             <tr>
-                <td style="width: 50%;">
-                    YANG MENYERAHKAN,<br>
-                    <span style="font-size: 8pt;">PIHAK PERTAMA (PERUSAHAAN)</span>
-                    <div class="signature-space">
-                        @if($p1SigBase64)
-                            <img src="{{ $p1SigBase64 }}" alt="TTD {{ $p1Name }}" class="signature-img">
-                        @endif
-                    </div>
-                    <div class="signature-name">{{ $p1Name }}</div>
-                    <div style="font-size: 8pt;">{{ $p1Title }}{{ $p1Dept ? ' - ' . $p1Dept : '' }}</div>
+                @foreach($slotRow as $colIndex => $signer)
+                @php
+                    $globalIndex = ($rowIndex * 3) + $colIndex;
+                    $sigBase64 = null;
+
+                    if ($signer && ($signatureMode ?? 'digital') === 'digital') {
+                        $rawSigPath = $signer->signature_path
+                            ?? $signer->signature
+                            ?? $signer->digital_signature
+                            ?? $signer->ttd
+                            ?? null;
+
+                        if (!empty($rawSigPath)) {
+                            if (str_starts_with($rawSigPath, 'data:image')) {
+                                $sigBase64 = $rawSigPath;
+                            } else {
+                                $cleanPath = ltrim(str_replace(['storage/', 'public/'], '', $rawSigPath), '/');
+                                foreach ([
+                                    storage_path('app/public/' . $cleanPath),
+                                    public_path('storage/' . $cleanPath),
+                                    public_path(ltrim($rawSigPath, '/')),
+                                    storage_path('app/' . ltrim($rawSigPath, '/')),
+                                ] as $path) {
+                                    if (file_exists($path) && is_file($path)) {
+                                        $ext = strtolower(pathinfo($path, PATHINFO_EXTENSION)) ?: 'png';
+                                        if ($ext === 'jpg') $ext = 'jpeg';
+                                        $sigBase64 = 'data:image/' . $ext . ';base64,' . base64_encode(file_get_contents($path));
+                                        break;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                @endphp
+
+                <td style="width: 33.33%; padding-bottom: 14px;">
+                    @if($globalIndex === 0)
+                        <div style="min-height: 26px;">
+                            YANG MENYERAHKAN,<br>
+                            <span style="font-size: 8pt;">PIHAK PERTAMA</span>
+                        </div>
+                        <div class="signature-space">
+                            @if($sigBase64)
+                                <img src="{{ $sigBase64 }}" alt="TTD {{ optional($signer)->name }}" class="signature-img">
+                            @endif
+                        </div>
+                        <div class="signature-name">{{ optional($signer)->name ?? '-' }}</div>
+                        <div style="font-size: 8pt;">
+                            {{ optional($signer)->job_title ?? 'IT / GA' }}
+                            @if($signer && isset($signer->department) && optional($signer->department)->name)
+                                - {{ $signer->department->name }}
+                            @endif
+                        </div>
+                    @elseif($globalIndex === 1)
+                        <div style="min-height: 26px;">
+                            YANG MENERIMA,<br>
+                            <span style="font-size: 8pt;">PIHAK KEDUA (SERVICE CENTER)</span>
+                        </div>
+                        <div class="signature-space"></div>
+                        <div>( .................................... )</div>
+                        <div style="font-size: 8pt; color: #333;">{{ $serviceCenterName ?? 'Vendor / Kurir Servis' }}</div>
+                    @else
+                        <div style="min-height: 26px;">
+                            MENGETAHUI,<br>
+                            <span style="font-size: 8pt;">SAKSI</span>
+                        </div>
+                        <div class="signature-space">
+                            @if($sigBase64)
+                                <img src="{{ $sigBase64 }}" alt="TTD {{ optional($signer)->name }}" class="signature-img">
+                            @endif
+                        </div>
+                        <div class="signature-name">{{ optional($signer)->name ?? '-' }}</div>
+                        <div style="font-size: 8pt;">
+                            {{ optional($signer)->job_title ?? 'Karyawan' }}
+                            @if($signer && isset($signer->department) && optional($signer->department)->name)
+                                - {{ $signer->department->name }}
+                            @endif
+                        </div>
+                    @endif
                 </td>
-                <td style="width: 50%;">
-                    YANG MENERIMA,<br>
-                    <span style="font-size: 8pt;">PIHAK KEDUA (SERVICE CENTER / KURIR)</span>
-                    <div class="signature-space"></div>
-                    <div class="signature-name">( .................................................. )</div>
-                    <div style="font-size: 8pt;">{{ $serviceCenter }}</div>
-                </td>
+                @endforeach
+
+
+                @for($empty = $slotRow->count(); $empty < 3; $empty++)
+                    <td style="width: 33.33%;"></td>
+                @endfor
             </tr>
-        </table>
+            @endforeach
+        </table> --}}
+
+
+        <div style="margin-top: 14px; page-break-inside: avoid;">
+            @foreach($baspSlots->chunk(3) as $rowIndex => $slotRow)
+            <table class="signature-box" style="margin-top: {{ $rowIndex > 0 ? '10px' : '0' }}; width: 100%; table-layout: fixed;">
+                <tr>
+                    @foreach($slotRow as $colIndex => $signer)
+                    @php
+                        $globalIndex = ($rowIndex * 3) + $colIndex;
+                        $sigBase64 = null;
+
+                        if ($signer && ($signatureMode ?? 'digital') === 'digital') {
+                            $rawSigPath = $signer->signature_path
+                                ?? $signer->signature
+                                ?? $signer->digital_signature
+                                ?? $signer->ttd
+                                ?? null;
+
+                            if (!empty($rawSigPath)) {
+                                if (str_starts_with($rawSigPath, 'data:image')) {
+                                    $sigBase64 = $rawSigPath;
+                                } else {
+                                    $cleanPath = ltrim(str_replace(['storage/', 'public/'], '', $rawSigPath), '/');
+                                    foreach ([
+                                        storage_path('app/public/' . $cleanPath),
+                                        public_path('storage/' . $cleanPath),
+                                        public_path(ltrim($rawSigPath, '/')),
+                                        storage_path('app/' . ltrim($rawSigPath, '/')),
+                                    ] as $path) {
+                                        if (file_exists($path) && is_file($path)) {
+                                            $ext = strtolower(pathinfo($path, PATHINFO_EXTENSION)) ?: 'png';
+                                            if ($ext === 'jpg') $ext = 'jpeg';
+                                            $sigBase64 = 'data:image/' . $ext . ';base64,' . base64_encode(file_get_contents($path));
+                                            break;
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    @endphp
+
+                    <td style="width: {{ 100 / $slotRow->count() }}%; text-align: center; vertical-align: top; padding: 4px;">
+                        @if($globalIndex === 0)
+                            <div style="min-height: 26px;">
+                                YANG MENYERAHKAN,<br>
+                                <span style="font-size: 8pt;">PIHAK PERTAMA</span>
+                            </div>
+                            <div class="signature-space">
+                                @if($sigBase64)
+                                    <img src="{{ $sigBase64 }}" alt="TTD {{ optional($signer)->name }}" class="signature-img">
+                                @endif
+                            </div>
+                            <div class="signature-name">{{ optional($signer)->name ?? '-' }}</div>
+                            <div style="font-size: 8pt;">
+                                {{ optional($signer)->job_title ?? 'IT / GA' }}
+                                @if($signer && isset($signer->department) && optional($signer->department)->name)
+                                    - {{ $signer->department->name }}
+                                @endif
+                            </div>
+                        @elseif($globalIndex === 1)
+                            <div style="min-height: 26px;">
+                                YANG MENERIMA,<br>
+                                <span style="font-size: 8pt;">PIHAK KEDUA (SERVICE CENTER)</span>
+                            </div>
+                            <div class="signature-space"></div>
+                            <div>( .................................... )</div>
+                            <div style="font-size: 8pt; color: #333;">{{ $serviceCenterName ?? 'Vendor / Kurir Servis' }}</div>
+                        @else
+                            <div style="min-height: 26px;">
+                                MENGETAHUI,<br>
+                                <span style="font-size: 8pt;">SAKSI</span>
+                            </div>
+                            <div class="signature-space">
+                                @if($sigBase64)
+                                    <img src="{{ $sigBase64 }}" alt="TTD {{ optional($signer)->name }}" class="signature-img">
+                                @endif
+                            </div>
+                            <div class="signature-name">{{ optional($signer)->name ?? '-' }}</div>
+                            <div style="font-size: 8pt;">
+                                {{ optional($signer)->job_title ?? 'Karyawan' }}
+                                @if($signer && isset($signer->department) && optional($signer->department)->name)
+                                    - {{ $signer->department->name }}
+                                @endif
+                            </div>
+                        @endif
+                    </td>
+                    @endforeach
+                </tr>
+            </table>
+            @endforeach
+        </div>
+
+
     </div>
 
     <script type="text/php">
         if (isset($pdf)) {
-            $text = "Halaman {PAGE_NUM} of {PAGE_COUNT}";
-            $font = $fontMetrics->get_font("Helvetica", "italic");
-            $size = 7.5;
+            $text  = "Halaman {PAGE_NUM} dari {PAGE_COUNT}";
+            $font  = $fontMetrics->get_font("Helvetica", "italic");
+            $size  = 7.5;
             $color = array(0.4, 0.4, 0.4);
-            $width = $fontMetrics->get_text_width($text, $font, $size);
+            $width = $fontMetrics->get_text_width("Halaman 1 dari 1", $font, $size);
 
             $x = $pdf->get_width() - $width - 40;
-            $y = $pdf->get_height() - 36;
+            $y = $pdf->get_height() - 29;
 
             $pdf->page_text($x, $y, $text, $font, $size, $color);
         }
     </script>
+
 </body>
 </html>

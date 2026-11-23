@@ -65,7 +65,7 @@
                 <td style="text-align: left; font-size: 7.5pt; color: #666; font-style: italic; padding: 0;">
                     Dicetak otomatis oleh sistem pada {{ \Carbon\Carbon::now()->translatedFormat('d F Y H:i:s') }} WIB
                 </td>
-                <td style="text-align: right; font-size: 7.5pt; color: #666; font-style: italic; padding: 0; padding-right: 85px;">
+                <td style="text-align: right; font-size: 7.5pt; color: #666; font-style: italic; padding: 0; padding-right: 95px;">
                     Dokumen BAPA Aset: {{ $nomorDokumen }} &nbsp;|
                 </td>
             </tr>
@@ -197,10 +197,12 @@
 
         <p>Dengan ditandatanganinya Berita Acara Pengembalian Aset ini, maka tanggung jawab PIHAK PERTAMA terhadap pemeliharaan aset tersebut dinyatakan telah selesai/gugur.</p>
 
-        <table class="signature-box">
+        {{-- <table class="signature-box">
+            @foreach($signers->chunk(3) as $rowIndex => $signerRow)
             <tr>
-                @foreach($signers as $index => $signer)
+                @foreach($signerRow as $colIndex => $signer)
                 @php
+                    $index = ($rowIndex * 3) + $colIndex;
                     $rawSigPath = $signer->signature_path
                         ?? $signer->signature
                         ?? $signer->digital_signature
@@ -214,14 +216,12 @@
                             $sigBase64 = $rawSigPath;
                         } else {
                             $cleanPath = ltrim(str_replace(['storage/', 'public/'], '', $rawSigPath), '/');
-                            $candidates = [
+                            foreach ([
                                 storage_path('app/public/' . $cleanPath),
                                 public_path('storage/' . $cleanPath),
                                 public_path(ltrim($rawSigPath, '/')),
                                 storage_path('app/' . ltrim($rawSigPath, '/')),
-                            ];
-
-                            foreach ($candidates as $path) {
+                            ] as $path) {
                                 if (file_exists($path) && is_file($path)) {
                                     $ext = strtolower(pathinfo($path, PATHINFO_EXTENSION)) ?: 'png';
                                     if ($ext === 'jpg') $ext = 'jpeg';
@@ -232,9 +232,11 @@
                         }
                     }
                 @endphp
-                <td style="width: {{ 100 / max(1, count($signers)) }}%;">
-                    {{ $index == 0 ? 'YANG MENGEMBALIKAN,' : ($index == 1 ? 'YANG MENERIMA,' : 'MENGETAHUI,') }}<br>
-                    <span style="font-size: 8pt;">{{ $index == 0 ? 'PIHAK PERTAMA' : ($index == 1 ? 'PIHAK KEDUA' : 'SAKSI') }}</span>
+                <td style="width: 33.33%; padding-bottom: 14px;">
+                    <div style="min-height: 26px;">
+                        {{ $index == 0 ? 'YANG MENYERAHKAN,' : ($index == 1 ? 'YANG MENERIMA,' : 'MENGETAHUI,') }}<br>
+                        <span style="font-size: 8pt;">{{ $index == 0 ? 'PIHAK PERTAMA' : ($index == 1 ? 'PIHAK KEDUA' : 'SAKSI') }}</span>
+                    </div>
                     <div class="signature-space">
                         @if($sigBase64)
                             <img src="{{ $sigBase64 }}" alt="TTD {{ $signer->name }}" class="signature-img">
@@ -249,23 +251,93 @@
                     </div>
                 </td>
                 @endforeach
+
+                @for($empty = $signerRow->count(); $empty < 3; $empty++)
+                    <td style="width: 33.33%;"></td>
+                @endfor
             </tr>
-        </table>
+            @endforeach
+        </table> --}}
+
+
+        <div style="margin-top: 14px; page-break-inside: avoid;">
+            @foreach($signers->chunk(3) as $rowIndex => $signerRow)
+            <table class="signature-box" style="margin-top: {{ $rowIndex > 0 ? '10px' : '0' }}; width: 100%; table-layout: fixed;">
+                <tr>
+                    @foreach($signerRow as $colIndex => $signer)
+                    @php
+                        $index = ($rowIndex * 3) + $colIndex;
+                        $rawSigPath = $signer->signature_path
+                            ?? $signer->signature
+                            ?? $signer->digital_signature
+                            ?? $signer->ttd
+                            ?? null;
+
+                        $sigBase64 = null;
+
+                        if (($signatureMode ?? 'digital') === 'digital' && !empty($rawSigPath)) {
+                            if (str_starts_with($rawSigPath, 'data:image')) {
+                                $sigBase64 = $rawSigPath;
+                            } else {
+                                $cleanPath = ltrim(str_replace(['storage/', 'public/'], '', $rawSigPath), '/');
+                                foreach ([
+                                    storage_path('app/public/' . $cleanPath),
+                                    public_path('storage/' . $cleanPath),
+                                    public_path(ltrim($rawSigPath, '/')),
+                                    storage_path('app/' . ltrim($rawSigPath, '/')),
+                                ] as $path) {
+                                    if (file_exists($path) && is_file($path)) {
+                                        $ext = strtolower(pathinfo($path, PATHINFO_EXTENSION)) ?: 'png';
+                                        if ($ext === 'jpg') $ext = 'jpeg';
+                                        $sigBase64 = 'data:image/' . $ext . ';base64,' . base64_encode(file_get_contents($path));
+                                        break;
+                                    }
+                                }
+                            }
+                        }
+                    @endphp
+                    <td style="width: {{ 100 / $signerRow->count() }}%; text-align: center; vertical-align: top; padding: 4px;">
+                        <div style="min-height: 26px;">
+                            {{ $index == 0 ? 'YANG MENYERAHKAN,' : ($index == 1 ? 'YANG MENERIMA,' : 'MENGETAHUI,') }}<br>
+                            <span style="font-size: 8pt;">{{ $index == 0 ? 'PIHAK PERTAMA' : ($index == 1 ? 'PIHAK KEDUA' : 'SAKSI') }}</span>
+                        </div>
+                        <div class="signature-space">
+                            @if($sigBase64)
+                                <img src="{{ $sigBase64 }}" alt="TTD {{ $signer->name }}" class="signature-img">
+                            @endif
+                        </div>
+                        <div class="signature-name">{{ $signer->name }}</div>
+                        <div style="font-size: 8pt;">
+                            {{ $signer->job_title ?? 'Karyawan' }}
+                            @if(isset($signer->department) && optional($signer->department)->name)
+                                - {{ $signer->department->name }}
+                            @endif
+                        </div>
+                    </td>
+                    @endforeach
+                </tr>
+            </table>
+            @endforeach
+        </div>
+
+
     </div>
+
 
     <script type="text/php">
         if (isset($pdf)) {
-            $text = "Halaman {PAGE_NUM} of {PAGE_COUNT}";
-            $font = $fontMetrics->get_font("Helvetica", "italic");
-            $size = 7.5;
+            $text  = "Halaman {PAGE_NUM} dari {PAGE_COUNT}";
+            $font  = $fontMetrics->get_font("Helvetica", "italic");
+            $size  = 7.5;
             $color = array(0.4, 0.4, 0.4);
-            $width = $fontMetrics->get_text_width($text, $font, $size);
+            $width = $fontMetrics->get_text_width("Halaman 1 dari 1", $font, $size);
 
             $x = $pdf->get_width() - $width - 40;
-            $y = $pdf->get_height() - 36;
+            $y = $pdf->get_height() - 29;
 
             $pdf->page_text($x, $y, $text, $font, $size, $color);
         }
     </script>
+
 </body>
 </html>

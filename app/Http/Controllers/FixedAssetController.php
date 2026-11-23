@@ -1406,8 +1406,15 @@ class FixedAssetController extends Controller
     public function transactionHistory(\Illuminate\Http\Request $request)
     {
         $query = \App\Models\FixedAssetTransaction::with([
-            'asset.item', 'fromUser', 'toUser', 'fromWarehouse', 'toWarehouse', 'status', 'creator'
-        ]);
+        'details.asset.item.category',
+        'details.asset.assetCategory',
+        'signers.user',
+        'fromUser',
+        'toUser',
+        'warehouse',
+        'status',
+        'creator'
+    ]);
 
         if ($request->filled('type')) {
             $query->where('transaction_type', $request->type);
@@ -2028,71 +2035,120 @@ class FixedAssetController extends Controller
         }
     }
 
-    public function printTransactionDocument(Request $request,$id)
+
+    public function printTransactionDocument(Request $request, $id)
     {
         $transaction = \App\Models\FixedAssetTransaction::with([
-            'details.asset.item', 'details.asset.company', 'details.asset.currency',
-            'fromUser.department', 'toUser.department',
-            'warehouse', 'status'
+            'details.asset.item',
+            'details.asset.company',
+            'details.asset.currency',
+            'signers.user.department',
+            'fromUser.department',
+            'toUser.department',
+            'warehouse',
+            'status'
         ])->findOrFail($id);
 
-        $firstDetail =$transaction->details->first();
-        $asset =$firstDetail ? $firstDetail->asset : FixedAsset::find($transaction->fixed_asset_id);
+        $firstDetail = $transaction->details->first();
+        $asset = $firstDetail ? $firstDetail->asset : FixedAsset::find($transaction->fixed_asset_id);
 
         if (!$asset) {
             return back()->with('error', 'Data aset pada transaksi ini tidak ditemukan.');
         }
 
-        $defaultP1 =$transaction->fromUser ?? auth()->user();
-        $defaultP2 =$transaction->toUser ?? auth()->user();
+        $isDisposedDoc = optional($transaction->status)->slug === 'disposed' || str_starts_with($transaction->transaction_number, 'BAPP/');
+        $defaultP1 = $transaction->fromUser ?? auth()->user();
+        $defaultP2 = $transaction->toUser ?? auth()->user();
 
-        $signerIds =$request->input('signers', []);
+        // 1. Jika ada input penanda tangan dari modal cetak, susun urutan peran secara konsisten lalu simpan ke DB
+        if ($request->has('signers')) {
+            $rawIds = array_values(array_unique(array_filter((array) $request->input('signers', []))));
+            $signatureMode = $request->input('signature_mode', 'digital');
 
-        if (empty($signerIds)) {$signers = collect([$defaultP1,$defaultP2]);
-        } else {
-            $selectedUsers = User::with('department')->whereIn('id', $signerIds)->get();$signers = collect();
+            if ($isDisposedDoc || $transaction->transaction_type === 'REPAIR_SEND') {
+                // Untuk BAPP (Pengaju, Pemeriksa, Menyetujui) & BASP (Pihak 1, Saksi...), urutan form sudah sesuai peran
+                $orderedIds = array_map('intval', $rawIds);
+            } else {
+                $orderedIds = [];
+                $remainingIds = collect($rawIds)->map(fn($uid) => (int) $uid);
 
-            // 1. Kunci Pihak Pertama
-            $pihak1 =$defaultP1 ? $selectedUsers->where('id',$defaultP1->id)->first() : null;
-            if (!$pihak1) $pihak1 =$selectedUsers->first();
+                // Kunci Pihak Pertama (Yang Menyerahkan) di urutan #1 jika termasuk dalam pilihan
+                if ($defaultP1 && $remainingIds->contains((int) $defaultP1->id)) {
+                    $orderedIds[] = (int) $defaultP1->id;
+                    $remainingIds = $remainingIds->reject(fn($uid) => $uid === (int) $defaultP1->id);
+                }
 
-            if ($pihak1) {$signers->push($pihak1);$selectedUsers = $selectedUsers->reject(fn($u) => $u->id ==$pihak1->id);
+                // Kunci Pihak Kedua (Yang Menerima) di urutan #2 jika termasuk dalam pilihan
+                if ($defaultP2 && $remainingIds->contains((int) $defaultP2->id)) {
+                    $orderedIds[] = (int) $defaultP2->id;
+                    $remainingIds = $remainingIds->reject(fn($uid) => $uid === (int) $defaultP2->id);
+                }
+
+                // Sisanya otomatis masuk sebagai Saksi / Mengetahui di urutan #3 dst
+                foreach ($remainingIds as $extraId) {
+                    $orderedIds[] = $extraId;
+                }
             }
 
-            // 2. Kunci Pihak Kedua
-            $pihak2 =$defaultP2 ? $selectedUsers->where('id',$defaultP2->id)->first() : null;
-            if (!$pihak2) $pihak2 =$selectedUsers->first();
+            // Hapus daftar lama & simpan ulang sesuai urutan terbaru ke tabel fixed_asset_transaction_signers
+            $transaction->signers()->delete();
 
-            if ($pihak2) {$signers->push($pihak2);$selectedUsers = $selectedUsers->reject(fn($u) => $u->id ==$pihak2->id);
+            foreach ($orderedIds as $idx => $uid) {
+                $roleLabel = match (true) {
+                    $isDisposedDoc && $idx === 0 => 'YANG MENGAJUKAN',
+                    $isDisposedDoc && $idx === 1 => 'DIPERIKSA (FINANCE / GA)',
+                    $isDisposedDoc && $idx === 2 => 'MENYETUJUI',
+                    $transaction->transaction_type === 'REPAIR_SEND' && $idx === 0 => 'PIHAK PERTAMA',
+                    !$isDisposedDoc && $idx === 0 => 'PIHAK PERTAMA',
+                    !$isDisposedDoc && $idx === 1 => 'PIHAK KEDUA',
+                    default => 'SAKSI / MENGETAHUI',
+                };
+
+                \App\Models\FixedAssetTransactionSigner::create([
+                    'fixed_asset_transaction_id' => $transaction->id,
+                    'user_id'                    => $uid,
+                    'role_label'                 => $roleLabel,
+                    'sequence'                   => $idx + 1,
+                    'signature_mode'             => $signatureMode,
+                ]);
             }
 
-            // 3. Sisanya otomatis masuk sebagai Saksi / Mengetahui
-            foreach ($selectedUsers as$extraSigner) {
-                $signers->push($extraSigner);
-            }
+            $transaction->load('signers.user.department');
         }
 
-        $signatureMode  =$request->input('signature_mode', 'digital');
-        $documentNumber =$transaction->transaction_number;
+        // 2. Ambil daftar user penanda tangan dari tabel relasi (jika sudah tersimpan) atau fallback ke default
+        if ($transaction->signers->count() > 0) {
+            $signers = $transaction->signers->map(fn($s) => $s->user)->filter();
+            $signatureMode = $request->input('signature_mode', $transaction->signers->first()->signature_mode ?? 'digital');
+        } else {
+            $signatureMode = $request->input('signature_mode', 'digital');
+            $signers = ($isDisposedDoc || $transaction->transaction_type === 'REPAIR_SEND')
+                ? collect([$defaultP1])->filter()
+                : collect([$defaultP1, $defaultP2])->filter();
+        }
+
+        $documentNumber = $transaction->transaction_number;
 
         // 1. Dokumen Pengembalian (BAPA) & Selesai Perbaikan Masuk Gudang (BAPA-SRV)
         if (in_array($transaction->transaction_type, ['RETURN', 'REPAIR_FINISH'])) {
-            $lastAssignee =$transaction->fromUser;
+            $lastAssignee = $transaction->fromUser;
             $pdf = Pdf::loadView('fixed_assets.bapa', compact('asset', 'lastAssignee', 'signers', 'documentNumber', 'transaction', 'signatureMode'))
                 ->setOptions(['isPhpEnabled' => true, 'isRemoteEnabled' => true])
                 ->setPaper('A4', 'portrait');
-            return $pdf->stream(str_replace('/', '_',$documentNumber) . '.pdf');
+            return $pdf->stream(str_replace('/', '_', $documentNumber) . '.pdf');
         }
 
         // 2. Dokumen Serah Terima Perbaikan ke Service Center (BASP)
-        if ($transaction->transaction_type === 'REPAIR_SEND') {$pdf = Pdf::loadView('fixed_assets.basp', compact('asset', 'signers', 'documentNumber', 'transaction', 'signatureMode'))
+        if ($transaction->transaction_type === 'REPAIR_SEND') {
+            $pdf = Pdf::loadView('fixed_assets.basp', compact('asset', 'signers', 'documentNumber', 'transaction', 'signatureMode'))
                 ->setOptions(['isPhpEnabled' => true, 'isRemoteEnabled' => true])
                 ->setPaper('A4', 'portrait');
             return $pdf->stream('BASP_' . str_replace('/', '_', $documentNumber) . '.pdf');
         }
 
         // 3. Dokumen Penghapusan / Pemusnahan Aset (BAPP)
-        if (optional($transaction->status)->slug === 'disposed' || str_starts_with($transaction->transaction_number, 'BAPP/')) {$pdf = Pdf::loadView('fixed_assets.bapp', compact('asset', 'signers', 'documentNumber', 'transaction', 'signatureMode'))
+        if ($isDisposedDoc) {
+            $pdf = Pdf::loadView('fixed_assets.bapp', compact('asset', 'signers', 'documentNumber', 'transaction', 'signatureMode'))
                 ->setOptions(['isPhpEnabled' => true, 'isRemoteEnabled' => true])
                 ->setPaper('A4', 'portrait');
             return $pdf->stream('BAPP_' . str_replace('/', '_', $documentNumber) . '.pdf');
@@ -2109,7 +2165,6 @@ class FixedAssetController extends Controller
 
 
 
-
     public function showTransaction($id)
     {
         $transaction = \App\Models\FixedAssetTransaction::with([
@@ -2121,6 +2176,7 @@ class FixedAssetController extends Controller
             'details.asset.assignee.department',
             'details.asset.currency',
             'details.asset.photos',
+            'signers.user.department',
             'fromUser.department',
             'fromUser.company',
             'toUser.department',

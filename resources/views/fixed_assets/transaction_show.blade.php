@@ -195,15 +195,16 @@
 
         <div class="table-responsive">
             <table class="table mb-0 align-middle table-bordered table-hover">
+
                 <thead class="bg-light small text-uppercase">
                     <tr>
                         <th width="4%" class="text-center">No</th>
-                        <th width="18%">Identitas & Kode Aset</th>
-                        <th width="24%">Nama Unit, Master Item & Spesifikasi</th>
-                        <th width="14%">Foto & Lampiran</th>
+                        <th width="17%">Identitas & Kode Aset</th>
+                        <th width="23%">Nama Unit, Master Item & Spesifikasi</th>
+                        <th width="13%">Foto & Lampiran</th>
                         <th width="14%">Perolehan & Nilai</th>
                         <th width="15%">Status & Lokasi Terkini</th>
-                        <th width="6%">Ref</th>
+                        <th width="9%">Ref. Dokumen</th>
                         <th width="5%" class="text-center">Log</th>
                     </tr>
                 </thead>
@@ -245,6 +246,15 @@
                                     })
                                     ->orderBy('id', 'desc')
                                     ->first();
+                            } elseif (in_array($transaction->transaction_type, ['REPAIR_SEND', 'REPAIR_FINISH'])) {
+                                $refTrx = \App\Models\FixedAssetTransaction::whereIn('transaction_type', ['HANDOVER', 'RETURN', 'REPAIR_SEND'])
+                                    ->where('id', '<', $transaction->id)
+                                    ->where(function ($q) use ($ast) {
+                                        $q->where('fixed_asset_id', $ast->id)
+                                          ->orWhereHas('details', fn($qd) => $qd->where('fixed_asset_id', $ast->id));
+                                    })
+                                    ->orderBy('id', 'desc')
+                                    ->first();
                             }
                         }
                     @endphp
@@ -277,17 +287,16 @@
                             <div class="mt-1 small text-muted" style="font-size: 0.75rem;">
                                 Kategori: <strong class="text-dark">{{ $kategoriAset }}</strong>
                             </div>
-                            @if(!empty($cleanSpek) && strtolower($cleanSpek) !== 'item dibuat otomatis dari import aset')
-                                <div class="p-1.5 mt-1.5 border rounded bg-light text-muted" style="font-size: 0.74rem; line-height: 1.3;">
-                                    {{ \Illuminate\Support\Str::limit($cleanSpek, 140) }}
-                                </div>
-                            @endif
+                            <div class="p-1.5 mt-1.5 border rounded bg-light text-muted" style="font-size: 0.74rem; line-height: 1.35;">
+                                <strong class="text-dark">Spek:</strong>
+                                {{ (!empty($cleanSpek) && strtolower($cleanSpek) !== 'item dibuat otomatis dari import aset') ? $cleanSpek : '-' }}
+                            </div>
                         </td>
 
                         {{-- 3. FOTO & LAMPIRAN FISIK ASET --}}
                         <td>
                             @php
-                                $assetPhotos = $ast ? $ast->photos : collect();
+                                $assetPhotos   = $ast ? $ast->photos : collect();
                                 $hasSupportDoc = $ast && !empty($ast->supporting_document);
                             @endphp
 
@@ -295,11 +304,11 @@
                                 <div class="flex-wrap gap-1.5 d-flex align-items-center">
                                     @foreach($assetPhotos as $photo)
                                         @php
-                                            $ext = strtolower(pathinfo($photo->file_path, PATHINFO_EXTENSION));
+                                            $ext   = strtolower(pathinfo($photo->file_path, PATHINFO_EXTENSION));
                                             $isImg = in_array($ext, ['jpg', 'jpeg', 'png', 'gif', 'webp']);
                                         @endphp
                                         @if($isImg)
-                                            <a href="{{ asset('storage/' . $photo->file_path) }}" target="_blank" class="border rounded shadow-sm d-inline-block overflow-hidden" title="Klik untuk memperbesar foto">
+                                            <a href="{{ asset('storage/' . $photo->file_path) }}" target="_blank" class="overflow-hidden border rounded shadow-sm d-inline-block" title="Klik untuk memperbesar foto">
                                                 <img src="{{ asset('storage/' . $photo->file_path) }}" alt="Foto Aset" style="width: 48px; height: 48px; object-fit: cover;">
                                             </a>
                                         @else
@@ -322,7 +331,23 @@
                             @endif
                         </td>
 
-                        {{-- 4. STATUS & LOKASI TERKINI ASET --}}
+                        {{-- 4. PEROLEHAN & NILAI --}}
+                        <td class="small">
+                            <div class="text-muted" style="font-size: 0.73rem;">Tgl Perolehan:</div>
+                            <div class="fw-semibold text-dark">
+                                {{ optional($ast)->acquisition_date ? \Carbon\Carbon::parse($ast->acquisition_date)->format('d M Y') : '-' }}
+                            </div>
+                            <div class="mt-1 text-muted" style="font-size: 0.73rem;">Harga Perolehan:</div>
+                            <div class="fw-bold text-dark font-monospace">
+                                {{ $currSym }} {{ number_format(optional($ast)->purchase_price ?? 0, $currDec, ',', '.') }}
+                            </div>
+                            <div class="mt-1 text-muted" style="font-size: 0.73rem;">Nilai Buku:</div>
+                            <div class="fw-semibold text-primary font-monospace">
+                                {{ $currSym }} {{ number_format(optional($ast)->net_book_value ?? optional($ast)->purchase_price ?? 0, $currDec, ',', '.') }}
+                            </div>
+                        </td>
+
+                        {{-- 5. STATUS & LOKASI TERKINI ASET --}}
                         <td class="small">
                             <div class="mb-1">
                                 <span class="badge bg-dark">{{ optional(optional($ast)->status)->name ?? '-' }}</span>
@@ -352,11 +377,16 @@
                                             ? (optional(\App\Models\User::find($det->previous_user_id))->name ?? '-')
                                             : (optional(\App\Models\Warehouse::find($det->previous_warehouse_id))->name ?? 'Gudang') }}
                                     </strong>
+                                    @if($refTrx && in_array($transaction->transaction_type, ['REPAIR_SEND', 'REPAIR_FINISH']))
+                                        <div class="mt-0.5 font-monospace text-primary" style="font-size: 0.7rem;">
+                                            Ref: {{ $refTrx->transaction_number }}
+                                        </div>
+                                    @endif
                                 </div>
                             @endif
                         </td>
 
-                        {{-- 5. REFERENSI DOKUMEN TERKAIT --}}
+                        {{-- 6. REFERENSI DOKUMEN TERKAIT --}}
                         <td class="small">
                             @if($transaction->transaction_type === 'HANDOVER')
                                 @if($refTrx)
@@ -382,12 +412,23 @@
                                 @else
                                     <span class="text-muted">-</span>
                                 @endif
+                            @elseif(in_array($transaction->transaction_type, ['REPAIR_SEND', 'REPAIR_FINISH']))
+                                @if($refTrx)
+                                    <a href="{{ route('fixed-assets.transactions.show', $refTrx->id) }}" class="border badge bg-info-subtle text-info-emphasis border-info-subtle text-decoration-none font-monospace">
+                                        <i class="bi bi-link-45deg me-1"></i>{{ $refTrx->transaction_number }}
+                                    </a>
+                                    <div class="mt-1 text-muted" style="font-size: 0.73rem;">
+                                        Tgl: {{ \Carbon\Carbon::parse($refTrx->transaction_date)->format('d M Y') }}
+                                    </div>
+                                @else
+                                    <span class="text-muted">-</span>
+                                @endif
                             @else
                                 <span class="text-muted">-</span>
                             @endif
                         </td>
 
-                        {{-- 6. TIMELINE --}}
+                        {{-- 7. TIMELINE --}}
                         <td class="text-center">
                             @if($ast)
                                 <a href="{{ route('fixed-assets.history', $ast->id) }}" class="btn btn-sm btn-outline-dark rounded-pill" title="Lihat Riwayat Lengkap Aset">
@@ -395,7 +436,6 @@
                                 </a>
                             @endif
                         </td>
-
                     </tr>
                     @endforeach
                 </tbody>
@@ -420,24 +460,90 @@
                     @php
                         $p1Id = $transaction->from_user_id ?? auth()->id();
                         $p2Id = $transaction->to_user_id ?? ($isDisposedTrx ? null : auth()->id());
+
+                        $hasSavedSigners = $transaction->signers && $transaction->signers->count() > 0;
+                        $savedSignerIds  = $hasSavedSigners
+                            ? $transaction->signers->pluck('user_id')->map(fn($id) => (int) $id)->toArray()
+                            : array_values(array_filter([(int) $p1Id, (int) $p2Id]));
+                        $savedSigMode    = $hasSavedSigners
+                            ? ($transaction->signers->first()->signature_mode ?? 'digital')
+                            : 'digital';
+
+                        // Tentukan selected untuk masing-masing slot
+                        if ($isDisposedTrx) {
+                            $selP1 = $savedSignerIds[0] ?? $p1Id;
+                            $selP2 = $savedSignerIds[1] ?? null;
+                            $selWitnesses = array_slice($savedSignerIds, 2);
+                        } elseif ($transaction->transaction_type === 'REPAIR_SEND') {
+                            $selP1 = $savedSignerIds[0] ?? $p1Id;
+                            $selP2 = null;
+                            $selWitnesses = array_slice($savedSignerIds, 1);
+                        } else {
+                            $selP1 = in_array((int) $p1Id, $savedSignerIds) ? (int) $p1Id : ($savedSignerIds[0] ?? $p1Id);
+                            $selP2 = in_array((int) $p2Id, $savedSignerIds) ? (int) $p2Id : ($savedSignerIds[1] ?? $p2Id);
+                            $selWitnesses = array_values(array_diff($savedSignerIds, array_filter([$selP1, $selP2])));
+                        }
                     @endphp
-                    <div class="mb-3">
-                        <label class="form-label fw-bold text-dark small">Daftar Penanda Tangan <span class="text-danger">*</span></label>
-                        <select name="signers[]" id="select2_signers" class="form-select" multiple required style="width: 100%;">
+
+                    @if($hasSavedSigners)
+                        <div class="px-3 py-2 mb-3 border-0 alert alert-success bg-success-subtle text-success-emphasis rounded-3 small">
+                            <i class="bi bi-shield-check me-1"></i>
+                            <strong>Tersimpan ({{ count($savedSignerIds) }} Penanda Tangan):</strong> Konfigurasi penanda tangan di bawah ini tersimpan resmi pada dokumen ini dan dapat diubah kapan saja.
+                        </div>
+                    @endif
+
+                    {{-- SLOT 1: PIHAK PERTAMA / YANG MENGAJUKAN --}}
+                    <div class="mb-2">
+                        <label class="form-label fw-bold text-dark small mb-1">
+                            1. {{ $isDisposedTrx ? 'Yang Mengajukan' : 'Pihak Pertama (Yang Menyerahkan)' }} <span class="text-danger">*</span>
+                        </label>
+                        <select name="signers[]" class="form-select select2-single-modal" required style="width: 100%;">
                             @foreach($users as $usr)
-                                <option value="{{ $usr->id }}" {{ in_array($usr->id, array_filter([$p1Id, $p2Id])) ? 'selected' : '' }}>
+                                <option value="{{ $usr->id }}" {{ (int) $usr->id === (int) $selP1 ? 'selected' : '' }}>
                                     {{ $usr->name }} ({{ optional($usr->department)->name ?? '-' }})
                                 </option>
                             @endforeach
                         </select>
-                        <div class="mt-2 form-text small">
+                    </div>
+
+                    {{-- SLOT 2: PIHAK KEDUA / PEMERIKSA (Kecuali REPAIR_SEND karena Pihak Kedua adalah Vendor eksternal) --}}
+                    @if($transaction->transaction_type !== 'REPAIR_SEND')
+                    <div class="mb-2">
+                        <label class="form-label fw-bold text-dark small mb-1">
+                            2. {{ $isDisposedTrx ? 'Diperiksa Oleh (Finance / GA)' : 'Pihak Kedua (Yang Menerima)' }} {!! $isDisposedTrx ? '' : '<span class="text-danger">*</span>' !!}
+                        </label>
+                        <select name="signers[]" class="form-select select2-single-modal" {{ $isDisposedTrx ? '' : 'required' }} style="width: 100%;">
+                            @if($isDisposedTrx)
+                                <option value="">-- Kosongkan (TTD Basah Manual) --</option>
+                            @endif
+                            @foreach($users as $usr)
+                                <option value="{{ $usr->id }}" {{ (int) $usr->id === (int) $selP2 ? 'selected' : '' }}>
+                                    {{ $usr->name }} ({{ optional($usr->department)->name ?? '-' }})
+                                </option>
+                            @endforeach
+                        </select>
+                    </div>
+                    @endif
+
+                    {{-- SLOT 3+: SAKSI / MENGETAHUI / MENYETUJUI --}}
+                    <div class="mb-3">
+                        <label class="form-label fw-bold text-dark small mb-1">
+                            {{ $transaction->transaction_type === 'REPAIR_SEND' ? '2.' : '3.' }}
+                            {{ $isDisposedTrx ? 'Menyetujui & Mengetahui (Opsional)' : 'Saksi / Mengetahui (Opsional)' }}
+                        </label>
+                        <select name="signers[]" id="select2_signers" class="form-select" multiple style="width: 100%;">
+                            @foreach($users as $usr)
+                                <option value="{{ $usr->id }}" {{ in_array((int) $usr->id, $selWitnesses) ? 'selected' : '' }}>
+                                    {{ $usr->name }} ({{ optional($usr->department)->name ?? '-' }})
+                                </option>
+                            @endforeach
+                        </select>
+                        <div class="mt-1 form-text small">
                             <i class="bi bi-info-circle text-primary"></i>
                             @if($isDisposedTrx)
-                                <strong>Info BAPP:</strong> Urutan pertama sebagai <strong>Yang Mengajukan</strong>, urutan kedua sebagai <strong>Pemeriksa (Finance / GA)</strong>, dan urutan ketiga sebagai <strong>Menyetujui</strong>.
-                            @elseif($transaction->transaction_type === 'REPAIR_SEND')
-                                <strong>Info BASP:</strong> Pihak Pertama diisi oleh staf IT/Perusahaan (<strong>{{ optional($transaction->fromUser)->name ?? auth()->user()->name }}</strong>), sedangkan kolom Pihak Kedua disiapkan kosong untuk tanda tangan basah/stempel <strong>Service Center / Kurir</strong>.
+                                Pilihan pertama pada kolom ini akan menempati posisi <strong>Menyetujui</strong>, dan sisanya sebagai <strong>Mengetahui</strong>.
                             @else
-                                <strong>Otomatis Terisi:</strong> Pihak Pertama (<strong>{{ optional($transaction->fromUser)->name ?? auth()->user()->name }}</strong>) &amp; Pihak Kedua (<strong>{{ optional($transaction->toUser)->name ?? '-' }}</strong>). Tambahkan nama lain jika memerlukan kolom <strong>Saksi / Mengetahui</strong>.
+                                Nama yang ditambahkan di sini akan otomatis dicetak di kolom <strong>Mengetahui / Saksi</strong>.
                             @endif
                         </div>
                     </div>
@@ -447,14 +553,14 @@
                         <label class="form-label fw-bold text-dark small">Metode Tanda Tangan pada PDF <span class="text-danger">*</span></label>
                         <div class="row g-2">
                             <div class="col-6">
-                                <input type="radio" class="btn-check" name="signature_mode" id="sig_digital" value="digital" checked>
+                                <input type="radio" class="btn-check" name="signature_mode" id="sig_digital" value="digital" {{ $savedSigMode === 'digital' ? 'checked' : '' }}>
                                 <label class="p-2 text-start btn btn-outline-primary w-100 rounded-3" for="sig_digital">
                                     <div class="fw-bold small"><i class="bi bi-pen-fill me-1"></i> Tanda Tangan Digital</div>
                                     <div style="font-size: 0.72rem;" class="opacity-75">Tampilkan gambar TTD dari profil user</div>
                                 </label>
                             </div>
                             <div class="col-6">
-                                <input type="radio" class="btn-check" name="signature_mode" id="sig_manual" value="manual">
+                                <input type="radio" class="btn-check" name="signature_mode" id="sig_manual" value="manual" {{ $savedSigMode === 'manual' ? 'checked' : '' }}>
                                 <label class="p-2 text-start btn btn-outline-secondary w-100 rounded-3" for="sig_manual">
                                     <div class="fw-bold small"><i class="bi bi-pencil-square me-1"></i> Tanda Tangan Manual</div>
                                     <div style="font-size: 0.72rem;" class="opacity-75">Kosongkan kolom untuk TTD basah</div>
@@ -480,15 +586,33 @@
 <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
 <script>
+    // $(document).ready(function() {
+    //     $('#printSignersModal').on('shown.bs.modal', function () {
+    //         $('#select2_signers').select2({
+    //             theme: 'bootstrap-5',
+    //             dropdownParent: $('#printSignersModal'),
+    //             placeholder: 'Pilih Karyawan Penanda Tangan...',
+    //             allowClear: true
+    //         });
+    //     });
+    // });
+
     $(document).ready(function() {
         $('#printSignersModal').on('shown.bs.modal', function () {
+            $('.select2-single-modal').select2({
+                theme: 'bootstrap-5',
+                dropdownParent: $('#printSignersModal'),
+                width: '100%'
+            });
             $('#select2_signers').select2({
                 theme: 'bootstrap-5',
                 dropdownParent: $('#printSignersModal'),
-                placeholder: 'Pilih Karyawan Penanda Tangan...',
-                allowClear: true
+                placeholder: 'Pilih Saksi / Mengetahui (bisa lebih dari 1)...',
+                allowClear: true,
+                width: '100%'
             });
         });
     });
+
 </script>
 @endpush
