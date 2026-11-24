@@ -37,11 +37,6 @@
     .dropdown-action-menu .dropdown-item:hover { background-color: #f8fafc; }
     .timeline-container .border-bottom:last-child { border-bottom: 0 !important; padding-bottom: 0 !important; margin-bottom: 0 !important; }
 
-    /* KUSTOMISASI CKEDITOR */
-    .ck-editor__editable_inline { min-height: 150px; border-bottom-left-radius: 8px !important; border-bottom-right-radius: 8px !important; }
-    .ck-toolbar { border-top-left-radius: 8px !important; border-top-right-radius: 8px !important; background-color: #f8fafc !important; }
-    .ck.ck-balloon-panel { z-index: 1056 !important; }
-
     /* FOTO GALLERY HOVER */
     .photo-gallery-item { transition: transform 0.2s ease-in-out; border: 1px solid #dee2e6; border-radius: 8px; overflow: hidden; background: #fff; padding: 3px; display: inline-block; }
     .photo-gallery-item:hover { transform: scale(1.1); z-index: 10; border-color: #0dcaf0; box-shadow: 0 4px 8px rgba(0,0,0,0.1); }
@@ -79,7 +74,7 @@
                 </select>
 
                 <div class="overflow-hidden border shadow-sm input-group rounded-pill">
-                    <input type="text" name="search" class="px-4 bg-white border-0 form-control" placeholder="Cari No Aset, PT, Karyawan, S/N..." value="{{ request('search') }}">
+                    <input type="text" name="search" class="px-4 bg-white border-0 form-control" placeholder="Cari No Aset, Varian, Nama, PT, Karyawan, S/N..." value="{{ request('search') }}">
                     <button class="px-4 text-white border-0 btn btn-info fw-bold" type="submit"><i class="bi bi-search"></i></button>
                     @if(request('search') || request('warehouse_id'))
                         <a href="{{ route('fixed-assets.index') }}" class="px-3 btn btn-light border-start text-danger" title="Reset"><i class="bi bi-x-lg"></i></a>
@@ -144,6 +139,8 @@
                             $currCode   = strtoupper(optional($ast->currency)->code ?? 'IDR');
                             $currSymbol = optional($ast->currency)->symbol ?? ($currCode === 'IDR' ? 'Rp' : $currCode);
                             $currDec    = ($currCode === 'IDR') ? 0 : 2;
+
+                            $activeUpgrades = ($ast->upgrades ?? collect())->whereNotIn('status', ['REMOVED_GOOD', 'REMOVED_DEFECTIVE']);
                         @endphp
                         <tr class="main-row">
                             <td>
@@ -153,6 +150,15 @@
                                         <div class="fw-bold text-dark fs-6 mb-1 {{ optional($ast->status)->slug === 'disposed' ? 'text-decoration-line-through text-danger' : '' }}">
                                             {{ $ast->name ?? optional($ast->item)->name }}
                                         </div>
+
+                                        {{-- NAMA ALTERNATIF / VARIAN BARANG --}}
+                                        @if(!empty($ast->item_alias_name))
+                                            <div class="mb-1">
+                                                <span class="px-2 py-0.5 border badge bg-info-subtle text-info-emphasis border-info-subtle" style="font-size: 0.72rem;" title="Nama Alternatif / Varian Barang">
+                                                    <i class="bi bi-layers-half me-1"></i>Varian: {{ $ast->item_alias_name }}
+                                                </span>
+                                            </div>
+                                        @endif
 
                                         {{-- Indikator Master Sistem --}}
                                         <div class="mb-1 text-muted small">
@@ -164,6 +170,15 @@
                                         @if($poItemName)
                                             <div class="mb-1 small" style="color: #0284c7; font-weight: 500;">
                                                 <i class="bi bi-cart-check me-1"></i> Asal PO: {{ $poItemName }}
+                                            </div>
+                                        @endif
+
+                                        {{-- Indikator Komponen Upgrade Aktif --}}
+                                        @if($activeUpgrades->isNotEmpty())
+                                            <div class="mb-1">
+                                                <span class="px-2 py-0.5 border badge bg-warning-subtle text-warning-emphasis border-warning" style="font-size: 0.7rem;" title="Komponen Upgrade Terpasang">
+                                                    <i class="bi bi-cpu-fill me-1"></i>Upgrade: {{ $activeUpgrades->pluck('component_name')->implode(', ') }}
+                                                </span>
                                             </div>
                                         @endif
 
@@ -249,6 +264,7 @@
                                                 <h6 class="mb-3 fw-bold text-dark fs-6"><i class="bi bi-card-text me-2 text-primary"></i>Spesifikasi & Nilai Aset</h6>
                                                 <table class="table mb-0 table-sm table-borderless small">
                                                     <tr><td width="35%" class="pb-2 text-muted">Pemilik PT</td><td class="pb-2 fw-bold text-dark">: {{ optional($ast->company)->name ?? '-' }}</td></tr>
+                                                    <tr><td class="pb-2 text-muted">Nama Alternatif / Varian</td><td class="pb-2 fw-bold text-info-emphasis">: {{ $ast->item_alias_name ?: '-' }}</td></tr>
                                                     <tr><td class="pb-2 text-muted">Label Akuntansi</td><td class="pb-2 fw-bold text-dark">: {{ $ast->accounting_asset_number ?? '-' }}</td></tr>
                                                     <tr><td class="pb-2 text-muted">Kategori</td><td class="pb-2 fw-bold text-dark">: {{ $ast->assetCategory ? $ast->assetCategory->name . ' (' . $ast->assetCategory->useful_life_years . ' Tahun)' : 'Kelompok 1 (Default)' }}</td></tr>
                                                     <tr><td class="pb-2 text-muted">Harga Perolehan</td><td class="pb-2 fw-bold text-dark">: {{ $currSymbol }} {{ number_format($ast->purchase_price ?? 0, $currDec, ',', '.') }}</td></tr>
@@ -347,6 +363,9 @@
                                     <div class="p-0 modal-body bg-light text-start">
                                         <div class="p-4 text-center bg-white shadow-sm border-bottom z-1 position-relative">
                                             <h5 class="mb-1 fw-bold text-dark">{{ $ast->name ?? optional($ast->item)->name }}</h5>
+                                            @if(!empty($ast->item_alias_name))
+                                                <div class="mb-1"><span class="badge bg-info-subtle text-info-emphasis border border-info-subtle">Varian: {{ $ast->item_alias_name }}</span></div>
+                                            @endif
                                             <div class="gap-2 mt-2 d-flex justify-content-center">
                                                 <span class="badge bg-primary"><i class="bi bi-tag-fill me-1"></i>{{ $ast->asset_number }}</span>
                                                 @if($ast->assigned_to) <span class="text-white badge bg-success"><i class="bi bi-person-check-fill me-1"></i>Dipegang: {{ optional($ast->assignee)->name }}</span> @else <span class="badge bg-info text-dark"><i class="bi bi-geo-alt-fill me-1"></i>{{ optional($ast->warehouse)->name ?? 'Lokasi Belum Diset' }}</span> @endif
@@ -398,7 +417,6 @@
                 <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
             </div>
             <div class="p-4 modal-body bg-light text-start" style="font-size: 0.95rem;">
-
                 <div class="p-3 mb-4 bg-white border shadow-sm rounded-3 border-primary-subtle">
                     <h6 class="mb-2 fw-bold text-primary"><i class="bi bi-bank me-2"></i>Dasar Hukum & Waktu Mulai Penyusutan</h6>
                     <p class="mb-2 text-dark">Penyusutan aset <strong>TIDAK</strong> dihitung berdasarkan tanggal Purchase Order (PO), melainkan dari <strong>Tanggal Perolehan (Acquisition Date)</strong>, yaitu saat barang fisik diterima dan siap digunakan.</p>
@@ -422,31 +440,6 @@
                     <span class="mb-1 text-success d-block small">3. Nilai Akhir yang Muncul di Sistem:</span>
                     Nilai Buku Saat Ini = <span class="text-dark">Harga Perolehan</span> - <span class="text-dark">Akumulasi Penyusutan</span>
                 </div>
-
-                <h6 class="mt-4 mb-3 fw-bold text-dark"><i class="bi bi-laptop me-2 text-warning"></i>Contoh Simulasi Kasus</h6>
-                <div class="p-3 bg-white border shadow-sm rounded-3 text-muted">
-                    <div class="pb-2 mb-3 row border-bottom">
-                        <div class="col-6"><strong>Harga Perolehan:</strong> Rp 10.000.000</div>
-                        <div class="col-6"><strong>Kategori:</strong> Kelompok 1 (Masa 4 Tahun / 48 Bulan)</div>
-                        <div class="mt-2 col-6"><strong>Tgl Perolehan (GR/Input):</strong> 01 Jan 2024</div>
-                        <div class="mt-2 col-6 text-danger"><strong>Waktu Pengecekan:</strong> Hari ini (Jeda &approx; 30,93 Bulan)</div>
-                    </div>
-
-                    <div class="mb-2">
-                        <span class="badge bg-secondary me-2">Langkah 1</span>
-                        Penyusutan per bulan = Rp 10.000.000 / 48 bulan = <strong>Rp 208.333,33</strong>
-                    </div>
-                    <div class="mb-2">
-                        <span class="badge bg-secondary me-2">Langkah 2</span>
-                        Akumulasi Susut = Rp 208.333,33 × 30,93 bulan = <strong>Rp 6.442.553</strong>
-                    </div>
-                    <div class="p-2 mb-2 border rounded bg-light">
-                        <span class="badge bg-success me-2">Hasil Akhir</span>
-                        Nilai Buku Saat Ini = Rp 10.000.000 - Rp 6.442.553 = <strong class="text-dark fs-6">Rp 3.557.447</strong>
-                    </div>
-                    <div class="mt-3 small text-info"><i class="bi bi-info-circle-fill me-1"></i> Catatan: Jika usia aset sudah melampaui masa manfaatnya (misal sudah lewat 4 tahun), maka sistem akan otomatis mengunci Nilai Buku di angka <strong>Rp 0</strong>.</div>
-                </div>
-
             </div>
             <div class="p-3 bg-white modal-footer border-top">
                 <button type="button" class="px-5 shadow-sm btn btn-primary rounded-pill fw-bold" data-bs-dismiss="modal">Saya Mengerti</button>
