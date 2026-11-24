@@ -110,8 +110,11 @@
             </a>
             <div class="collapse {{ request()->routeIs('fixed-assets.*', 'asset-capitalizations.*', 'assets.*') ? 'show' : '' }}" id="menuAssets">
                 @can('view_assets')
+                    <a href="{{ route('fixed-assets.analytics') }}" class="sidebar-sublink {{ request()->routeIs('fixed-assets.analytics') ? 'active' : '' }}">Dashboard Analisa Aset</a>
                     <a href="{{ route('fixed-assets.master_list') }}" class="sidebar-sublink {{ request()->routeIs('fixed-assets.master_list') ? 'active' : '' }}">Master Data Aset Aktif</a>
+                    <a href="{{ route('fixed-assets.employee_matrix') }}" class="sidebar-sublink {{ request()->routeIs('fixed-assets.employee_matrix') ? 'active' : '' }}">Matriks Aset Karyawan</a>
                     <a href="{{ route('fixed-assets.transactions') }}" class="sidebar-sublink {{ request()->routeIs('fixed-assets.transactions') ? 'active' : '' }}">Transaksi & Retur Aset</a>
+                    <a href="{{ route('fixed-assets.upgrades.index') }}" class="sidebar-sublink {{ request()->routeIs('fixed-assets.upgrades.*') ? 'active' : '' }}">Upgrade & Part Aset</a>
                     <a href="{{ route('asset-capitalizations.index') }}" class="sidebar-sublink {{ request()->routeIs('asset-capitalizations.*') ? 'active' : '' }}">Pengakuan Aset</a>
                     <a href="{{ route('fixed-assets.index') }}" class="sidebar-sublink {{ request()->routeIs('fixed-assets.index') ? 'active' : '' }}">Registrasi / Import Aset</a>
                     <a href="{{ route('fixed-assets.import_history') }}" class="sidebar-sublink {{ request()->routeIs('fixed-assets.import_history') ? 'active' : '' }}">Riwayat Import & Label QR</a>

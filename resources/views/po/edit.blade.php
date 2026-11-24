@@ -33,6 +33,14 @@
 @endpush
 
 @section('content')
+@php
+    $itemAliasesMap = [];
+    if (isset($masterItems)) {
+        foreach ($masterItems as $mItem) {
+            $itemAliasesMap[$mItem->id] = $mItem->aliases ? $mItem->aliases->pluck('alias_name')->toArray() : [];
+        }
+    }
+@endphp
 
 <form action="{{ route('po.update', $po->po_number) }}" method="POST" id="poForm" enctype="multipart/form-data" novalidate>
     @csrf
@@ -168,6 +176,8 @@
                             $remainingNominal = $currentConvRate > 0 ? ($sisaBaseQty / $currentConvRate) : 0;
                             $remainingNominal = round($remainingNominal, 2);
                         }
+
+                        $existingAliases = optional($masterItem)->aliases ?? collect();
                     @endphp
 
                     <div class="mb-4 border-0 shadow-sm card item-row" style="border-radius: 12px; overflow: hidden;">
@@ -175,6 +185,7 @@
                             <div>
                                 <div class="text-dark fw-bolder fs-6">{{ $item->item_name ?? optional($item->item)->name ?? 'Item Terhapus' }}</div>
                                 <span class="mt-1 border badge bg-secondary-subtle text-secondary">{{ optional($item->item)->code }}</span>
+                                <span class="mt-1 text-muted small ms-1">(Master: {{ optional($item->item)->name ?? '-' }})</span>
                                 <input type="hidden" name="po_items[{{ $item->id }}][pr_item_id]" value="{{ $item->purchase_request_item_id }}">
                                 <input type="hidden" name="po_items[{{ $item->id }}][vendor_id]" value="{{ $po->vendor_id }}">
                             </div>
@@ -198,13 +209,30 @@
                             <div class="pb-4 mb-4 row g-3 border-bottom">
                                 <div class="col-md-7">
                                     <div class="mb-3">
-                                        <label class="form-label small fw-bold text-dark">Nama Barang di PO (Opsional)</label>
-                                        <input type="text" name="po_items[{{ $item->id }}][item_name_override]" class="form-control form-input-custom fw-bold text-primary" value="{{ $item->item_name ?? optional($item->item)->name }}" placeholder="Ketik nama spesifik barang...">
+                                        <label class="form-label small fw-bold text-dark">
+                                            Nama Alternatif / Nama Barang di PO (Opsional)
+                                            <span class="border badge bg-info-subtle text-info-emphasis border-info-subtle ms-1" style="font-size: 0.68rem;">Auto-Simpan Kamus Varian</span>
+                                        </label>
+                                        <input type="text"
+                                               name="po_items[{{ $item->id }}][item_name_override]"
+                                               list="existing_alias_list_{{ $item->id }}"
+                                               class="form-control form-input-custom fw-bold text-primary"
+                                               value="{{ $item->item_name ?? optional($item->item)->name }}"
+                                               placeholder="Pilih dari saran varian atau ketik nama alternatif...">
+                                        <datalist id="existing_alias_list_{{ $item->id }}">
+                                            @foreach($existingAliases as $al)
+                                                <option value="{{ $al->alias_name }}"></option>
+                                            @endforeach
+                                        </datalist>
+                                        @if($existingAliases->count() > 0)
+                                            <div class="form-text text-muted" style="font-size: 0.72rem;">
+                                                <i class="bi bi-lightbulb-fill text-warning me-1"></i>Tersedia <strong>{{ $existingAliases->count() }} saran nama alternatif</strong> tersimpan. Klik kolom di atas untuk memilih atau ketik nama baru.
+                                            </div>
+                                        @endif
                                     </div>
                                     <label class="form-label small fw-bold text-dark">Spesifikasi Detail (Bisa diedit)</label>
                                     <textarea name="po_items[{{ $item->id }}][notes]" id="spec_{{ $item->id }}" class="form-control ckeditor-spec">{!! $item->description !!}</textarea>
 
-                                    {{-- 🔥 TAMBAHKAN KOTAK REMARK DI SINI 🔥 --}}
                                     <div class="mt-3">
                                         <label class="form-label small fw-bold text-dark">Remark (Opsional)</label>
                                         <input type="text" name="po_items[{{ $item->id }}][remark]" class="form-control form-input-custom" value="{{ $item->remark ?? '' }}" placeholder="Ketik remark di sini...">
@@ -620,7 +648,6 @@
                     @if(isset($masterItems))
                         @foreach($masterItems as $mItem)
                             @php
-                                // 🔥 KUMPULKAN SEMUA SATUAN ALTERNATIF DARI MASTER DATA 🔥
                                 $altUoms = [];
                                 if(isset($mItem->itemUoms) && count($mItem->itemUoms) > 0) {
                                     foreach($mItem->itemUoms as $alt) {
@@ -636,7 +663,7 @@
                                 data-name="{{ $mItem->name }}"
                                 data-uom="{{ optional($mItem->uom)->name }}"
                                 data-uom-id="{{ $mItem->uom_id }}"
-                                data-alt-uoms="{{ json_encode($altUoms) }}"> {{-- 🔥 KIRIM KE JAVASCRIPT 🔥 --}}
+                                data-alt-uoms="{{ json_encode($altUoms) }}">
                                 {{ $mItem->name }} ({{ $mItem->code }})
                             </option>
                         @endforeach
@@ -658,22 +685,30 @@
             <div class="pb-4 mb-4 row g-3 border-bottom">
                 <div class="col-md-7">
                     <div class="mb-3">
-                        <label class="form-label small fw-bold text-dark">Nama Barang di PO (Opsional)</label>
-                        {{-- 🔥 ID DITAMBAHKAN AGAR BISA DIISI OTOMATIS OLEH JAVASCRIPT 🔥 --}}
-                        <input type="text" name="new_items[NEW_INDEX][item_name_override]" id="new_item_name_override_NEW_INDEX" class="form-control form-input-custom fw-bold text-primary" placeholder="Ketik nama spesifik barang...">
+                        <label class="form-label small fw-bold text-dark">
+                            Nama Alternatif / Nama Barang di PO (Opsional)
+                            <span class="border badge bg-info-subtle text-info-emphasis border-info-subtle ms-1" style="font-size: 0.68rem;">Auto-Simpan Kamus Varian</span>
+                        </label>
+                        <input type="text"
+                               name="new_items[NEW_INDEX][item_name_override]"
+                               id="new_item_name_override_NEW_INDEX"
+                               list="new_alias_list_NEW_INDEX"
+                               class="form-control form-input-custom fw-bold text-primary"
+                               placeholder="Pilih dari saran varian atau ketik nama alternatif baru...">
+                        <datalist id="new_alias_list_NEW_INDEX"></datalist>
+                        <div class="form-text text-muted" style="font-size: 0.72rem;" id="newAliasHint_NEW_INDEX">
+                            Pilih barang master di atas untuk melihat daftar nama alternatif yang pernah dipakai.
+                        </div>
                     </div>
                     <label class="form-label small fw-bold text-dark">Spesifikasi Detail</label>
                     <textarea name="new_items[NEW_INDEX][notes]" id="new_spec_NEW_INDEX" class="form-control new-ckeditor-spec"></textarea>
 
-                    {{-- 🔥 TAMBAHKAN KOTAK REMARK DI SINI 🔥 --}}
                     <div class="mt-4">
                         <label class="form-label small fw-bold text-dark">Remark (Opsional)</label>
                         <input type="text" name="new_items[NEW_INDEX][remark]" class="form-control form-input-custom" value="" placeholder="Ketik remark di sini...">
                     </div>
-
                 </div>
 
-                {{-- 🔥 KOTAK UPLOAD FILE DITAMBAHKAN KEMBALI 🔥 --}}
                 <div class="col-md-5">
                     <label class="form-label small fw-bold text-dark"><i class="bi bi-paperclip text-primary"></i> Dokumen Pendukung Item</label>
                     <div class="p-3 border rounded shadow-sm bg-light border-secondary-subtle">
@@ -751,6 +786,8 @@
 <script src="https://cdn.ckeditor.com/ckeditor5/39.0.1/classic/ckeditor.js"></script>
 
 <script>
+    window.ITEM_ALIASES_MAP = @json($itemAliasesMap);
+
     var chargeIdx = 500;
     var discIdx = 500;
     var newItemIdx = 1000;
@@ -825,35 +862,49 @@
         calculateRow(row.querySelector('.qty-input'));
     }
 
-    // 🔥 LOGIKA UNTUK MENYALIN NAMA BARANG OTOMATIS & MENARIK MULTI-UOM 🔥
+    // 🔥 LOGIKA UNTUK MENYALIN NAMA BARANG OTOMATIS, SARAN NAMA ALTERNATIF & MULTI-UOM 🔥
     function populateNewItemData(selectEl, index) {
         var selected = selectEl.options[selectEl.selectedIndex];
 
-        // Jika user memilih opsi "-- Cari Barang --" (kosong)
         if(!selected || !selected.value) {
             document.getElementById('new_uom_select_' + index).innerHTML = '<option value="">Satuan Dasar</option>';
             return;
         }
 
-        // Ambil data dari tag HTML <option> yang dipilih
+        var selectedItemId = selected.value;
         var baseUomName = selected.getAttribute('data-uom') || 'PCS';
         var baseUomId = selected.getAttribute('data-uom-id') || '';
         var rawItemName = selected.getAttribute('data-name') || '';
         var altUomsRaw = selected.getAttribute('data-alt-uoms') || '[]';
 
-        // Set Nama Satuan Dasar
         document.getElementById('uom-name-' + index).value = baseUomName;
+
+        // Isi Datalist Saran Nama Alternatif dari Kamus ItemAlias
+        var aliasList = document.getElementById('new_alias_list_' + index);
+        var aliasHint = document.getElementById('newAliasHint_' + index);
+        if (aliasList) {
+            aliasList.innerHTML = '';
+            var aliases = (window.ITEM_ALIASES_MAP && window.ITEM_ALIASES_MAP[selectedItemId]) || [];
+            aliases.forEach(function(aliasName) {
+                var opt = document.createElement('option');
+                opt.value = aliasName;
+                aliasList.appendChild(opt);
+            });
+            if (aliasHint) {
+                aliasHint.innerHTML = aliases.length > 0
+                    ? '<i class="bi bi-lightbulb-fill text-warning me-1"></i>Tersedia <strong>' + aliases.length + ' saran nama alternatif</strong> tersimpan. Klik kolom di atas untuk memilih atau ketik nama baru.'
+                    : 'Belum ada nama alternatif tersimpan untuk barang ini. Ketik nama baru untuk menyimpannya otomatis.';
+            }
+        }
 
         var uomSelect = document.getElementById('new_uom_select_' + index);
         var optionsHtml = '<option value="' + baseUomId + '" data-name="' + baseUomName + '" data-conv="1">' + baseUomName + ' (Dasar)</option>';
 
-        // 🔥 LOGIKA BARU: BACA DAN TAMBAHKAN SATUAN KEMASAN DARI DATABASE 🔥
         try {
             var altUoms = JSON.parse(altUomsRaw);
             altUoms.forEach(function(alt, idx) {
-                // Jangan masukkan jika konversinya 1 (sama dengan dasar)
                 if (alt.conv !== 1) {
-                    var safeAltVal = alt.id + " ".repeat(idx + 1); // Anti tabrakan id
+                    var safeAltVal = alt.id + " ".repeat(idx + 1);
                     optionsHtml += '<option value="' + safeAltVal + '" data-name="' + alt.name + ' (Isi: ' + alt.conv + ' ' + baseUomName + ')" data-conv="' + alt.conv + '">' + alt.name + ' (Isi: ' + alt.conv + ')</option>';
                 }
             });
@@ -863,13 +914,11 @@
 
         uomSelect.innerHTML = optionsHtml;
 
-        // Set Override Nama Barang (Agar otomatis terisi)
         var overrideInput = document.getElementById('new_item_name_override_' + index);
         if(overrideInput) {
             overrideInput.value = rawItemName;
         }
 
-        // Jalankan fungsi update perhitungan harga/qty otomatis setelah UOM diubah
         updateRowUom(uomSelect, index);
     }
 
@@ -882,18 +931,22 @@
         if(uomNameInput) uomNameInput.value = newUomName;
 
         var qtyInput = document.getElementById('qty-input-' + index);
-        var sisaBaseQty = parseFloat(qtyInput.getAttribute('data-base-remaining')) || 0;
-
-        var helpText = document.getElementById('max-val-' + index);
-        if(helpText && sisaBaseQty < 999999) {
-            var newMaxVal = sisaBaseQty / newConvRate;
-            qtyInput.max = newMaxVal;
-            qtyInput.value = parseFloat(newMaxVal.toFixed(2));
-            helpText.innerText = newMaxVal.toFixed(2);
+        if (qtyInput) {
+            var sisaBaseQty = parseFloat(qtyInput.getAttribute('data-base-remaining')) || 0;
+            var helpText = document.getElementById('max-val-' + index);
+            if(helpText && sisaBaseQty < 999999) {
+                var newMaxVal = sisaBaseQty / newConvRate;
+                qtyInput.max = newMaxVal;
+                qtyInput.value = parseFloat(newMaxVal.toFixed(2));
+                helpText.innerText = newMaxVal.toFixed(2);
+            }
+            selectEl.setAttribute('data-current-conv', newConvRate);
+            calculateRow(qtyInput);
+        } else {
+            selectEl.setAttribute('data-current-conv', newConvRate);
+            var rowQty = selectEl.closest('.item-row')?.querySelector('.qty-input');
+            if (rowQty) calculateRow(rowQty);
         }
-
-        selectEl.setAttribute('data-current-conv', newConvRate);
-        calculateRow(qtyInput);
     }
 
     function triggerFilePicker(index) {
@@ -1189,7 +1242,6 @@
             confirmButtonText: 'Ya, Simpan!'
         }).then(function(result) {
             if (result.isConfirmed) {
-                // Ubah tombol submit menjadi spinner (tanpa kotak loading SweetAlert)
                 let submitBtn = $(form).find('button[type="submit"], #btnSubmitForm, #btn-submit-main');
                 submitBtn.data('original-html', submitBtn.html());
                 submitBtn.prop('disabled', true).html('<span class="spinner-border spinner-border-sm me-2"></span> Menyimpan...');

@@ -54,7 +54,6 @@
 @endpush
 
 @section('content')
-{{-- DIBUAT FULL WIDTH TANPA MAX-WIDTH AGAR MENGISI LAYAR PENUH --}}
 <div class="pb-5 container-fluid text-dark px-md-4">
 
     <div class="mb-4 d-flex justify-content-between align-items-end">
@@ -78,7 +77,6 @@
                     <div class="mb-1 tracking-wide small text-muted fw-bold text-uppercase">Nomor Batch Import</div>
                     <h4 class="mb-2 fw-bold text-dark">{{ $batch->batch_number }}</h4>
 
-                    {{-- 🔥 LOGIKA AMAN: Mencegah error jika statusInfo tidak ada 🔥 --}}
                     @php
                         $badgeColor = 'secondary';
                         $badgeText = strtoupper($batch->status);
@@ -192,11 +190,11 @@
             <table class="table align-middle table-modern">
                 <thead>
                     <tr>
-                        <th class="ps-4" width="17%">Item Master</th>
-                        <th width="25%">Nama Aset Fisik</th>
-                        <th width="18%">Akuntansi & S/N</th>
+                        <th class="ps-4" width="16%">Item Master</th>
+                        <th width="29%">Varian & Nama Aset Akuntansi</th>
+                        <th width="16%">Akuntansi & S/N</th>
                         <th width="15%">Lokasi & Status</th>
-                        <th width="15%">Harga Beli</th>
+                        <th width="14%">Harga Beli</th>
                         <th class="text-center pe-4" width="10%">Validasi</th>
                     </tr>
                 </thead>
@@ -206,7 +204,6 @@
                         $currencySymbols = \App\Models\Currency::pluck('symbol', 'code')
                             ->mapWithKeys(fn($symbol, $code) => [strtoupper(trim($code)) => $symbol]);
 
-                        // Ambil mapping code => name dari Master Item sekaligus (1x query)
                         $itemCodes = $batch->details->pluck('kode_barang')->filter()->map(fn($c) => trim($c))->unique();
                         $masterItems = \App\Models\Item::whereIn('code', $itemCodes)->pluck('name', 'code');
                     @endphp
@@ -215,23 +212,41 @@
                         $listErrors = [];
                         $cleanCatatan = $d->catatan ?? '';
 
-                        // 1. Tangkap format baru: [ERR_LIST]err1||err2[/ERR_LIST]
                         if (preg_match('/\[ERR_LIST\](.*?)\[\/ERR_LIST\]/s', $cleanCatatan, $m)) {
                             $listErrors = array_filter(array_map('trim', explode('||', $m[1])));
                             $cleanCatatan = trim(str_replace($m[0], '', $cleanCatatan));
-                        }
-                        // 2. Tangkap format lama yang sudah terlanjur masuk di batch sebelumnya: [ERROR VALIDASI: ...]
-                        elseif (preg_match('/\[ERROR VALIDASI:\s*(.*?)\]/s', $cleanCatatan, $m)) {
+                        } elseif (preg_match('/\[ERROR VALIDASI:\s*(.*?)\]/s', $cleanCatatan, $m)) {
                             $listErrors = array_filter(array_map('trim', explode('|', $m[1])));
                             $cleanCatatan = trim(str_replace($m[0], '', $cleanCatatan));
                         }
-                        // 3. Fallback jika masih kosong
                         if (!$d->is_valid && empty($listErrors)) {
                             $listErrors = [$d->validation_error ?? $d->error_message ?? 'Data baris tidak sesuai format/master.'];
                         }
 
                         $cleanKode = trim($d->kode_barang ?? '');
                         $masterItemName = $cleanKode ? ($masterItems[$cleanKode] ?? null) : null;
+
+                        $harga = (float) $d->harga_beli;
+                        $adaDesimal = round($harga - floor($harga), 2) > 0;
+                        $kodeCurr = strtoupper(trim($d->mata_uang ?? 'IDR'));
+                        $simbol = $currencySymbols[$kodeCurr] ?? $kodeCurr;
+
+                        // Parse rincian upgrade dari kolom upgrade_items jika ada
+                        $parsedUpgrades = [];
+                        $totalUpgradeCost = 0;
+                        if (!empty($d->upgrade_items)) {
+                            foreach (preg_split('/\r\n|\r|\n|;/', (string) $d->upgrade_items) as $uLine) {
+                                $uLine = trim($uLine);
+                                if ($uLine === '' || $uLine === '-') continue;
+                                $uParts = preg_split('/\||:/', $uLine, 2);
+                                $uName = trim($uParts[0]);
+                                $uCost = isset($uParts[1]) ? (float) preg_replace('/[^0-9.]/', '', $uParts[1]) : 0;
+                                if ($uName !== '') {
+                                    $parsedUpgrades[] = ['name' => $uName, 'cost' => $uCost];
+                                    $totalUpgradeCost += $uCost;
+                                }
+                            }
+                        }
                     @endphp
                     <tr>
                         <td class="ps-4">
@@ -251,7 +266,41 @@
                             @endif
                         </td>
                         <td>
-                            <div class="mb-1 fw-bold text-dark">{{ $d->nama_spesifik_aset ?: 'Sesuai Master' }}</div>
+                            {{-- NAMA ALTERNATIF / VARIAN --}}
+                            @if(!empty($d->nama_alternatif))
+                                <div class="mb-1">
+                                    <span class="px-2 py-1 border badge bg-info-subtle text-info-emphasis border-info-subtle" style="font-size: 0.72rem;">
+                                        <i class="bi bi-tag-fill me-1"></i> Varian: {{ $d->nama_alternatif }}
+                                    </span>
+                                </div>
+                            @endif
+
+                            {{-- NAMA SPESIFIK ASET / AKUNTANSI --}}
+                            <div class="mb-1 fw-bold text-dark">{{ $d->nama_spesifik_aset ?: ($d->nama_alternatif ?: 'Sesuai Master') }}</div>
+
+                            {{-- RINCIAN KOMPONEN UPGRADE (JIKA ADA) --}}
+                            @if(!empty($parsedUpgrades))
+                                <div class="p-2 mb-1 border rounded-3 bg-warning-subtle border-warning" style="font-size: 0.75rem;">
+                                    <div class="fw-bold text-warning-emphasis mb-1">
+                                        <i class="bi bi-cpu-fill me-1"></i>Komponen Upgrade ({{ count($parsedUpgrades) }}):
+                                    </div>
+                                    <ul class="mb-1 ps-3 text-dark">
+                                        @foreach($parsedUpgrades as $pu)
+                                            <li>
+                                                {{ $pu['name'] }}
+                                                @if($pu['cost'] > 0)
+                                                    <span class="fw-bold text-primary">(+{{ $simbol }} {{ number_format($pu['cost'], 0, ',', '.') }})</span>
+                                                @endif
+                                            </li>
+                                        @endforeach
+                                    </ul>
+                                    @if($totalUpgradeCost > 0)
+                                        <div class="pt-1 border-top border-warning fw-bold text-dark">
+                                            Total Upgrade: {{ $simbol }} {{ number_format($totalUpgradeCost, 0, ',', '.') }}
+                                        </div>
+                                    @endif
+                                </div>
+                            @endif
 
                             @if(!empty($d->spesifikasi))
                                 <div class="mb-1 text-muted" style="font-size: 0.8rem; line-height: 1.4;">
@@ -260,7 +309,6 @@
                                 </div>
                             @endif
 
-                            {{-- Tampilkan catatan bersih tanpa tag error --}}
                             @if(!empty($cleanCatatan))
                                 <div class="text-muted fst-italic" style="font-size: 0.8rem; line-height: 1.4;">
                                     <span class="fw-bold text-secondary"><i class="bi bi-journal-text me-1"></i>Note:</span>
@@ -297,12 +345,6 @@
                         {{-- HARGA & TANGGAL --}}
                         <td>
                             @php
-                                $harga = (float) $d->harga_beli;
-                                $adaDesimal = round($harga - floor($harga), 2) > 0;
-
-                                $kodeCurr = strtoupper(trim($d->mata_uang ?? 'IDR'));
-                                $simbol = $currencySymbols[$kodeCurr] ?? $kodeCurr;
-
                                 $tglTampil = '-';
                                 if (!empty($d->tanggal_perolehan)) {
                                     if (is_numeric($d->tanggal_perolehan)) {
@@ -350,10 +392,6 @@
 
 <script>
     document.addEventListener("DOMContentLoaded", function() {
-
-        // ==========================================
-        // 1. SWEETALERT UNTUK TOMBOL AJUKAN APPROVAL
-        // ==========================================
         document.querySelectorAll('.btn-ajukan-approval').forEach(btn => {
             btn.addEventListener('click', function() {
                 const form = this.closest('form');
@@ -383,9 +421,6 @@
             });
         });
 
-        // ==========================================
-        // 2. SWEETALERT UNTUK TOMBOL BATAL DRAFT
-        // ==========================================
         document.querySelectorAll('.btn-batal-draft').forEach(btn => {
             btn.addEventListener('click', function() {
                 const form = this.closest('form');
@@ -415,13 +450,9 @@
             });
         });
 
-        // ==========================================
-        // 3. SWEETALERT UNTUK TOMBOL APPROVE (FINAL)
-        // ==========================================
         document.querySelectorAll('.btn-approve-final').forEach(btn => {
             btn.addEventListener('click', function() {
                 const form = this.closest('form');
-
                 Swal.fire({
                     title: 'Mengesahkan Import Aset?',
                     text: "Aset akan resmi masuk ke Buku Utama. Sistem otomatis membuat Master Barang baru jika kode dikosongkan.",
@@ -448,13 +479,9 @@
             });
         });
 
-        // ==========================================
-        // 4. SWEETALERT UNTUK TOMBOL REJECT (FINAL)
-        // ==========================================
         document.querySelectorAll('.btn-reject-final').forEach(btn => {
             btn.addEventListener('click', function() {
                 const form = this.closest('form');
-
                 Swal.fire({
                     title: 'Tolak Pengajuan?',
                     text: "Berkas Karantina ini akan dikembalikan ke status Draft untuk diperbaiki oleh staf.",
@@ -480,7 +507,6 @@
                 });
             });
         });
-
     });
 </script>
 @endpush

@@ -1,0 +1,2932 @@
+<?php
+
+namespace App\Http\Controllers;
+
+use App\Models\Asset;
+use App\Models\ChargeType;
+use App\Models\Company;
+use App\Models\GoodsReceipt;
+use App\Models\GoodsReceiptItem;
+use App\Models\InventoryMovement;
+use App\Models\InventoryStock;
+use App\Models\PaymentTerm;
+use Illuminate\Support\Facades\Auth;
+use App\Models\Item;
+use App\Models\Tax;
+use App\Models\PurchaseOrder;
+use App\Models\PurchaseOrderItem;
+use App\Models\PurchaseRequest;
+use App\Models\PurchaseRequestItem;
+use App\Models\Vendor;
+use App\Models\Status;
+use App\Models\DiscountType;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Storage;
+use App\Models\User;
+use App\Notifications\DocumentApprovalNotification;
+
+use Webklex\PDFMerger\Facades\PDFMergerFacade as PDFMerger;
+
+class PurchaseOrderController extends Controller
+{
+    // =========================================================================
+    // 1. TAMPILKAN ITEM SIAP PO
+    // =========================================================================
+    public function getItemsForPo()
+    {
+        $statusApproved = \App\Models\Status::where('type', 'PR')->where('slug', 'approved')->first();
+        $statusPartial  = \App\Models\Status::where('type', 'PR')->where('slug', 'partial_po')->first();
+        $validStatusIds = array_filter([$statusApproved->id ?? null, $statusPartial->id ?? null]);
+
+        $pendingItems = PurchaseRequestItem::where('status', 'APPROVED')
+                        ->whereHas('purchaseRequest', function($q) use ($validStatusIds) {
+                            $q->whereIn('status_id', $validStatusIds);
+                        })
+                        ->whereRaw('qty > IFNULL(ordered_qty, 0)')
+                        ->with(['item', 'purchaseRequest'])
+                        ->get();
+
+        $vendors = \App\Models\Vendor::all();
+        $companies = \App\Models\Company::all();
+
+        return view('po.create', compact('pendingItems', 'vendors', 'companies'));
+    }
+
+    public function create()
+    {
+        return $this->getItemsForPo();
+    }
+
+    // =========================================================================
+    // 2. STORE (SIMPAN DRAFT PO MANUAL)
+    // =========================================================================
+    public function store(Request $request)
+    {
+        $request->validate([
+            'billing_company_id'   => 'required|exists:companies,id',
+            'payment_term_id'      => 'required|exists:payment_terms,id',
+            'po_items'             => 'required|array',
+            'po_items.*.vendor_id' => 'required|integer',
+        ], [
+            'po_items.*.vendor_id.required' => 'Gagal: Anda harus memilih Vendor Aktual untuk semua barang!',
+        ]);
+
+        DB::beginTransaction();
+        try {
+            $poNumber = $this->generatePoNumber($request->billing_company_id);
+            $paymentTermName = \App\Models\PaymentTerm::find($request->payment_term_id)->name ?? null;
+            $statusDraft = \App\Models\Status::where('type', 'PO')->whereIn('slug', ['draft', 'pending_approval'])->first();
+            $shippingAddress = $request->shipping_address ?: (\App\Models\Company::find($request->bill_to_company_id)->address ?? '-');
+
+            $po = PurchaseOrder::create([
+                'po_number'          => $poNumber,
+                'purchase_request_id'=> $request->pr_id,
+                'vendor_id'          => $request->vendor_id,
+                'vendor_sub_name'       => $request->vendor_sub_name, // 🔥 TANGKAP INPUTAN INI 🔥
+                'bill_to_company_id' => $request->bill_to_company_id,
+                'status_id'          => $statusDraft->id ?? null,
+                'po_date'            => $request->po_date,
+                'delivery_date'      => $request->delivery_date,
+                'due_date'           => $request->due_date,
+                'payment_terms'      => $paymentTermName,
+                'notes'              => $request->notes,
+                'currency'           => $request->currency,
+                'created_by'         => auth()->id(),
+                'shipping_address'   => $shippingAddress,
+                // 🔥 TAMBAHKAN BARIS INI 🔥
+                'custom_workflow_id'  => $request->custom_workflow_id,
+            ]);
+
+            $vendorName = \App\Models\Vendor::find($request->vendor_id)->name ?? 'Vendor';
+            $this->logHistory($po->id, 'PO Diterbitkan', "Draft PO Nomor: **{$po->po_number}**\nVendor: **{$vendorName}**");
+
+            $grandSubtotal = 0; $grandTax = 0; $prItemIdsToHeal = [];
+
+            foreach ($request->input('items', []) as $itemData) {
+                $qty = (float) ($itemData['qty'] ?? 0);
+                if ($qty <= 0) continue;
+
+                if (!empty($itemData['pr_item_id'])) {
+                    $prItemIdsToHeal[] = $itemData['pr_item_id'];
+                }
+
+                $price = (float) $itemData['price'];
+                $gross = $qty * $price;
+                $discVal = (float) ($itemData['discount_value'] ?? 0);
+                $discType = $itemData['discount_type'] ?? 'FIXED';
+                $discAmt = (strtoupper($discType) == 'PERCENT') ? ($gross * $discVal / 100) : $discVal;
+                $dpp = $gross - $discAmt;
+
+                $taxAmt = 0;
+                $taxId = $itemData['tax_id'] ?? null;
+                $taxVal = 0;
+                $taxType = 'FIXED';
+                if ($taxId && $tax = \App\Models\Tax::find($taxId)) {
+                    $taxVal = $tax->percent;
+                    $taxType = 'PERCENT';
+                    $taxAmt = ($dpp * $tax->percent) / 100;
+                }
+
+                $masterItem = \App\Models\Item::find($itemData['item_id']);
+                $itemName = $itemData['item_name_override'] ?? ($masterItem->name ?? '-');
+
+                PurchaseOrderItem::create([
+                    'purchase_order_id'        => $po->id,
+                    'item_id'                  => $itemData['item_id'],
+                    'item_name'                => $itemName,
+                    'purchase_request_item_id' => $itemData['pr_item_id'] ?? null,
+                    'qty_ordered'              => $qty,
+                    'unit_price'               => $price,
+                    'uom_id'                   => $itemData['uom_id'] ?? null,
+                    'uom'                      => $itemData['uom'] ?? ($masterItem->unit ?? 'Unit'),
+                    'description'              => $itemData['notes'] ?? ($masterItem->name ?? '-'),
+                    'remark'            => $newItemData['remark'] ?? null, // 🔥 TAMBAHKAN INI
+                    'discount_amount'          => $discAmt,
+                    'tax_amount'               => $taxAmt,
+                    'tax_id'                   => $taxId,
+                    'subtotal'                 => $dpp,
+                    'discount_type'            => $discType,
+                    'discount_value'           => $discVal,
+                ]);
+
+                $grandSubtotal += $dpp;
+                $grandTax += $taxAmt;
+            }
+
+            $totalCharges = 0;
+            if ($request->has('charges_name')) {
+                foreach ($request->charges_name as $idx => $name) {
+                    $amount = (float) ($request->charges_amount[$idx] ?? 0);
+                    if ($name && $amount > 0) {
+                        DB::table('purchase_order_charges')->insert([
+                            'purchase_order_id' => $po->id, 'name' => $name, 'amount' => $amount, 'created_at' => now(), 'updated_at' => now()
+                        ]);
+                        $totalCharges += $amount;
+                    }
+                }
+            }
+
+            $globalDiscType = $request->global_discount_type ?? 'FIXED';
+            $globalDiscVal  = (float) ($request->global_discount_value ?? 0);
+            $globalDiscAmount = (strtoupper($globalDiscType) == 'PERCENT') ? ($grandSubtotal * $globalDiscVal / 100) : $globalDiscVal;
+
+            $poGrandTotal = ($grandSubtotal - $globalDiscAmount) + $grandTax + $totalCharges;
+            $po->update([
+                'subtotal'       => $grandSubtotal,
+                'tax_total'      => $grandTax,
+                'discount_total' => $globalDiscAmount,
+                'grand_total'    => $poGrandTotal
+            ]);
+
+            if (!empty($prItemIdsToHeal)) {
+                foreach(array_unique($prItemIdsToHeal) as $pid) {
+                    $this->recalculatePrItemFulfillment($pid);
+                }
+                $this->checkAndUpdatePrStatus($request->pr_id);
+            }
+
+            DB::commit();
+
+            // 🔥 SYNC GOOGLE SHEET 🔥
+            \App\Jobs\SyncPoToGoogleSheet::dispatch($po->refresh());
+
+            return redirect()->route('po.show', $po->id)->with('success', 'Draft Purchase Order berhasil dibuat!');
+        } catch (\Exception $e) {
+            DB::rollback();
+            return back()->with('error', 'Gagal membuat PO: ' . $e->getMessage())->withInput();
+        }
+    }
+
+
+    // =========================================================================
+    // 🔥 PROSES TERBITKAN PO DARI PR (STORE) 🔥
+    // =========================================================================
+    public function storeFromPr(\Illuminate\Http\Request $request, $slug, \App\Services\SystemSettingService $settingService)
+    {
+        $request->validate([
+            'billing_company_id' => 'required|exists:companies,id',
+            'payment_term_id'    => 'required|exists:payment_terms,id',
+            'po_items'           => 'required|array',
+            'delivery_date'      => 'required|date',
+        ]);
+
+        try {
+            \Illuminate\Support\Facades\DB::transaction(function () use ($request, $slug, $settingService) {
+                $prRecord = \App\Models\PurchaseRequest::with('items')->where('pr_number', $slug)->firstOrFail();
+
+                $itemsByVendor = [];
+                foreach ($request->po_items as $originalIndex => $itemData) {
+                    if (isset($itemData['is_selected']) && trim($itemData['vendor_id'] ?? '') !== '' && (float)($itemData['qty'] ?? 0) > 0) {
+                        $itemsByVendor[$itemData['vendor_id']][$originalIndex] = $itemData;
+                    }
+                }
+
+                if (empty($itemsByVendor)) {
+                    throw new \Exception('Anda harus memilih Vendor Aktual minimal untuk 1 barang!');
+                }
+
+                $paymentTermName = \App\Models\PaymentTerm::find($request->payment_term_id)->name ?? null;
+                $prItemIdsToHeal = [];
+
+                foreach ($itemsByVendor as $vendorId => $items) {
+                    $newPoNumber = $this->generatePoNumber($request->billing_company_id);
+                    $storagePath = (\Illuminate\Support\Facades\DB::table('system_settings')->where('setting_key', 'path_po_attachment')->value('setting_value') ?: 'attachments/purchase_orders') . '/' . str_replace(['/', '\\'], '-', $newPoNumber);
+
+                    $poSubtotalGross = 0; $poTotalItemDiscount = 0; $poTotalTaxItem = 0;
+                    $processedLineItems = [];
+
+                    foreach ($items as $originalIndex => $itemData) {
+                        $qty = (float) ($itemData['qty'] ?? 0);
+                        $price = (float) ($itemData['unit_price'] ?? 0);
+                        $gross = $qty * $price;
+
+                        if (!empty($itemData['pr_item_id'])) {
+                            $prItemIdsToHeal[] = $itemData['pr_item_id'];
+                        }
+
+                        $discVal = (float) ($itemData['discount_value'] ?? 0);
+                        $discType = strtoupper($itemData['discount_type'] ?? 'FIXED');
+                        $discAmt = ($discType === 'PERCENT') ? ($gross * $discVal / 100) : $discVal;
+                        $dpp = $gross - $discAmt;
+
+                        $taxVal = (float) ($itemData['tax_value'] ?? 0);
+                        $taxType = strtoupper($itemData['tax_type'] ?? 'FIXED');
+                        $taxAmt = ($taxType === 'PERCENT') ? ($dpp * $taxVal / 100) : $taxVal;
+
+                        $poSubtotalGross += $gross; $poTotalItemDiscount += $discAmt; $poTotalTaxItem += $taxAmt;
+
+                        $processedLineItems[] = [
+                            'originalIndex' => $originalIndex,
+                            'itemData' => $itemData, 'discAmt' => $discAmt, 'dpp' => $dpp,
+                            'taxType' => $taxType, 'taxVal' => $taxVal, 'taxAmt' => $taxAmt, 'qty' => $qty, 'price' => $price,
+                            'discType' => $discType, 'discVal' => $discVal
+                        ];
+                    }
+
+                    $globalDiscType = strtoupper($request->input('global_discount_type', 'FIXED'));
+                    $globalDiscVal = 0; $poGlobalDiscount = 0;
+                    if ($request->has('global_discounts')) {
+                        foreach ($request->global_discounts as $gDisc) {
+                            if ($gDisc['vendor_id'] == 'ALL' || $gDisc['vendor_id'] == $vendorId) {
+                                $globalDiscType = strtoupper($gDisc['type']);
+                                $globalDiscVal = (float)$gDisc['value'];
+                                $poGlobalDiscount += ($globalDiscType === 'PERCENT') ? (($poSubtotalGross - $poTotalItemDiscount) * ($globalDiscVal / 100)) : $globalDiscVal;
+                            }
+                        }
+                    }
+
+                    $dppAfterGlobalDisc = ($poSubtotalGross - $poTotalItemDiscount) - $poGlobalDiscount;
+
+                    $globalTaxType = strtoupper($request->input('global_tax_type', 'FIXED'));
+                    $globalTaxVal = 0; $poGlobalTax = 0;
+                    if ($request->has('global_taxes')) {
+                        foreach ($request->global_taxes as $gTax) {
+                            if ($gTax['vendor_id'] == 'ALL' || $gTax['vendor_id'] == $vendorId) {
+                                $globalTaxType = strtoupper($gTax['type']);
+                                $globalTaxVal = (float)$gTax['value'];
+                                $poGlobalTax += ($globalTaxType === 'PERCENT') ? ($dppAfterGlobalDisc * ($globalTaxVal / 100)) : $globalTaxVal;
+                            }
+                        }
+                    }
+
+                    $poChargeTotal = 0; $appliedCharges = [];
+                    if ($request->has('charges')) {
+                        foreach ($request->charges as $charge) {
+                            if (!empty($charge['amount']) && ($charge['vendor_id'] == 'ALL' || $charge['vendor_id'] == $vendorId)) {
+                                $poChargeTotal += (float)$charge['amount'];
+                                $appliedCharges[] = $charge;
+                            }
+                        }
+                    }
+
+                    $poExtraDiscountTotal = 0; $appliedExtraDiscs = [];
+                    if ($request->has('extra_discounts')) {
+                        foreach ($request->extra_discounts as $disc) {
+                            if (!empty($disc['amount']) && ($disc['vendor_id'] == 'ALL' || $disc['vendor_id'] == $vendorId)) {
+                                $poExtraDiscountTotal += (float)$disc['amount'];
+                                $appliedExtraDiscs[] = $disc;
+                            }
+                        }
+                    }
+
+                    $totalAllDiscounts = $poTotalItemDiscount + $poGlobalDiscount;
+                    $totalAllTaxes = $poTotalTaxItem + $poGlobalTax;
+                    $poGrandTotal = $dppAfterGlobalDisc + $totalAllTaxes + $poChargeTotal - $poExtraDiscountTotal;
+
+                    $po = \App\Models\PurchaseOrder::create([
+                        'po_number'             => $newPoNumber,
+                        'purchase_request_id'   => $prRecord->id,
+                        'vendor_id'             => $vendorId,
+                        'vendor_sub_name'       => $request->vendor_sub_name, // 🔥 TANGKAP INPUTAN INI 🔥
+                        'bill_to_company_id'    => $request->billing_company_id,
+                        'status_id'             => 1,
+                        'po_date'               => $request->po_date ?? now(),
+                        'created_by'            => auth()->id(),
+                        'currency'              => $request->currency ?? 'IDR',
+                        'shipping_address'      => $request->shipping_address,
+                        'payment_terms'         => $paymentTermName,
+                        'notes'                 => $request->notes,
+                        'delivery_date'         => $request->delivery_date,
+                        'global_discount_type'  => $globalDiscType,
+                        'global_discount_value' => $globalDiscVal,
+                        'global_tax_type'       => $globalTaxType,
+                        'global_tax_value'      => $globalTaxVal,
+                        'subtotal'              => $poSubtotalGross,
+                        'discount_total'        => $totalAllDiscounts,
+                        'tax_total'             => $totalAllTaxes,
+                        'charge_total'          => $poChargeTotal,
+                        'grand_total'           => $poGrandTotal,
+                        'invoice_number'        => $request->invoice_number,
+                        'account_number'        => $request->account_number,
+                        'custom_workflow_id'  => $request->custom_workflow_id,
+                    ]);
+
+                    foreach ($appliedCharges as $charge) {
+                        \Illuminate\Support\Facades\DB::table('purchase_order_charges')->insert([
+                            'purchase_order_id' => $po->id, 'name' => $charge['charge_type_id'], 'amount' => $charge['amount'], 'created_at' => now(), 'updated_at' => now()
+                        ]);
+                    }
+                    foreach ($appliedExtraDiscs as $disc) {
+                        \Illuminate\Support\Facades\DB::table('purchase_order_discounts')->insert([
+                            'purchase_order_id' => $po->id, 'name' => $disc['discount_type_id'], 'amount' => $disc['amount'], 'created_at' => now(), 'updated_at' => now()
+                        ]);
+                    }
+
+                    if ($request->hasFile('header_attachments')) {
+                        foreach ($request->file('header_attachments') as $file) {
+                            if ($file instanceof \Illuminate\Http\UploadedFile) {
+                                $path = $file->storeAs($storagePath, time() . '_' . uniqid() . '_' . str_replace(' ', '_', $file->getClientOriginalName()), 'public');
+                                \Illuminate\Support\Facades\DB::table('purchase_order_attachments')->insert([
+                                    'purchase_order_id' => $po->id,
+                                    'file_name'         => $file->getClientOriginalName(),
+                                    'file_path'         => str_replace('\\', '/', $path),
+                                    'created_at'        => now(), 'updated_at' => now()
+                                ]);
+                            }
+                        }
+                    }
+
+                    foreach ($processedLineItems as $line) {
+                        $itemData = $line['itemData'];
+                        $prItem = \Illuminate\Support\Facades\DB::table('purchase_request_items')->where('id', $itemData['pr_item_id'])->first();
+
+                        $rawUomId = isset($itemData['uom_id']) ? trim($itemData['uom_id']) : '';
+                        preg_match('/\d+/', $rawUomId, $idMatches);
+                        $uomIdSafe = !empty($idMatches[0]) ? (int)$idMatches[0] : null;
+
+                        $uomTextSafe = $itemData['uom'] ?? ($prItem->uom ?? 'PCS');
+                        $uomTextSafe = trim(preg_replace('/ \[PO\]| \[PR\]| \[GR\]/i', '', $uomTextSafe));
+
+                        $newPoItem = \App\Models\PurchaseOrderItem::create([
+                            'purchase_order_id'        => $po->id,
+                            'item_id'                  => $itemData['item_id'],
+                            'item_name'                => $itemData['item_name_override'] ?? ($prItem->item_name ?? null),
+                            'purchase_request_item_id' => $itemData['pr_item_id'],
+                            'uom_id'                   => $uomIdSafe,
+                            'uom'                      => $uomTextSafe,
+                            'description'              => $itemData['notes'] ?? (\App\Models\Item::find($itemData['item_id'])->name ?? '-'),
+                            'remark'                   => $itemData['remark'] ?? null,
+                            'tax_id'                   => null,
+                            'qty_ordered'              => $line['qty'],
+                            'unit_price'               => $line['price'],
+                            'discount_type'            => $line['discType'],
+                            'discount_value'           => $line['discVal'],
+                            'discount_amount'          => $line['discAmt'],
+                            'tax_type'                 => $line['taxType'],
+                            'tax_value'                => $line['taxVal'],
+                            'tax_amount'               => $line['taxAmt'],
+                            'subtotal'                 => $line['dpp'],
+                        ]);
+
+                        $files = $request->file("po_items.{$line['originalIndex']}.attachments");
+                        if (!empty($files)) {
+                            foreach (is_array($files) ? $files : [$files] as $file) {
+                                if ($file instanceof \Illuminate\Http\UploadedFile) {
+                                    $path = $file->storeAs($storagePath, "item_{$itemData['item_id']}_" . uniqid() . time() . "." . $file->extension(), 'public');
+                                    \Illuminate\Support\Facades\DB::table('purchase_order_item_attachments')->insert([
+                                        'purchase_order_item_id' => $newPoItem->id,
+                                        'file_name'              => $file->getClientOriginalName(),
+                                        'file_path'              => str_replace('\\', '/', $path),
+                                        'created_at'             => now(), 'updated_at' => now()
+                                    ]);
+                                }
+                            }
+                        }
+                    }
+
+                    $customWorkflowId = $request->input('custom_workflow_id');
+                    $needsApproval = false;
+
+                    if ($customWorkflowId) {
+                        $workflow = \App\Models\ApprovalWorkflow::with('steps')->find($customWorkflowId);
+                        if ($workflow && $workflow->steps->count() > 0) {
+                            $isFirstStep = true; // 🔥 KUNCI SEQUENTIAL APPROVAL 🔥
+
+                            foreach ($workflow->steps->sortBy('step_order') as $step) {
+                                $targetDept = $step->target_department_id ?? $step->department_id ?? null;
+                                $specificUserId = $step->user_id ?? $step->specific_user_id ?? $step->approver_id ?? null;
+
+                                \Illuminate\Support\Facades\DB::table('document_approvals')->insert([
+                                    'document_id'          => $po->id,
+                                    'document_type'        => get_class($po),
+                                    'role_id'              => $step->role_id,
+                                    'target_department_id' => $targetDept,
+                                    'user_id'              => $specificUserId,
+                                    'step_order'           => $step->step_order,
+                                    // 🔥 LAPIS 1 = PENDING, LAPIS 2 DST = WAITING 🔥
+                                    'status'               => $isFirstStep ? 'PENDING' : 'WAITING',
+                                    'created_at'           => now(),
+                                    'updated_at'           => now()
+                                ]);
+                                $isFirstStep = false;
+                            }
+                            $needsApproval = true;
+                            $this->logHistory($po->id, 'SYSTEM', "Menggunakan Rute Persetujuan Khusus: " . $workflow->name);
+                        }
+                    } else {
+                        $needsApproval = \App\Services\ApprovalService::generateWorkflow($po);
+                        if ($needsApproval) {
+                            // Kunci Berurutan Untuk Workflow Standar
+                            $allAppr = \App\Models\DocumentApproval::where('document_id', $po->id)
+                                ->whereIn('document_type', [get_class($po), 'PO', 'PurchaseOrder'])
+                                ->orderBy('step_order', 'asc')->get();
+
+                            $isFirstStep = true;
+                            foreach($allAppr as $ap) {
+                                $ap->update(['status' => $isFirstStep ? 'PENDING' : 'WAITING']);
+                                $isFirstStep = false;
+                            }
+                            $this->logHistory($po->id, 'SYSTEM', 'PO diterbitkan dari PR dan masuk antrean persetujuan (Workflow Standar).');
+                        }
+                    }
+
+                    if ($needsApproval) {
+                        $pendingStatusId = \App\Models\Status::where('type', 'PO')->whereIn('slug', ['pending_approval', 'pending'])->first()->id ?? 1;
+                        $po->update(['status_id' => $pendingStatusId]);
+                    } else {
+                        $approvedStatusId = \App\Models\Status::where('type', 'PO')->where('slug', 'approved')->first()->id ?? 3;
+                        $po->update(['status_id' => $approvedStatusId]);
+                        $this->logHistory($po->id, 'APPROVED', 'PO Auto-Approved karena tidak ada aturan aktif atau nominal di bawah batas.');
+                    }
+
+                    // 🔥 SYNC GOOGLE SHEET 🔥
+                    \App\Jobs\SyncPoToGoogleSheet::dispatch($po->refresh());
+                }
+
+                if (!empty($prItemIdsToHeal)) {
+                    foreach(array_unique($prItemIdsToHeal) as $pid) {
+                        $this->recalculatePrItemFulfillment($pid);
+                    }
+                    $this->checkAndUpdatePrStatus($prRecord->id);
+                }
+            });
+
+            return redirect()->route('po.index')->with('success', 'Purchase Order berhasil diterbitkan dari PR!');
+        } catch (\Exception $e) {
+            return back()->withInput()->with('error', 'Gagal memproses pembuatan PO dari PR: ' . $e->getMessage());
+        }
+    }
+
+
+
+    // =========================================================================
+    // 4. UPDATE PO (EDIT DATA PO) - ANTI BADAI, FULL FLEXIBILITY & SEQUENTIAL APPROVAL
+    // =========================================================================
+    public function update(Request $request, $slug, \App\Services\SystemSettingService $settingService)
+    {
+        // 🔥 PERBAIKAN: Hapus validasi 'po_items' wajib array, karena bisa jadi isinya cuma new_items
+        $request->validate([
+            'billing_company_id' => 'required|exists:companies,id',
+            'payment_term_id'    => 'required|exists:payment_terms,id',
+            'delivery_date'      => 'required|date',
+        ]);
+
+        // Validasi Custom: Harus ada setidaknya 1 item (lama atau baru)
+        if (!$request->has('po_items') && !$request->has('new_items')) {
+            return back()->withInput()->with('error', 'Gagal: PO harus memiliki setidaknya 1 item barang!');
+        }
+
+        try {
+            \Illuminate\Support\Facades\DB::transaction(function () use ($request, $slug, $settingService) {
+                $po = \App\Models\PurchaseOrder::with('items')->where('po_number', $slug)->firstOrFail();
+
+                if (!in_array(strtolower(optional($po->status)->slug ?? ''), ['draft', 'pending_approval', 'pending', 'rejected', ''])) {
+                    throw new \Exception('Gagal: PO ini sudah tidak dapat diedit karena statusnya ' . optional($po->status)->name);
+                }
+
+                $poSubtotalGross = 0; $poTotalItemDiscount = 0; $poTotalTax = 0;
+                $safePoNumber = str_replace(['/', '\\'], '-', $po->po_number);
+                $storagePath = (\Illuminate\Support\Facades\DB::table('system_settings')->where('setting_key', 'path_po_attachment')->value('setting_value') ?: 'attachments/purchase_orders') . '/' . $safePoNumber;
+
+                // ================================================================
+                // 1. UPDATE & HAPUS ITEM LAMA
+                // ================================================================
+                if ($request->has('po_items')) {
+                    foreach ($request->po_items as $itemId => $itemData) {
+                        if (!$poItem = \App\Models\PurchaseOrderItem::find($itemId)) continue;
+
+                        // 🔥 LOGIKA HAPUS ITEM (DIRECT PO) 🔥
+                        if (isset($itemData['is_deleted']) && $itemData['is_deleted'] == "1") {
+                            $poItem->delete();
+                            continue; // Langsung lompati ke item berikutnya
+                        }
+
+                        $newQty = (float) ($itemData['qty'] ?? 0);
+                        $price = (float) ($itemData['unit_price'] ?? 0);
+                        $gross = $newQty * $price;
+
+                        $discVal = (float) ($itemData['discount_value'] ?? 0);
+                        $discType = strtoupper($itemData['discount_type'] ?? 'FIXED');
+                        $discAmt = ($discType === 'PERCENT') ? ($gross * $discVal / 100) : $discVal;
+
+                        $dpp = $gross - $discAmt;
+
+                        $taxVal = (float) ($itemData['tax_value'] ?? 0);
+                        $taxType = strtoupper($itemData['tax_type'] ?? 'FIXED');
+                        $taxAmt = ($taxType === 'PERCENT') ? ($dpp * ($taxVal / 100)) : $taxVal;
+
+                        $files = $request->file("po_items.{$itemId}.attachments");
+                        if (!empty($files)) {
+                            foreach (is_array($files) ? $files : [$files] as $file) {
+                                if ($file instanceof \Illuminate\Http\UploadedFile) {
+                                    $path = $file->storeAs($storagePath, "item_{$poItem->item_id}_" . uniqid() . time() . "." . $file->extension(), 'public');
+                                    \Illuminate\Support\Facades\DB::table('purchase_order_item_attachments')->insert([
+                                        'purchase_order_item_id' => $poItem->id,
+                                        'file_name'              => $file->getClientOriginalName(),
+                                        'file_path'              => str_replace('\\', '/', $path),
+                                        'created_at'             => now(), 'updated_at' => now()
+                                    ]);
+                                }
+                            }
+                        }
+
+                        $poSubtotalGross += $gross;
+                        $poTotalItemDiscount += $discAmt;
+                        $poTotalTax += $taxAmt;
+
+                        $rawUomId = isset($itemData['uom_id']) ? trim($itemData['uom_id']) : $poItem->uom_id;
+                        preg_match('/\d+/', (string)$rawUomId, $idMatches);
+                        $uomIdSafe = !empty($idMatches[0]) ? (int)$idMatches[0] : null;
+
+                        $uomTextSafe = $itemData['uom'] ?? $poItem->uom;
+                        $uomTextSafe = trim(preg_replace('/ \[PO\]| \[PR\]| \[GR\]/i', '', $uomTextSafe));
+
+                        $itemName = $itemData['item_name_override'] ?? $poItem->item_name;
+
+                        $poItem->update([
+                            'item_name'       => $itemName,
+                            'uom_id'          => $uomIdSafe,
+                            'uom'             => $uomTextSafe,
+                            'description'     => $itemData['notes'] ?? $poItem->description,
+                            'remark'          => $itemData['remark'] ?? $poItem->remark,
+                            'vendor_id'       => $itemData['vendor_id'] ?? $poItem->vendor_id,
+                            'tax_id'          => null,
+                            'qty_ordered'     => $newQty,
+                            'qty'             => $newQty,
+                            'unit_price'      => $price,
+                            'discount_type'   => $discType,
+                            'discount_value'  => $discVal,
+                            'discount_amount' => $discAmt,
+                            'subtotal'        => $dpp,
+                            'tax_type'        => $taxType,
+                            'tax_value'       => $taxVal,
+                            'tax_amount'      => $taxAmt,
+                        ]);
+                    }
+                }
+
+                // ================================================================
+                // 🔥 2. INSERT ITEM BARU (HANYA DIRECT PO) 🔥
+                // ================================================================
+                if ($request->has('new_items')) {
+                    foreach ($request->new_items as $newItemData) {
+                        // Tolak jika item_id kosong
+                        if (empty($newItemData['item_id'])) continue;
+
+                        $newQty = (float) ($newItemData['qty'] ?? 0);
+                        $price = (float) ($newItemData['unit_price'] ?? 0);
+                        $gross = $newQty * $price;
+
+                        $discVal = (float) ($newItemData['discount_value'] ?? 0);
+                        $discType = strtoupper($newItemData['discount_type'] ?? 'FIXED');
+                        $discAmt = ($discType === 'PERCENT') ? ($gross * $discVal / 100) : $discVal;
+
+                        $dpp = $gross - $discAmt;
+
+                        $taxVal = (float) ($newItemData['tax_value'] ?? 0);
+                        $taxType = strtoupper($newItemData['tax_type'] ?? 'FIXED');
+                        $taxAmt = ($taxType === 'PERCENT') ? ($dpp * ($taxVal / 100)) : $taxVal;
+
+                        $poSubtotalGross += $gross;
+                        $poTotalItemDiscount += $discAmt;
+                        $poTotalTax += $taxAmt;
+
+                        $rawUomId = trim($newItemData['uom_id'] ?? '');
+                        preg_match('/\d+/', (string)$rawUomId, $idMatches);
+                        $uomIdSafe = !empty($idMatches[0]) ? (int)$idMatches[0] : null;
+
+                        // Simpan Item Baru ke Database
+                        $createdPoItem = \App\Models\PurchaseOrderItem::create([
+                            'purchase_order_id' => $po->id,
+                            'item_id'           => $newItemData['item_id'],
+                            'vendor_id'         => $newItemData['vendor_id'] ?? $po->vendor_id,
+                            'item_name'         => $newItemData['item_name_override'] ?? null,
+                            'uom_id'            => $uomIdSafe,
+                            'uom'               => $newItemData['uom'] ?? 'PCS',
+                            'description'       => $newItemData['notes'] ?? null,
+                            'remark'            => $newItemData['remark'] ?? null,
+                            'qty_ordered'       => $newQty,
+                            'qty'               => $newQty,
+                            'unit_price'        => $price,
+                            'discount_type'     => $discType,
+                            'discount_value'    => $discVal,
+                            'discount_amount'   => $discAmt,
+                            'subtotal'          => $dpp,
+                            'tax_type'          => $taxType,
+                            'tax_value'         => $taxVal,
+                            'tax_amount'        => $taxAmt,
+                        ]);
+                    }
+                }
+                // ================================================================
+
+                // 3. LAMPIRAN HEADER PO
+                if ($request->hasFile('header_attachments')) {
+                    foreach ($request->file('header_attachments') as $file) {
+                        if ($file instanceof \Illuminate\Http\UploadedFile) {
+                            $path = $file->storeAs($storagePath, time() . '_' . uniqid() . '_' . str_replace(' ', '_', $file->getClientOriginalName()), 'public');
+                            \Illuminate\Support\Facades\DB::table('purchase_order_attachments')->insert([
+                                'purchase_order_id' => $po->id,
+                                'file_name'         => $file->getClientOriginalName(),
+                                'file_path'         => str_replace('\\', '/', $path),
+                                'created_at'        => now(), 'updated_at' => now()
+                            ]);
+                        }
+                    }
+                }
+
+                // 4. KALKULASI GLOBAL
+                $globalDiscType = strtoupper($request->global_discount_type ?? 'FIXED');
+                $globalDiscVal = (float) ($request->global_discount_value ?? 0);
+                $poGlobalDiscount = ($globalDiscType === 'PERCENT') ? (($poSubtotalGross - $poTotalItemDiscount) * ($globalDiscVal / 100)) : $globalDiscVal;
+
+                $dppAfterGlobalDisc = ($poSubtotalGross - $poTotalItemDiscount) - $poGlobalDiscount;
+
+                $globalTaxType = strtoupper($request->global_tax_type ?? 'FIXED');
+                $globalTaxVal = (float) ($request->global_tax_value ?? 0);
+                $poGlobalTax = ($globalTaxType === 'PERCENT') ? ($dppAfterGlobalDisc * ($globalTaxVal / 100)) : $globalTaxVal;
+
+                // 5. UPDATE CHARGES & EXTRA DISCOUNTS
+                \Illuminate\Support\Facades\DB::table('purchase_order_charges')->where('purchase_order_id', $po->id)->delete();
+                $poChargeTotal = 0;
+                if ($request->has('charges')) {
+                    foreach ($request->charges as $charge) {
+                        if (!empty($charge['amount'])) {
+                            \Illuminate\Support\Facades\DB::table('purchase_order_charges')->insert([
+                                'purchase_order_id' => $po->id, 'name' => $charge['charge_type_id'], 'amount' => $charge['amount'], 'created_at' => now(), 'updated_at' => now()
+                            ]);
+                            $poChargeTotal += $charge['amount'];
+                        }
+                    }
+                }
+
+                \Illuminate\Support\Facades\DB::table('purchase_order_discounts')->where('purchase_order_id', $po->id)->delete();
+                $poExtraDiscountTotal = 0;
+                if ($request->has('extra_discounts')) {
+                    foreach ($request->extra_discounts as $disc) {
+                        if (!empty($disc['amount'])) {
+                            \Illuminate\Support\Facades\DB::table('purchase_order_discounts')->insert([
+                                'purchase_order_id' => $po->id, 'name' => $disc['discount_type_id'], 'amount' => $disc['amount'], 'created_at' => now(), 'updated_at' => now()
+                            ]);
+                            $poExtraDiscountTotal += $disc['amount'];
+                        }
+                    }
+                }
+
+                $totalAllDiscounts = $poTotalItemDiscount + $poGlobalDiscount;
+                $totalAllTaxes = $poTotalTax + $poGlobalTax;
+                $poGrandTotal = $dppAfterGlobalDisc + $poGlobalTax + $poChargeTotal - $poExtraDiscountTotal;
+
+                // 6. UPDATE HEADER PO
+                $po->update([
+                    'vendor_sub_name'       => $request->vendor_sub_name,
+                    'bill_to_company_id'    => $request->billing_company_id,
+                    'shipping_address'      => $request->shipping_address,
+                    'payment_terms'         => \App\Models\PaymentTerm::find($request->payment_term_id)->name ?? null,
+                    'notes'                 => $request->notes,
+                    'delivery_date'         => $request->delivery_date,
+                    'po_date'               => $request->po_date,
+                    'currency'              => $request->currency,
+                    'global_discount_type'  => $globalDiscType,
+                    'global_discount_value' => $globalDiscVal,
+                    'global_tax_type'       => $globalTaxType,
+                    'global_tax_value'      => $globalTaxVal,
+                    'subtotal'              => $poSubtotalGross,
+                    'discount_total'        => $totalAllDiscounts,
+                    'tax_total'             => $totalAllTaxes,
+                    'charge_total'          => $poChargeTotal,
+                    'grand_total'           => $poGrandTotal,
+                    'invoice_number'        => $request->invoice_number,
+                    'account_number'        => $request->account_number,
+                ]);
+
+                // 7. SYNC PR (JIKA ADA)
+                $prItemIds = $po->items()->pluck('purchase_request_item_id')->filter()->unique()->toArray();
+                if (!empty($prItemIds)) {
+                    foreach($prItemIds as $pid) {
+                        $this->recalculatePrItemFulfillment($pid);
+                    }
+                    $this->checkAndUpdatePrStatus($po->purchase_request_id);
+                }
+
+                // =====================================================================
+                // 🔥 8. APPROVAL & WORKFLOW (SEQUENTIAL APPROVAL MURNI) 🔥
+                // =====================================================================
+                $customWorkflowId = $request->input('custom_workflow_id');
+                $needsApproval = false;
+
+                \App\Models\DocumentApproval::where('document_id', $po->id)
+                    ->whereIn('document_type', [get_class($po), 'App\Models\PurchaseOrder', 'PO', 'PurchaseOrder'])
+                    ->delete();
+
+                if ($customWorkflowId) {
+                    $workflow = \App\Models\ApprovalWorkflow::with('steps')->find($customWorkflowId);
+                    if ($workflow && $workflow->steps->count() > 0) {
+                        $isFirstStep = true; // KUNCI SEQUENTIAL APPROVAL
+
+                        foreach ($workflow->steps->sortBy('step_order') as $step) {
+                            $targetDept = $step->target_department_id ?? $step->department_id ?? null;
+                            $specificUserId = $step->user_id ?? $step->specific_user_id ?? $step->approver_id ?? null;
+
+                            \Illuminate\Support\Facades\DB::table('document_approvals')->insert([
+                                'document_id'          => $po->id,
+                                'document_type'        => get_class($po),
+                                'role_id'              => $step->role_id,
+                                'target_department_id' => $targetDept,
+                                'user_id'              => $specificUserId,
+                                'step_order'           => $step->step_order,
+                                // LAPIS 1 = PENDING, LAPIS 2 DST = WAITING
+                                'status'               => $isFirstStep ? 'PENDING' : 'WAITING',
+                                'created_at'           => now(),
+                                'updated_at'           => now()
+                            ]);
+                            $isFirstStep = false;
+                        }
+                        $needsApproval = true;
+                        $this->logHistory($po->id, 'SYSTEM', "Menggunakan Rute Persetujuan Khusus: " . $workflow->name);
+                    }
+                } else {
+                    $needsApproval = \App\Services\ApprovalService::generateWorkflow($po);
+                    if ($needsApproval) {
+                        // Kunci Berurutan Untuk Workflow Standar
+                        $allAppr = \App\Models\DocumentApproval::where('document_id', $po->id)
+                            ->whereIn('document_type', [get_class($po), 'PO', 'PurchaseOrder'])
+                            ->orderBy('step_order', 'asc')->get();
+
+                        $isFirstStep = true;
+                        foreach($allAppr as $ap) {
+                            $ap->update(['status' => $isFirstStep ? 'PENDING' : 'WAITING']);
+                            $isFirstStep = false;
+                        }
+                        $this->logHistory($po->id, 'SYSTEM', 'Rute persetujuan (Workflow) PO telah di-reset menyesuaikan data revisi (Standar Departemen).');
+                    }
+                }
+
+                if ($needsApproval) {
+                    $pendingStatus = \App\Models\Status::whereIn('slug', ['pending_approval', 'pending'])->first()->id ?? 1;
+                    $po->update(['status_id' => $pendingStatus]);
+                } else {
+                    $approvedStatus = \App\Models\Status::where('slug', 'approved')->first()->id ?? 3;
+                    $po->update(['status_id' => $approvedStatus]);
+                    $this->logHistory($po->id, 'APPROVED', 'PO Auto-Approved karena tidak ada aturan aktif atau nominal di bawah batas.');
+                }
+
+                $this->logHistory($po->id, 'PO Direvisi', 'Perubahan telah disimpan.');
+
+                // 🔥 SYNC GOOGLE SHEET 🔥
+                \App\Jobs\SyncPoToGoogleSheet::dispatch($po->refresh());
+
+            });
+
+            return redirect()->route('po.show', $slug)->with('success', 'Perubahan Purchase Order berhasil disimpan!');
+        } catch (\Exception $e) {
+            return back()->withInput()->with('error', 'Gagal menyimpan perubahan: ' . $e->getMessage());
+        }
+    }
+
+    // =========================================================================
+    // 3. EDIT (FORM EDIT PO BERBASIS SLUG) - DENGAN REVERSE ENGINEER WORKFLOW
+    // =========================================================================
+    public function edit($slug)
+    {
+        $po = \App\Models\PurchaseOrder::with(['items', 'status', 'charges'])->where('po_number', $slug)->firstOrFail();
+
+        if (!in_array(strtolower(optional($po->status)->slug ?? ''), ['draft', 'pending_approval', 'pending', 'rejected', ''])) {
+            return back()->with('error', 'Gagal: PO ini sudah tidak dapat diedit karena statusnya ' . optional($po->status)->name);
+        }
+
+        $companies     = \App\Models\Company::orderBy('name')->get();
+        $vendors       = \App\Models\Vendor::orderBy('name')->get();
+        $paymentTerms  = \App\Models\PaymentTerm::orderBy('name')->get();
+        $currencies    = \App\Models\Currency::where('is_active', true)->orderBy('name')->get();
+        $taxes         = \App\Models\Tax::where('is_active', true)->orderBy('name')->get();
+        $chargeTypes   = \App\Models\ChargeType::where('is_active', true)->orderBy('name')->get();
+        $discountTypes = \App\Models\DiscountType::where('is_active', true)->orderBy('name')->get();
+        $uoms          = \App\Models\Uom::orderBy('name')->get();
+        $masterItems   = \App\Models\Item::with(['uom', 'itemUoms'])->orderBy('name')->get();
+
+        $charges        = $po->charges ?? collect([]);
+        $extraDiscounts = \Illuminate\Support\Facades\DB::table('purchase_order_discounts')->where('purchase_order_id', $po->id)->get();
+        $attachments    = \Illuminate\Support\Facades\DB::table('purchase_order_attachments')->where('purchase_order_id', $po->id)->get();
+
+        $customWorkflows = [];
+        $selectedWorkflowId = null;
+
+        if (class_exists('\App\Models\ApprovalWorkflow')) {
+            $customWorkflows = \App\Models\ApprovalWorkflow::with('steps')
+                ->where('is_active', true)
+                ->whereIn('document_type', ['PurchaseOrder', 'PO', 'App\Models\PurchaseOrder'])
+                ->get();
+
+            // 🔥 STRATEGI 1: BACA DARI TABEL DOCUMENT_APPROVALS (REVERSE ENGINEER) 🔥
+            $currentApprovals = \App\Models\DocumentApproval::where('document_id', $po->id)
+                ->whereIn('document_type', [get_class($po), 'App\Models\PurchaseOrder', 'PO', 'PurchaseOrder'])
+                ->orderBy('step_order', 'asc')
+                ->get();
+
+            if ($currentApprovals->count() > 0) {
+                $poRoles = $currentApprovals->pluck('role_id')->toArray();
+                foreach ($customWorkflows as $cw) {
+                    if ($cw->steps && $cw->steps->count() === count($poRoles)) {
+                        $cwRoles = $cw->steps->sortBy('step_order')->pluck('role_id')->toArray();
+                        if ($poRoles === $cwRoles) {
+                            $selectedWorkflowId = $cw->id;
+                            break;
+                        }
+                    }
+                }
+            }
+
+            // 🔥 STRATEGI 2: BACA DARI HISTORY LOG JIKA STRATEGI 1 GAGAL 🔥
+            if (!$selectedWorkflowId) {
+                $historyLog = \App\Models\History::where('record_id', $po->id)
+                    ->whereIn('record_type', [get_class($po), 'App\Models\PurchaseOrder', 'PO', 'PurchaseOrder'])
+                    ->where('action', 'SYSTEM')
+                    ->where('note', 'like', '%Menggunakan Rute Persetujuan Khusus%')
+                    ->orderBy('id', 'desc')->first();
+
+                if ($historyLog) {
+                    $workflowName = trim(str_replace(['Menggunakan Rute Persetujuan Khusus (Update):', 'Menggunakan Rute Persetujuan Khusus:'], '', $historyLog->note));
+                    $matchedWorkflow = $customWorkflows->where('name', $workflowName)->first();
+                    if ($matchedWorkflow) {
+                        $selectedWorkflowId = $matchedWorkflow->id;
+                    }
+                }
+            }
+        }
+
+        return view('po.edit', compact(
+            'po', 'companies', 'vendors', 'paymentTerms', 'currencies',
+            'masterItems', 'uoms', 'taxes', 'chargeTypes', 'discountTypes',
+            'customWorkflows', 'selectedWorkflowId',
+            'charges', 'extraDiscounts', 'attachments'
+        ));
+    }
+
+
+
+
+    // =========================================================================
+    // 7. SHOW PO DETAIL
+    // =========================================================================
+    public function show($slug)
+    {
+        // 1. Ambil data PO beserta relasinya, MENGGUNAKAN RELASI 'items.item' agar info barang master terbaca
+        $po = \App\Models\PurchaseOrder::with([
+            'items.item.itemUoms',
+            'vendor',
+            'company',
+            'billToCompany',
+            'status',
+            'user',
+            'purchaseRequest',
+            'attachments',
+            'approvals.role',
+            'histories.user'
+        ])->where('po_number', $slug)->firstOrFail();
+
+        $charges = \DB::table('purchase_order_charges')->where('purchase_order_id', $po->id)->get();
+        $extraDiscounts = \DB::table('purchase_order_discounts')->where('purchase_order_id', $po->id)->get();
+
+        $poItemIds = $po->items->pluck('id')->toArray();
+        $itemAttachments = \DB::table('purchase_order_item_attachments')->whereIn('purchase_order_item_id', $poItemIds)->get();
+
+        foreach ($po->items as $item) {
+            $item->raw_attachments = $itemAttachments->where('purchase_order_item_id', $item->id)->values();
+        }
+
+        $hasBeenPartiallyApproved = $po->approvals->where('status', 'APPROVED')->isNotEmpty();
+
+        // 2. Ambil data Alur Persetujuan (Approval Process) dan lempar ke view
+        $approvals = \App\Models\DocumentApproval::with(['role'])
+            ->where('document_id', $po->id)
+            ->whereIn('document_type', ['App\Models\PurchaseOrder', 'PO', 'PurchaseOrder', get_class($po)])
+            ->orderBy('step_order', 'asc')
+            ->get();
+
+        return view('po.show', compact('po', 'charges', 'extraDiscounts', 'hasBeenPartiallyApproved', 'approvals'));
+    }
+
+
+
+// =========================================================================
+    // 8. HALAMAN INDEX PO & 🔥 VISIBILITAS APPROVAL (STRICT PRIVACY PO) 🔥
+    // =========================================================================
+    public function index(\Illuminate\Http\Request $request)
+    {
+        $search = $request->input('search');
+        $user = auth()->user();
+        $userRoleIds = $user->roles->pluck('id')->toArray();
+
+        $statusApproved = \App\Models\Status::where('type', 'PR')->where('slug', 'approved')->first();
+        $statusPartial  = \App\Models\Status::where('type', 'PR')->where('slug', 'partial_po')->first();
+
+        $statusIds = array_filter([$statusApproved ? $statusApproved->id : null, $statusPartial ? $statusPartial->id : null]);
+
+        $prQuery = \App\Models\PurchaseRequest::with(['user', 'status', 'company'])
+            ->whereIn('status_id', $statusIds)
+            ->when($search, function ($query) use ($search) {
+                $query->where(function ($q) use ($search) {
+                    $q->where('pr_number', 'like', "%{$search}%")
+                      ->orWhereHas('user', function ($qUser) use ($search) { $qUser->where('name', 'like', "%{$search}%"); })
+                      ->orWhereHas('company', function ($qComp) use ($search) { $qComp->where('name', 'like', "%{$search}%"); })
+                      ->orWhereHas('items.vendorQuotes.vendor', function ($qVendor) use ($search) { $qVendor->where('name', 'like', "%{$search}%"); });
+                });
+            });
+
+        $readyPrs = $prQuery->orderBy('created_at', 'desc')->paginate(10, ['*'], 'pr_page');
+
+        $poQuery = \App\Models\PurchaseOrder::with(['vendor', 'company', 'purchaseRequest.company', 'status', 'approvals.role'])
+            ->when($search, function ($query) use ($search) {
+                $query->where(function ($q) use ($search) {
+                    $q->where('po_number', 'like', "%{$search}%")
+                      ->orWhereHas('vendor', function ($qVendor) use ($search) { $qVendor->where('name', 'like', "%{$search}%"); })
+                      ->orWhereHas('company', function ($qPoComp) use ($search) { $qPoComp->where('name', 'like', "%{$search}%"); })
+                      ->orWhereHas('purchaseRequest', function ($qPr) use ($search) {
+                          $qPr->where('pr_number', 'like', "%{$search}%")
+                              ->orWhereHas('company', function ($qPrComp) use ($search) { $qPrComp->where('name', 'like', "%{$search}%"); });
+                      });
+                });
+            });
+
+        if (!$user->hasAnyRole(['Super Admin', 'super-admin', 'Super Administrator'])) {
+            $poQuery->where(function ($q) use ($user, $userRoleIds) {
+                // 1. Lolos jika dia Pembuat PO
+                $q->where('created_by', $user->id)
+
+                // 2. Lolos jika dia sudah menyetujui di masa lalu
+                  ->orWhereHas('approvals', function ($qApprovals) use ($user) {
+                      $qApprovals->where('approved_by', $user->id);
+                  })
+
+                // 3. Lolos jika dia adalah Approver AKTIF (PENDING) - Anti Bocor
+                  ->orWhereHas('approvals', function ($qApprovals) use ($user, $userRoleIds) {
+                      // 🔥 KUNCI UTAMA 1: WAJIB BERSTATUS PENDING/APPROVED/REJECTED (TOLAK WAITING!) 🔥
+                      $qApprovals->whereIn('status', ['PENDING', 'APPROVED', 'REJECTED'])
+                                 ->where(function ($subQ) use ($user, $userRoleIds) {
+
+                                     // A. Cek Nama Spesifik Dulu
+                                     $subQ->where('user_id', $user->id);
+
+                                     // B. JIKA TIDAK ADA NAMA SPESIFIK, BARU CEK JABATAN
+                                     if (!empty($userRoleIds)) {
+                                         $subQ->orWhere(function($roleQ) use ($user, $userRoleIds) {
+                                             // 🔥 KUNCI UTAMA 2: Abaikan baris ini jika punya target nama spesifik orang lain 🔥
+                                             $roleQ->whereNull('user_id')
+                                                   ->whereIn('role_id', $userRoleIds)
+                                                   ->where(function($qDept) use ($user) {
+                                                       $qDept->where('target_department_id', $user->department_id)
+                                                             ->orWhere('target_department_id', 'all')
+                                                             ->orWhereNull('target_department_id')
+                                                             ->orWhere('target_department_id', '');
+                                                   });
+                                         });
+                                     }
+                                 });
+                  });
+            });
+        }
+
+        $purchaseOrders = $poQuery->orderBy('created_at', 'desc')->paginate(10, ['*'], 'po_page');
+
+        return view('po.index', compact('readyPrs', 'purchaseOrders', 'search'));
+    }
+
+
+    // =========================================================================
+    // 9. PROCESS PR PAGE
+    // =========================================================================
+    public function processPr($slug)
+    {
+        $pr = \App\Models\PurchaseRequest::with(['items.item.uom', 'items.item.itemUoms', 'items.vendorQuotes.vendor', 'user', 'company'])->where('pr_number', $slug)->firstOrFail();
+        $prStatusSlug = strtolower(optional($pr->status)->slug ?? '');
+
+        if (!in_array($prStatusSlug, ['approved', 'partial_po'])) {
+            $prStatusText = strtoupper(trim(optional($pr->status)->name ?? $pr->status ?? ''));
+            $isAllowed = false;
+            foreach (['APPROVED', 'PARSIAL', 'DISETUJUI'] as $keyword) {
+                if (str_contains($prStatusText, $keyword)) {
+                    $isAllowed = true;
+                    break;
+                }
+            }
+            if (!$isAllowed) {
+                return redirect()->back()->with('error', 'Akses Ditolak: PR ini berstatus "' . $prStatusText . '". Hanya PR yang Disetujui/Parsial yang bisa dibuatkan PO.');
+            }
+        }
+
+        $existingPos = \App\Models\PurchaseOrder::with(['vendor', 'status', 'items.item'])
+            ->where('purchase_request_id', $pr->id)
+            ->whereHas('status', function($q) {
+                $q->whereNotIn('slug', ['canceled', 'cancelled', 'rejected']);
+            })->orderBy('created_at', 'desc')->get();
+
+        $selectedVendor = null;
+        $firstQuote = $pr->items->flatMap->vendorQuotes->first();
+
+        if ($firstQuote && $firstQuote->vendor) {
+            $selectedVendor = $firstQuote->vendor;
+        }
+
+        $defaultCurrency = 'IDR';
+        if ($firstQuote && !empty($firstQuote->currency)) {
+            $currObj = \App\Models\Currency::find($firstQuote->currency_id);
+            if($currObj) $defaultCurrency = $currObj->code;
+        }
+
+        $defaultShippingAddress = $pr->items->first()->delivery_address ?? null;
+        if (empty($defaultShippingAddress)) {
+            if ($pr->company && !empty($pr->company->address)) {
+                $defaultShippingAddress = $pr->company->address;
+            } else {
+                $headOffice = \App\Models\Company::where('is_head_office', true)->first();
+                $defaultShippingAddress = $headOffice ? $headOffice->address : '';
+            }
+        }
+
+        $vendors = \App\Models\Vendor::orderBy('name')->get();
+        $companies = \App\Models\Company::orderBy('name')->get();
+        $paymentTerms = \App\Models\PaymentTerm::orderBy('days')->get();
+        $taxes = \App\Models\Tax::where('is_active', true)->orderBy('percent')->get();
+        $chargeTypes = \App\Models\ChargeType::where('is_active', true)->get();
+        $currencies = \App\Models\Currency::where('is_active', true)->get();
+        $discountTypes = \App\Models\DiscountType::where('is_active', true)->get();
+
+        $customWorkflows = [];
+        if (class_exists('\App\Models\ApprovalWorkflow')) {
+            $customWorkflows = \App\Models\ApprovalWorkflow::with('steps')
+                ->where('is_active', true)
+                ->whereIn('document_type', [
+                    'PO',
+                    'App\Models\PurchaseOrder',
+                    'PurchaseOrder'
+                ])
+                ->get();
+        }
+
+        return view('po.process_pr', compact('pr', 'existingPos', 'vendors', 'companies', 'paymentTerms', 'taxes', 'chargeTypes', 'currencies', 'discountTypes', 'selectedVendor', 'defaultCurrency', 'defaultShippingAddress', 'customWorkflows'));
+    }
+
+    // =========================================================================
+    // 10. MENGAJUKAN PERSETUJUAN PO (DENGAN DAYA INGAT HISTORY & NOTIFIKASI)
+    // =========================================================================
+    public function submitApproval($slug)
+    {
+        DB::beginTransaction();
+        try {
+            $po = \App\Models\PurchaseOrder::where('po_number', $slug)->firstOrFail();
+            $statusPending = \App\Models\Status::where('type', 'PO')->where('slug', 'pending_approval')->first();
+
+            if ($statusPending) $po->update(['status_id' => $statusPending->id]);
+
+            \App\Models\DocumentApproval::where('document_id', $po->id)->where('document_type', get_class($po))->delete();
+
+            $workflow = null;
+
+            $historyLog = \App\Models\PurchaseOrderHistory::where('purchase_order_id', $po->id)
+                ->where('action', 'SYSTEM')
+                ->where(function($q) {
+                    $q->where('note', 'like', 'Menggunakan Rute Persetujuan Khusus:%')
+                      ->orWhere('note', 'like', 'Menggunakan Rute Persetujuan Khusus (Update):%');
+                })
+                ->orderBy('id', 'desc')
+                ->first();
+
+            if ($historyLog) {
+                $workflowName = trim(str_replace(['Menggunakan Rute Persetujuan Khusus:', 'Menggunakan Rute Persetujuan Khusus (Update):'], '', $historyLog->note));
+                $workflow = \DB::table('approval_workflows')->where('name', $workflowName)->where('is_active', 1)->first();
+            }
+
+            if (!$workflow) {
+                $workflow = \DB::table('approval_workflows')
+                    ->whereIn('document_type', [get_class($po), 'PO', 'PurchaseOrder'])
+                    ->where('is_active', 1)
+                    ->whereNull('department_id') // Mencari aturan default/umum
+                    ->orderBy('id', 'asc')
+                    ->first();
+            }
+
+            if (!$workflow) throw new \Exception("Workflow Persetujuan untuk PO belum diaktifkan di Master Matriks!");
+
+            $steps = \DB::table('approval_workflow_steps')
+                ->where('approval_workflow_id', $workflow->id)
+                ->where('min_amount', '<=', $po->grand_total)
+                ->orderBy('step_order', 'asc')
+                ->get();
+
+            if ($steps->isEmpty()) throw new \Exception('Langkah Persetujuan (Steps) belum diatur untuk nominal PO ini.');
+
+            $firstStepRoleId = null;
+            $firstStepTargetDept = null;
+
+            foreach ($steps as $index => $step) {
+                if ($index === 0) {
+                    $firstStepRoleId = $step->role_id;
+                    $firstStepTargetDept = $step->target_department_id ?? $step->department_id ?? null;
+                }
+
+                $targetDept = $step->target_department_id ?? $step->department_id ?? null;
+                \Illuminate\Support\Facades\DB::table('document_approvals')->insert([
+                    'document_id'          => $po->id,
+                    'document_type'        => get_class($po),
+                    'role_id'              => $step->role_id,
+                    'target_department_id' => $targetDept,
+                    'step_order'           => $step->step_order,
+                    'status'               => 'PENDING',
+                    'created_at'           => now(),
+                    'updated_at'           => now()
+                ]);
+            }
+
+            if ($firstStepRoleId) {
+                $targetManagers = \App\Models\User::whereHas('roles', function ($q) use ($firstStepRoleId) {
+                    $q->where('id', $firstStepRoleId);
+                })->get();
+
+                if (!empty($firstStepTargetDept) && $firstStepTargetDept !== 'all') {
+                    $targetManagers = $targetManagers->where('department_id', $firstStepTargetDept);
+                } elseif (empty($firstStepTargetDept)) {
+                    $pembuatPo = \App\Models\User::find($po->created_by);
+                    if ($pembuatPo) {
+                        $targetManagers = $targetManagers->where('department_id', $pembuatPo->department_id);
+                    }
+                }
+
+                $urlNotifManager = route('po.show', $po->po_number);
+                $pesanNotif = "Ada Dokumen PO Nomor {$po->po_number} yang membutuhkan persetujuan Anda.";
+
+                foreach ($targetManagers as $manager) {
+                    if (class_exists('\App\Notifications\DocumentApprovalNotification')) {
+                        $manager->notify(new \App\Notifications\DocumentApprovalNotification('PO PENDING APPROVAL', $pesanNotif, $urlNotifManager));
+                    } else {
+                        \Illuminate\Support\Facades\DB::table('notifications')->insert([
+                            'id'              => \Illuminate\Support\Str::uuid(),
+                            'type'            => 'App\Notifications\DocumentApprovalNotification',
+                            'notifiable_type' => 'App\Models\User',
+                            'notifiable_id'   => $manager->id,
+                            'data'            => json_encode([
+                                'title'   => 'Antrean Persetujuan Baru',
+                                'message' => $pesanNotif,
+                                'url'     => $urlNotifManager
+                            ]),
+                            'read_at'         => null,
+                            'created_at'      => now(),
+                            'updated_at'      => now(),
+                        ]);
+                    }
+                }
+            }
+
+            $this->logHistory($po->id, 'Diajukan Ulang', 'Dokumen PO diajukan menggunakan matriks: **' . $workflow->name . '**');
+            DB::commit();
+            return redirect()->route('po.show', $slug)->with('success', 'PO Berhasil diajukan menggunakan jalur: ' . $workflow->name);
+        } catch (\Exception $e) {
+            DB::rollBack();
+            return back()->with('error', 'Gagal mengajukan PO: ' . $e->getMessage());
+        }
+    }
+
+    // =========================================================================
+    // 11. KEPUTUSAN (APPROVE / REJECT) PO
+    // =========================================================================
+    public function decide(Request $request, string $slug)
+    {
+        DB::beginTransaction();
+        try {
+            $po = \App\Models\PurchaseOrder::where('po_number', $slug)->firstOrFail();
+            $pembuatPo = \App\Models\User::find($po->created_by);
+
+            foreach(auth()->user()->unreadNotifications as $notification) {
+                if(isset($notification->data['url']) && str_contains($notification->data['url'], route('po.show', $po->po_number))) {
+                    $notification->markAsRead();
+                }
+            }
+
+            // 1. Cari antrean persetujuan saat ini
+            $currentApproval = \App\Models\DocumentApproval::with('role')
+                ->where('document_id', $po->id)
+                ->where('document_type', get_class($po))
+                ->where('status', 'PENDING')
+                ->orderBy('step_order', 'asc')
+                ->first();
+
+            $action = strtoupper($request->input('action', ''));
+
+            if (!$currentApproval && $action !== 'REJECT') {
+                DB::rollBack();
+                return redirect()->back()->with('error', 'Dokumen ini tidak sedang menunggu persetujuan Anda.');
+            }
+
+            // 🔥 2. LOGIKA SMART LOOKUP (SATPAM CERDAS BACKEND) 🔥
+            $user = auth()->user();
+            $isSuperAdmin = $user->hasAnyRole(['Super Admin', 'Super Administrator', 'super-admin']) || $user->id === 1;
+            $isAuthorized = false;
+            $approverRoleName = 'Atasan';
+
+            if ($currentApproval) {
+                $approverRoleName = optional($currentApproval->role)->name ?? 'Atasan Spesifik';
+                $uid = $currentApproval->user_id ?? $currentApproval->approver_id ?? $currentApproval->specific_user_id ?? null;
+
+                if (!empty($uid)) {
+                    if ($isSuperAdmin || $user->id == $uid) {
+                        $isAuthorized = true;
+                    }
+                } else {
+                    $reqRoleName = optional($currentApproval->role)->name;
+                    $targetDeptId = $currentApproval->target_department_id;
+
+                    if ($isSuperAdmin) {
+                        $isAuthorized = true;
+                    } elseif ($reqRoleName && $user->hasRole($reqRoleName)) {
+                        if (empty($targetDeptId) || $targetDeptId === 'all' || $targetDeptId == 0) {
+                            $isAuthorized = true;
+                        } elseif ($user->department_id == $targetDeptId) {
+                            $isAuthorized = true;
+                        } else {
+                            if ($pembuatPo && $user->department_id == $pembuatPo->department_id) {
+                                $isAuthorized = true;
+                            }
+                        }
+                    }
+                }
+            }
+
+            if ($currentApproval && !$isAuthorized) {
+                DB::rollBack();
+                return redirect()->back()->with('error', "AKSES DITOLAK: Giliran persetujuan saat ini adalah wewenang {$approverRoleName} dari departemen terkait. Anda tidak memiliki hak akses!");
+            }
+
+            // ==========================================
+            // EKSEKUSI REJECT
+            // ==========================================
+            if ($action === 'REJECT') {
+                if ($currentApproval) $currentApproval->update(['status' => 'REJECTED', 'approved_by' => auth()->id(), 'approved_at' => now()]);
+
+                $statusRejected = \App\Models\Status::where('type', 'PO')->whereIn('slug', ['draft', 'rejected'])->first();
+                if ($statusRejected) $po->update(['status_id' => $statusRejected->id]);
+                if (\Schema::hasColumn('purchase_orders', 'current_approval_level')) $po->update(['current_approval_level' => 0]);
+
+                $reason = $request->input('note', 'Ditolak secara global');
+                $this->logHistory($po->id, 'Ditolak', "Dokumen ditolak oleh " . auth()->user()->name . " (Sebagai $approverRoleName). Alasan: $reason");
+
+                // Hapus dari Google Sheet jika rejected
+                try {
+                    $sheetService = new \App\Services\GoogleSheetService();
+                    $tabName = env('GOOGLE_SHEET_OPEX_TAB_NAME', 'Sheet1');
+                    $sheetService->deleteRowsByBillNumber($tabName, $po->po_number);
+                } catch (\Exception $e) { }
+
+                if ($pembuatPo) {
+                    if (class_exists('\App\Notifications\DocumentApprovalNotification')) {
+                        $pembuatPo->notify(new \App\Notifications\DocumentApprovalNotification('PO Ditolak ❌', "Mohon maaf, PO Nomor {$po->po_number} ditolak. Alasan: {$reason}", route('po.show', $po->po_number)));
+                    }
+                }
+
+                DB::commit();
+                return redirect()->route('po.index')->with('error', 'Purchase Order ditolak dan dikembalikan ke Draft.');
+            }
+
+            // ==========================================
+            // EKSEKUSI APPROVE
+            // ==========================================
+            $currentApproval->update(['status' => 'APPROVED', 'approved_by' => auth()->id(), 'approved_at' => now()]);
+            if (\Schema::hasColumn('purchase_orders', 'current_approval_level')) $po->update(['current_approval_level' => $currentApproval->step_order]);
+
+            // 🔥 KUNCI PERBAIKAN: CARI APPROVER BERIKUTNYA YANG STATUSNYA 'WAITING' 🔥
+            $nextApproval = \App\Models\DocumentApproval::with('role')
+                ->where('document_id', $po->id)
+                ->where('document_type', get_class($po))
+                ->where('status', 'WAITING') // <-- INI DIA PENYAKITNYA, KITA UBAH JADI WAITING!
+                ->orderBy('step_order', 'asc')
+                ->first();
+
+            $actionText = 'Disetujui (' . strtoupper($approverRoleName) . ')';
+            $catatan = "Dokumen disetujui pada tahap ini oleh " . auth()->user()->name . ".\n";
+
+            if ($nextApproval) {
+                // 🔥 AKTIFKAN STATUSNYA JADI PENDING AGAR MUNCUL DI NOTIFIKASI RADIT! 🔥
+                $nextApproval->update(['status' => 'PENDING']);
+
+                $nextRoleName = $nextApproval->role ? $nextApproval->role->name : 'Atasan Berikutnya';
+
+                $nextUid = $nextApproval->user_id ?? $nextApproval->approver_id ?? $nextApproval->specific_user_id ?? null;
+                if (!empty($nextUid)) {
+                    $nextApproverUser = \App\Models\User::find($nextUid);
+                    if($nextApproverUser){
+                        if (class_exists('\App\Notifications\DocumentApprovalNotification')) {
+                            $nextApproverUser->notify(new \App\Notifications\DocumentApprovalNotification('PO Butuh Persetujuan 📝', "PO Nomor {$po->po_number} telah disetujui lapis sebelumnya dan kini butuh persetujuan khusus Anda.", route('po.show', $po->po_number)));
+                        }
+                        $nextRoleName = $nextApproverUser->name;
+                    }
+                } else {
+                    $nextApprovers = \App\Models\User::role($nextRoleName)->get();
+                    foreach ($nextApprovers as $approver) {
+                        if (class_exists('\App\Notifications\DocumentApprovalNotification')) {
+                            $approver->notify(new \App\Notifications\DocumentApprovalNotification('PO Butuh Persetujuan Lapis Lanjutan 📝', "PO Nomor {$po->po_number} telah disetujui lapis sebelumnya dan kini butuh persetujuan Anda sebagai {$nextRoleName}.", route('po.show', $po->po_number)));
+                        }
+                    }
+                }
+
+                $catatan .= "Diteruskan ke: **" . strtoupper($nextRoleName) . "**\n";
+                $successMsg = "Disetujui! Diteruskan ke $nextRoleName.";
+            } else {
+                $statusFinal = \App\Models\Status::where('type', 'PO')->whereIn('slug', ['issued', 'approved'])->first();
+                if ($statusFinal) $po->update(['status_id' => $statusFinal->id]);
+
+                $actionText = 'Disetujui Final';
+                $catatan .= "Persetujuan Matriks telah SELESAI.\n";
+                $successMsg = "Hore! Dokumen PO telah disetujui secara FINAL!";
+
+                if ($pembuatPo) {
+                    if (class_exists('\App\Notifications\DocumentApprovalNotification')) {
+                        $pembuatPo->notify(new \App\Notifications\DocumentApprovalNotification('PO Disetujui Final 🎉', "Hore! PO Nomor {$po->po_number} telah DISETUJUI SECARA FINAL dan siap diproses ke Vendor.", route('po.show', $po->po_number)));
+                    }
+                }
+            }
+
+            $this->logHistory($po->id, $actionText, $catatan);
+            DB::commit();
+
+            return redirect()->route('po.show', $po->po_number)->with('success', $successMsg);
+
+        } catch (\Exception $e) {
+            DB::rollBack();
+            return back()->with('error', 'Terjadi kesalahan sistem: ' . $e->getMessage());
+        }
+    }
+
+    // =========================================================================
+    // 12. FUNGSI HAPUS ATTACHMENTS
+    // =========================================================================
+    public function deleteAttachment($id)
+    {
+        try {
+            $attachment = \App\Models\PurchaseOrderAttachment::findOrFail($id);
+            if (\Storage::disk('public')->exists($attachment->file_path)) {
+                \Storage::disk('public')->delete($attachment->file_path);
+            }
+            $attachment->delete();
+            $this->logHistory($attachment->purchase_order_id, 'Lampiran Dihapus', "File '{$attachment->file_name}' telah dihapus.");
+            return redirect()->back()->with('success', 'File berhasil dihapus.');
+        } catch (\Exception $e) {
+            return redirect()->back()->with('error', 'Gagal menghapus file: ' . $e->getMessage());
+        }
+    }
+
+    // =========================================================================
+    // HELPER 5: LOG HISTORY
+    // =========================================================================
+    private function logHistory($poId, $action, $note = null)
+    {
+        \App\Models\PurchaseOrderHistory::create([
+            'purchase_order_id' => $poId,
+            'user_id' => auth()->id(),
+            'action' => $action,
+            'note' => $note
+        ]);
+    }
+
+
+    // =========================================================================
+    // 🔥 FUNGSI HAPUS LAMPIRAN HEADER PO 🔥
+    // =========================================================================
+    public function deleteHeaderAttachment($id)
+    {
+        $attachment = \Illuminate\Support\Facades\DB::table('purchase_order_attachments')->where('id', $id)->first();
+        if ($attachment) {
+            if (\Illuminate\Support\Facades\Storage::disk('public')->exists($attachment->file_path)) {
+                \Illuminate\Support\Facades\Storage::disk('public')->delete($attachment->file_path);
+            }
+            \Illuminate\Support\Facades\DB::table('purchase_order_attachments')->where('id', $id)->delete();
+        }
+        return back()->with('success', 'File Lampiran Header berhasil dihapus.');
+    }
+
+    // =========================================================================
+    // 🔥 FUNGSI HAPUS LAMPIRAN ITEM PO 🔥
+    // =========================================================================
+    public function deleteItemAttachment($id)
+    {
+        $attachment = \Illuminate\Support\Facades\DB::table('purchase_order_item_attachments')->where('id', $id)->first();
+        if ($attachment) {
+            if (\Illuminate\Support\Facades\Storage::disk('public')->exists($attachment->file_path)) {
+                \Illuminate\Support\Facades\Storage::disk('public')->delete($attachment->file_path);
+            }
+            \Illuminate\Support\Facades\DB::table('purchase_order_item_attachments')->where('id', $id)->delete();
+        }
+        return back()->with('success', 'File Lampiran Item berhasil dihapus.');
+    }
+
+    // =========================================================================
+    // 🔥 1. HALAMAN LAPORAN OUTSTANDING PO (FIXED STATUS_ID) 🔥
+    // =========================================================================
+    public function outstanding(\Illuminate\Http\Request $request)
+    {
+        $startDate = $request->input('start_date', now()->subDays(30)->format('Y-m-d'));
+        $endDate = $request->input('end_date', now()->format('Y-m-d'));
+        $companyId = $request->input('company_id');
+        $vendorId = $request->input('vendor_id');
+        $search = $request->input('search');
+
+        $start = \Carbon\Carbon::parse($startDate)->startOfDay();
+        $end = \Carbon\Carbon::parse($endDate)->endOfDay();
+
+        $companies = \App\Models\Company::orderBy('name')->get();
+        $vendors = \App\Models\Vendor::orderBy('name')->get();
+
+        $outstandingStatusIds = \Illuminate\Support\Facades\DB::table('statuses')
+            ->where('type', 'PO')
+            ->whereIn('slug', ['issued', 'partial_received', 'partial_receipt'])
+            ->pluck('id')
+            ->toArray();
+
+        $query = \App\Models\PurchaseOrder::with(['items.item', 'vendor', 'company'])
+                    ->whereIn('status_id', $outstandingStatusIds)
+                    ->whereBetween('created_at', [$start, $end]);
+
+        if ($companyId) {
+            $query->where('company_id', $companyId);
+        }
+
+        if ($vendorId) {
+            $query->where('vendor_id', $vendorId);
+        }
+
+        if ($search) {
+            $query->where(function($q) use ($search) {
+                $q->where('po_number', 'like', "%{$search}%")
+                  ->orWhereHas('items', function($qItems) use ($search) {
+                      $qItems->where('item_name', 'like', "%{$search}%")
+                             ->orWhereHas('item', function($qMaster) use ($search) {
+                                 $qMaster->where('name', 'like', "%{$search}%")
+                                         ->orWhere('code', 'like', "%{$search}%");
+                             });
+                  });
+            });
+        }
+
+        $outstandingPos = $query->orderBy('created_at', 'asc')->paginate(20)->withQueryString();
+
+        foreach ($outstandingPos as $po) {
+            $po->total_qty_ordered = $po->items->sum('qty_ordered');
+            $po->total_qty_received = $po->items->sum('qty_received');
+            $po->qty_sisa = $po->total_qty_ordered - $po->total_qty_received;
+        }
+
+        return view('po.outstanding', compact('outstandingPos', 'startDate', 'endDate', 'companyId', 'vendorId', 'search', 'companies', 'vendors'));
+    }
+
+    // =========================================================================
+    // 🔥 2. FUNGSI EKSEKUSI FORCE CLOSE (DENGAN LOG RIWAYAT/HISTORY) 🔥
+    // =========================================================================
+    public function forceClose(\Illuminate\Http\Request $request, $slug)
+    {
+        $po = \App\Models\PurchaseOrder::where('po_number', $slug)->firstOrFail();
+
+        $finalStatusIds = \Illuminate\Support\Facades\DB::table('statuses')
+            ->where('type', 'PO')
+            ->whereIn('slug', ['completed', 'rejected', 'cancelled', 'canceled', 'fully_received', 'closed_short'])
+            ->pluck('id')
+            ->toArray();
+
+        if (in_array($po->status_id, $finalStatusIds)) {
+            return redirect()->back()->with('error', 'Gagal! Purchase Order ini sudah memiliki status Final.');
+        }
+
+        $closedShortStatus = \Illuminate\Support\Facades\DB::table('statuses')
+            ->where('type', 'PO')
+            ->where('slug', 'closed_short')
+            ->first();
+
+        if ($closedShortStatus) {
+            $po->status_id = $closedShortStatus->id;
+        } else {
+            $fallbackStatus = \Illuminate\Support\Facades\DB::table('statuses')->where('type', 'PO')->where('slug', 'completed')->first();
+            if ($fallbackStatus) $po->status_id = $fallbackStatus->id;
+        }
+
+        $alasan = $request->input('reason', 'Ditutup paksa tanpa alasan.');
+
+        $catatan = "\n\n=== FORCE CLOSED PADA " . now()->translatedFormat('d M Y H:i') . " ===\n";
+        $catatan .= "Oleh: " . (auth()->user()->name ?? 'Sistem') . "\n";
+        $catatan .= "Alasan: " . $alasan;
+        $po->notes = $po->notes . $catatan;
+
+        $po->save();
+
+        if (method_exists($po, 'histories')) {
+            $po->histories()->create([
+                'user_id' => auth()->id(),
+                'action'  => 'Force Close PO',
+                'note'    => "Dokumen ditutup paksa (Closed Short).\n**Alasan:** " . $alasan
+            ]);
+        }
+
+        return redirect()->back()->with('success', "Purchase Order {$po->po_number} berhasil ditutup paksa (Closed Short)!");
+    }
+
+    // =========================================================================
+    // 🔥 FUNGSI BARU: HALAMAN CREATE DIRECT PO (TANPA PR) 🔥
+    // =========================================================================
+    public function createDirect()
+    {
+        $vendors = \App\Models\Vendor::orderBy('name')->get();
+        $companies = \App\Models\Company::orderBy('name')->get();
+        $paymentTerms = \App\Models\PaymentTerm::orderBy('days')->get();
+        $taxes = \App\Models\Tax::where('is_active', true)->orderBy('percent')->get();
+        $chargeTypes = \App\Models\ChargeType::where('is_active', true)->get();
+        $currencies = \App\Models\Currency::where('is_active', true)->get();
+        $discountTypes = \App\Models\DiscountType::where('is_active', true)->get();
+
+        $masterItems = \App\Models\Item::with(['itemUoms', 'uom'])->orderBy('name')->get();
+
+        $headOffice = \App\Models\Company::where('is_head_office', true)->first();
+        $defaultShippingAddress = $headOffice ? $headOffice->address : '';
+
+        $customWorkflows = [];
+        if (class_exists('\App\Models\ApprovalWorkflow')) {
+            $customWorkflows = \App\Models\ApprovalWorkflow::with('steps')
+                ->where('is_active', true)
+                ->whereIn('document_type', ['PO', 'App\Models\PurchaseOrder', 'PurchaseOrder'])
+                ->get();
+        }
+
+        return view('po.create_direct', compact(
+            'vendors', 'companies', 'paymentTerms', 'taxes', 'chargeTypes',
+            'currencies', 'discountTypes', 'masterItems', 'defaultShippingAddress', 'customWorkflows'
+        ));
+    }
+
+
+    // =========================================================================
+    // 🔥 FUNGSI BARU: PROSES SIMPAN DIRECT PO (TANPA PR) 🔥
+    // =========================================================================
+    public function storeDirect(\Illuminate\Http\Request $request)
+    {
+        $request->validate([
+            'vendor_id'          => 'required|exists:vendors,id',
+            'billing_company_id' => 'required|exists:companies,id',
+            'payment_term_id'    => 'required|exists:payment_terms,id',
+            'po_date'            => 'required|date',
+            'delivery_date'      => 'required|date',
+            'po_items'           => 'required|array|min:1',
+            'invoice_number'     => 'nullable|string',
+            'account_number'     => 'nullable|string',
+        ]);
+
+        try {
+            \Illuminate\Support\Facades\DB::transaction(function () use ($request) {
+
+                $newPoNumber = $this->generatePoNumber($request->billing_company_id);
+                $storagePath = (\Illuminate\Support\Facades\DB::table('system_settings')->where('setting_key', 'path_po_attachment')->value('setting_value') ?: 'attachments/purchase_orders') . '/' . str_replace(['/', '\\'], '-', $newPoNumber);
+                $paymentTermName = \App\Models\PaymentTerm::find($request->payment_term_id)->name ?? null;
+
+                $poSubtotalGross = 0; $poTotalItemDiscount = 0; $poTotalTaxItem = 0;
+                $processedLineItems = [];
+
+                foreach ($request->po_items as $index => $itemData) {
+                    $qty = (float) ($itemData['qty'] ?? 0);
+                    $price = (float) ($itemData['unit_price'] ?? 0);
+                    if ($qty <= 0) continue;
+
+                    $gross = $qty * $price;
+                    $discVal = (float) ($itemData['discount_value'] ?? 0);
+                    $discType = strtoupper($itemData['discount_type'] ?? 'FIXED');
+                    $discAmt = ($discType === 'PERCENT') ? ($gross * $discVal / 100) : $discVal;
+                    $dpp = $gross - $discAmt;
+
+                    $taxVal = (float) ($itemData['tax_value'] ?? 0);
+                    $taxType = strtoupper($itemData['tax_type'] ?? 'FIXED');
+                    $taxAmt = ($taxType === 'PERCENT') ? ($dpp * $taxVal / 100) : $taxVal;
+
+                    $poSubtotalGross += $gross;
+                    $poTotalItemDiscount += $discAmt;
+                    $poTotalTaxItem += $taxAmt;
+
+                    $processedLineItems[] = [
+                        'itemData' => $itemData, 'discAmt' => $discAmt, 'dpp' => $dpp,
+                        'taxType' => $taxType, 'taxVal' => $taxVal, 'taxAmt' => $taxAmt, 'qty' => $qty, 'price' => $price,
+                        'discType' => $discType, 'discVal' => $discVal, 'originalIndex' => $index
+                    ];
+                }
+
+                if (empty($processedLineItems)) throw new \Exception('Minimal harus ada 1 barang yang valid (Kuantitas > 0).');
+
+                $globalDiscType = strtoupper($request->global_discount_type ?? 'FIXED');
+                $globalDiscVal = (float) ($request->global_discount_value ?? 0);
+
+                // 🔥 PERBAIKAN: Hitung diskon global secara langsung tanpa looping array global_discounts 🔥
+                $poGlobalDiscount = ($globalDiscType === 'PERCENT') ? (($poSubtotalGross - $poTotalItemDiscount) * ($globalDiscVal / 100)) : $globalDiscVal;
+                $dppAfterGlobalDisc = ($poSubtotalGross - $poTotalItemDiscount) - $poGlobalDiscount;
+
+                $globalTaxType = strtoupper($request->global_tax_type ?? 'FIXED');
+                $globalTaxVal = (float) ($request->global_tax_value ?? 0);
+
+                // 🔥 PERBAIKAN: Hitung pajak global secara langsung 🔥
+                $poGlobalTax = ($globalTaxType === 'PERCENT') ? ($dppAfterGlobalDisc * ($globalTaxVal / 100)) : $globalTaxVal;
+
+                $poChargeTotal = 0; $appliedCharges = [];
+                if ($request->has('charges')) {
+                    foreach ($request->charges as $charge) {
+                        // 🔥 PERBAIKAN: Hapus pengecekan vendor_id karena ini Direct PO (semua untuk 1 vendor) 🔥
+                        if (!empty($charge['amount'])) {
+                            $poChargeTotal += (float)$charge['amount'];
+                            $appliedCharges[] = $charge;
+                        }
+                    }
+                }
+
+                $poExtraDiscountTotal = 0; $appliedExtraDiscs = [];
+                if ($request->has('extra_discounts')) {
+                    foreach ($request->extra_discounts as $disc) {
+                        // 🔥 PERBAIKAN: Hapus pengecekan vendor_id 🔥
+                        if (!empty($disc['amount'])) {
+                            $poExtraDiscountTotal += (float)$disc['amount'];
+                            $appliedExtraDiscs[] = $disc;
+                        }
+                    }
+                }
+
+                $totalAllDiscounts = $poTotalItemDiscount + $poGlobalDiscount;
+                $totalAllTaxes = $poTotalTaxItem + $poGlobalTax;
+                $poGrandTotal = $dppAfterGlobalDisc + $totalAllTaxes + $poChargeTotal - $poExtraDiscountTotal;
+
+                $po = \App\Models\PurchaseOrder::create([
+                    'po_number'             => $newPoNumber,
+                    'purchase_request_id'   => null,
+                    'vendor_id'             => $request->vendor_id,
+                    'vendor_sub_name'       => $request->vendor_sub_name,
+                    'bill_to_company_id'    => $request->billing_company_id,
+                    'status_id'             => 1,
+                    'po_date'               => $request->po_date ?? now(),
+                    'created_by'            => auth()->id(),
+                    'currency'              => $request->currency ?? 'IDR',
+                    'shipping_address'      => $request->shipping_address,
+                    'payment_terms'         => $paymentTermName,
+                    'notes'                 => $request->notes,
+                    'delivery_date'         => $request->delivery_date,
+                    'global_discount_type'  => $globalDiscType,
+                    'global_discount_value' => $globalDiscVal,
+                    'global_tax_type'       => $globalTaxType,
+                    'global_tax_value'      => $globalTaxVal,
+                    'subtotal'              => $poSubtotalGross,
+                    'discount_total'        => $totalAllDiscounts,
+                    'tax_total'             => $totalAllTaxes,
+                    'charge_total'          => $poChargeTotal,
+                    'grand_total'           => $poGrandTotal,
+                    'invoice_number'        => $request->invoice_number,
+                    'account_number'        => $request->account_number,
+                ]);
+
+                foreach ($appliedCharges as $charge) {
+                    \Illuminate\Support\Facades\DB::table('purchase_order_charges')->insert([
+                        'purchase_order_id' => $po->id, 'name' => $charge['charge_type_id'] ?? 'Biaya Tambahan', 'amount' => $charge['amount'], 'created_at' => now(), 'updated_at' => now()
+                    ]);
+                }
+                foreach ($appliedExtraDiscs as $disc) {
+                    \Illuminate\Support\Facades\DB::table('purchase_order_discounts')->insert([
+                        'purchase_order_id' => $po->id, 'name' => $disc['discount_type_id'] ?? 'Potongan Tambahan', 'amount' => $disc['amount'], 'created_at' => now(), 'updated_at' => now()
+                    ]);
+                }
+
+                if ($request->hasFile('header_attachments')) {
+                    foreach ($request->file('header_attachments') as $file) {
+                        if ($file instanceof \Illuminate\Http\UploadedFile) {
+                            $path = $file->storeAs($storagePath, time() . '_' . uniqid() . '_' . str_replace(' ', '_', $file->getClientOriginalName()), 'public');
+                            \Illuminate\Support\Facades\DB::table('purchase_order_attachments')->insert([
+                                'purchase_order_id' => $po->id,
+                                'file_name'         => $file->getClientOriginalName(),
+                                'file_path'         => str_replace('\\', '/', $path),
+                                'created_at'        => now(), 'updated_at' => now()
+                            ]);
+                        }
+                    }
+                }
+
+                foreach ($processedLineItems as $line) {
+                    $itemData = $line['itemData'];
+                    $masterItem = \App\Models\Item::find($itemData['item_id']);
+
+                    $rawUomId = isset($itemData['uom_id']) ? trim($itemData['uom_id']) : '';
+                    preg_match('/\d+/', $rawUomId, $idMatches);
+                    $uomIdSafe = !empty($idMatches[0]) ? (int)$idMatches[0] : null;
+
+                    $uomTextSafe = $itemData['uom'] ?? ($masterItem->unit ?? 'PCS');
+                    $uomTextSafe = trim(preg_replace('/ \[PO\]| \[PR\]| \[GR\]/i', '', $uomTextSafe));
+
+                    $newPoItem = \App\Models\PurchaseOrderItem::create([
+                        'purchase_order_id'        => $po->id,
+                        'item_id'                  => $itemData['item_id'],
+                        'item_name'                => $itemData['item_name_override'] ?? ($masterItem->name ?? '-'),
+                        'purchase_request_item_id' => null,
+                        'uom_id'                   => $uomIdSafe,
+                        'uom'                      => $uomTextSafe,
+                        'description'              => $itemData['notes'] ?? '-',
+                        'remark'                   => $itemData['remark'] ?? null,
+                        'tax_id'                   => null,
+                        'qty_ordered'              => $line['qty'],
+                        'unit_price'               => $line['price'],
+                        'discount_type'            => $line['discType'],
+                        'discount_value'           => $line['discVal'],
+                        'discount_amount'          => $line['discAmt'],
+                        'tax_type'                 => $line['taxType'],
+                        'tax_value'                => $line['taxVal'],
+                        'tax_amount'               => $line['taxAmt'],
+                        'subtotal'                 => $line['dpp'],
+                    ]);
+
+                    $files = $request->file("po_items.{$line['originalIndex']}.attachments");
+                    if (!empty($files)) {
+                        foreach (is_array($files) ? $files : [$files] as $file) {
+                            if ($file instanceof \Illuminate\Http\UploadedFile) {
+                                $path = $file->storeAs($storagePath, "item_{$itemData['item_id']}_" . uniqid() . time() . "." . $file->extension(), 'public');
+                                \Illuminate\Support\Facades\DB::table('purchase_order_item_attachments')->insert([
+                                    'purchase_order_item_id' => $newPoItem->id,
+                                    'file_name'              => $file->getClientOriginalName(),
+                                    'file_path'              => str_replace('\\', '/', $path),
+                                    'created_at'             => now(), 'updated_at' => now()
+                                ]);
+                            }
+                        }
+                    }
+                }
+
+                $this->logHistory($po->id, 'CREATED', "Direct PO (Tanpa PR) berhasil dibuat.");
+
+                $customWorkflowId = $request->input('custom_workflow_id');
+                $needsApproval = false;
+
+                if ($customWorkflowId) {
+                    $workflow = \App\Models\ApprovalWorkflow::with('steps')->find($customWorkflowId);
+                    if ($workflow && $workflow->steps->count() > 0) {
+                        $isFirstStep = true;
+
+                        foreach ($workflow->steps->sortBy('step_order') as $step) {
+                            $targetDept = $step->target_department_id ?? $step->department_id ?? null;
+                            $specificUserId = $step->user_id ?? $step->specific_user_id ?? $step->approver_id ?? null;
+
+                            \Illuminate\Support\Facades\DB::table('document_approvals')->insert([
+                                'document_id'          => $po->id,
+                                'document_type'        => get_class($po),
+                                'role_id'              => $step->role_id,
+                                'target_department_id' => $targetDept,
+                                'user_id'              => $specificUserId,
+                                'step_order'           => $step->step_order,
+                                'status'               => $isFirstStep ? 'PENDING' : 'WAITING',
+                                'created_at'           => now(),
+                                'updated_at'           => now()
+                            ]);
+                            $isFirstStep = false;
+                        }
+                        $needsApproval = true;
+                        $this->logHistory($po->id, 'SYSTEM', "Menggunakan Rute Persetujuan Khusus: " . $workflow->name);
+                    }
+
+                } else {
+                    $needsApproval = \App\Services\ApprovalService::generateWorkflow($po);
+                    if ($needsApproval) {
+                        $allAppr = \App\Models\DocumentApproval::where('document_id', $po->id)
+                            ->whereIn('document_type', [get_class($po), 'PO', 'PurchaseOrder'])
+                            ->orderBy('step_order', 'asc')->get();
+
+                        $isFirstStep = true;
+                        foreach($allAppr as $ap) {
+                            $ap->update(['status' => $isFirstStep ? 'PENDING' : 'WAITING']);
+                            $isFirstStep = false;
+                        }
+                        $this->logHistory($po->id, 'SYSTEM', 'Masuk antrean persetujuan (Workflow Standar).');
+                    }
+                }
+
+                if ($needsApproval) {
+                    $pendingStatusId = \App\Models\Status::where('type', 'PO')->whereIn('slug', ['pending_approval', 'pending'])->first()->id ?? 1;
+                    $po->update(['status_id' => $pendingStatusId]);
+                } else {
+                    $approvedStatusId = \App\Models\Status::where('type', 'PO')->where('slug', 'approved')->first()->id ?? 3;
+                    $po->update(['status_id' => $approvedStatusId]);
+                    $this->logHistory($po->id, 'APPROVED', 'PO Auto-Approved karena tidak ada aturan matriks aktif.');
+                }
+
+                \App\Jobs\SyncPoToGoogleSheet::dispatch($po->refresh());
+
+            });
+
+            return redirect()->route('po.index')->with('success', 'Direct PO berhasil diterbitkan!');
+
+        } catch (\Exception $e) {
+            return back()->withInput()->with('error', 'Gagal memproses pembuatan PO: ' . $e->getMessage());
+        }
+    }
+
+
+
+    // =========================================================================
+    // 🔥 FUNGSI KHUSUS: UPDATE INVOICE & REKENING TANPA MERESET APPROVAL 🔥
+    // =========================================================================
+    public function updateBillingInfo(\Illuminate\Http\Request $request, $slug)
+    {
+        try {
+            $po = \App\Models\PurchaseOrder::where('po_number', $slug)->firstOrFail();
+
+            $po->update([
+                'invoice_number' => $request->input('invoice_number'),
+                'account_number' => $request->input('account_number'),
+            ]);
+
+            $this->logHistory($po->id, 'Info Tagihan Diupdate', 'Nomor Invoice atau Rekening Vendor telah diperbarui untuk keperluan pembayaran.');
+
+            // 🔥 SYNC GOOGLE SHEET SAAT INVOICE DIUPDATE 🔥
+            \App\Jobs\SyncPoToGoogleSheet::dispatch($po->refresh());
+
+            return back()->with('success', 'Informasi Invoice & Rekening berhasil disimpan!');
+        } catch (\Exception $e) {
+            return back()->with('error', 'Gagal menyimpan info tagihan: ' . $e->getMessage());
+        }
+    }
+
+
+    // =========================================================================
+    // 1. CETAK PURCHASE ORDER (PDF)
+    // =========================================================================
+    public function printPdf(\Illuminate\Http\Request $request, $slug)
+    {
+        $type = $request->query('type', 'digital');
+
+        $po = \App\Models\PurchaseOrder::with([
+            'items.item.itemUoms', 'vendor', 'company', 'billToCompany', 'status', 'user',
+            'purchaseRequest.department', 'approvals.approver', 'approvals.role'
+        ])->where('po_number', $slug)->firstOrFail();
+
+        $charges = \DB::table('purchase_order_charges')->where('purchase_order_id', $po->id)->get();
+        $extraDiscounts = \DB::table('purchase_order_discounts')->where('purchase_order_id', $po->id)->get();
+        $hasBeenApproved = $po->approvals->where('status', 'APPROVED')->isNotEmpty();
+
+        $pdf = \Barryvdh\DomPDF\Facade\Pdf::loadView('po.print_pdf', compact('po', 'charges', 'extraDiscounts', 'hasBeenApproved', 'type'))
+                  ->setPaper('A4', 'portrait');
+
+        $prefix = $type === 'manual' ? 'Manual_' : 'Digital_';
+        return $pdf->stream('Purchase_Order_' . $prefix . str_replace('/', '_', $po->po_number) . '.pdf');
+    }
+
+    // =========================================================================
+    // 2. CETAK PURCHASE ORDER + LAMPIRAN (SMART MERGE)
+    // =========================================================================
+    public function printCompletePdf(\Illuminate\Http\Request $request, $slug)
+    {
+        $type = $request->query('type', 'digital');
+
+        $po = \App\Models\PurchaseOrder::with([
+            'items.item.itemUoms', 'vendor', 'company', 'status', 'user', 'approvals.approver', 'approvals.role', 'attachments'
+        ])->where('po_number', $slug)->firstOrFail();
+
+        $charges = \DB::table('purchase_order_charges')->where('purchase_order_id', $po->id)->get();
+        $extraDiscounts = \DB::table('purchase_order_discounts')->where('purchase_order_id', $po->id)->get();
+        $hasBeenApproved = $po->approvals->where('status', 'APPROVED')->isNotEmpty();
+
+        $poPdf = \Barryvdh\DomPDF\Facade\Pdf::loadView('po.print_pdf', compact('po', 'charges', 'extraDiscounts', 'hasBeenApproved', 'type'))
+                 ->setPaper('A4', 'portrait');
+
+        $tempDir = storage_path('app/public/temp_pdf');
+        if (!file_exists($tempDir)) mkdir($tempDir, 0777, true);
+
+        $poPath = $tempDir . '/main_po_' . $po->id . '_' . time() . '.pdf';
+        file_put_contents($poPath, $poPdf->output());
+
+        $oMerger = \Webklex\PDFMerger\Facades\PDFMergerFacade::init();
+        $oMerger->addPDF($poPath, 'all');
+
+        $tempFilesToDelete = [$poPath];
+        $totalLampiran = 0;
+
+        // 🔥 KUNCI PERBAIKAN: GABUNG LAMPIRAN HEADER & ITEM 🔥
+        $allAttachments = [];
+        if ($po->attachments) {
+            foreach ($po->attachments as $att) { $allAttachments[] = $att; }
+        }
+
+        $poItemIds = $po->items->pluck('id')->toArray();
+        $itemAttachments = \DB::table('purchase_order_item_attachments')->whereIn('purchase_order_item_id', $poItemIds)->get();
+        foreach ($itemAttachments as $att) { $allAttachments[] = $att; }
+
+        if (count($allAttachments) > 0) {
+            $totalLampiran = count($allAttachments);
+            foreach ($allAttachments as $file) {
+                $cleanFilePath = ltrim($file->file_path, '/');
+                $finalFilePath = storage_path('app/public/' . $cleanFilePath);
+
+                if (file_exists($finalFilePath)) {
+                    $extension = strtolower(pathinfo($finalFilePath, PATHINFO_EXTENSION));
+
+                    if ($extension === 'pdf') {
+                        try {
+                            $fpdi = new \setasign\Fpdi\Fpdi();
+                            $fpdi->setSourceFile($finalFilePath);
+                            $oMerger->addPDF($finalFilePath, 'all');
+                        } catch (\Exception $e) {
+                            $html = "<div style='border:2px solid #0d6efd; padding:20px; text-align:center; font-family:sans-serif; margin-top:50px;'>
+                                        <h2 style='color:#0d6efd;'>📄 LAMPIRAN PDF (TERENKRIPSI/TERKOMPRESI)</h2>
+                                        <p>File pendukung bernama: <b>{$file->file_name}</b></p>
+                                        <p>File ini menggunakan format PDF modern yang tidak bisa digabungkan ke dalam dokumen ini secara otomatis.</p>
+                                        <p><i>Silakan lihat atau unduh file ini langsung melalui sistem ProcureApp.</i></p>
+                                     </div>";
+                            $infoPdf = \Barryvdh\DomPDF\Facade\Pdf::loadHTML($html)->setPaper('a4', 'portrait');
+                            $infoPath = $tempDir . '/info_' . uniqid() . '.pdf';
+                            file_put_contents($infoPath, $infoPdf->output());
+                            $oMerger->addPDF($infoPath, 'all');
+                            $tempFilesToDelete[] = $infoPath;
+                        }
+                    } elseif (in_array($extension, ['jpg', 'jpeg', 'png'])) {
+                        $imageData = base64_encode(file_get_contents($finalFilePath));
+                        $mime = mime_content_type($finalFilePath);
+                        $base64Src = 'data:' . $mime . ';base64,' . $imageData;
+
+                        $imgPdf = \Barryvdh\DomPDF\Facade\Pdf::loadHTML("
+                            <html><head><style>@page{margin:0px;} body{margin:0;padding:20px;text-align:center;} img{max-width:100%;max-height:1050px;}</style></head>
+                            <body><img src='" . $base64Src . "'></body></html>
+                        ")->setPaper('a4', 'portrait');
+
+                        $imgTempName = 'img_convert_' . uniqid() . '.pdf';
+                        $imgTempPath = $tempDir . '/' . $imgTempName;
+                        file_put_contents($imgTempPath, $imgPdf->output());
+                        $oMerger->addPDF($imgTempPath, 'all');
+                        $tempFilesToDelete[] = $imgTempPath;
+                    } else {
+                        $html = "<div style='border:2px solid #198754; padding:20px; text-align:center; font-family:sans-serif; margin-top:50px;'>
+                                    <h2 style='color:#198754;'>📎 LAMPIRAN BERKAS (".strtoupper($extension).")</h2>
+                                    <p>File pendukung bernama: <b>{$file->file_name}</b></p>
+                                    <p>File ini berformat Excel / Word / Lainnya sehingga tidak dapat ditampilkan sebagai halaman PDF.</p>
+                                    <p><i>Silakan unduh lampiran ini melalui menu detail PO di sistem.</i></p>
+                                 </div>";
+                        $infoPdf = \Barryvdh\DomPDF\Facade\Pdf::loadHTML($html)->setPaper('a4', 'portrait');
+                        $infoPath = $tempDir . '/info_' . uniqid() . '.pdf';
+                        file_put_contents($infoPath, $infoPdf->output());
+                        $oMerger->addPDF($infoPath, 'all');
+                        $tempFilesToDelete[] = $infoPath;
+                    }
+                } else {
+                    $errorHtml = "<div style='border:2px solid red; padding:20px; text-align:center; font-family:sans-serif; margin-top:50px;'>
+                                    <h2 style='color:red;'>⚠️ FILE FISIK HILANG ⚠️</h2>
+                                    <p>Data lampiran <b>{$file->file_name}</b> tercatat di sistem, tapi file aslinya tidak ditemukan di server.</p>
+                                  </div>";
+                    $errorPdf = \Barryvdh\DomPDF\Facade\Pdf::loadHTML($errorHtml)->setPaper('a4', 'portrait');
+                    $errorTempPath = $tempDir . '/err_notfound_' . uniqid() . '.pdf';
+                    file_put_contents($errorTempPath, $errorPdf->output());
+                    $oMerger->addPDF($errorTempPath, 'all');
+                    $tempFilesToDelete[] = $errorTempPath;
+                }
+            }
+        }
+
+        if ($totalLampiran === 0) {
+            $noDataHtml = "<div style='border: 2px solid orange; padding: 20px; font-family: sans-serif; text-align:center; margin-top:50px;'>
+                            <h2 style='color: orange;'>⚠️ INFO SISTEM ⚠️</h2><p>TIDAK ADA DATA LAMPIRAN untuk PO ini.</p></div>";
+            $noDataPdf = \Barryvdh\DomPDF\Facade\Pdf::loadHTML($noDataHtml)->setPaper('a4', 'portrait');
+            $noDataTempPath = $tempDir . '/err_nodata_' . uniqid() . '.pdf';
+            file_put_contents($noDataTempPath, $noDataPdf->output());
+            $oMerger->addPDF($noDataTempPath, 'all');
+            $tempFilesToDelete[] = $noDataTempPath;
+        }
+
+        $oMerger->merge();
+        $finalPdfOutput = $oMerger->output();
+
+        foreach ($tempFilesToDelete as $trashPath) if (file_exists($trashPath)) unlink($trashPath);
+
+        $prefix = $type === 'manual' ? 'Manual_' : 'Digital_';
+        return response($finalPdfOutput)->header('Content-Type', 'application/pdf')->header('Content-Disposition', 'inline; filename="PO_Lengkap_' . $prefix . str_replace('/', '_', $po->po_number) . '.pdf"');
+    }
+
+    // =========================================================================
+    // 3. CETAK BPR DETAIL (RINCIAN BIAYA & DISKON)
+    // =========================================================================
+    public function printBprDetail(\Illuminate\Http\Request $request, $slug)
+    {
+        $type = $request->query('type', 'digital');
+
+        $po = \App\Models\PurchaseOrder::with(['items.item', 'company', 'user', 'vendor', 'attachments', 'purchaseRequest'])->where('po_number', $slug)->firstOrFail();
+        $charges = \DB::table('purchase_order_charges')->where('purchase_order_id', $po->id)->get();
+        $extraDiscounts = \DB::table('purchase_order_discounts')->where('purchase_order_id', $po->id)->get();
+
+        $pdf = \Barryvdh\DomPDF\Facade\Pdf::loadView('po.print_bpr_detail', compact('po', 'charges', 'extraDiscounts', 'type'))
+                ->setPaper('A4', 'portrait');
+
+        $prefix = $type === 'manual' ? 'Manual_' : 'Digital_';
+        return $pdf->stream('BPR_PO_Detail_' . $prefix . str_replace('/', '_', $po->po_number) . '.pdf');
+    }
+
+    // =========================================================================
+    // 4. CETAK BPR DETAIL + LAMPIRAN (ANTI-BADAI SMART MERGE)
+    // =========================================================================
+    public function printBprWithAttachments(\Illuminate\Http\Request $request, $slug)
+    {
+        $type = $request->query('type', 'digital');
+
+        $po = \App\Models\PurchaseOrder::with(['items.item', 'company', 'user', 'vendor', 'attachments', 'purchaseRequest'])->where('po_number', $slug)->firstOrFail();
+        $charges = \DB::table('purchase_order_charges')->where('purchase_order_id', $po->id)->get();
+        $extraDiscounts = \DB::table('purchase_order_discounts')->where('purchase_order_id', $po->id)->get();
+
+        $pdf = \Barryvdh\DomPDF\Facade\Pdf::loadView('po.print_bpr_detail', compact('po', 'charges', 'extraDiscounts', 'type'))->setPaper('A4', 'portrait');
+
+        $tempDir = storage_path('app/public/temp_pdf');
+        if (!file_exists($tempDir)) mkdir($tempDir, 0777, true);
+
+        $tempMainPdfPath = $tempDir . '/temp_po_bpr_dtl_' . uniqid() . '.pdf';
+        file_put_contents($tempMainPdfPath, $pdf->output());
+
+        $oMerger = \Webklex\PDFMerger\Facades\PDFMergerFacade::init();
+        $oMerger->addPDF($tempMainPdfPath, 'all');
+
+        $tempFilesToDelete = [$tempMainPdfPath];
+        $totalLampiran = 0;
+
+        $allAttachments = [];
+        if ($po->attachments) {
+            foreach ($po->attachments as $att) { $allAttachments[] = $att; }
+        }
+
+        $poItemIds = $po->items->pluck('id')->toArray();
+        $itemAttachments = \DB::table('purchase_order_item_attachments')->whereIn('purchase_order_item_id', $poItemIds)->get();
+        foreach ($itemAttachments as $att) { $allAttachments[] = $att; }
+
+        if (count($allAttachments) > 0) {
+            $totalLampiran = count($allAttachments);
+            foreach ($allAttachments as $file) {
+                $cleanFilePath = ltrim($file->file_path, '/');
+                $finalFilePath = storage_path('app/public/' . $cleanFilePath);
+
+                if (file_exists($finalFilePath)) {
+                    $extension = strtolower(pathinfo($finalFilePath, PATHINFO_EXTENSION));
+
+                    if ($extension === 'pdf') {
+                        try {
+                            $fpdi = new \setasign\Fpdi\Fpdi();
+                            $fpdi->setSourceFile($finalFilePath);
+                            $oMerger->addPDF($finalFilePath, 'all');
+                        } catch (\Exception $e) {
+                            $html = "<div style='border:2px solid #0d6efd; padding:20px; text-align:center; font-family:sans-serif; margin-top:50px;'>
+                                        <h2 style='color:#0d6efd;'>📄 LAMPIRAN PDF (TERENKRIPSI/TERKOMPRESI)</h2>
+                                        <p>File pendukung bernama: <b>{$file->file_name}</b></p>
+                                        <p>File ini menggunakan format PDF modern yang tidak bisa digabungkan ke dalam dokumen ini secara otomatis.</p>
+                                        <p><i>Silakan lihat atau unduh file ini langsung melalui sistem ProcureApp.</i></p>
+                                     </div>";
+                            $infoPdf = \Barryvdh\DomPDF\Facade\Pdf::loadHTML($html)->setPaper('a4', 'portrait');
+                            $infoPath = $tempDir . '/info_' . uniqid() . '.pdf';
+                            file_put_contents($infoPath, $infoPdf->output());
+                            $oMerger->addPDF($infoPath, 'all');
+                            $tempFilesToDelete[] = $infoPath;
+                        }
+                    } elseif (in_array($extension, ['jpg', 'jpeg', 'png'])) {
+                        $imageData = base64_encode(file_get_contents($finalFilePath));
+                        $mime = mime_content_type($finalFilePath);
+                        $base64Src = 'data:' . $mime . ';base64,' . $imageData;
+
+                        $imgPdf = \Barryvdh\DomPDF\Facade\Pdf::loadHTML("
+                            <html><head><style>@page{margin:0px;} body{margin:0;padding:20px;text-align:center;} img{max-width:100%;max-height:1050px;}</style></head>
+                            <body><img src='" . $base64Src . "'></body></html>
+                        ")->setPaper('a4', 'portrait');
+
+                        $imgTempName = 'img_convert_' . uniqid() . '.pdf';
+                        $imgTempPath = $tempDir . '/' . $imgTempName;
+                        file_put_contents($imgTempPath, $imgPdf->output());
+                        $oMerger->addPDF($imgTempPath, 'all');
+                        $tempFilesToDelete[] = $imgTempPath;
+                    } else {
+                        $html = "<div style='border:2px solid #198754; padding:20px; text-align:center; font-family:sans-serif; margin-top:50px;'>
+                                    <h2 style='color:#198754;'>📎 LAMPIRAN BERKAS (".strtoupper($extension).")</h2>
+                                    <p>File pendukung bernama: <b>{$file->file_name}</b></p>
+                                    <p>File ini berformat Excel / Word / Lainnya sehingga tidak dapat ditampilkan sebagai halaman PDF.</p>
+                                    <p><i>Silakan unduh lampiran ini melalui menu detail PO di sistem.</i></p>
+                                 </div>";
+                        $infoPdf = \Barryvdh\DomPDF\Facade\Pdf::loadHTML($html)->setPaper('a4', 'portrait');
+                        $infoPath = $tempDir . '/info_' . uniqid() . '.pdf';
+                        file_put_contents($infoPath, $infoPdf->output());
+                        $oMerger->addPDF($infoPath, 'all');
+                        $tempFilesToDelete[] = $infoPath;
+                    }
+                } else {
+                    $errorHtml = "<div style='border:2px solid red; padding:20px; text-align:center; font-family:sans-serif; margin-top:50px;'>
+                                    <h2 style='color:red;'>⚠️ FILE FISIK HILANG ⚠️</h2>
+                                    <p>Data lampiran <b>{$file->file_name}</b> tercatat di sistem, tapi file aslinya tidak ditemukan di server.</p>
+                                  </div>";
+                    $errorPdf = \Barryvdh\DomPDF\Facade\Pdf::loadHTML($errorHtml)->setPaper('a4', 'portrait');
+                    $errorTempPath = $tempDir . '/err_notfound_' . uniqid() . '.pdf';
+                    file_put_contents($errorTempPath, $errorPdf->output());
+                    $oMerger->addPDF($errorTempPath, 'all');
+                    $tempFilesToDelete[] = $errorTempPath;
+                }
+            }
+        }
+
+        if ($totalLampiran === 0) {
+            $noDataHtml = "<div style='border: 2px solid orange; padding: 20px; font-family: sans-serif; text-align:center; margin-top:50px;'>
+                            <h2 style='color: orange;'>⚠️ INFO SISTEM ⚠️</h2><p>TIDAK ADA DATA LAMPIRAN untuk PO ini.</p></div>";
+            $noDataPdf = \Barryvdh\DomPDF\Facade\Pdf::loadHTML($noDataHtml)->setPaper('a4', 'portrait');
+            $noDataTempPath = $tempDir . '/err_nodata_' . uniqid() . '.pdf';
+            file_put_contents($noDataTempPath, $noDataPdf->output());
+            $oMerger->addPDF($noDataTempPath, 'all');
+            $tempFilesToDelete[] = $noDataTempPath;
+        }
+
+        $oMerger->merge();
+        $finalPdfOutput = $oMerger->output();
+
+        foreach ($tempFilesToDelete as $trashPath) if (file_exists($trashPath)) unlink($trashPath);
+
+        $prefix = $type === 'manual' ? 'Manual_' : 'Digital_';
+        return response($finalPdfOutput)->header('Content-Type', 'application/pdf')->header('Content-Disposition', 'inline; filename="BPR_Standar_Lengkap_' . $prefix . str_replace('/', '_', $po->po_number) . '.pdf"');
+    }
+
+
+    // =========================================================================
+    // CETAK BPR STANDAR (RINGKAS TANPA RINCIAN BIAYA/DISKON)
+    // =========================================================================
+    public function printBpr(\Illuminate\Http\Request $request, $slug)
+    {
+        $type = $request->query('type', 'digital');
+
+        $po = \App\Models\PurchaseOrder::with(['items.item', 'company', 'user.department', 'vendor', 'purchaseRequest'])
+            ->where('po_number', $slug)->firstOrFail();
+
+        $pdf = \Barryvdh\DomPDF\Facade\Pdf::loadView('po.print_bpr', compact('po', 'type'))
+                ->setPaper('A4', 'portrait');
+
+        $prefix = $type === 'manual' ? 'Manual_' : 'Digital_';
+        return $pdf->stream('BPR_PO_Standar_' . $prefix . str_replace(['/', '\\'], '_', $po->po_number) . '.pdf');
+    }
+
+
+    // =========================================================================
+    // CETAK BPR STANDAR (RINGKAS) + LAMPIRAN (ANTI-BADAI SMART MERGE)
+    // =========================================================================
+    public function printBprStandarWithAttachments(\Illuminate\Http\Request $request, $slug)
+    {
+        $type = $request->query('type', 'digital');
+
+        $po = \App\Models\PurchaseOrder::with(['items.item', 'company', 'user.department', 'vendor', 'attachments', 'purchaseRequest'])
+            ->where('po_number', $slug)->firstOrFail();
+
+        $pdf = \Barryvdh\DomPDF\Facade\Pdf::loadView('po.print_bpr', compact('po', 'type'))
+                ->setPaper('A4', 'portrait');
+
+        $tempDir = storage_path('app/public/temp_pdf');
+        if (!file_exists($tempDir)) mkdir($tempDir, 0777, true);
+
+        $tempMainPdfPath = $tempDir . '/temp_po_bpr_std_' . uniqid() . '.pdf';
+        file_put_contents($tempMainPdfPath, $pdf->output());
+
+        $oMerger = \Webklex\PDFMerger\Facades\PDFMergerFacade::init();
+        $oMerger->addPDF($tempMainPdfPath, 'all');
+
+        $tempFilesToDelete = [$tempMainPdfPath];
+        $totalLampiran = 0;
+
+        $allAttachments = [];
+        if ($po->attachments) {
+            foreach ($po->attachments as $att) { $allAttachments[] = $att; }
+        }
+
+        $poItemIds = $po->items->pluck('id')->toArray();
+        $itemAttachments = \DB::table('purchase_order_item_attachments')->whereIn('purchase_order_item_id', $poItemIds)->get();
+        foreach ($itemAttachments as $att) { $allAttachments[] = $att; }
+
+        if (count($allAttachments) > 0) {
+            $totalLampiran = count($allAttachments);
+            foreach ($allAttachments as $file) {
+                $cleanFilePath = ltrim($file->file_path, '/');
+                $finalFilePath = storage_path('app/public/' . $cleanFilePath);
+
+                if (file_exists($finalFilePath)) {
+                    $extension = strtolower(pathinfo($finalFilePath, PATHINFO_EXTENSION));
+
+                    if ($extension === 'pdf') {
+                        try {
+                            $fpdi = new \setasign\Fpdi\Fpdi();
+                            $fpdi->setSourceFile($finalFilePath);
+                            $oMerger->addPDF($finalFilePath, 'all');
+                        } catch (\Exception $e) {
+                            $html = "<div style='border:2px solid #0d6efd; padding:20px; text-align:center; font-family:sans-serif; margin-top:50px;'>
+                                        <h2 style='color:#0d6efd;'>📄 LAMPIRAN PDF (TERENKRIPSI/TERKOMPRESI)</h2>
+                                        <p>File pendukung bernama: <b>{$file->file_name}</b></p>
+                                        <p>File ini menggunakan format PDF modern yang tidak bisa digabungkan ke dalam dokumen ini secara otomatis.</p>
+                                        <p><i>Silakan lihat atau unduh file ini langsung melalui sistem ProcureApp.</i></p>
+                                     </div>";
+                            $infoPdf = \Barryvdh\DomPDF\Facade\Pdf::loadHTML($html)->setPaper('a4', 'portrait');
+                            $infoPath = $tempDir . '/info_' . uniqid() . '.pdf';
+                            file_put_contents($infoPath, $infoPdf->output());
+                            $oMerger->addPDF($infoPath, 'all');
+                            $tempFilesToDelete[] = $infoPath;
+                        }
+                    } elseif (in_array($extension, ['jpg', 'jpeg', 'png'])) {
+                        $imageData = base64_encode(file_get_contents($finalFilePath));
+                        $mime = mime_content_type($finalFilePath);
+                        $base64Src = 'data:' . $mime . ';base64,' . $imageData;
+
+                        $imgPdf = \Barryvdh\DomPDF\Facade\Pdf::loadHTML("
+                            <html><head><style>@page{margin:0px;} body{margin:0;padding:20px;text-align:center;} img{max-width:100%;max-height:1050px;}</style></head>
+                            <body><img src='" . $base64Src . "'></body></html>
+                        ")->setPaper('a4', 'portrait');
+
+                        $imgTempName = 'img_convert_' . uniqid() . '.pdf';
+                        $imgTempPath = $tempDir . '/' . $imgTempName;
+                        file_put_contents($imgTempPath, $imgPdf->output());
+                        $oMerger->addPDF($imgTempPath, 'all');
+                        $tempFilesToDelete[] = $imgTempPath;
+                    } else {
+                        $html = "<div style='border:2px solid #198754; padding:20px; text-align:center; font-family:sans-serif; margin-top:50px;'>
+                                    <h2 style='color:#198754;'>📎 LAMPIRAN BERKAS (".strtoupper($extension).")</h2>
+                                    <p>File pendukung bernama: <b>{$file->file_name}</b></p>
+                                    <p>File ini berformat Excel / Word / Lainnya sehingga tidak dapat ditampilkan sebagai halaman PDF.</p>
+                                    <p><i>Silakan unduh lampiran ini melalui menu detail PO di sistem.</i></p>
+                                 </div>";
+                        $infoPdf = \Barryvdh\DomPDF\Facade\Pdf::loadHTML($html)->setPaper('a4', 'portrait');
+                        $infoPath = $tempDir . '/info_' . uniqid() . '.pdf';
+                        file_put_contents($infoPath, $infoPdf->output());
+                        $oMerger->addPDF($infoPath, 'all');
+                        $tempFilesToDelete[] = $infoPath;
+                    }
+                } else {
+                    $errorHtml = "<div style='border:2px solid red; padding:20px; text-align:center; font-family:sans-serif; margin-top:50px;'>
+                                    <h2 style='color:red;'>⚠️ FILE FISIK HILANG ⚠️</h2>
+                                    <p>Data lampiran <b>{$file->file_name}</b> tercatat di sistem, tapi file aslinya tidak ditemukan di server.</p>
+                                  </div>";
+                    $errorPdf = \Barryvdh\DomPDF\Facade\Pdf::loadHTML($errorHtml)->setPaper('a4', 'portrait');
+                    $errorTempPath = $tempDir . '/err_notfound_' . uniqid() . '.pdf';
+                    file_put_contents($errorTempPath, $errorPdf->output());
+                    $oMerger->addPDF($errorTempPath, 'all');
+                    $tempFilesToDelete[] = $errorTempPath;
+                }
+            }
+        }
+
+        if ($totalLampiran === 0) {
+            $noDataHtml = "<div style='border: 2px solid orange; padding: 20px; font-family: sans-serif; text-align:center; margin-top:50px;'>
+                            <h2 style='color: orange;'>⚠️ INFO SISTEM ⚠️</h2><p>TIDAK ADA DATA LAMPIRAN untuk PO ini.</p></div>";
+            $noDataPdf = \Barryvdh\DomPDF\Facade\Pdf::loadHTML($noDataHtml)->setPaper('a4', 'portrait');
+            $noDataTempPath = $tempDir . '/err_nodata_' . uniqid() . '.pdf';
+            file_put_contents($noDataTempPath, $noDataPdf->output());
+            $oMerger->addPDF($noDataTempPath, 'all');
+            $tempFilesToDelete[] = $noDataTempPath;
+        }
+
+        $oMerger->merge();
+        $finalPdfOutput = $oMerger->output();
+
+        foreach ($tempFilesToDelete as $trashPath) if (file_exists($trashPath)) unlink($trashPath);
+
+        $prefix = $type === 'manual' ? 'Manual_' : 'Digital_';
+        return response($finalPdfOutput)->header('Content-Type', 'application/pdf')->header('Content-Disposition', 'inline; filename="BPR_Standar_Lengkap_' . $prefix . str_replace('/', '_', $po->po_number) . '.pdf"');
+    }
+
+    // =========================================================================
+    // HELPER: PERBAIKI STATUS PR OTOMATIS MENGGUNAKAN NATIVE DB
+    // =========================================================================
+    private function checkAndUpdatePrStatus($prId)
+    {
+        $prItems = DB::table('purchase_request_items')->where('purchase_request_id', $prId)->get();
+        if ($prItems->isEmpty()) return;
+
+        $anyItemProcessed = false;
+        $allItemFulfilled = true;
+        $validItemsCount  = 0;
+
+        foreach ($prItems as $item) {
+            $itemStatus = strtoupper(trim($item->status ?? ''));
+            if (in_array($itemStatus, ['REJECTED', 'CANCELED', 'CANCELLED'])) {
+                continue;
+            }
+
+            $validItemsCount++;
+            $targetQty = (float) $item->qty;
+            $currentOrdered = (float) ($item->ordered_qty ?? 0);
+
+            if (round($currentOrdered, 4) > 0) {
+                $anyItemProcessed = true;
+            }
+
+            if (round($currentOrdered, 4) < round($targetQty, 4)) {
+                $allItemFulfilled = false;
+            }
+        }
+
+        if ($validItemsCount === 0) return;
+
+        $statusApproved = DB::table('statuses')->where('type', 'PR')->whereIn('slug', ['approved', 'disetujui'])->value('id');
+        $statusPartial  = DB::table('statuses')->where('type', 'PR')->whereIn('slug', ['partial_po', 'parsial'])->value('id');
+        $statusPoIssued = DB::table('statuses')->where('type', 'PR')
+            ->whereIn('slug', ['po_issued', 'completed', 'selesai', 'po_terbit', 'issued', 'terbit'])
+            ->value('id');
+
+        if (!$statusPoIssued) {
+            $statusPoIssued = DB::table('statuses')->where('type', 'PR')->where('name', 'like', '%Terbit%')->orWhere('name', 'like', '%Selesai%')->value('id');
+        }
+
+        $newStatusId = null;
+        if (!$anyItemProcessed) {
+            $newStatusId = $statusApproved;
+        } elseif (!$allItemFulfilled) {
+            $newStatusId = $statusPartial;
+        } else {
+            $newStatusId = $statusPoIssued;
+        }
+
+        if ($newStatusId) {
+            DB::table('purchase_requests')->where('id', $prId)->update(['status_id' => $newStatusId]);
+        }
+    }
+
+    // =========================================================================
+    // HELPER 1: HITUNG ULANG QTY PR SECARA ABSOLUT (ANTI-TABRAKAN & ANTI-JSON)
+    // =========================================================================
+    private function recalculatePrItemFulfillment($prItemId)
+    {
+        $prItem = DB::table('purchase_request_items')->where('id', $prItemId)->first();
+        if (!$prItem) return;
+
+        $masterItem = DB::table('items')->where('id', $prItem->item_id)->first();
+        $baseUomId = $masterItem->uom_id ?? null;
+
+        $baseUomDb = clone DB::table('uoms')->where('id', $baseUomId)->first();
+        $baseUomName = strtoupper($baseUomDb->name ?? 'PCS');
+
+        $rejectedPoStatusIds = DB::table('statuses')->where('type', 'PO')
+                                 ->whereIn('slug', ['canceled', 'cancelled', 'rejected'])
+                                 ->pluck('id')->toArray();
+
+        $activePoIds = DB::table('purchase_orders')
+                         ->whereNotIn('status_id', $rejectedPoStatusIds)
+                         ->pluck('id')->toArray();
+
+        if (empty($activePoIds)) {
+            DB::table('purchase_request_items')->where('id', $prItemId)->update(['ordered_qty' => 0]);
+            return;
+        }
+
+        $poItems = DB::table('purchase_order_items')
+                     ->where('purchase_request_item_id', $prItemId)
+                     ->whereIn('purchase_order_id', $activePoIds)
+                     ->get();
+
+        $totalOrderedInPrUom = 0;
+
+        // 1. CARI FAKTOR KONVERSI PR ITEM
+        $prUomFactor = 1;
+        $prUomId = $prItem->uom_id;
+
+        if (!empty($prUomId) && $prUomId != $baseUomId) {
+            $altDb = DB::table('item_uoms')->where('id', $prUomId)->first();
+            if ($altDb) {
+                $prUomFactor = (float) $altDb->conversion_qty;
+            }
+        }
+        if ($prUomFactor == 1) {
+            $rawPrUom = $prItem->uom ?? '';
+            if (is_string($rawPrUom) && str_starts_with(trim($rawPrUom), '{')) {
+                $dec = json_decode($rawPrUom, true);
+                if ($dec) {
+                    $decLower = array_change_key_case($dec, CASE_LOWER);
+                    $rawPrUom = $decLower['uom_name'] ?? $decLower['name'] ?? $decLower['code'] ?? '';
+                }
+            }
+            if (preg_match('/\(Isi:?\s*([0-9.]+)/i', $rawPrUom, $matches)) {
+                $prUomFactor = (float) $matches[1];
+            } else {
+                $cleanPr = strtoupper(trim(preg_replace('/ \(Isi:.*\)/i', '', $rawPrUom)));
+                $altDb = DB::table('item_uoms')->where('item_id', $prItem->item_id)->whereRaw('UPPER(uom_name) = ?', [$cleanPr])->first();
+                if ($altDb) {
+                    $prUomFactor = (float) $altDb->conversion_qty;
+                }
+            }
+        }
+        if ($prUomFactor <= 0) $prUomFactor = 1;
+
+        // 2. HITUNG KONVERSI DARI SEMUA PO ITEM AKTIF
+        foreach ($poItems as $poItem) {
+            $poUomFactor = 1;
+            $poUomId = $poItem->uom_id;
+
+            if (!empty($poUomId) && $poUomId != $baseUomId) {
+                $altDb = DB::table('item_uoms')->where('id', $poUomId)->first();
+                if ($altDb) {
+                    $poUomFactor = (float) $altDb->conversion_qty;
+                }
+            }
+
+            if ($poUomFactor == 1) {
+                $rawPoUom = $poItem->uom ?? '';
+                if (is_string($rawPoUom) && str_starts_with(trim($rawPoUom), '{')) {
+                    $dec = json_decode($rawPoUom, true);
+                    if ($dec) {
+                        $decLower = array_change_key_case($dec, CASE_LOWER);
+                        $rawPoUom = $decLower['uom_name'] ?? $decLower['name'] ?? $decLower['code'] ?? '';
+                    }
+                }
+                if (preg_match('/\(Isi:?\s*([0-9.]+)/i', $rawPoUom, $matches)) {
+                    $poUomFactor = (float) $matches[1];
+                } else {
+                    $cleanPo = strtoupper(trim(preg_replace('/ \(Isi:.*\)/i', '', $rawPoUom)));
+                    $cleanPo = trim(preg_replace('/ \[PO\]| \[PR\]| \[GR\]/i', '', $cleanPo));
+
+                    $altDb = DB::table('item_uoms')->where('item_id', $poItem->item_id)->whereRaw('UPPER(uom_name) = ?', [$cleanPo])->first();
+                    if ($altDb) {
+                        $poUomFactor = (float) $altDb->conversion_qty;
+                    }
+                }
+            }
+            if ($poUomFactor <= 0) $poUomFactor = 1;
+
+            // 3. KALKULASI ABSOLUT
+            $qtyInBase = (float)$poItem->qty_ordered * $poUomFactor;
+            $qtyInPrUnit = $qtyInBase / $prUomFactor;
+
+            $totalOrderedInPrUom += $qtyInPrUnit;
+        }
+
+        DB::table('purchase_request_items')
+            ->where('id', $prItemId)
+            ->update(['ordered_qty' => round($totalOrderedInPrUom, 4)]);
+    }
+
+    // =========================================================================
+    // HELPER 4: GENERATOR NOMOR PO OTOMATIS
+    // =========================================================================
+    private function generatePoNumber($companyId)
+    {
+        $company = \App\Models\Company::find($companyId);
+        $companyCode = $company ? strtoupper($company->code ?? 'PT') : 'PT';
+
+        $year = date('Y');
+        $month = date('m');
+        $dateStr = date('Ymd');
+
+        $prefix = "PO-{$companyCode}-{$dateStr}-";
+
+        $latestPo = \App\Models\PurchaseOrder::where('po_number', 'like', $prefix . '%')->orderBy('id', 'desc')->lockForUpdate()->first();
+        $newSequence = 1;
+        if ($latestPo && $latestPo->po_number) {
+            $parts = explode('-', $latestPo->po_number);
+            $newSequence = ((int) end($parts)) + 1;
+        }
+
+        return $prefix . str_pad($newSequence, 4, '0', STR_PAD_LEFT);
+    }
+
+    // =========================================================================
+    // FUNGSI CANCEL / BATALKAN PO DENGAN REFUND PR OTOMATIS & HAPUS SHEET
+    // =========================================================================
+    public function cancel(Request $request, $slug)
+    {
+        $request->validate([
+            'cancel_reason' => 'required|string|max:255'
+        ]);
+
+        DB::beginTransaction();
+        try {
+            $po = \App\Models\PurchaseOrder::with('items')->where('po_number', $slug)->firstOrFail();
+
+            $currentStatusSlug = strtolower(optional($po->status)->slug);
+            $unallowableStatuses = ['completed', 'fully_received', 'closed', 'canceled', 'cancelled', 'rejected'];
+
+            if (in_array($currentStatusSlug, $unallowableStatuses)) {
+                throw new \Exception('Gagal: PO yang sudah selesai, diretur, atau dibatalkan tidak bisa dibatalkan ulang.');
+            }
+
+            $statusPoCanceled = \App\Models\Status::where('type', 'PO')->whereIn('slug', ['canceled', 'cancelled'])->first();
+            if (!$statusPoCanceled) {
+                // Fallback jika belum ada slug canceled
+                $statusPoCanceled = \App\Models\Status::where('type', 'PO')->where('slug', 'rejected')->first();
+            }
+
+            if ($statusPoCanceled) {
+                $po->update(['status_id' => $statusPoCanceled->id]);
+            }
+
+            // Batalkan matriks persetujuan yang masih gantung
+            \App\Models\DocumentApproval::where('document_id', $po->id)
+                ->whereIn('document_type', [get_class($po), 'PO', 'PurchaseOrder'])
+                ->where('status', 'PENDING')
+                ->update(['status' => 'REJECTED', 'note' => 'Batal Otomatis (PO di-Cancel). Alasan: ' . $request->cancel_reason]);
+
+            // Catat history
+            $this->logHistory($po->id, 'PO Dibatalkan', 'Dokumen PO telah dibatalkan. Alasan: **' . $request->cancel_reason . '**');
+
+            // 🔥 JALANKAN SELF-HEALING PR OTOMATIS 🔥
+            $prItemIds = $po->items->pluck('purchase_request_item_id')->filter()->unique()->toArray();
+            if (!empty($prItemIds)) {
+                foreach($prItemIds as $pid) {
+                    $this->recalculatePrItemFulfillment($pid);
+                }
+                $this->checkAndUpdatePrStatus($po->purchase_request_id);
+            }
+
+            DB::commit();
+
+            // 🔥 HAPUS DARI GOOGLE SHEET KARENA DIBATALKAN 🔥
+            try {
+                $sheetService = new \App\Services\GoogleSheetService();
+                $tabName = env('GOOGLE_SHEET_OPEX_TAB_NAME', 'Sheet1'); // Pastikan ini nama tab yang benar!
+                $sheetService->deleteRowsByBillNumber($tabName, $po->po_number);
+            } catch (\Exception $e) {}
+
+            return redirect()->route('po.index')->with('success', 'PO Berhasil dibatalkan! Kuantitas PR telah kembali normal.');
+
+        } catch (\Exception $e) {
+            DB::rollBack();
+            return back()->with('error', 'Gagal membatalkan PO: ' . $e->getMessage());
+        }
+    }
+
+    // =========================================================================
+    // 🔥 HELPER SINKRONISASI GOOGLE SHEET (FORMAT 14 KOLOM SEPERTI OPEX) 🔥
+    // =========================================================================
+    // private function syncPoToSheet($po)
+    // {
+    //     try {
+    //         $po->load(['items.item.category', 'vendor', 'company', 'user']);
+
+    //         $companyName = optional($po->company)->name ?? '-';
+    //         $vendorName  = optional($po->vendor)->name ?? '-';
+    //         $poDate      = \Carbon\Carbon::parse($po->po_date)->format('d-M-Y');
+
+    //         $childRows = [];
+
+    //         // 1. LOOPING ITEM PO
+    //         foreach ($po->items as $item) {
+    //             $infoTambahan = "";
+    //             if ($item->discount_amount > 0) {
+    //                 $infoTambahan .= (strtoupper($item->discount_type) === 'PERCENT') ? " (-Disc {$item->discount_value}%)" : " (-Diskon Rp" . number_format($item->discount_amount, 0, ',', '.') . ")";
+    //             }
+    //             if ($item->tax_amount > 0) {
+    //                 $infoTambahan .= (strtoupper($item->tax_type) === 'PERCENT') ? " (+PPN {$item->tax_value}%)" : " (+Pajak Rp" . number_format($item->tax_amount, 0, ',', '.') . ")";
+    //             }
+
+    //             $dppSheet = $item->subtotal; // DPP dari item (Gross - Discount)
+    //             $categoryName = optional(optional($item->item)->category)->name ?? 'Lainnya';
+
+    //             // 🔥 BERSIHKAN HTML DARI NAMA ITEM 🔥
+    //             $deskripsiLayanan = html_entity_decode(strip_tags($item->item_name ?? optional($item->item)->name ?? 'Item Tanpa Nama'));
+
+    //             $childRows[] = [
+    //                 $poDate, // A: Tanggal
+    //                 $companyName, // B: PT / Perusahaan
+    //                 $vendorName, // C: Vendor / Supplier
+    //                 "  ↳ [Item] " . $deskripsiLayanan . $infoTambahan, // D: Layanan
+    //                 $categoryName, // E: Kategori
+    //                 $dppSheet, // F: PRICE (DPP)
+    //                 $item->tax_amount ?? 0, // G: Pajak
+    //                 $dppSheet + ($item->tax_amount ?? 0), // H: Total Tagihan Item
+    //                 $po->invoice_number ?? '-', // I: No Penawaran / Invoice
+    //                 $po->account_number ?? '-', // J: No Rekening
+    //                 $po->po_number, // K: Nomer Dokumen (PO Number)
+    //                 $po->user->name ?? 'System', // L: Create by
+    //                 '-', // M: Keterangan BPR/PO (Kosong untuk anak)
+    //                 html_entity_decode(strip_tags($item->description ?? '-')) // N: Spesifikasi Detail
+    //             ];
+    //         }
+
+    //         // 2. LOOPING BIAYA TAMBAHAN PO
+    //         $charges = \DB::table('purchase_order_charges')->where('purchase_order_id', $po->id)->get();
+    //         foreach ($charges as $charge) {
+    //             $childRows[] = [
+    //                 $poDate, $companyName, $vendorName,
+    //                 "  ↳ [+] " . html_entity_decode(strip_tags($charge->name)), 'Biaya Tambahan',
+    //                 $charge->amount, 0, $charge->amount,
+    //                 $po->invoice_number ?? '-', $po->account_number ?? '-', $po->po_number, $po->user->name ?? 'System', '-', '-'
+    //             ];
+    //         }
+
+    //         // 3. LOOPING POTONGAN/DISKON TAMBAHAN PO
+    //         $discounts = \DB::table('purchase_order_discounts')->where('purchase_order_id', $po->id)->get();
+    //         foreach ($discounts as $discount) {
+    //             $childRows[] = [
+    //                 $poDate, $companyName, $vendorName,
+    //                 "  ↳ [-] " . html_entity_decode(strip_tags($discount->name)), 'Potongan / Diskon',
+    //                 -abs($discount->amount), 0, -abs($discount->amount),
+    //                 $po->invoice_number ?? '-', $po->account_number ?? '-', $po->po_number, $po->user->name ?? 'System', '-', '-'
+    //             ];
+    //         }
+
+    //         // =========================================================================
+    //         // 🔥 3.5. LOGIKA BARU: SINKRONISASI DISKON GLOBAL & PAJAK GLOBAL 🔥
+    //         // =========================================================================
+
+    //         // A. HITUNG DISKON GLOBAL (Komersial) MURNI DARI HEADER
+    //         $sumItemDisc = $po->items->sum('discount_amount');
+    //         $actualGlobalDisc = (float)($po->discount_total ?? 0) - $sumItemDisc;
+
+    //         if ($actualGlobalDisc > 0) {
+    //             // Buat label persentasenya jika tipe persen
+    //             $labelDiskonGlobal = "Diskon Komersial (Global)";
+    //             if (isset($po->global_discount_type) && strtoupper($po->global_discount_type) === 'PERCENT') {
+    //                 $labelDiskonGlobal = "Diskon Komersial {$po->global_discount_value}%";
+    //             }
+
+    //             $childRows[] = [
+    //                 $poDate, $companyName, $vendorName,
+    //                 "  ↳ [-] " . $labelDiskonGlobal, 'Potongan / Diskon',
+    //                 -$actualGlobalDisc, 0, -$actualGlobalDisc,
+    //                 $po->invoice_number ?? '-', $po->account_number ?? '-', $po->po_number, $po->user->name ?? 'System', '-', '-'
+    //             ];
+    //         }
+
+    //         // B. HITUNG PAJAK GLOBAL (VAT/PPN) MURNI DARI HEADER
+    //         $sumItemTax = $po->items->sum('tax_amount');
+    //         $actualGlobalTax = (float)($po->tax_total ?? 0) - $sumItemTax;
+
+    //         if ($actualGlobalTax > 0) {
+    //             // Buat label persentasenya jika tipe persen
+    //             $labelPajakGlobal = "Pajak Header (VAT/PPN)";
+    //             if (isset($po->global_tax_type) && strtoupper($po->global_tax_type) === 'PERCENT') {
+    //                 $labelPajakGlobal = "Pajak (VAT/PPN) {$po->global_tax_value}%";
+    //             }
+
+    //             $childRows[] = [
+    //                 $poDate, $companyName, $vendorName,
+    //                 "  ↳ [+] " . $labelPajakGlobal, 'Pajak',
+    //                 $actualGlobalTax, 0, $actualGlobalTax,
+    //                 $po->invoice_number ?? '-', $po->account_number ?? '-', $po->po_number, $po->user->name ?? 'System', '-', '-'
+    //             ];
+    //         }
+    //         // =========================================================================
+
+    //         // 4. FORMAT BARIS INDUK (PARENT SUMMARY)
+    //         $globalDiscLabel = "";
+    //         if ($po->global_discount_value > 0) {
+    //             $globalDiscLabel = ($po->global_discount_type === 'PERCENT') ? " (-Disc Global {$po->global_discount_value}%)" : " (-Disc Global Rp" . number_format($po->global_discount_value, 0, ',', '.') . ")";
+    //         }
+
+    //         $globalTaxLabel = "";
+    //         if ($po->global_tax_value > 0) {
+    //             $globalTaxLabel = ($po->global_tax_type === 'PERCENT') ? " (+PPN Global {$po->global_tax_value}%)" : " (+Pajak Global Rp" . number_format($po->global_tax_value, 0, ',', '.') . ")";
+    //         }
+
+    //         $judulParent = "⭐ GRAND TOTAL PO" . $globalTaxLabel . $globalDiscLabel;
+
+    //         // 🔥 BERSIHKAN HTML DARI KETERANGAN GLOBAL 🔥
+    //         $catatanParent = html_entity_decode(strip_tags(trim($po->notes ?? '-')));
+
+    //         // Kalkulasi Total DPP Murni (Grand Total - Total Pajak Keseluruhan)
+    //         $totalDPP = ($po->grand_total ?? 0) - ($po->tax_total ?? 0);
+
+    //         $parentRow = [
+    //             $poDate, // A
+    //             $companyName, // B
+    //             $vendorName, // C
+    //             $judulParent, // D
+    //             "SUMMARY", // E
+    //             $totalDPP, // F: Total DPP Keseluruhan
+    //             $po->tax_total ?? 0, // G: Total Pajak Keseluruhan
+    //             $po->grand_total ?? 0, // H: Grand Total Keseluruhan
+    //             $po->invoice_number ?? '-', // I
+    //             $po->account_number ?? '-', // J
+    //             $po->po_number, // K
+    //             $po->user->name ?? 'System', // L
+    //             $catatanParent, // M: Keterangan Global
+    //             '-' // N: Spesifikasi
+    //         ];
+
+    //         // Gabungkan Parent di atas, disusul baris Child di bawahnya
+    //         $googleSheetRows = array_merge([$parentRow], $childRows);
+
+    //         // 5. EKSEKUSI PENGIRIMAN KE GOOGLE SHEET
+    //         $sheetService = new \App\Services\GoogleSheetService();
+
+    //         // Disetel agar menembak ke tab OPEX (Sheet1) agar menyatu dengan tabel BPR
+    //         // Pastikan jika tab PO berbeda, ganti 'Sheet1' dengan nama tab PO yang benar
+    //         $tabName = env('GOOGLE_SHEET_OPEX_TAB_NAME', 'Sheet1');
+
+    //         // Hapus baris PO lama jika ini adalah revisi (Update)
+    //         $sheetService->deleteRowsByBillNumber($tabName, $po->po_number);
+
+    //         foreach ($googleSheetRows as $rowData) {
+    //             $sheetService->appendRow($tabName, $rowData);
+    //         }
+    //     } catch (\Exception $e) {
+    //         \Log::error("Gagal Sync PO ke Sheet: " . $e->getMessage());
+    //     }
+    // }
+
+
+    // =========================================================================
+    // 🔥 5. CETAK BUNDLE LENGKAP: PO + BPR STANDAR + LAMPIRAN 🔥
+    // =========================================================================
+    public function printBundleStandar(\Illuminate\Http\Request $request, $slug)
+    {
+        $type = $request->query('type', 'digital');
+
+        // 1. Load Data
+        $po = \App\Models\PurchaseOrder::with([
+            'items.item.itemUoms', 'vendor', 'company', 'status', 'user', 'approvals.approver', 'approvals.role', 'attachments', 'purchaseRequest'
+        ])->where('po_number', $slug)->firstOrFail();
+
+        $charges = \DB::table('purchase_order_charges')->where('purchase_order_id', $po->id)->get();
+        $extraDiscounts = \DB::table('purchase_order_discounts')->where('purchase_order_id', $po->id)->get();
+        $hasBeenApproved = $po->approvals->where('status', 'APPROVED')->isNotEmpty();
+
+        // 2. Generate PDF PO
+        $poPdf = \Barryvdh\DomPDF\Facade\Pdf::loadView('po.print_pdf', compact('po', 'charges', 'extraDiscounts', 'hasBeenApproved', 'type'))->setPaper('A4', 'portrait');
+
+        // 3. Generate PDF BPR Standar
+        $bprPdf = \Barryvdh\DomPDF\Facade\Pdf::loadView('po.print_bpr', compact('po', 'type'))->setPaper('A4', 'portrait');
+
+        $tempDir = storage_path('app/public/temp_pdf');
+        if (!file_exists($tempDir)) mkdir($tempDir, 0777, true);
+
+        // 4. Simpan Sementara
+        $poPath = $tempDir . '/bundle_po_' . $po->id . '_' . time() . '.pdf';
+        file_put_contents($poPath, $poPdf->output());
+
+        $bprPath = $tempDir . '/bundle_bpr_' . $po->id . '_' . time() . '.pdf';
+        file_put_contents($bprPath, $bprPdf->output());
+
+        // 5. Inisiasi Merger & Gabungkan PO + BPR
+        $oMerger = \Webklex\PDFMerger\Facades\PDFMergerFacade::init();
+        $oMerger->addPDF($poPath, 'all');
+        $oMerger->addPDF($bprPath, 'all');
+
+        $tempFilesToDelete = [$poPath, $bprPath];
+
+        // 6. Gabungkan Lampiran (Attachments)
+        $allAttachments = [];
+        if ($po->attachments) {
+            foreach ($po->attachments as $att) { $allAttachments[] = $att; }
+        }
+
+        $poItemIds = $po->items->pluck('id')->toArray();
+        $itemAttachments = \DB::table('purchase_order_item_attachments')->whereIn('purchase_order_item_id', $poItemIds)->get();
+        foreach ($itemAttachments as $att) { $allAttachments[] = $att; }
+
+        if (count($allAttachments) > 0) {
+            foreach ($allAttachments as $file) {
+                $cleanFilePath = ltrim($file->file_path, '/');
+                $finalFilePath = storage_path('app/public/' . $cleanFilePath);
+
+                if (file_exists($finalFilePath)) {
+                    $extension = strtolower(pathinfo($finalFilePath, PATHINFO_EXTENSION));
+
+                    if ($extension === 'pdf') {
+                        try {
+                            $fpdi = new \setasign\Fpdi\Fpdi();
+                            $fpdi->setSourceFile($finalFilePath);
+                            $oMerger->addPDF($finalFilePath, 'all');
+                        } catch (\Exception $e) {
+                            $html = "<div style='border:2px solid #0d6efd; padding:20px; text-align:center; font-family:sans-serif; margin-top:50px;'><h2 style='color:#0d6efd;'>📄 LAMPIRAN PDF TERENKRIPSI</h2><p>File: <b>{$file->file_name}</b> tidak bisa digabung otomatis. Silakan unduh manual.</p></div>";
+                            $infoPdf = \Barryvdh\DomPDF\Facade\Pdf::loadHTML($html)->setPaper('a4', 'portrait');
+                            $infoPath = $tempDir . '/info_' . uniqid() . '.pdf';
+                            file_put_contents($infoPath, $infoPdf->output());
+                            $oMerger->addPDF($infoPath, 'all');
+                            $tempFilesToDelete[] = $infoPath;
+                        }
+                    } elseif (in_array($extension, ['jpg', 'jpeg', 'png'])) {
+                        $imageData = base64_encode(file_get_contents($finalFilePath));
+                        $mime = mime_content_type($finalFilePath);
+                        $base64Src = 'data:' . $mime . ';base64,' . $imageData;
+                        $imgPdf = \Barryvdh\DomPDF\Facade\Pdf::loadHTML("<html><head><style>@page{margin:0px;} body{margin:0;padding:20px;text-align:center;} img{max-width:100%;max-height:1050px;}</style></head><body><img src='" . $base64Src . "'></body></html>")->setPaper('a4', 'portrait');
+                        $imgTempPath = $tempDir . '/img_' . uniqid() . '.pdf';
+                        file_put_contents($imgTempPath, $imgPdf->output());
+                        $oMerger->addPDF($imgTempPath, 'all');
+                        $tempFilesToDelete[] = $imgTempPath;
+                    }
+                }
+            }
+        }
+
+        $oMerger->merge();
+        $finalPdfOutput = $oMerger->output();
+
+        // Bersihkan File Temp
+        foreach ($tempFilesToDelete as $trashPath) if (file_exists($trashPath)) unlink($trashPath);
+
+        $prefix = $type === 'manual' ? 'Manual_' : 'Digital_';
+        return response($finalPdfOutput)->header('Content-Type', 'application/pdf')->header('Content-Disposition', 'inline; filename="BUNDLE_PO_BPR_STD_' . $prefix . str_replace('/', '_', $po->po_number) . '.pdf"');
+    }
+
+
+    // =========================================================================
+    // 🔥 6. CETAK BUNDLE LENGKAP: PO + BPR DETAIL (PAJAK/DISKON) + LAMPIRAN 🔥
+    // =========================================================================
+    public function printBundleDetail(\Illuminate\Http\Request $request, $slug)
+    {
+        $type = $request->query('type', 'digital');
+
+        // 1. Load Data
+        $po = \App\Models\PurchaseOrder::with([
+            'items.item.itemUoms', 'vendor', 'company', 'status', 'user', 'approvals.approver', 'approvals.role', 'attachments', 'purchaseRequest'
+        ])->where('po_number', $slug)->firstOrFail();
+
+        $charges = \DB::table('purchase_order_charges')->where('purchase_order_id', $po->id)->get();
+        $extraDiscounts = \DB::table('purchase_order_discounts')->where('purchase_order_id', $po->id)->get();
+        $hasBeenApproved = $po->approvals->where('status', 'APPROVED')->isNotEmpty();
+
+        // 2. Generate PDF PO
+        $poPdf = \Barryvdh\DomPDF\Facade\Pdf::loadView('po.print_pdf', compact('po', 'charges', 'extraDiscounts', 'hasBeenApproved', 'type'))->setPaper('A4', 'portrait');
+
+        // 3. Generate PDF BPR DETAIL
+        $bprPdf = \Barryvdh\DomPDF\Facade\Pdf::loadView('po.print_bpr_detail', compact('po', 'charges', 'extraDiscounts', 'type'))->setPaper('A4', 'portrait');
+
+        $tempDir = storage_path('app/public/temp_pdf');
+        if (!file_exists($tempDir)) mkdir($tempDir, 0777, true);
+
+        // 4. Simpan Sementara
+        $poPath = $tempDir . '/bundle_po_dtl_' . $po->id . '_' . time() . '.pdf';
+        file_put_contents($poPath, $poPdf->output());
+
+        $bprPath = $tempDir . '/bundle_bpr_dtl_' . $po->id . '_' . time() . '.pdf';
+        file_put_contents($bprPath, $bprPdf->output());
+
+        // 5. Inisiasi Merger & Gabungkan PO + BPR
+        $oMerger = \Webklex\PDFMerger\Facades\PDFMergerFacade::init();
+        $oMerger->addPDF($poPath, 'all');
+        $oMerger->addPDF($bprPath, 'all');
+
+        $tempFilesToDelete = [$poPath, $bprPath];
+
+        // 6. Gabungkan Lampiran (Attachments)
+        $allAttachments = [];
+        if ($po->attachments) {
+            foreach ($po->attachments as $att) { $allAttachments[] = $att; }
+        }
+
+        $poItemIds = $po->items->pluck('id')->toArray();
+        $itemAttachments = \DB::table('purchase_order_item_attachments')->whereIn('purchase_order_item_id', $poItemIds)->get();
+        foreach ($itemAttachments as $att) { $allAttachments[] = $att; }
+
+        if (count($allAttachments) > 0) {
+            foreach ($allAttachments as $file) {
+                $cleanFilePath = ltrim($file->file_path, '/');
+                $finalFilePath = storage_path('app/public/' . $cleanFilePath);
+
+                if (file_exists($finalFilePath)) {
+                    $extension = strtolower(pathinfo($finalFilePath, PATHINFO_EXTENSION));
+
+                    if ($extension === 'pdf') {
+                        try {
+                            $fpdi = new \setasign\Fpdi\Fpdi();
+                            $fpdi->setSourceFile($finalFilePath);
+                            $oMerger->addPDF($finalFilePath, 'all');
+                        } catch (\Exception $e) {
+                            $html = "<div style='border:2px solid #0d6efd; padding:20px; text-align:center; font-family:sans-serif; margin-top:50px;'><h2 style='color:#0d6efd;'>📄 LAMPIRAN PDF TERENKRIPSI</h2><p>File: <b>{$file->file_name}</b> tidak bisa digabung otomatis. Silakan unduh manual.</p></div>";
+                            $infoPdf = \Barryvdh\DomPDF\Facade\Pdf::loadHTML($html)->setPaper('a4', 'portrait');
+                            $infoPath = $tempDir . '/info_' . uniqid() . '.pdf';
+                            file_put_contents($infoPath, $infoPdf->output());
+                            $oMerger->addPDF($infoPath, 'all');
+                            $tempFilesToDelete[] = $infoPath;
+                        }
+                    } elseif (in_array($extension, ['jpg', 'jpeg', 'png'])) {
+                        $imageData = base64_encode(file_get_contents($finalFilePath));
+                        $mime = mime_content_type($finalFilePath);
+                        $base64Src = 'data:' . $mime . ';base64,' . $imageData;
+                        $imgPdf = \Barryvdh\DomPDF\Facade\Pdf::loadHTML("<html><head><style>@page{margin:0px;} body{margin:0;padding:20px;text-align:center;} img{max-width:100%;max-height:1050px;}</style></head><body><img src='" . $base64Src . "'></body></html>")->setPaper('a4', 'portrait');
+                        $imgTempPath = $tempDir . '/img_' . uniqid() . '.pdf';
+                        file_put_contents($imgTempPath, $imgPdf->output());
+                        $oMerger->addPDF($imgTempPath, 'all');
+                        $tempFilesToDelete[] = $imgTempPath;
+                    }
+                }
+            }
+        }
+
+        $oMerger->merge();
+        $finalPdfOutput = $oMerger->output();
+
+        // Bersihkan File Temp
+        foreach ($tempFilesToDelete as $trashPath) if (file_exists($trashPath)) unlink($trashPath);
+
+        $prefix = $type === 'manual' ? 'Manual_' : 'Digital_';
+        return response($finalPdfOutput)->header('Content-Type', 'application/pdf')->header('Content-Disposition', 'inline; filename="BUNDLE_PO_BPR_DTL_' . $prefix . str_replace('/', '_', $po->po_number) . '.pdf"');
+    }
+
+
+
+}

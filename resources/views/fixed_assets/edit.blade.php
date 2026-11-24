@@ -13,7 +13,6 @@
     .photo-preview-item:hover { transform: scale(1.1); z-index: 10; }
     .btn-dashed { border-style: dashed !important; border-width: 2px !important; }
 
-    /* 🔥 CSS BARU: Tombol Hapus Foto Lama 🔥 */
     .btn-delete-existing {
         position: absolute;
         top: -8px;
@@ -39,7 +38,7 @@
     <div class="mb-4 d-flex justify-content-between align-items-center">
         <div>
             <h4 class="mb-0 fw-bold text-dark"><i class="bi bi-pencil-square me-2 text-info"></i> Update Data Aset: {{ $asset->asset_number }}</h4>
-            <div class="mt-1 text-muted small">Perbarui spesifikasi, tanggal perolehan (untuk perhitungan penyusutan), status, dan foto fisik.</div>
+            <div class="mt-1 text-muted small">Perbarui nama varian, nama akuntansi, spesifikasi, rincian upgrade multi-baris, status, dan foto fisik.</div>
         </div>
         <a href="{{ route('fixed-assets.index') }}" class="btn btn-outline-secondary rounded-pill fw-bold"><i class="bi bi-arrow-left me-1"></i> Kembali</a>
     </div>
@@ -59,49 +58,79 @@
             <div class="p-4 card-body">
                 <div class="p-3 mb-4 text-center border bg-light rounded-4">
                     <h5 class="mb-1 fw-bold text-dark">{{ $asset->name ?? optional($asset->item)->name }}</h5>
-                    <span class="px-3 py-1 badge bg-primary">No. Aset: {{ $asset->asset_number }}</span>
-                    @if($asset->goodsReceipt)
-                        <span class="px-3 py-1 badge bg-info text-dark">Ref GR: {{ $asset->goodsReceipt->gr_number }}</span>
-                    @else
-                        <span class="px-3 py-1 badge bg-secondary">Input Manual / Hibah</span>
-                    @endif
+                    <div class="flex-wrap gap-1 d-flex justify-content-center align-items-center">
+                        <span class="px-3 py-1 badge bg-primary">No. Aset: {{ $asset->asset_number }}</span>
+                        @if($asset->item_alias_name)
+                            <span class="px-3 py-1 border badge bg-info-subtle text-info-emphasis border-info-subtle">Varian: {{ $asset->item_alias_name }}</span>
+                        @endif
+                        @if($asset->goodsReceipt)
+                            <span class="px-3 py-1 badge bg-info text-dark">Ref GR: {{ $asset->goodsReceipt->gr_number }}</span>
+                        @else
+                            <span class="px-3 py-1 badge bg-secondary">Input Manual / Hibah / Import</span>
+                        @endif
+                    </div>
                 </div>
 
                 <div class="row g-5">
+                    {{-- KOLOM KIRI: PENAMAAN 3 LAPIS, SPESIFIKASI & FOTO --}}
                     <div class="col-md-6 border-end pe-md-5">
-                        <h6 class="pb-2 mb-4 border-bottom text-primary fw-bold"><i class="bi bi-box-seam me-2"></i>Detail Fisik & Spesifikasi</h6>
+                        <h6 class="pb-2 mb-4 border-bottom text-primary fw-bold"><i class="bi bi-box-seam me-2"></i>Detail Fisik & Penamaan Aset</h6>
 
-                        <!-- 🔥 TAMBAHKAN KOTAK INI AGAR NAMA ASET BISA DI-RENAME 🔥 -->
+                        {{-- LAPIS 1 & 2: REFERENSI MASTER ITEM & NAMA ALTERNATIF / VARIAN --}}
                         <div class="mb-3">
-                            <label class="form-label fw-bold small text-muted">Penamaan Spesifik Aset (Akuntansi) <span class="text-danger">*</span></label>
-                            <input type="text" name="name" class="shadow-sm form-control border-primary" value="{{ old('name', $asset->name) }}" required>
+                            <label class="form-label fw-bold small text-dark">
+                                Nama Alternatif / Varian Barang (Opsional)
+                                <span class="border badge bg-info-subtle text-info-emphasis border-info-subtle ms-1" style="font-size: 0.68rem;">Auto-Simpan Kamus Varian</span>
+                            </label>
+                            <input type="text"
+                                   name="item_alias_name"
+                                   id="edit_item_alias_name"
+                                   list="edit_alias_list"
+                                   class="shadow-sm form-control border-info fw-semibold text-dark"
+                                   value="{{ old('item_alias_name', $asset->item_alias_name) }}"
+                                   placeholder="Cth: Mini PC, Komputer Rakitan, Komputer All in One...">
+                            <datalist id="edit_alias_list">
+                                @foreach(optional($asset->item)->aliases ?? [] as $al)
+                                    <option value="{{ $al->alias_name }}"></option>
+                                @endforeach
+                            </datalist>
+                            <div class="form-text" style="font-size: 0.72rem;">
+                                <i class="bi bi-lightbulb-fill text-warning me-1"></i>Pilih varian dari saran kamus item ini atau ketik nama varian baru.
+                            </div>
+                        </div>
+
+                        {{-- LAPIS 3: NAMA ASET AKUNTANSI --}}
+                        <div class="mb-3">
+                            <label class="form-label fw-bold small text-primary">Nama Aset Akuntansi (Sesuai Buku Besar / Invoice) <span class="text-danger">*</span></label>
+                            <input type="text" name="name" class="shadow-sm form-control border-primary fw-bold text-primary" value="{{ old('name', $asset->name) }}" required>
 
                             <div class="p-2 mt-2 border rounded bg-light" style="font-size: 0.75rem;">
                                 <div class="mb-1 text-secondary">
-                                    <i class="bi bi-box me-1"></i> Nama Master Sistem: <strong class="text-dark">{{ optional($asset->item)->name }}</strong>
+                                    <i class="bi bi-box me-1"></i> Nama Master Sistem: <strong class="text-dark">[{{ optional($asset->item)->code }}] {{ optional($asset->item)->name }}</strong>
                                 </div>
 
-                                {{-- 🔥 Menampilkan Nama Asli dari PO Jika Ada 🔥 --}}
                                 @if($poItemName)
                                     <div class="text-info">
                                         <i class="bi bi-cart-check me-1"></i> Nama di Dokumen PO: <strong class="text-primary">{{ $poItemName }}</strong>
                                     </div>
                                 @else
                                     <div class="text-muted fst-italic">
-                                        <i class="bi bi-info-circle me-1"></i> Aset ini tidak terikat dengan dokumen PO (Input Manual/Hibah).
+                                        <i class="bi bi-info-circle me-1"></i> Aset ini tidak terikat dengan dokumen PO (Input Manual / Hibah / Import).
                                     </div>
                                 @endif
                             </div>
                         </div>
 
-                        <div class="mb-3">
-                            <label class="form-label fw-bold small text-muted">Serial Number (S/N) Fisik</label>
-                            <input type="text" name="serial_number" class="shadow-sm form-control" value="{{ old('serial_number', $asset->serial_number) }}">
-                        </div>
+                        <div class="row">
+                            <div class="mb-3 col-md-6">
+                                <label class="form-label fw-bold small text-muted">Serial Number (S/N) Fisik</label>
+                                <input type="text" name="serial_number" class="shadow-sm form-control" value="{{ old('serial_number', $asset->serial_number) }}">
+                            </div>
 
-                        <div class="mb-3">
-                            <label class="form-label fw-bold small text-muted">No. Aset (Label Akuntansi / FA)</label>
-                            <input type="text" name="accounting_asset_number" class="shadow-sm form-control border-info" value="{{ old('accounting_asset_number', $asset->accounting_asset_number) }}">
+                            <div class="mb-3 col-md-6">
+                                <label class="form-label fw-bold small text-muted">No. Aset (Label Akuntansi / FA)</label>
+                                <input type="text" name="accounting_asset_number" class="shadow-sm form-control border-info" value="{{ old('accounting_asset_number', $asset->accounting_asset_number) }}">
+                            </div>
                         </div>
 
                         <div class="mb-3">
@@ -115,7 +144,6 @@
                                 <i class="bi bi-images me-1"></i> Galeri Foto Fisik & Upload Tambahan
                             </label>
 
-                            {{-- 🔥 FOTO SAAT INI (DENGAN TOMBOL HAPUS) 🔥 --}}
                             @if($asset->photos->count() > 0)
                                 <div class="mb-3" id="existing-photos-container">
                                     <div class="mb-2 small text-muted">Foto Saat Ini (Klik X untuk hapus):</div>
@@ -147,7 +175,6 @@
                                                     </a>
                                                 @endif
 
-                                                {{-- Tombol Hapus X Merah --}}
                                                 <button type="button" class="btn btn-danger btn-delete-existing remove-existing-photo" data-photo-id="{{ $photo->id }}" title="Hapus Lampiran Ini">
                                                     <i class="bi bi-x"></i>
                                                 </button>
@@ -172,9 +199,9 @@
                                 <span class="text-muted small fst-italic"><i class="bi bi-image me-1"></i> Preview foto baru akan muncul di sini...</span>
                             </div>
                         </div>
-                        
                     </div>
 
+                    {{-- KOLOM KANAN: NILAI, PENYUSUTAN, UPGRADE MULTI-BARIS & STATUS --}}
                     <div class="col-md-6 ps-md-5">
                         <h6 class="pb-2 mb-4 border-bottom text-primary fw-bold"><i class="bi bi-cash-coin me-2"></i>Nilai & Penyusutan</h6>
 
@@ -189,19 +216,17 @@
                         </div>
 
                         <div class="mb-3">
-                            <label class="form-label fw-bold small text-muted">Mata Uang & Harga Beli <span class="text-danger">*</span></label>
+                            <label class="form-label fw-bold small text-muted">Mata Uang & Harga Beli Awal <span class="text-danger">*</span></label>
                             <div class="shadow-sm input-group">
                                 <select name="currency_id" class="input-group-text bg-light border-success fw-bold text-dark" style="cursor: pointer;" required>
                                     @foreach($currencies as $currency)
                                         <option value="{{ $currency->id }}" {{ $asset->currency_id == $currency->id ? 'selected' : '' }}>{{ $currency->code }}</option>
                                     @endforeach
                                 </select>
-                                
-                                {{-- Input Visual (Untuk dibaca user dengan format titik) --}}
-                                <input type="text" id="display_purchase_price" class="form-control border-success fw-bold text-dark" 
+
+                                <input type="text" id="display_purchase_price" class="form-control border-success fw-bold text-dark"
                                        value="{{ number_format(old('purchase_price', $asset->purchase_price), 0, ',', '.') }}" placeholder="0">
-                                
-                                {{-- Input Hidden (Angka murni yang akan dikirim ke Server) --}}
+
                                 <input type="hidden" name="purchase_price" id="real_purchase_price" value="{{ old('purchase_price', $asset->purchase_price) }}">
                             </div>
                         </div>
@@ -211,12 +236,70 @@
                             <select name="asset_category_id" class="shadow-sm form-select" required>
                                 <option value="">-- Pilih Kategori --</option>
                                 @foreach($assetCategories as $category)
-                                    {{-- 🔥 Gunakan old() agar jika ada error validasi, pilihan tidak ter-reset 🔥 --}}
                                     <option value="{{ $category->id }}" {{ old('asset_category_id', $asset->asset_category_id) == $category->id ? 'selected' : '' }}>
                                         {{ $category->name }} ({{ $category->useful_life_years }} Thn)
                                     </option>
                                 @endforeach
                             </select>
+                        </div>
+
+                        {{-- 🔥 TABEL DINAMIS MULTI-BARIS KOMPONEN UPGRADE 🔥 --}}
+                        <div class="p-3 mb-4 border rounded-3 bg-warning-subtle border-warning">
+                            <input type="hidden" name="upgrades_submitted" value="1">
+                            <div class="pb-2 mb-2 d-flex justify-content-between align-items-center border-bottom border-warning">
+                                <span class="fw-bold text-dark" style="font-size: 0.85rem;">
+                                    <i class="bi bi-cpu-fill text-warning-emphasis me-1"></i> Rincian Upgrade Komponen (Bisa Lebih dari 1 Baris)
+                                </span>
+                                <button type="button" class="px-3 btn btn-sm btn-warning fw-bold rounded-pill" id="btnAddUpgradeRow">
+                                    <i class="bi bi-plus-circle me-1"></i> Tambah Komponen
+                                </button>
+                            </div>
+                            <div class="mb-2 text-muted" style="font-size: 0.72rem;">
+                                Catat komponen upgrade (RAM, SSD, LCD Tape, Enclosure, dll) beserta biayanya masing-masing.
+                            </div>
+
+                            <div class="bg-white border table-responsive rounded-3">
+                                <table class="table mb-0 align-middle table-sm table-bordered" id="upgradesTable">
+                                    <thead class="table-light small text-muted">
+                                        <tr>
+                                            <th style="width: 38%;">Komponen Upgrade</th>
+                                            <th style="width: 24%;">Biaya</th>
+                                            <th style="width: 28%;">Tgl / Pelaksana</th>
+                                            <th style="width: 10%;" class="text-center">Aksi</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="upgradesContainer">
+                                        @foreach($asset->upgrades ?? [] as $uIdx => $upg)
+                                            <tr class="upgrade-row">
+                                                <td>
+                                                    <input type="text" name="upgrades[{{ $uIdx }}][component_name]" class="form-control form-control-sm" value="{{ $upg->component_name }}" placeholder="Nama komponen...">
+                                                </td>
+                                                <td>
+                                                    <input type="text" class="form-control form-control-sm text-end upgrade-cost-display" value="{{ $upg->cost > 0 ? number_format($upg->cost, 0, ',', '.') : '' }}" placeholder="0">
+                                                    <input type="hidden" name="upgrades[{{ $uIdx }}][cost]" class="upgrade-cost-real" value="{{ (float) $upg->cost }}">
+                                                </td>
+                                                <td>
+                                                    <input type="date" name="upgrades[{{ $uIdx }}][upgrade_date]" class="mb-1 form-control form-control-sm" value="{{ $upg->upgrade_date ? $upg->upgrade_date->format('Y-m-d') : '' }}">
+                                                    <input type="text" name="upgrades[{{ $uIdx }}][vendor]" class="form-control form-control-sm" value="{{ $upg->vendor_or_executor }}" placeholder="Vendor / IT">
+                                                </td>
+                                                <td class="text-center">
+                                                    <button type="button" class="btn btn-sm btn-outline-danger btn-remove-upgrade" title="Hapus Baris">
+                                                        <i class="bi bi-trash"></i>
+                                                    </button>
+                                                </td>
+                                            </tr>
+                                        @endforeach
+                                    </tbody>
+                                    <tfoot class="table-light small fw-bold">
+                                        <tr>
+                                            <td class="text-end">Total Biaya Upgrade:</td>
+                                            <td colspan="3" class="text-primary" id="totalUpgradeDisplay">
+                                                {{ number_format(($asset->upgrades ?? collect())->sum('cost'), 0, ',', '.') }}
+                                            </td>
+                                        </tr>
+                                    </tfoot>
+                                </table>
+                            </div>
                         </div>
 
                         <h6 class="pb-2 mt-4 mb-3 border-bottom text-primary fw-bold"><i class="bi bi-geo-alt me-2"></i>Lokasi & Status</h6>
@@ -241,13 +324,11 @@
                             </select>
                         </div>
 
-                        {{-- 🔥 BLOK KOLOM USER / PEMEGANG ASET DENGAN ANIMASI 🔥 --}}
                         <div class="mb-3" id="wrapper-assigned-to" style="display: {{ optional($asset->status)->slug === 'in_use' ? 'block' : 'none' }};">
                             <label class="form-label fw-bold small text-muted text-uppercase text-primary">Ditugaskan Kepada (User) <span class="text-danger">*</span></label>
                             <select name="assigned_to" id="assigned_to" class="shadow-sm form-select select2-user" style="width: 100%;" {{ optional($asset->status)->slug === 'in_use' ? 'required' : '' }}>
                                 <option value="">-- Pilih Karyawan Pemakai --</option>
                                 @foreach($users as $user)
-                                    {{-- 🔥 Menampilkan Nama Karyawan — Nama PT (Nama Departemen) 🔥 --}}
                                     <option value="{{ $user->id }}" {{ $asset->assigned_to == $user->id ? 'selected' : '' }}>
                                         {{ $user->name }} — {{ optional($user->company)->name ?? 'Tanpa PT' }} ({{ optional($user->department)->name ?? 'Tanpa Dept' }})
                                     </option>
@@ -256,7 +337,6 @@
                             <div class="form-text" style="font-size: 0.7rem;"><i class="bi bi-info-circle"></i> Wajib diisi karena status aset adalah In Use (Dipakai).</div>
                         </div>
 
-                        {{-- 🔥 BLOK ALASAN KHUSUS DISPOSAL / MAINTENANCE (MUNCUL OTOMATIS) 🔥 --}}
                         <div class="p-3 mb-3 border bg-danger-subtle border-danger-subtle rounded-3" id="wrapper-reason" style="display: none;">
                             <label class="form-label fw-bold small text-danger text-uppercase">Alasan Resmi Perubahan Status <span class="text-danger">*</span></label>
                             <textarea name="status_change_reason" id="status_change_reason" class="shadow-sm form-control border-danger" rows="2" placeholder="Wajib diisi! Sebutkan alasan detail kenapa aset di-disposed atau diservis..."></textarea>
@@ -266,7 +346,7 @@
                         </div>
 
                         <div class="mb-2">
-                            <label class="form-label fw-bold small text-muted">Catatan / Alasan Perubahan Data</label>
+                            <label class="form-label fw-bold small text-muted">Catatan / Remarks</label>
                             <textarea name="notes" class="shadow-sm form-control border-warning" rows="2" placeholder="Tulis catatan atau alasan update data...">{{ old('notes', $asset->notes) }}</textarea>
                         </div>
                     </div>
@@ -289,12 +369,10 @@
 
 <script>
     $(document).ready(function() {
-        // Init Select2 untuk Karyawan
         $('.select2-user').select2({ theme: 'bootstrap-5' });
 
-        // 🔥 LOGIKA SMART TOGGLE UNTUK FORM EDIT MENGGUNAKAN SLUG 🔥
+        // Smart Toggle Status
         $('#status_id').on('change', function() {
-            // Ambil slug dari option yang dipilih agar akurat
             let slug = $(this).find('option:selected').data('slug');
 
             if (slug === 'in_use') {
@@ -305,13 +383,81 @@
                 $('#assigned_to').val('').trigger('change');
                 $('#assigned_to').prop('required', false);
             }
+
+            if (slug === 'disposed' || slug === 'maintenance' || slug === 'returned') {
+                $('#wrapper-reason').slideDown();
+                $('#status_change_reason').prop('required', true);
+            } else {
+                $('#wrapper-reason').slideUp();
+                $('#status_change_reason').val('');
+                $('#status_change_reason').prop('required', false);
+            }
         });
 
         ClassicEditor.create(document.querySelector('#spesifikasi_editor_edit'), {
             toolbar: [ 'heading', '|', 'bold', 'italic', 'bulletedList', 'numberedList', 'blockQuote', '|', 'undo', 'redo' ]
         }).catch(error => { console.error(error); });
 
-        // LOGIKA HAPUS FOTO LAMA (MENGGUNAKAN SWEETALERT2)
+        // ==========================================
+        // Logika Tambah & Hapus Baris Upgrade Multi-Baris
+        // ==========================================
+        let upgradeRowIdx = {{ ($asset->upgrades ?? collect())->count() + 100 }};
+
+        function addUpgradeRow(comp = '', cost = '', date = '', vendor = '') {
+            let idx = upgradeRowIdx++;
+            let defaultDate = date || "{{ date('Y-m-d') }}";
+            let formattedCost = cost ? parseInt(cost, 10).toLocaleString('id-ID') : '';
+
+            let rowHtml = `
+                <tr class="upgrade-row">
+                    <td>
+                        <input type="text" name="upgrades[${idx}][component_name]" class="form-control form-control-sm" value="${comp}" placeholder="Cth: RAM DDR3 16GB / SSD 512GB">
+                    </td>
+                    <td>
+                        <input type="text" class="form-control form-control-sm text-end upgrade-cost-display" value="${formattedCost}" placeholder="0">
+                        <input type="hidden" name="upgrades[${idx}][cost]" class="upgrade-cost-real" value="${cost || 0}">
+                    </td>
+                    <td>
+                        <input type="date" name="upgrades[${idx}][upgrade_date]" class="mb-1 form-control form-control-sm" value="${defaultDate}">
+                        <input type="text" name="upgrades[${idx}][vendor]" class="form-control form-control-sm" value="${vendor}" placeholder="Vendor / IT">
+                    </td>
+                    <td class="text-center">
+                        <button type="button" class="btn btn-sm btn-outline-danger btn-remove-upgrade" title="Hapus Baris">
+                            <i class="bi bi-trash"></i>
+                        </button>
+                    </td>
+                </tr>
+            `;
+            $('#upgradesContainer').append(rowHtml);
+            recalcTotalUpgrade();
+        }
+
+        $('#btnAddUpgradeRow').on('click', function () {
+            addUpgradeRow();
+        });
+
+        $(document).on('click', '.btn-remove-upgrade', function () {
+            $(this).closest('tr').remove();
+            recalcTotalUpgrade();
+        });
+
+        $(document).on('input', '.upgrade-cost-display', function () {
+            let raw = $(this).val().replace(/[^0-9]/g, '');
+            let tr = $(this).closest('tr');
+            tr.find('.upgrade-cost-real').val(raw || 0);
+            $(this).val(raw ? parseInt(raw, 10).toLocaleString('id-ID') : '');
+            recalcTotalUpgrade();
+        });
+
+        function recalcTotalUpgrade() {
+            let total = 0;
+            $('.upgrade-cost-real').each(function () {
+                total += parseFloat($(this).val()) || 0;
+            });
+            $('#totalUpgradeDisplay').text(total.toLocaleString('id-ID'));
+        }
+
+        // LOGIKA HAPUS FOTO LAMA
         $('.remove-existing-photo').on('click', function(e) {
             e.preventDefault();
             let photoId = $(this).data('photo-id');
@@ -385,52 +531,20 @@
                 previewDiv.html('<span class="text-muted small fst-italic"><i class="bi bi-image me-1"></i> Preview foto baru akan muncul di sini...</span>');
             }
         }
-    });
 
-    // 🔥 LOGIKA SMART TOGGLE UNTUK FORM EDIT (IN_USE, DISPOSED, MAINTENANCE, RETURNED) 🔥
-        $('#status_id').on('change', function() {
-            let slug = $(this).find('option:selected').data('slug');
-
-            // 1. Toggle Kolom User (In Use)
-            if (slug === 'in_use') {
-                $('#wrapper-assigned-to').slideDown();
-                $('#assigned_to').prop('required', true);
-            } else {
-                $('#wrapper-assigned-to').slideUp();
-                $('#assigned_to').val('').trigger('change');
-                $('#assigned_to').prop('required', false);
-            }
-
-            // 2. Toggle Kolom Alasan Khusus (Disposed, Maintenance, & Returned)
-            if (slug === 'disposed' || slug === 'maintenance' || slug === 'returned') {
-                $('#wrapper-reason').slideDown();
-                $('#status_change_reason').prop('required', true);
-            } else {
-                $('#wrapper-reason').slideUp();
-                $('#status_change_reason').val('');
-                $('#status_change_reason').prop('required', false);
-            }
-        });
-
-
-        // 🔥 LOGIKA FORMAT RIBUAN HARGA BELI 🔥
+        // Format Ribuan Harga Beli
         let displayPrice = $('#display_purchase_price');
         let realPrice = $('#real_purchase_price');
 
         displayPrice.on('keyup', function() {
-            // Bersihkan semua karakter selain angka
             let rawValue = $(this).val().replace(/[^0-9]/g, '');
-            
-            // Masukkan angka murni ke input hidden untuk dikirim ke database
             realPrice.val(rawValue);
-            
-            // Format ulang dengan titik (Pemisah ribuan ala Indonesia) dan tampilkan ke layar
             if(rawValue) {
                 $(this).val(parseInt(rawValue, 10).toLocaleString('id-ID'));
             } else {
                 $(this).val('');
             }
         });
-
+    });
 </script>
 @endpush

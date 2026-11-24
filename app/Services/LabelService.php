@@ -21,7 +21,7 @@ class LabelService
             $item = Item::find($request->item_id);
             $rawSns = explode(',', $request->query('raw_sn'));
 
-            foreach($rawSns as $sn) {
+            foreach ($rawSns as $sn) {
                 $cleanSn = trim($sn);
                 $companyName = null;
                 $tglIn = now()->format('d M Y');
@@ -30,6 +30,7 @@ class LabelService
 
                 $masterItemName = $item->name ?? 'Barang Umum';
                 $specificItemName = $masterItemName;
+                $aliasItemName = null;
                 $grNumber = '-';
 
                 // Lacak via item_serials & goods_issue_items
@@ -40,7 +41,10 @@ class LabelService
 
                     if (isset($serialData->goods_issue_id) && $serialData->goods_issue_id) {
                         $giItemRow = DB::table('goods_issue_items')->where('goods_issue_id', $serialData->goods_issue_id)->where('item_id', $item->id ?? 0)->first();
-                        if ($giItemRow && isset($giItemRow->item_name) && $giItemRow->item_name) $specificItemName = $giItemRow->item_name;
+                        if ($giItemRow && isset($giItemRow->item_name) && $giItemRow->item_name) {
+                            $specificItemName = $giItemRow->item_name;
+                            $aliasItemName = $giItemRow->item_name;
+                        }
                     }
                 }
 
@@ -60,19 +64,28 @@ class LabelService
                     $gr = DB::table('goods_receipts')->where('id', $foundGrId)->first();
                     if ($gr) {
                         $grNumber = $gr->gr_number ?? '-';
-                        $tglIn = isset($gr->receipt_date) ? date('d M Y', strtotime($gr->receipt_date)) : (isset($gr->created_at) ? date('d M Y', strtotime($gr->created_at)) : $tglIn);
+                        $tglIn = isset($gr->received_date)
+                            ? date('d M Y', strtotime($gr->received_date))
+                            : (isset($gr->receipt_date)
+                                ? date('d M Y', strtotime($gr->receipt_date))
+                                : (isset($gr->created_at) ? date('d M Y', strtotime($gr->created_at)) : $tglIn));
+
                         if (isset($gr->warehouse_id) && !$foundWarehouseId) $foundWarehouseId = $gr->warehouse_id;
 
                         if (isset($gr->purchase_order_id)) {
                             $po = DB::table('purchase_orders')->where('id', $gr->purchase_order_id)->first();
                             if ($po) {
                                 $poArray = (array) $po;
-                                if (array_key_exists('company_id', $poArray) && $po->company_id) {
+                                if (array_key_exists('bill_to_company_id', $poArray) && $po->bill_to_company_id) {
+                                    $companyName = DB::table('companies')->where('id', $po->bill_to_company_id)->value('name');
+                                } elseif (array_key_exists('company_id', $poArray) && $po->company_id) {
                                     $companyName = DB::table('companies')->where('id', $po->company_id)->value('name');
                                 } elseif (array_key_exists('purchase_request_id', $poArray) && $po->purchase_request_id) {
                                     $pr = DB::table('purchase_requests')->where('id', $po->purchase_request_id)->first();
                                     $prArray = (array) $pr;
-                                    if ($pr && array_key_exists('company_id', $prArray) && $pr->company_id) $companyName = DB::table('companies')->where('id', $pr->company_id)->value('name');
+                                    if ($pr && array_key_exists('company_id', $prArray) && $pr->company_id) {
+                                        $companyName = DB::table('companies')->where('id', $pr->company_id)->value('name');
+                                    }
                                 }
 
                                 if ($specificItemName === $masterItemName) {
@@ -81,6 +94,7 @@ class LabelService
                                         $poItemArr = (array) $poItemRow;
                                         if (array_key_exists('item_name', $poItemArr) && $poItemRow->item_name) {
                                             $specificItemName = $poItemRow->item_name;
+                                            $aliasItemName = $poItemRow->item_name;
                                         } elseif (array_key_exists('description', $poItemArr) && $poItemRow->description) {
                                             $specificItemName = $poItemRow->description;
                                         }
@@ -94,21 +108,24 @@ class LabelService
                 if (!$companyName && $foundWarehouseId) {
                     $stock = DB::table('inventory_stocks')->where('item_id', $item->id ?? 0)->where('warehouse_id', $foundWarehouseId)->first();
                     $stockArray = (array) $stock;
-                    if ($stock && array_key_exists('company_id', $stockArray) && $stock->company_id) $companyName = DB::table('companies')->where('id', $stock->company_id)->value('name');
+                    if ($stock && array_key_exists('company_id', $stockArray) && $stock->company_id) {
+                        $companyName = DB::table('companies')->where('id', $stock->company_id)->value('name');
+                    }
                 }
 
                 $fallbackQr = ($item->code ?? 'BRG') . '-' . ($grNumber !== '-' ? $grNumber : uniqid());
 
                 $assets->push((object)[
                     'master_item_name' => $masterItemName,
-                    'po_item_name' => $specificItemName,
-                    'item_code' => $item->code ?? '-',
-                    'company_name' => $companyName ?: 'PERUSAHAAN INTERNAL',
-                    'serial_number' => $cleanSn ?: '-',
-                    'asset_number' => '-',
-                    'tanggal_in' => $tglIn,
+                    'item_alias_name'  => $aliasItemName,
+                    'po_item_name'     => $specificItemName,
+                    'item_code'        => $item->code ?? '-',
+                    'company_name'     => $companyName ?: 'PERUSAHAAN INTERNAL',
+                    'serial_number'    => $cleanSn ?: '-',
+                    'asset_number'     => '-',
+                    'tanggal_in'       => $tglIn,
                     'reference_number' => $grNumber,
-                    'qr_data' => $cleanSn ?: $fallbackQr,
+                    'qr_data'          => $cleanSn ?: $fallbackQr,
                 ]);
             }
         }
@@ -132,21 +149,22 @@ class LabelService
 
                 $assets->push((object)[
                     'master_item_name' => optional($ast->item)->name ?? '-',
-                    'po_item_name' => $ast->name ?? '-',
-                    'item_code' => optional($ast->item)->code ?? '-',
-                    'company_name' => optional($ast->company)->name ?? 'PERUSAHAAN INTERNAL',
-                    'serial_number' => $ast->serial_number ?: '-',
-                    'asset_number' => $ast->asset_number ?: '-',
-                    'tanggal_in' => $ast->acquisition_date ? date('d M Y', strtotime($ast->acquisition_date)) : '-',
+                    'item_alias_name'  => $ast->item_alias_name ?: null,
+                    'po_item_name'     => $ast->name ?? '-',
+                    'item_code'        => optional($ast->item)->code ?? '-',
+                    'company_name'     => optional($ast->company)->name ?? 'PERUSAHAAN INTERNAL',
+                    'serial_number'    => $ast->serial_number ?: '-',
+                    'asset_number'     => $ast->asset_number ?: '-',
+                    'tanggal_in'       => $ast->acquisition_date ? date('d M Y', strtotime($ast->acquisition_date)) : '-',
                     'reference_number' => $docNumber,
-                    'qr_data' => $ast->asset_number ?: ($ast->serial_number ?: $fallbackQr),
+                    'qr_data'          => $ast->asset_number ?: ($ast->serial_number ?: $fallbackQr),
                 ]);
             }
         }
 
         // Kembalikan dua variabel yang dibutuhkan oleh view
         return [
-            'assets' => $assets,
+            'assets'   => $assets,
             'assetIds' => $assetIds
         ];
     }

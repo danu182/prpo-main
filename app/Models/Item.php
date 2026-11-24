@@ -119,6 +119,11 @@ class Item extends Model
         return $this->hasMany(ItemSerial::class, 'item_id');
     }
 
-    
+
+    public function aliases()
+    {
+        return $this->hasMany(ItemAlias::class, 'item_id')->orderBy('alias_name', 'asc');
+    }
+
 
 }

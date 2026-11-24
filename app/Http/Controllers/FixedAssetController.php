@@ -13,8 +13,6 @@ use Maatwebsite\Excel\Facades\Excel;
 
 class FixedAssetController extends Controller
 {
-
-
     public function index(Request $request)
     {
         $search      = trim((string) $request->input('search'));
@@ -22,7 +20,7 @@ class FixedAssetController extends Controller
 
         $assets = FixedAsset::with([
                 'item', 'company', 'status', 'assignee.company', 'assignee.department',
-                'warehouse', 'assetCategory', 'currency',
+                'warehouse', 'assetCategory', 'currency', 'upgrades',
                 'goodsReceipt.po.items', 'goodsReceipt.purchaseOrder.items',
                 'histories' => function ($q) { $q->orderBy('created_at', 'desc'); },
                 'histories.assignee', 'histories.creator'
@@ -43,6 +41,7 @@ class FixedAssetController extends Controller
                        ->orWhere('serial_number', 'like', "%{$search}%")
                        ->orWhere('accounting_asset_number', 'like', "%{$search}%")
                        ->orWhere('name', 'like', "%{$search}%")
+                       ->orWhere('item_alias_name', 'like', "%{$search}%")
                        ->orWhereHas('item', function ($qi) use ($search) {
                            $qi->where('code', 'like', "%{$search}%")
                               ->orWhere('name', 'like', "%{$search}%");
@@ -70,22 +69,22 @@ class FixedAssetController extends Controller
         ));
     }
 
-
     // =========================================================================
-    // 🔥 PROSES SIMPAN ASET MANUAL (CLEAN CODE, SMART MUTATION & DYNAMIC BATCH) 🔥
+    // 🔥 PROSES SIMPAN ASET MANUAL (NAMA VARIAN, NAMA AKUNTANSI & MULTI-UPGRADE) 🔥
     // =========================================================================
     public function store(Request $request)
     {
         $request->validate([
-            'item_id'                 => 'required|exists:items,id',
-            'asset_category_id'       => 'required|exists:asset_categories,id',
-            'warehouse_id'            => 'required|exists:warehouses,id',
-            'quantity'                => 'required|integer|min:1',
-            'status_id'               => 'required|exists:statuses,id',
-            'company_id'              => 'required|exists:companies,id',
-            'asset_name'              => 'nullable|string|max:255',
-            'serial_number'           => 'nullable|string|max:255',
-            'accounting_asset_number' => [
+            'item_id'                   => 'required|exists:items,id',
+            'asset_category_id'         => 'required|exists:asset_categories,id',
+            'warehouse_id'              => 'required|exists:warehouses,id',
+            'quantity'                  => 'required|integer|min:1',
+            'status_id'                 => 'required|exists:statuses,id',
+            'company_id'                => 'required|exists:companies,id',
+            'item_alias_name'           => 'nullable|string|max:255',
+            'asset_name'                => 'nullable|string|max:255',
+            'serial_number'             => 'nullable|string|max:255',
+            'accounting_asset_number'   => [
                 'nullable',
                 'string',
                 'max:255',
@@ -93,15 +92,19 @@ class FixedAssetController extends Controller
                     return $query->whereNull('notes')->orWhere('notes', 'not like', '%[DIBATALKAN%');
                 }),
             ],
-            'spesifikasi_detail'      => 'required|string',
-            'notes'                   => 'nullable|string',
-            'acquisition_date'        => 'required|date',
-            'purchase_price'          => 'nullable|numeric|min:0',
-            'currency_id'             => 'required|exists:currencies,id',
-            'supporting_document'     => 'nullable|file|mimes:pdf,jpg,jpeg,png|max:5120',
-            'photos.*'                => 'nullable|file|mimes:jpeg,png,jpg,gif,pdf,doc,docx,xls,xlsx,zip,rar|max:5120',
-            'acquisition_type_id'     => 'required|exists:acquisition_types,id',
-
+            'spesifikasi_detail'        => 'required|string',
+            'notes'                     => 'nullable|string',
+            'acquisition_date'          => 'required|date',
+            'purchase_price'            => 'nullable|numeric|min:0',
+            'currency_id'               => 'required|exists:currencies,id',
+            'supporting_document'       => 'nullable|file|mimes:pdf,jpg,jpeg,png|max:5120',
+            'photos.*'                  => 'nullable|file|mimes:jpeg,png,jpg,gif,pdf,doc,docx,xls,xlsx,zip,rar|max:5120',
+            'acquisition_type_id'       => 'required|exists:acquisition_types,id',
+            'upgrades'                  => 'nullable|array',
+            'upgrades.*.component_name' => 'nullable|string|max:255',
+            'upgrades.*.cost'           => 'nullable|numeric|min:0',
+            'upgrades.*.upgrade_date'   => 'nullable|date',
+            'upgrades.*.vendor'         => 'nullable|string|max:255',
         ], [
             'accounting_asset_number.unique' => 'Nomor Aset Akuntansi tersebut sudah terdaftar pada aset lain!',
             'photos.*.mimes' => 'File lampiran harus berupa Gambar, PDF, Word, Excel, atau ZIP.',
@@ -121,7 +124,15 @@ class FixedAssetController extends Controller
                 $itemMaster = \App\Models\Item::lockForUpdate()->findOrFail($request->item_id);
                 $yearMonth = date('Y/m');
 
-                $finalAssetName = $request->filled('asset_name') ? $request->asset_name : $itemMaster->name;
+                $aliasName = $request->filled('item_alias_name') ? trim($request->item_alias_name) : null;
+                if ($aliasName) {
+                    \App\Models\ItemAlias::recordAlias($itemMaster->id, $aliasName, 'ASSET_MANUAL');
+                }
+
+                $finalAssetName = $request->filled('asset_name')
+                    ? trim($request->asset_name)
+                    : ($aliasName ?: $itemMaster->name);
+
                 $currentStock = (float) $itemMaster->current_stock;
 
                 $acqType = \App\Models\AcquisitionType::find($request->acquisition_type_id);
@@ -151,6 +162,7 @@ class FixedAssetController extends Controller
                         'item_id'                 => $request->item_id,
                         'asset_category_id'       => $request->asset_category_id,
                         'name'                    => $finalAssetName,
+                        'item_alias_name'         => $aliasName,
                         'warehouse_id'            => $request->warehouse_id,
                         'company_id'              => $request->company_id,
                         'serial_number'           => $qty > 1 ? null : $request->serial_number,
@@ -165,6 +177,25 @@ class FixedAssetController extends Controller
                         'batch_id'                => $nomorPenerimaanManual,
                         'supporting_document'     => $documentPath,
                     ]);
+
+                    // Simpan Multi-Baris Komponen Upgrade
+                    if ($request->has('upgrades') && is_array($request->upgrades)) {
+                        foreach ($request->upgrades as $upg) {
+                            $compName = trim((string) ($upg['component_name'] ?? ''));
+                            if ($compName === '') continue;
+
+                            \App\Models\FixedAssetUpgrade::create([
+                                'fixed_asset_id'     => $asset->id,
+                                'upgrade_date'       => $upg['upgrade_date'] ?? $request->acquisition_date,
+                                'component_name'     => $compName,
+                                'cost'               => (float) ($upg['cost'] ?? 0),
+                                'currency_id'        => $request->currency_id,
+                                'vendor_or_executor' => $upg['vendor'] ?? null,
+                                'notes'              => $upg['notes'] ?? null,
+                                'created_by'         => auth()->id(),
+                            ]);
+                        }
+                    }
 
                     $historyNote = 'Input Manual: ' . $namaPerolehan . ' (Unit ke-' . $i . ' dari ' . $qty . '). ' . $request->notes;
                     if ($assignedTo) {
@@ -205,8 +236,8 @@ class FixedAssetController extends Controller
                         'qty'              => 1,
                         'balance_before'   => $balanceBefore,
                         'balance_after'    => $balanceAfter,
-                        'reference_number' => $assetNumber,
-                        'notes'            => "Penerimaan Manual: $namaPerolehan",
+                        'reference_number' => $nomorPenerimaanManual,
+                        'notes'            => "Penerimaan Manual: {$namaPerolehan} ({$assetNumber})",
                         'created_by'       => auth()->id(),
                     ]);
 
@@ -218,8 +249,8 @@ class FixedAssetController extends Controller
                             'qty'              => 1,
                             'balance_before'   => $balanceAfter,
                             'balance_after'    => $balanceAfter - 1,
-                            'reference_number' => 'GI-' . $assetNumber,
-                            'notes'            => "Aset langsung diserahkan ke pengguna (Input Manual)",
+                            'reference_number' => 'GI-' . $nomorPenerimaanManual,
+                            'notes'            => "Aset ({$assetNumber}) langsung diserahkan ke pengguna (Input Manual)",
                             'created_by'       => auth()->id(),
                         ]);
                         $currentStock = $balanceAfter - 1;
@@ -243,7 +274,8 @@ class FixedAssetController extends Controller
     public function edit($id)
     {
         $asset = FixedAsset::with([
-            'photos', 'item', 'company', 'status', 'warehouse', 'assetCategory',
+            'photos', 'item.aliases', 'company', 'status', 'warehouse', 'assetCategory',
+            'upgrades.currency',
             'goodsReceipt.po.items', 'goodsReceipt.purchaseOrder.items'
         ])->findOrFail($id);
 
@@ -271,18 +303,19 @@ class FixedAssetController extends Controller
     }
 
     // =========================================================================
-    // 🔥 PROSES SIMPAN EDIT ASET (CLEAN CODE & ENTERPRISE MUTATION) 🔥
+    // 🔥 PROSES SIMPAN EDIT ASET (NAMA VARIAN, NAMA AKUNTANSI & MULTI-UPGRADE) 🔥
     // =========================================================================
     public function update(Request $request, $id)
     {
         $request->validate([
-            'asset_category_id'       => 'required|exists:asset_categories,id',
-            'status_id'               => 'required|exists:statuses,id',
-            'warehouse_id'            => 'nullable|exists:warehouses,id',
-            'company_id'              => 'nullable|exists:companies,id',
-            'name'                    => 'nullable|string|max:255',
-            'serial_number'           => 'nullable|string|max:255',
-            'accounting_asset_number' => [
+            'asset_category_id'         => 'required|exists:asset_categories,id',
+            'status_id'                 => 'required|exists:statuses,id',
+            'warehouse_id'              => 'nullable|exists:warehouses,id',
+            'company_id'                => 'nullable|exists:companies,id',
+            'item_alias_name'           => 'nullable|string|max:255',
+            'name'                      => 'nullable|string|max:255',
+            'serial_number'             => 'nullable|string|max:255',
+            'accounting_asset_number'   => [
                 'nullable',
                 'string',
                 'max:255',
@@ -292,12 +325,17 @@ class FixedAssetController extends Controller
                         return $query->whereNull('notes')->orWhere('notes', 'not like', '%[DIBATALKAN%');
                     }),
             ],
-            'spesifikasi_detail'      => 'nullable|string',
-            'notes'                   => 'nullable|string',
-            'acquisition_date'        => 'required|date',
-            'purchase_price'          => 'nullable|numeric|min:0',
-            'currency_id'             => 'required|exists:currencies,id',
-            'photos.*'                => 'nullable|image|mimes:jpeg,png,jpg|max:2048',
+            'spesifikasi_detail'        => 'nullable|string',
+            'notes'                     => 'nullable|string',
+            'acquisition_date'          => 'required|date',
+            'purchase_price'            => 'nullable|numeric|min:0',
+            'currency_id'               => 'required|exists:currencies,id',
+            'photos.*'                  => 'nullable|image|mimes:jpeg,png,jpg|max:2048',
+            'upgrades'                  => 'nullable|array',
+            'upgrades.*.component_name' => 'nullable|string|max:255',
+            'upgrades.*.cost'           => 'nullable|numeric|min:0',
+            'upgrades.*.upgrade_date'   => 'nullable|date',
+            'upgrades.*.vendor'         => 'nullable|string|max:255',
         ], [
             'accounting_asset_number.unique' => 'Nomor Aset Akuntansi tersebut sudah digunakan oleh aset lain!',
         ]);
@@ -318,9 +356,15 @@ class FixedAssetController extends Controller
 
                 $assignedTo = ($statusSlug !== 'in_use') ? null : $request->assigned_to;
 
+                $aliasName = $request->filled('item_alias_name') ? trim($request->item_alias_name) : null;
+                if ($aliasName && $asset->item_id) {
+                    \App\Models\ItemAlias::recordAlias($asset->item_id, $aliasName, 'ASSET_MANUAL');
+                }
+
                 $asset->update([
                     'asset_category_id'       => $request->asset_category_id,
                     'name'                    => $request->name ?? $asset->name,
+                    'item_alias_name'         => $aliasName,
                     'warehouse_id'            => $request->warehouse_id ?? $asset->warehouse_id,
                     'company_id'              => $request->company_id ?? $asset->company_id,
                     'serial_number'           => $request->serial_number,
@@ -333,6 +377,39 @@ class FixedAssetController extends Controller
                     'purchase_price'          => $request->purchase_price ?? 0,
                     'currency_id'             => $request->currency_id,
                 ]);
+
+                // Sinkronkan Multi-Baris Komponen Upgrade
+                if ($request->has('upgrades_submitted')) {
+                    $asset->upgrades()->delete();
+                    foreach ((array) $request->input('upgrades', []) as $upg) {
+                        $compName = trim((string) ($upg['component_name'] ?? ''));
+                        if ($compName === '') continue;
+
+                        \App\Models\FixedAssetUpgrade::create([
+                            'fixed_asset_id'     => $asset->id,
+                            'upgrade_date'       => $upg['upgrade_date'] ?? now()->format('Y-m-d'),
+                            'component_name'     => $compName,
+                            'cost'               => (float) ($upg['cost'] ?? 0),
+                            'currency_id'        => $request->currency_id,
+                            'vendor_or_executor' => $upg['vendor'] ?? null,
+                            'notes'              => $upg['notes'] ?? null,
+                            'created_by'         => auth()->id(),
+                        ]);
+                    }
+                }
+
+                // Hapus Foto Lama yang Ditandai X
+                if ($request->has('delete_photos')) {
+                    $photosToDelete = \App\Models\AssetPhoto::where('fixed_asset_id', $asset->id)
+                        ->whereIn('id', (array) $request->delete_photos)
+                        ->get();
+                    foreach ($photosToDelete as $oldPhoto) {
+                        if (Storage::disk('public')->exists($oldPhoto->file_path)) {
+                            Storage::disk('public')->delete($oldPhoto->file_path);
+                        }
+                        $oldPhoto->delete();
+                    }
+                }
 
                 if ($oldStatusId != $request->status_id || $oldAssignee != $assignedTo) {
                     $historyNote = 'Perubahan Data Aset menjadi: ' . optional($selectedStatus)->name . '.';
@@ -730,7 +807,6 @@ class FixedAssetController extends Controller
                 return back()->with('error', 'Pengajuan dikembalikan ke Draft.');
             }
 
-            // 🔥 BLOKIR APPROVE JIKA ADA BARIS TIDAK VALID 🔥
             if ($batch->details->where('is_valid', 0)->count() > 0) {
                 DB::rollBack();
                 return back()->with('error', 'Gagal menyetujui: Terdapat baris data yang tidak valid di dalam batch ini.');
@@ -766,7 +842,6 @@ class FixedAssetController extends Controller
             throw new \Exception("Proses import dibatalkan karena masih terdapat data yang tidak valid.");
         }
 
-        // Ambil status default tipe AST (Available di Gudang & In Use)
         $defaultAvailableStatus = \App\Models\Status::where('type', 'AST')
             ->whereIn('slug', ['available', 'ready', 'in_warehouse', 'active', 'good'])
             ->orderBy('sequence', 'asc')
@@ -785,24 +860,28 @@ class FixedAssetController extends Controller
             }
 
             if (!$item) {
-                $namaAsetBaru = $row->nama_spesifik_aset ?? 'Aset Import Tanpa Nama';
-                $item = \App\Models\Item::lockForUpdate()->where('name', $namaAsetBaru)->first();
+                $namaMasterBaru = !empty($row->nama_alternatif)
+                    ? trim((string) $row->nama_alternatif)
+                    : ($row->nama_spesifik_aset ?? 'Aset Import Tanpa Nama');
+
+                $item = \App\Models\Item::lockForUpdate()->where('name', $namaMasterBaru)->first();
 
                 if (!$item) {
                     $lastItem = \App\Models\Item::orderBy('id', 'desc')->lockForUpdate()->first();
                     $nextId   = $lastItem ? $lastItem->id + 1 : 1;
                     $newCode  = 'ITM-' . str_pad($nextId, 4, '0', STR_PAD_LEFT);
-                    $slug     = \Illuminate\Support\Str::slug($namaAsetBaru) . '-' . \Illuminate\Support\Str::random(4);
+                    $slug     = \Illuminate\Support\Str::slug($namaMasterBaru) . '-' . \Illuminate\Support\Str::random(4);
 
                     $cat = \App\Models\Category::firstOrCreate(
-                        ['name' => 'Umum'], ['code' => 'UMU']
+                        ['name' => 'Umum'],
+                        ['code' => 'UMU']
                     );
                     $uom = \App\Models\Uom::firstOrCreate(['code' => 'PCS'], ['name' => 'Pieces']);
 
                     $item = \App\Models\Item::create([
                         'code'           => $newCode,
                         'slug'           => $slug,
-                        'name'           => $namaAsetBaru,
+                        'name'           => $namaMasterBaru,
                         'category_id'    => $cat->id,
                         'uom_id'         => $uom->id,
                         'item_type_code' => 'AST',
@@ -814,6 +893,12 @@ class FixedAssetController extends Controller
                 }
             }
 
+            // Simpan Nama Alternatif / Varian ke kamus item_aliases
+            $aliasName = !empty($row->nama_alternatif) ? trim((string) $row->nama_alternatif) : null;
+            if ($aliasName) {
+                \App\Models\ItemAlias::recordAlias($item->id, $aliasName, 'ASSET_IMPORT');
+            }
+
             // 2. Ambil ID & Validasi Status Hanya Tipe 'AST'
             $companyId       = !empty($row->nama_pt) ? (int) $row->nama_pt : 1;
             $warehouseId     = !empty($row->nama_gudang) ? (int) $row->nama_gudang : 1;
@@ -823,7 +908,6 @@ class FixedAssetController extends Controller
             $rawStatusId = !empty($row->status_aset) ? (int) $row->status_aset : null;
             $status = $rawStatusId ? \App\Models\Status::where('id', $rawStatusId)->where('type', 'AST')->first() : null;
 
-            // Jika ID status bukan tipe AST (misal nyasar ke status dokumen), gunakan status AST yang sah
             if (!$status) {
                 $status = $assignedTo ? $defaultInUseStatus : $defaultAvailableStatus;
             }
@@ -851,11 +935,16 @@ class FixedAssetController extends Controller
             $nextSeq = $lastAsset ? ((int) substr($lastAsset->asset_number, -4)) + 1 : 1;
             $assetNumber = "AST/{$yearMonth}/" . str_pad($nextSeq, 4, '0', STR_PAD_LEFT);
 
+            $finalAssetName = !empty($row->nama_spesifik_aset)
+                ? trim((string) $row->nama_spesifik_aset)
+                : ($aliasName ?: $item->name);
+
             $asset = \App\Models\FixedAsset::create([
                 'asset_number'            => $assetNumber,
                 'item_id'                 => $item->id,
                 'asset_category_id'       => $assetCategoryId,
-                'name'                    => $row->nama_spesifik_aset ?: $item->name,
+                'name'                    => $finalAssetName,
+                'item_alias_name'         => $aliasName,
                 'warehouse_id'            => $warehouseId,
                 'company_id'              => $companyId,
                 'department_id'           => $userPenerima ? $userPenerima->department_id : null,
@@ -872,15 +961,40 @@ class FixedAssetController extends Controller
                 'batch_id'                => $batch->batch_number,
             ]);
 
+            // Simpan Rincian Komponen Upgrade Multi-Baris ke fixed_asset_upgrades
+            if (!empty($row->upgrade_items)) {
+                $lines = preg_split('/\r\n|\r|\n|;/', (string) $row->upgrade_items);
+                foreach ($lines as $line) {
+                    $line = trim($line);
+                    if ($line === '' || $line === '-') continue;
+
+                    $parts = preg_split('/\||:/', $line, 2);
+                    $compName = trim($parts[0]);
+                    $compCost = isset($parts[1]) ? (float) preg_replace('/[^0-9.]/', '', $parts[1]) : 0;
+
+                    if ($compName !== '') {
+                        \App\Models\FixedAssetUpgrade::create([
+                            'fixed_asset_id'     => $asset->id,
+                            'upgrade_date'       => $formattedDate,
+                            'component_name'     => $compName,
+                            'cost'               => $compCost,
+                            'currency_id'        => $currency ? $currency->id : 1,
+                            'vendor_or_executor' => trim((string) $row->catatan) ?: null,
+                            'created_by'         => auth()->id(),
+                        ]);
+                    }
+                }
+            }
+
             \App\Models\FixedAssetHistory::create([
                 'fixed_asset_id' => $asset->id,
                 'status'         => $status ? $status->name : 'Registered',
                 'assigned_to'    => $assignedTo,
-                'notes'          => 'Di-import via Karantina (Batch: '.$batch->batch_number.')',
+                'notes'          => 'Di-import via Karantina (Batch: ' . $batch->batch_number . ')',
                 'created_by'     => auth()->id()
             ]);
 
-            // 4. Mutasi Stok Pintar
+            // 4. Mutasi Stok Pintar (No. Referensi = Batch Import, Keterangan = Nomor Aset)
             $currStock = (float) $item->current_stock;
             $balanceAfter = $currStock + 1;
 
@@ -891,8 +1005,8 @@ class FixedAssetController extends Controller
                 'qty'              => 1,
                 'balance_before'   => $currStock,
                 'balance_after'    => $balanceAfter,
-                'reference_number' => $assetNumber,
-                'notes'            => "Penerimaan Aset Import",
+                'reference_number' => $batch->batch_number,
+                'notes'            => "Penerimaan Aset Import ({$assetNumber})",
                 'created_by'       => auth()->id()
             ]);
 
@@ -904,8 +1018,8 @@ class FixedAssetController extends Controller
                     'qty'              => 1,
                     'balance_before'   => $balanceAfter,
                     'balance_after'    => $balanceAfter - 1,
-                    'reference_number' => 'GI-' . $assetNumber,
-                    'notes'            => "Aset langsung diserahkan ke pengguna (Import)",
+                    'reference_number' => 'GI-' . $batch->batch_number,
+                    'notes'            => "Aset ({$assetNumber}) langsung diserahkan ke pengguna (Import)",
                     'created_by'       => auth()->id()
                 ]);
                 $item->update(['current_stock' => $balanceAfter - 1]);
@@ -966,7 +1080,7 @@ class FixedAssetController extends Controller
     {
         $batch = \App\Models\FixedAssetImportBatch::where('batch_number', $batchId)->with('user')->firstOrFail();
         $assets = \App\Models\FixedAsset::where('batch_id', $batchId)
-                    ->with(['item', 'user', 'company', 'status'])
+                    ->with(['item', 'user', 'company', 'status', 'upgrades'])
                     ->paginate(20);
 
         return view('fixed_assets.import_history_show', compact('batch', 'assets'));
@@ -988,7 +1102,6 @@ class FixedAssetController extends Controller
             return back()->with('error', 'Tidak ada aset pada Batch ini untuk dicetak.');
         }
 
-        // Ambil ID pertama sebagai fallback parameter {id} pada URL, dan kirim semua ID lewat ?ids=1,2,3,...
         $firstId = $ids[0];
         $queryParams = array_merge($request->query(), [
             'ids' => implode(',', $ids),
@@ -1020,6 +1133,15 @@ class FixedAssetController extends Controller
         }
 
         return response()->json($formattedItems);
+    }
+
+    public function getItemAliases($itemId)
+    {
+        $aliases = \App\Models\ItemAlias::where('item_id', $itemId)
+            ->orderBy('alias_name', 'asc')
+            ->pluck('alias_name');
+
+        return response()->json($aliases);
     }
 
     public function hibahHistory()
@@ -1054,7 +1176,7 @@ class FixedAssetController extends Controller
 
         $query = \App\Models\FixedAsset::with([
             'item.category', 'assetCategory', 'assignee.department',
-            'company', 'department', 'status', 'warehouse', 'currency'
+            'company', 'department', 'status', 'warehouse', 'currency', 'upgrades'
         ]);
 
         if (!empty($voidStatusIds)) {
@@ -1079,7 +1201,7 @@ class FixedAssetController extends Controller
             }
         }
 
-        // Pencarian Universal
+        // Pencarian Universal (Mencakup Nama Akuntansi, Nama Varian/Alternatif & Komponen Upgrade)
         if ($request->filled('search')) {
             $search = $request->search;
             $query->where(function ($q) use ($search) {
@@ -1087,7 +1209,11 @@ class FixedAssetController extends Controller
                   ->orWhere('accounting_asset_number', 'like', "%{$search}%")
                   ->orWhere('serial_number', 'like', "%{$search}%")
                   ->orWhere('name', 'like', "%{$search}%")
+                  ->orWhere('item_alias_name', 'like', "%{$search}%")
                   ->orWhere('spesifikasi_detail', 'like', "%{$search}%")
+                  ->orWhereHas('upgrades', function ($upgQ) use ($search) {
+                      $upgQ->where('component_name', 'like', "%{$search}%");
+                  })
                   ->orWhereHas('assignee', function ($userQ) use ($search) {
                       $userQ->where('name', 'like', "%{$search}%");
                   })
@@ -1104,7 +1230,7 @@ class FixedAssetController extends Controller
         $assets = $query->latest()->paginate(15)->withQueryString();
 
         // KPI mengikuti filter Perusahaan yang dipilih
-        $kpiQuery = \App\Models\FixedAsset::with('currency');
+        $kpiQuery = \App\Models\FixedAsset::with(['currency', 'upgrades']);
         $excludeKpiIds = array_merge($voidStatusIds, $disposedStatusIds);
 
         if (!empty($excludeKpiIds)) {
@@ -1153,8 +1279,6 @@ class FixedAssetController extends Controller
         return \Maatwebsite\Excel\Facades\Excel::download(new \App\Exports\MasterAssetExport($request->all()), $namaFile);
     }
 
-
-
     // =========================================================================
     // 🔥 MESIN PROSES PENYERAHAN / UPDATE STATUS ASET (DINAMIS + NOMOR TRANSAKSI) 🔥
     // =========================================================================
@@ -1186,12 +1310,10 @@ class FixedAssetController extends Controller
 
                 $userPenerima = $request->assigned_to ? \App\Models\User::find($request->assigned_to) : null;
 
-                // 1. Generate Nomor Dokumen Resmi (BAST jika diserahkan ke user, AST-TRX jika hanya perubahan status)
                 $prefix = $userPenerima ? 'BAST' : 'AST-TRX';
                 $trxNumber = $this->generateTransactionNumber($prefix);
                 $generatedTrxNumber = $trxNumber;
 
-                // 2. Update Status & Kepemilikan Aset
                 $asset->assigned_to   = $request->assigned_to;
                 $asset->department_id = $userPenerima ? $userPenerima->department_id : null;
                 $asset->status_id     = $request->status_id;
@@ -1206,7 +1328,6 @@ class FixedAssetController extends Controller
 
                 $asset->save();
 
-                // 3. Simpan Header Transaksi Resmi ke Tabel fixed_asset_transactions
                 \App\Models\FixedAssetTransaction::create([
                     'transaction_number' => $trxNumber,
                     'transaction_type'   => $userPenerima ? 'HANDOVER' : 'STATUS_CHANGE',
@@ -1221,7 +1342,6 @@ class FixedAssetController extends Controller
                     'created_by'         => auth()->id(),
                 ]);
 
-                // 4. Catat ke Riwayat Perjalanan Aset (Timeline Item) beserta Nomor Transaksinya
                 $catatanTeks = $request->filled('handover_notes') ? trim($request->handover_notes) : '-';
                 if ($userPenerima) {
                     $historyNotes = "[{$trxNumber}] Diserahkan ke User: {$userPenerima->name} | Catatan: {$catatanTeks}";
@@ -1237,7 +1357,6 @@ class FixedAssetController extends Controller
                     'created_by'     => auth()->id(),
                 ]);
 
-                // 5. Kurangi Stok Master Item & Catat Mutasi Gudang (Jika Keluar dari Gudang)
                 if ($asset->warehouse_id === null && $previousWarehouseId && $asset->item_id) {
                     $item = \App\Models\Item::lockForUpdate()->find($asset->item_id);
                     if ($item) {
@@ -1266,7 +1385,6 @@ class FixedAssetController extends Controller
                     }
                 }
 
-                // 6. Sinkronkan Status di Tabel item_serials jika ada S/N
                 if (!empty($asset->serial_number) && $asset->item_id) {
                     $snStatus = in_array(optional($newStatus)->slug, ['disposed', 'void']) ? 'DISPOSED' : ($userPenerima ? 'IN_USE' : 'AVAILABLE');
                     \DB::table('item_serials')
@@ -1311,11 +1429,9 @@ class FixedAssetController extends Controller
                 $warehouseTujuan = \App\Models\Warehouse::find($request->warehouse_id);
                 $returnReason = $request->filled('return_notes') ? trim($request->return_notes) : 'Pengembalian rutin ke gudang.';
 
-                // 1. Generate Nomor Dokumen BAPA Resmi
                 $trxNumber = $this->generateTransactionNumber('BAPA');
                 $generatedTrxNumber = $trxNumber;
 
-                // 2. Simpan Header Transaksi ke fixed_asset_transactions
                 \App\Models\FixedAssetTransaction::create([
                     'transaction_number' => $trxNumber,
                     'transaction_type'   => 'RETURN',
@@ -1330,7 +1446,6 @@ class FixedAssetController extends Controller
                     'created_by'         => auth()->id(),
                 ]);
 
-                // 3. Catat ke Timeline Aset
                 \App\Models\FixedAssetHistory::create([
                     'fixed_asset_id' => $asset->id,
                     'status'         => 'RETURNED',
@@ -1339,7 +1454,6 @@ class FixedAssetController extends Controller
                     'created_by'     => auth()->id(),
                 ]);
 
-                // 4. Update Data Aset
                 $asset->assigned_to   = null;
                 $asset->department_id = null;
                 $asset->warehouse_id  = $request->warehouse_id;
@@ -1347,7 +1461,6 @@ class FixedAssetController extends Controller
                 $asset->notes         = $returnReason;
                 $asset->save();
 
-                // 5. Tambah Stok Master Item & Catat Mutasi Gudang
                 if ($asset->item_id) {
                     $item = \App\Models\Item::lockForUpdate()->find($asset->item_id);
                     if ($item) {
@@ -1385,7 +1498,6 @@ class FixedAssetController extends Controller
                     }
                 }
 
-                // 6. Sinkronkan Status Serial Number
                 if (!empty($asset->serial_number) && $asset->item_id) {
                     \DB::table('item_serials')
                         ->where('item_id', $asset->item_id)
@@ -1401,20 +1513,18 @@ class FixedAssetController extends Controller
         }
     }
 
-
-
     public function transactionHistory(\Illuminate\Http\Request $request)
     {
         $query = \App\Models\FixedAssetTransaction::with([
-        'details.asset.item.category',
-        'details.asset.assetCategory',
-        'signers.user',
-        'fromUser',
-        'toUser',
-        'warehouse',
-        'status',
-        'creator'
-    ]);
+            'details.asset.item.category',
+            'details.asset.assetCategory',
+            'signers.user',
+            'fromUser',
+            'toUser',
+            'warehouse',
+            'status',
+            'creator'
+        ]);
 
         if ($request->filled('type')) {
             $query->where('transaction_type', $request->type);
@@ -1440,12 +1550,9 @@ class FixedAssetController extends Controller
         return view('fixed_assets.transaction_history', compact('transactions', 'users'));
     }
 
-
-
-
     public function history($id)
     {
-        $asset = \App\Models\FixedAsset::with(['item', 'company', 'warehouse', 'assignee'])->findOrFail($id);
+        $asset = \App\Models\FixedAsset::with(['item', 'company', 'warehouse', 'assignee', 'upgrades.currency'])->findOrFail($id);
 
         $histories = \App\Models\FixedAssetHistory::where('fixed_asset_id', $id)
             ->orderBy('created_at', 'asc')
@@ -1617,6 +1724,7 @@ class FixedAssetController extends Controller
                     $photo->delete();
                 }
 
+                $asset->upgrades()->delete();
                 \App\Models\FixedAssetHistory::where('fixed_asset_id', $id)->delete();
                 $asset->delete();
             });
@@ -1626,8 +1734,6 @@ class FixedAssetController extends Controller
             return back()->with('error', 'Gagal Menghapus: ' . $e->getMessage());
         }
     }
-
-
 
     private function generateTransactionNumber(string $prefix): string
     {
@@ -1646,6 +1752,7 @@ class FixedAssetController extends Controller
         $query = \App\Models\FixedAssetTransaction::with([
             'details.asset.item.category',
             'details.asset.assetCategory',
+            'signers.user',
             'fromUser',
             'toUser',
             'warehouse',
@@ -1665,7 +1772,7 @@ class FixedAssetController extends Controller
         }
 
         if ($request->filled('search')) {
-            $search = $request->search;
+            $search = trim((string) $request->search);
             $query->where(function ($q) use ($search) {
                 $q->where('transaction_number', 'like', "%{$search}%")
                   ->orWhere('notes', 'like', "%{$search}%")
@@ -1674,6 +1781,7 @@ class FixedAssetController extends Controller
                          ->orWhere('accounting_asset_number', 'like', "%{$search}%")
                          ->orWhere('serial_number', 'like', "%{$search}%")
                          ->orWhere('name', 'like', "%{$search}%")
+                         ->orWhere('item_alias_name', 'like', "%{$search}%")
                          ->orWhereHas('item', function ($qi) use ($search) {
                              $qi->where('code', 'like', "%{$search}%")
                                 ->orWhere('name', 'like', "%{$search}%")
@@ -1688,7 +1796,6 @@ class FixedAssetController extends Controller
 
         $transactions = $query->latest()->paginate(15)->withQueryString();
 
-        // Statistik ringkas untuk KPI Cards
         $stats = [
             'total'    => \App\Models\FixedAssetTransaction::count(),
             'handover' => \App\Models\FixedAssetTransaction::where('transaction_type', 'HANDOVER')->count(),
@@ -1700,9 +1807,6 @@ class FixedAssetController extends Controller
 
         return view('fixed_assets.transactions', compact('transactions', 'stats'));
     }
-
-
-
 
     public function createTransaction()
     {
@@ -1720,7 +1824,6 @@ class FixedAssetController extends Controller
             })
             ->pluck('id');
 
-        // 1. Aset siap serah terima di Gudang (Hanya yang siap pakai / bukan rusak & bukan servis)
         $availableAssets = FixedAsset::with(['item', 'warehouse', 'status'])
             ->whereNull('assigned_to')
             ->whereNotIn('status_id', $voidDisposedIds)
@@ -1729,14 +1832,12 @@ class FixedAssetController extends Controller
             ->orderBy('asset_number', 'asc')
             ->get();
 
-        // 2. Aset sedang dipakai Staf (Untuk Return / BAPA)
         $inUseAssets = FixedAsset::with(['item', 'assignee.department', 'status'])
             ->whereNotNull('assigned_to')
             ->whereNotIn('status_id', $voidDisposedIds)
             ->orderBy('asset_number', 'asc')
             ->get();
 
-        // 3. Aset yang sedang di Service Center / Maintenance (Khusus Selesai Perbaikan / BAPA-SRV)
         $repairAssets = FixedAsset::with(['item', 'warehouse', 'status'])
             ->whereNull('assigned_to')
             ->whereNotIn('status_id', $voidDisposedIds)
@@ -1750,7 +1851,6 @@ class FixedAssetController extends Controller
             ->orderBy('asset_number', 'asc')
             ->get();
 
-        // 4. Semua aset aktif (Untuk Kirim Perbaikan ke Service Center / BASP & Update Status / Disposal)
         $allActiveAssets = FixedAsset::with(['item', 'warehouse', 'assignee.department', 'status'])
             ->whereNotIn('status_id', $voidDisposedIds)
             ->orderBy('asset_number', 'asc')
@@ -1764,7 +1864,6 @@ class FixedAssetController extends Controller
             'availableAssets', 'inUseAssets', 'repairAssets', 'allActiveAssets', 'warehouses', 'statuses', 'users'
         ));
     }
-
 
     public function storeTransaction(Request $request)
     {
@@ -1803,7 +1902,6 @@ class FixedAssetController extends Controller
                     default         => ($statusSlug === 'disposed' ? 'BAPP' : 'AST-TRX'),
                 };
 
-                // Pengaman Backend: Kunci kombinasi Jenis Transaksi & Status Aset Baru
                 $allowedSlugsByType = [
                     'HANDOVER'      => ['in_use'],
                     'RETURN'        => ['available', 'returned', 'maintenance', 'repair', 'rusak'],
@@ -1816,12 +1914,13 @@ class FixedAssetController extends Controller
                     throw new \Exception("Status '{$newStatus->name}' tidak diizinkan untuk jenis transaksi {$type}.");
                 }
 
-                $trxNumber    =$this->generateTransactionNumber($prefix);$userPenerima = $request->to_user_id ? User::find($request->to_user_id) : null;
+                $trxNumber    = $this->generateTransactionNumber($prefix);
+                $userPenerima = $request->to_user_id ? User::find($request->to_user_id) : null;
 
-                $firstAsset = FixedAsset::findOrFail($request->asset_ids[0]);$fromUserId = ($type === 'RETURN') ?$firstAsset->assigned_to : auth()->id();
+                $firstAsset = FixedAsset::findOrFail($request->asset_ids[0]);
+                $fromUserId = ($type === 'RETURN') ? $firstAsset->assigned_to : auth()->id();
 
-                // Susun catatan terstruktur khusus jika transaksi pengiriman ke Service Center
-                $compiledNotes =$request->notes ?: '';
+                $compiledNotes = $request->notes ?: '';
                 if ($type === 'REPAIR_SEND') {
                     $scName  = trim($request->service_center_name);
                     $rmaNo   = trim($request->rma_number ?: '-');
@@ -1836,16 +1935,16 @@ class FixedAssetController extends Controller
                     'fixed_asset_id'     => $firstAsset->id,
                     'from_user_id'       => $fromUserId,
                     'to_user_id'         => ($type === 'HANDOVER') ? $request->to_user_id : (($type === 'RETURN') ? auth()->id() : null),
-                    'warehouse_id'       => in_array($type, ['RETURN', 'REPAIR_FINISH']) ?$request->warehouse_id : null,
+                    'warehouse_id'       => in_array($type, ['RETURN', 'REPAIR_FINISH']) ? $request->warehouse_id : null,
                     'status_id'          => $request->status_id,
                     'notes'              => $compiledNotes,
                     'created_by'         => auth()->id(),
                 ]);
 
-                foreach ($request->asset_ids as$assetId) {
+                foreach ($request->asset_ids as $assetId) {
                     $asset = FixedAsset::lockForUpdate()->findOrFail($assetId);
-                    $prevWarehouseId =$asset->warehouse_id;
-                    $prevUserId      =$asset->assigned_to;
+                    $prevWarehouseId = $asset->warehouse_id;
+                    $prevUserId      = $asset->assigned_to;
 
                     \App\Models\FixedAssetTransactionDetail::create([
                         'fixed_asset_transaction_id' => $trxCreated->id,
@@ -1875,14 +1974,14 @@ class FixedAssetController extends Controller
                             'created_by'     => auth()->id(),
                         ]);
 
-                        if ($prevWarehouseId &&$asset->item_id) {
+                        if ($prevWarehouseId && $asset->item_id) {
                             $item = \App\Models\Item::lockForUpdate()->find($asset->item_id);
                             if ($item) {
-                                $before = (float)$item->current_stock;
-                                $item->update(['current_stock' => max(0,$before - 1)]);
+                                $before = (float) $item->current_stock;
+                                $item->update(['current_stock' => max(0, $before - 1)]);
                                 \App\Models\StockMutation::create([
-                                    'item_id' => $item->id, 'warehouse_id' =>$prevWarehouseId,
-                                    'type' => 'OUT', 'qty' => 1, 'balance_before' => $before, 'balance_after' =>$item->current_stock,
+                                    'item_id' => $item->id, 'warehouse_id' => $prevWarehouseId,
+                                    'type' => 'OUT', 'qty' => 1, 'balance_before' => $before, 'balance_after' => $item->current_stock,
                                     'reference_number' => $trxNumber, 'notes' => "Serah Terima Aset ({$asset->asset_number}) ke {$userPenerima->name}",
                                     'created_by' => auth()->id(),
                                 ]);
@@ -1913,18 +2012,18 @@ class FixedAssetController extends Controller
                         if ($asset->item_id) {
                             $item = \App\Models\Item::lockForUpdate()->find($asset->item_id);
                             if ($item) {
-                                $before = (float)$item->current_stock;
-                                $item->update(['current_stock' =>$before + 1]);
+                                $before = (float) $item->current_stock;
+                                $item->update(['current_stock' => $before + 1]);
                                 \App\Models\StockMutation::create([
-                                    'item_id' => $item->id, 'warehouse_id' =>$request->warehouse_id,
-                                    'type' => 'IN', 'qty' => 1, 'balance_before' => $before, 'balance_after' =>$item->current_stock,
+                                    'item_id' => $item->id, 'warehouse_id' => $request->warehouse_id,
+                                    'type' => 'IN', 'qty' => 1, 'balance_before' => $before, 'balance_after' => $item->current_stock,
                                     'reference_number' => $trxNumber, 'notes' => "Pengembalian Aset ({$asset->asset_number})",
                                     'created_by' => auth()->id(),
                                 ]);
                             }
                         }
                     } elseif ($type === 'REPAIR_SEND') {
-                        $prevHolderInfo =$prevUserId
+                        $prevHolderInfo = $prevUserId
                             ? 'Pemegang sebelumnya: ' . (optional(User::find($prevUserId))->name ?? '-')
                             : 'Dari Gudang';
 
@@ -1944,20 +2043,21 @@ class FixedAssetController extends Controller
                             'created_by'     => auth()->id(),
                         ]);
 
-                        if ($prevWarehouseId &&$asset->item_id) {
+                        if ($prevWarehouseId && $asset->item_id) {
                             $item = \App\Models\Item::lockForUpdate()->find($asset->item_id);
                             if ($item) {
-                                $before = (float)$item->current_stock;
-                                $item->update(['current_stock' => max(0,$before - 1)]);
+                                $before = (float) $item->current_stock;
+                                $item->update(['current_stock' => max(0, $before - 1)]);
                                 \App\Models\StockMutation::create([
-                                    'item_id' => $item->id, 'warehouse_id' =>$prevWarehouseId,
-                                    'type' => 'OUT', 'qty' => 1, 'balance_before' => $before, 'balance_after' =>$item->current_stock,
+                                    'item_id' => $item->id, 'warehouse_id' => $prevWarehouseId,
+                                    'type' => 'OUT', 'qty' => 1, 'balance_before' => $before, 'balance_after' => $item->current_stock,
                                     'reference_number' => $trxNumber, 'notes' => "Pengiriman Servis Aset ({$asset->asset_number}) ke {$request->service_center_name}",
                                     'created_by' => auth()->id(),
                                 ]);
                             }
                         }
-                    } elseif ($type === 'REPAIR_FINISH') {$asset->update([
+                    } elseif ($type === 'REPAIR_FINISH') {
+                        $asset->update([
                             'assigned_to'   => null,
                             'department_id' => null,
                             'warehouse_id'  => $request->warehouse_id,
@@ -1976,11 +2076,11 @@ class FixedAssetController extends Controller
                         if ($asset->item_id) {
                             $item = \App\Models\Item::lockForUpdate()->find($asset->item_id);
                             if ($item) {
-                                $before = (float)$item->current_stock;
-                                $item->update(['current_stock' =>$before + 1]);
+                                $before = (float) $item->current_stock;
+                                $item->update(['current_stock' => $before + 1]);
                                 \App\Models\StockMutation::create([
-                                    'item_id' => $item->id, 'warehouse_id' =>$request->warehouse_id,
-                                    'type' => 'IN', 'qty' => 1, 'balance_before' => $before, 'balance_after' =>$item->current_stock,
+                                    'item_id' => $item->id, 'warehouse_id' => $request->warehouse_id,
+                                    'type' => 'IN', 'qty' => 1, 'balance_before' => $before, 'balance_after' => $item->current_stock,
                                     'reference_number' => $trxNumber, 'notes' => "Penerimaan Kembali Hasil Servis ({$asset->asset_number})",
                                     'created_by' => auth()->id(),
                                 ]);
@@ -2010,14 +2110,14 @@ class FixedAssetController extends Controller
                             'created_by'     => auth()->id(),
                         ]);
 
-                        if ($isDisposed && $prevWarehouseId &&$asset->item_id) {
+                        if ($isDisposed && $prevWarehouseId && $asset->item_id) {
                             $item = \App\Models\Item::lockForUpdate()->find($asset->item_id);
                             if ($item) {
-                                $before = (float)$item->current_stock;
-                                $item->update(['current_stock' => max(0,$before - 1)]);
+                                $before = (float) $item->current_stock;
+                                $item->update(['current_stock' => max(0, $before - 1)]);
                                 \App\Models\StockMutation::create([
-                                    'item_id' => $item->id, 'warehouse_id' =>$prevWarehouseId,
-                                    'type' => 'OUT', 'qty' => 1, 'balance_before' => $before, 'balance_after' =>$item->current_stock,
+                                    'item_id' => $item->id, 'warehouse_id' => $prevWarehouseId,
+                                    'type' => 'OUT', 'qty' => 1, 'balance_before' => $before, 'balance_after' => $item->current_stock,
                                     'reference_number' => $trxNumber, 'notes' => "Penghapusan / Disposal Aset ({$asset->asset_number})",
                                     'created_by' => auth()->id(),
                                 ]);
@@ -2034,7 +2134,6 @@ class FixedAssetController extends Controller
             return back()->withInput()->with('error', 'Gagal memproses transaksi: ' . $e->getMessage());
         }
     }
-
 
     public function printTransactionDocument(Request $request, $id)
     {
@@ -2060,37 +2159,31 @@ class FixedAssetController extends Controller
         $defaultP1 = $transaction->fromUser ?? auth()->user();
         $defaultP2 = $transaction->toUser ?? auth()->user();
 
-        // 1. Jika ada input penanda tangan dari modal cetak, susun urutan peran secara konsisten lalu simpan ke DB
         if ($request->has('signers')) {
             $rawIds = array_values(array_unique(array_filter((array) $request->input('signers', []))));
             $signatureMode = $request->input('signature_mode', 'digital');
 
             if ($isDisposedDoc || $transaction->transaction_type === 'REPAIR_SEND') {
-                // Untuk BAPP (Pengaju, Pemeriksa, Menyetujui) & BASP (Pihak 1, Saksi...), urutan form sudah sesuai peran
                 $orderedIds = array_map('intval', $rawIds);
             } else {
                 $orderedIds = [];
                 $remainingIds = collect($rawIds)->map(fn($uid) => (int) $uid);
 
-                // Kunci Pihak Pertama (Yang Menyerahkan) di urutan #1 jika termasuk dalam pilihan
                 if ($defaultP1 && $remainingIds->contains((int) $defaultP1->id)) {
                     $orderedIds[] = (int) $defaultP1->id;
                     $remainingIds = $remainingIds->reject(fn($uid) => $uid === (int) $defaultP1->id);
                 }
 
-                // Kunci Pihak Kedua (Yang Menerima) di urutan #2 jika termasuk dalam pilihan
                 if ($defaultP2 && $remainingIds->contains((int) $defaultP2->id)) {
                     $orderedIds[] = (int) $defaultP2->id;
                     $remainingIds = $remainingIds->reject(fn($uid) => $uid === (int) $defaultP2->id);
                 }
 
-                // Sisanya otomatis masuk sebagai Saksi / Mengetahui di urutan #3 dst
                 foreach ($remainingIds as $extraId) {
                     $orderedIds[] = $extraId;
                 }
             }
 
-            // Hapus daftar lama & simpan ulang sesuai urutan terbaru ke tabel fixed_asset_transaction_signers
             $transaction->signers()->delete();
 
             foreach ($orderedIds as $idx => $uid) {
@@ -2116,7 +2209,6 @@ class FixedAssetController extends Controller
             $transaction->load('signers.user.department');
         }
 
-        // 2. Ambil daftar user penanda tangan dari tabel relasi (jika sudah tersimpan) atau fallback ke default
         if ($transaction->signers->count() > 0) {
             $signers = $transaction->signers->map(fn($s) => $s->user)->filter();
             $signatureMode = $request->input('signature_mode', $transaction->signers->first()->signature_mode ?? 'digital');
@@ -2129,7 +2221,6 @@ class FixedAssetController extends Controller
 
         $documentNumber = $transaction->transaction_number;
 
-        // 1. Dokumen Pengembalian (BAPA) & Selesai Perbaikan Masuk Gudang (BAPA-SRV)
         if (in_array($transaction->transaction_type, ['RETURN', 'REPAIR_FINISH'])) {
             $lastAssignee = $transaction->fromUser;
             $pdf = Pdf::loadView('fixed_assets.bapa', compact('asset', 'lastAssignee', 'signers', 'documentNumber', 'transaction', 'signatureMode'))
@@ -2138,7 +2229,6 @@ class FixedAssetController extends Controller
             return $pdf->stream(str_replace('/', '_', $documentNumber) . '.pdf');
         }
 
-        // 2. Dokumen Serah Terima Perbaikan ke Service Center (BASP)
         if ($transaction->transaction_type === 'REPAIR_SEND') {
             $pdf = Pdf::loadView('fixed_assets.basp', compact('asset', 'signers', 'documentNumber', 'transaction', 'signatureMode'))
                 ->setOptions(['isPhpEnabled' => true, 'isRemoteEnabled' => true])
@@ -2146,7 +2236,6 @@ class FixedAssetController extends Controller
             return $pdf->stream('BASP_' . str_replace('/', '_', $documentNumber) . '.pdf');
         }
 
-        // 3. Dokumen Penghapusan / Pemusnahan Aset (BAPP)
         if ($isDisposedDoc) {
             $pdf = Pdf::loadView('fixed_assets.bapp', compact('asset', 'signers', 'documentNumber', 'transaction', 'signatureMode'))
                 ->setOptions(['isPhpEnabled' => true, 'isRemoteEnabled' => true])
@@ -2154,16 +2243,11 @@ class FixedAssetController extends Controller
             return $pdf->stream('BAPP_' . str_replace('/', '_', $documentNumber) . '.pdf');
         }
 
-        // 4. Dokumen Serah Terima ke Karyawan (BAST)
         $pdf = Pdf::loadView('fixed_assets.bast', compact('asset', 'signers', 'documentNumber', 'transaction', 'signatureMode'))
             ->setOptions(['isPhpEnabled' => true, 'isRemoteEnabled' => true])
             ->setPaper('A4', 'portrait');
         return $pdf->stream('BAST_' . str_replace('/', '_', $documentNumber) . '.pdf');
     }
-
-
-
-
 
     public function showTransaction($id)
     {
@@ -2176,6 +2260,7 @@ class FixedAssetController extends Controller
             'details.asset.assignee.department',
             'details.asset.currency',
             'details.asset.photos',
+            'details.asset.upgrades',
             'signers.user.department',
             'fromUser.department',
             'fromUser.company',
@@ -2190,6 +2275,387 @@ class FixedAssetController extends Controller
 
         return view('fixed_assets.transaction_show', compact('transaction', 'users'));
     }
+
+
+
+    /**
+     * Halaman Rekapitulasi Aset per Karyawan / Pemegang (Format Matriks Rowspan)
+     */
+    public function employeeMatrix(Request $request)
+    {
+        $search       = trim((string)$request->input('search'));
+        $companyId    =$request->input('company_id');
+        $statusFilter =$request->input('assignment_status', 'assigned');
+
+        $query = FixedAsset::with([
+            'item',
+            'company',
+            'assignee.company',
+            'assignee.department',
+            'status',
+            'warehouse',
+            'currency',
+            'upgrades' => function ($q) {$q->with('currency')
+                  ->whereNotIn('status', ['REMOVED_GOOD', 'REMOVED_DEFECTIVE'])
+                  ->orderBy('upgrade_date', 'asc')
+                  ->orderBy('id', 'asc');
+            }
+        ])
+        ->where(function ($q) {$q->whereNull('notes')->orWhere('notes', 'not like', '%[DIBATALKAN%');
+        })
+        ->whereHas('status', function ($q) {$q->whereNotIn('slug', ['void', 'batal', 'canceled', 'cancelled', 'disposed']);
+        });
+
+        if ($statusFilter === 'assigned') {$query->whereNotNull('assigned_to');
+        } elseif ($statusFilter === 'unassigned') {$query->whereNull('assigned_to');
+        }
+
+        if ($companyId) {$query->where(function ($q) use ($companyId) {
+                $q->where('company_id',$companyId)
+                  ->orWhereHas('assignee', fn($qa) => $qa->where('company_id',$companyId));
+            });
+        }
+
+        if ($search !== '') {$query->where(function ($q) use ($search) {
+                $q->where('asset_number', 'like', "\%{$search}%")
+                  ->orWhere('accounting_asset_number', 'like', "%{$search}%")
+                  ->orWhere('serial_number', 'like', "%{$search}%")
+                  ->orWhere('name', 'like', "%{$search}%")
+                  ->orWhere('item_alias_name', 'like', "%{$search}%")
+                  ->orWhere('spesifikasi_detail', 'like', "%{$search}%")
+                  ->orWhereHas('assignee', fn($qa) => $qa->where('name', 'like', "\%{$search}%"))
+                  ->orWhereHas('upgrades', fn($qu) => $qu->where('component_name', 'like', "\%{$search}%"));
+            });
+        }
+
+        $assets =$query->get();
+
+        $groupedHolders = $assets->groupBy(function ($ast) {
+            if ($ast->assigned_to) {
+                return 'USER_' . $ast->assigned_to;
+            }
+            return 'WH_' . ($ast->warehouse_id ?? 0);
+        })->map(function ($userAssets,$key) {
+            $first  =$userAssets->first();
+            $isUser = str_starts_with($key, 'USER_');
+
+            $holderName     = $isUser ? (optional($first->assignee)->name ?? 'User Tidak Dikenal') : ('Gudang: ' . (optional($first->warehouse)->name ?? 'Belum Diset'));
+            $holderCompany  =$isUser ? (optional(optional($first->assignee)->company)->code ?? optional(optional($first->assignee)->company)->name ?? '-') : '-';
+            $holderPosition =$isUser ? (optional($first->assignee)->position ?? optional(optional($first->assignee)->department)->name ?? '-') : 'Stok Tersedia di Gudang';
+
+            $totalRows = 0;
+            $assetRows =$userAssets->map(function ($ast) use (&$totalRows) {
+                $upgrades  =$ast->upgrades;
+                $rowSpan   = max(1,$upgrades->count());
+                $totalRows +=$rowSpan;
+
+                return (object) [
+                    'asset'    => $ast,
+                    'upgrades' => $upgrades,
+                    'rowspan'  => $rowSpan,
+                ];
+            })->values();
+
+            return (object) [
+                'key'             => $key,
+                'is_user'         => $isUser,
+                'holder_name'     => $holderName,
+                'holder_company'  => $holderCompany,
+                'holder_position' => $holderPosition,
+                'total_rows'      => $totalRows,
+                'assets'          => $assetRows,
+            ];
+        })->sortBy('holder_name')->values();
+
+        $companies = \App\Models\Company::orderBy('name')->get();
+
+        return view('fixed_assets.employee_matrix', compact(
+            'groupedHolders', 'companies', 'search', 'companyId', 'statusFilter'
+        ));
+    }
+
+
+
+
+    /**
+     * Halaman Executive Dashboard & Analisa Aset Perusahaan (Grafik & Actionable Insights)
+     */
+    public function analytics(Request $request)
+    {
+        $companyId   = $request->input('company_id');
+        $warehouseId = $request->input('warehouse_id');
+
+        $baseQuery = FixedAsset::with([
+                'item',
+                'company',
+                'status',
+                'assignee.department',
+                'department',
+                'warehouse',
+                'assetCategory',
+                'currency',
+                'upgrades' => function ($q) {
+                    $q->with('currency')
+                      ->orderBy('upgrade_date', 'asc')
+                      ->orderBy('id', 'asc');
+                }
+            ])
+            ->where(function ($q) {
+                $q->whereNull('notes')->orWhere('notes', 'not like', '%[DIBATALKAN%');
+            })
+            ->whereHas('status', function ($q) {
+                $q->whereNotIn('slug', ['void', 'batal', 'canceled', 'cancelled']);
+            });
+
+        if ($companyId) {
+            $baseQuery->where('company_id', $companyId);
+        }
+        if ($warehouseId) {
+            $baseQuery->where('warehouse_id', $warehouseId);
+        }
+
+        $allAssets = $baseQuery->get();
+
+        // Pemisahan Aset Aktif (tidak disposed) vs Disposed
+        $activeAssets   = $allAssets->filter(fn($a) => optional($a->status)->slug !== 'disposed');
+        $disposedAssets = $allAssets->filter(fn($a) => optional($a->status)->slug === 'disposed');
+
+        // 1. KPI VALUASI MULTI-MATA UANG (Terpisah per Currency)
+        $valuationByCurrency = [];
+        foreach ($activeAssets as $ast) {
+            $currCode = strtoupper(trim(optional($ast->currency)->code ?? 'IDR'));
+            if (!isset($valuationByCurrency[$currCode])) {
+                $valuationByCurrency[$currCode] = [
+                    'currency'         => $currCode,
+                    'unit_count'       => 0,
+                    'initial_cost'     => 0.0,
+                    'cap_upgrade_cost' => 0.0,
+                    'exp_upgrade_cost' => 0.0,
+                    'historical_cost'  => 0.0,
+                    'accumulated_dep'  => 0.0,
+                    'net_book_value'   => 0.0,
+                    'monthly_dep'      => 0.0,
+                ];
+            }
+
+            $dep = $ast->calculateDepreciationSummary();
+            $valuationByCurrency[$currCode]['unit_count']       += 1;
+            $valuationByCurrency[$currCode]['initial_cost']     += $dep['initial_price'];
+            $valuationByCurrency[$currCode]['cap_upgrade_cost'] += $dep['capitalized_upgrade_total'];
+            $valuationByCurrency[$currCode]['exp_upgrade_cost'] += $dep['expense_upgrade_total'];
+            $valuationByCurrency[$currCode]['historical_cost']  += $dep['total_historical_cost'];
+            $valuationByCurrency[$currCode]['accumulated_dep']  += $dep['accumulated_depreciation'];
+            $valuationByCurrency[$currCode]['net_book_value']   += $dep['net_book_value'];
+            $valuationByCurrency[$currCode]['monthly_dep']      += $dep['monthly_depreciation'];
+        }
+        ksort($valuationByCurrency);
+
+        // 2. GRAFIK 1: KOMPOSISI STATUS ASET (Donut Chart)
+        $statusGroups = $allAssets->groupBy(fn($a) => optional($a->status)->name ?? 'Lainnya');
+        $chartStatus = [
+            'labels' => $statusGroups->keys()->values()->toArray(),
+            'counts' => $statusGroups->map->count()->values()->toArray(),
+        ];
+
+        // 3. GRAFIK 2: DISTRIBUSI USIA ASET / ASSET AGING BUCKET (Bar Chart)
+        $agingBuckets = [
+            '< 1 Tahun (Baru)'           => 0,
+            '1 - 3 Tahun (Produktif)'    => 0,
+            '3 - 4 Tahun (Menua)'        => 0,
+            '> 4 Tahun (Kandidat Ganti)' => 0,
+        ];
+        $now = now()->startOfDay();
+        foreach ($activeAssets as $ast) {
+            if (!$ast->acquisition_date) {
+                $agingBuckets['< 1 Tahun (Baru)']++;
+                continue;
+            }
+            $monthsAge = \Carbon\Carbon::parse($ast->acquisition_date)->diffInMonths($now);
+            if ($monthsAge < 12) {
+                $agingBuckets['< 1 Tahun (Baru)']++;
+            } elseif ($monthsAge <= 36) {
+                $agingBuckets['1 - 3 Tahun (Produktif)']++;
+            } elseif ($monthsAge <= 48) {
+                $agingBuckets['3 - 4 Tahun (Menua)']++;
+            } else {
+                $agingBuckets['> 4 Tahun (Kandidat Ganti)']++;
+            }
+        }
+        $chartAging = [
+            'labels' => array_keys($agingBuckets),
+            'counts' => array_values($agingBuckets),
+        ];
+
+        // 4. GRAFIK 3: SEBARAN JUMLAH UNIT ASET PER ENTITAS PT (Horizontal Bar)
+        $companyGroups = $activeAssets->groupBy(fn($a) => optional($a->company)->name ?? 'Belum Diset PT')
+            ->map->count()
+            ->sortDesc();
+        $chartCompany = [
+            'labels' => $companyGroups->keys()->values()->toArray(),
+            'counts' => $companyGroups->values()->toArray(),
+        ];
+
+        // 5. GRAFIK 4: TOP 8 DEPARTEMEN / DIVISI PENGGUNA ASET
+        $deptGroups = $activeAssets->groupBy(function ($a) {
+                return optional($a->department)->name
+                    ?? optional(optional($a->assignee)->department)->name
+                    ?? ($a->assigned_to ? 'Departemen Belum Diset' : 'Stok Gudang (Idle)');
+            })
+            ->map->count()
+            ->sortDesc()
+            ->take(8);
+        $chartDepartment = [
+            'labels' => $deptGroups->keys()->values()->toArray(),
+            'counts' => $deptGroups->values()->toArray(),
+        ];
+
+        // 6. GRAFIK 5: ANALISA UPGRADE & RELIABILITAS PART (CapEx vs OpEx & Status Part)
+        $allUpgradesFlat = $allAssets->flatMap->upgrades;
+        $upgradeStats = [
+            'active_capex'      => $allUpgradesFlat->whereNotIn('status', ['REMOVED_GOOD', 'REMOVED_DEFECTIVE'])->where('is_capitalized', true)->count(),
+            'active_opex'       => $allUpgradesFlat->whereNotIn('status', ['REMOVED_GOOD', 'REMOVED_DEFECTIVE'])->where('is_capitalized', false)->count(),
+            'removed_good'      => $allUpgradesFlat->where('status', 'REMOVED_GOOD')->count(),
+            'removed_defective' => $allUpgradesFlat->where('status', 'REMOVED_DEFECTIVE')->count(),
+        ];
+
+        // 7. GRAFIK 6: TOP 7 VARIAN / KATEGORI PERANGKAT TERBANYAK
+        $variantGroups = $activeAssets->groupBy(fn($a) => $a->item_alias_name ?: (optional($a->item)->name ?? 'Lainnya'))
+            ->map->count()
+            ->sortDesc()
+            ->take(7);
+        $chartVariants = [
+            'labels' => $variantGroups->keys()->values()->toArray(),
+            'counts' => $variantGroups->values()->toArray(),
+        ];
+
+        // 8. GRAFIK 7: PROYEKSI BEBAN PENYUSUTAN 6 BULAN KE DEPAN (Per Mata Uang)
+        $forecastMonths = [];
+        for ($i = 0; $i < 6; $i++) {
+            $targetDate = now()->addMonths($i)->startOfMonth();
+            $forecastMonths[] = [
+                'key'   => $targetDate->format('Y-m'),
+                'label' => $targetDate->translatedFormat('M Y'),
+                'date'  => $targetDate,
+            ];
+        }
+        $forecastSeriesByCurr = [];
+        foreach ($forecastMonths as $fm) {
+            foreach ($activeAssets as $ast) {
+                $currCode = strtoupper(trim(optional($ast->currency)->code ?? 'IDR'));
+                if (!isset($forecastSeriesByCurr[$currCode])) {
+                    $forecastSeriesByCurr[$currCode] = array_fill(0, 6, 0.0);
+                }
+            }
+        }
+        foreach ($forecastMonths as $idx => $fm) {
+            foreach ($activeAssets as $ast) {
+                $currCode = strtoupper(trim(optional($ast->currency)->code ?? 'IDR'));
+                $sumAtMonth = $ast->calculateDepreciationSummary($fm['date']);
+                $forecastSeriesByCurr[$currCode][$idx] += $sumAtMonth['monthly_depreciation'];
+            }
+        }
+        $chartForecast = [
+            'labels' => array_column($forecastMonths, 'label'),
+            'series' => $forecastSeriesByCurr,
+        ];
+
+        // =====================================================================
+        // ACTIONABLE INSIGHTS (4 TAB DAFTAR PERINGATAN DINI)
+        // =====================================================================
+        $refreshCandidates = collect(); // Sisa umur <= 6 bulan atau Nilai Buku 0 tapi masih dipakai
+        $highUpgradeRatio  = collect(); // Biaya upgrade >= 40% dari harga beli awal
+        $idleAssets        = collect(); // Status available di gudang > 30 hari
+        $incompleteAudit   = collect(); // Belum ada No. FA atau S/N
+
+        foreach ($activeAssets as $ast) {
+            $dep      = $ast->calculateDepreciationSummary();
+            $currCode = strtoupper(trim(optional($ast->currency)->code ?? 'IDR'));
+
+            // A. Kandidat Peremajaan (Sisa umur <= 6 bulan)
+            if ($dep['remaining_months'] <= 6) {
+                $refreshCandidates->push((object)[
+                    'asset'            => $ast,
+                    'currency'         => $currCode,
+                    'remaining_months' => $dep['remaining_months'],
+                    'nbv'              => $dep['net_book_value'],
+                    'historical_cost'  => $dep['total_historical_cost'],
+                ]);
+            }
+
+            // B. Rasio Biaya Upgrade Tinggi (>= 40% dari harga awal)
+            $activeUpgrades = $ast->upgrades->whereNotIn('status', ['REMOVED_GOOD', 'REMOVED_DEFECTIVE']);
+            $totUpgCost     = (float) $activeUpgrades->sum('cost');
+            $initPrice      = (float) ($ast->purchase_price ?? 0);
+            if ($totUpgCost > 0 && ($initPrice <= 0 || ($totUpgCost / $initPrice) >= 0.40)) {
+                $ratioPct = $initPrice > 0 ? round(($totUpgCost / $initPrice) * 100, 1) : 100;
+                $highUpgradeRatio->push((object)[
+                    'asset'         => $ast,
+                    'currency'      => $currCode,
+                    'initial_price' => $initPrice,
+                    'upgrade_cost'  => $totUpgCost,
+                    'ratio_pct'     => $ratioPct,
+                    'parts_count'   => $activeUpgrades->count(),
+                ]);
+            }
+
+            // C. Aset Idle di Gudang > 30 hari
+            if (optional($ast->status)->slug === 'available' && empty($ast->assigned_to)) {
+                $refDate  = $ast->acquisition_date ? \Carbon\Carbon::parse($ast->acquisition_date) : \Carbon\Carbon::parse($ast->created_at);
+                $idleDays = (int) $refDate->diffInDays($now);
+                if ($idleDays >= 30) {
+                    $idleAssets->push((object)[
+                        'asset'     => $ast,
+                        'currency'  => $currCode,
+                        'idle_days' => $idleDays,
+                        'nbv'       => $dep['net_book_value'],
+                    ]);
+                }
+            }
+
+            // D. Kelengkapan Audit (Tanpa No. FA atau Tanpa S/N)
+            $missingFields = [];
+            if (empty(trim((string) $ast->accounting_asset_number))) $missingFields[] = 'No. Akuntansi (FA)';
+            if (empty(trim((string) $ast->serial_number)))           $missingFields[] = 'Serial Number (S/N)';
+            if (empty($ast->asset_category_id))                      $missingFields[] = 'Kategori Penyusutan';
+
+            if (!empty($missingFields)) {
+                $incompleteAudit->push((object)[
+                    'asset'          => $ast,
+                    'missing_fields' => $missingFields,
+                ]);
+            }
+        }
+
+        $refreshCandidates = $refreshCandidates->sortBy('remaining_months')->values();
+        $highUpgradeRatio  = $highUpgradeRatio->sortByDesc('ratio_pct')->values();
+        $idleAssets        = $idleAssets->sortByDesc('idle_days')->values();
+
+        $companies  = \App\Models\Company::orderBy('name')->get();
+        $warehouses = \App\Models\Warehouse::orderBy('name')->get();
+
+        return view('fixed_assets.analytics', compact(
+            'allAssets',
+            'activeAssets',
+            'disposedAssets',
+            'valuationByCurrency',
+            'chartStatus',
+            'chartAging',
+            'chartCompany',
+            'chartDepartment',
+            'upgradeStats',
+            'chartVariants',
+            'chartForecast',
+            'refreshCandidates',
+            'highUpgradeRatio',
+            'idleAssets',
+            'incompleteAudit',
+            'companies',
+            'warehouses',
+            'companyId',
+            'warehouseId'
+        ));
+    }
+
 
 
 

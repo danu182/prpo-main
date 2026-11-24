@@ -45,7 +45,7 @@ class PurchaseOrderController extends Controller
                             $q->whereIn('status_id', $validStatusIds);
                         })
                         ->whereRaw('qty > IFNULL(ordered_qty, 0)')
-                        ->with(['item', 'purchaseRequest'])
+                        ->with(['item.aliases', 'purchaseRequest'])
                         ->get();
 
         $vendors = \App\Models\Vendor::all();
@@ -81,21 +81,20 @@ class PurchaseOrderController extends Controller
             $shippingAddress = $request->shipping_address ?: (\App\Models\Company::find($request->bill_to_company_id)->address ?? '-');
 
             $po = PurchaseOrder::create([
-                'po_number'          => $poNumber,
-                'purchase_request_id'=> $request->pr_id,
-                'vendor_id'          => $request->vendor_id,
-                'vendor_sub_name'       => $request->vendor_sub_name, // 🔥 TANGKAP INPUTAN INI 🔥
-                'bill_to_company_id' => $request->bill_to_company_id,
-                'status_id'          => $statusDraft->id ?? null,
-                'po_date'            => $request->po_date,
-                'delivery_date'      => $request->delivery_date,
-                'due_date'           => $request->due_date,
-                'payment_terms'      => $paymentTermName,
-                'notes'              => $request->notes,
-                'currency'           => $request->currency,
-                'created_by'         => auth()->id(),
-                'shipping_address'   => $shippingAddress,
-                // 🔥 TAMBAHKAN BARIS INI 🔥
+                'po_number'           => $poNumber,
+                'purchase_request_id' => $request->pr_id,
+                'vendor_id'           => $request->vendor_id,
+                'vendor_sub_name'     => $request->vendor_sub_name,
+                'bill_to_company_id'  => $request->bill_to_company_id,
+                'status_id'           => $statusDraft->id ?? null,
+                'po_date'             => $request->po_date,
+                'delivery_date'       => $request->delivery_date,
+                'due_date'            => $request->due_date,
+                'payment_terms'       => $paymentTermName,
+                'notes'               => $request->notes,
+                'currency'            => $request->currency,
+                'created_by'          => auth()->id(),
+                'shipping_address'    => $shippingAddress,
                 'custom_workflow_id'  => $request->custom_workflow_id,
             ]);
 
@@ -142,7 +141,7 @@ class PurchaseOrderController extends Controller
                     'uom_id'                   => $itemData['uom_id'] ?? null,
                     'uom'                      => $itemData['uom'] ?? ($masterItem->unit ?? 'Unit'),
                     'description'              => $itemData['notes'] ?? ($masterItem->name ?? '-'),
-                    'remark'            => $newItemData['remark'] ?? null, // 🔥 TAMBAHKAN INI
+                    'remark'                   => $itemData['remark'] ?? null,
                     'discount_amount'          => $discAmt,
                     'tax_amount'               => $taxAmt,
                     'tax_id'                   => $taxId,
@@ -150,6 +149,11 @@ class PurchaseOrderController extends Controller
                     'discount_type'            => $discType,
                     'discount_value'           => $discVal,
                 ]);
+
+                // Simpan Nama Alternatif ke Kamus ItemAlias
+                if (!empty($itemData['item_name_override'])) {
+                    \App\Models\ItemAlias::recordAlias($itemData['item_id'], $itemData['item_name_override'], 'PO');
+                }
 
                 $grandSubtotal += $dpp;
                 $grandTax += $taxAmt;
@@ -189,7 +193,6 @@ class PurchaseOrderController extends Controller
 
             DB::commit();
 
-            // 🔥 SYNC GOOGLE SHEET 🔥
             \App\Jobs\SyncPoToGoogleSheet::dispatch($po->refresh());
 
             return redirect()->route('po.show', $po->id)->with('success', 'Draft Purchase Order berhasil dibuat!');
@@ -203,6 +206,7 @@ class PurchaseOrderController extends Controller
     // =========================================================================
     // 🔥 PROSES TERBITKAN PO DARI PR (STORE) 🔥
     // =========================================================================
+
     public function storeFromPr(\Illuminate\Http\Request $request, $slug, \App\Services\SystemSettingService $settingService)
     {
         $request->validate([
@@ -319,7 +323,7 @@ class PurchaseOrderController extends Controller
                         'po_number'             => $newPoNumber,
                         'purchase_request_id'   => $prRecord->id,
                         'vendor_id'             => $vendorId,
-                        'vendor_sub_name'       => $request->vendor_sub_name, // 🔥 TANGKAP INPUTAN INI 🔥
+                        'vendor_sub_name'       => $request->vendor_sub_name,
                         'bill_to_company_id'    => $request->billing_company_id,
                         'status_id'             => 1,
                         'po_date'               => $request->po_date ?? now(),
@@ -340,7 +344,7 @@ class PurchaseOrderController extends Controller
                         'grand_total'           => $poGrandTotal,
                         'invoice_number'        => $request->invoice_number,
                         'account_number'        => $request->account_number,
-                        'custom_workflow_id'  => $request->custom_workflow_id,
+                        'custom_workflow_id'    => $request->custom_workflow_id,
                     ]);
 
                     foreach ($appliedCharges as $charge) {
@@ -400,6 +404,11 @@ class PurchaseOrderController extends Controller
                             'subtotal'                 => $line['dpp'],
                         ]);
 
+                        // Simpan Nama Alternatif ke Kamus ItemAlias
+                        if (!empty($itemData['item_name_override'])) {
+                            \App\Models\ItemAlias::recordAlias($itemData['item_id'], $itemData['item_name_override'], 'PO');
+                        }
+
                         $files = $request->file("po_items.{$line['originalIndex']}.attachments");
                         if (!empty($files)) {
                             foreach (is_array($files) ? $files : [$files] as $file) {
@@ -422,7 +431,7 @@ class PurchaseOrderController extends Controller
                     if ($customWorkflowId) {
                         $workflow = \App\Models\ApprovalWorkflow::with('steps')->find($customWorkflowId);
                         if ($workflow && $workflow->steps->count() > 0) {
-                            $isFirstStep = true; // 🔥 KUNCI SEQUENTIAL APPROVAL 🔥
+                            $isFirstStep = true;
 
                             foreach ($workflow->steps->sortBy('step_order') as $step) {
                                 $targetDept = $step->target_department_id ?? $step->department_id ?? null;
@@ -435,7 +444,6 @@ class PurchaseOrderController extends Controller
                                     'target_department_id' => $targetDept,
                                     'user_id'              => $specificUserId,
                                     'step_order'           => $step->step_order,
-                                    // 🔥 LAPIS 1 = PENDING, LAPIS 2 DST = WAITING 🔥
                                     'status'               => $isFirstStep ? 'PENDING' : 'WAITING',
                                     'created_at'           => now(),
                                     'updated_at'           => now()
@@ -448,7 +456,6 @@ class PurchaseOrderController extends Controller
                     } else {
                         $needsApproval = \App\Services\ApprovalService::generateWorkflow($po);
                         if ($needsApproval) {
-                            // Kunci Berurutan Untuk Workflow Standar
                             $allAppr = \App\Models\DocumentApproval::where('document_id', $po->id)
                                 ->whereIn('document_type', [get_class($po), 'PO', 'PurchaseOrder'])
                                 ->orderBy('step_order', 'asc')->get();
@@ -471,7 +478,6 @@ class PurchaseOrderController extends Controller
                         $this->logHistory($po->id, 'APPROVED', 'PO Auto-Approved karena tidak ada aturan aktif atau nominal di bawah batas.');
                     }
 
-                    // 🔥 SYNC GOOGLE SHEET 🔥
                     \App\Jobs\SyncPoToGoogleSheet::dispatch($po->refresh());
                 }
 
@@ -492,18 +498,93 @@ class PurchaseOrderController extends Controller
 
 
     // =========================================================================
+    // 3. EDIT (FORM EDIT PO BERBASIS SLUG) - DENGAN REVERSE ENGINEER WORKFLOW
+    // =========================================================================
+    public function edit($slug)
+    {
+        $po = \App\Models\PurchaseOrder::with(['items.item.aliases', 'status', 'charges'])->where('po_number', $slug)->firstOrFail();
+
+        if (!in_array(strtolower(optional($po->status)->slug ?? ''), ['draft', 'pending_approval', 'pending', 'rejected', ''])) {
+            return back()->with('error', 'Gagal: PO ini sudah tidak dapat diedit karena statusnya ' . optional($po->status)->name);
+        }
+
+        $companies     = \App\Models\Company::orderBy('name')->get();
+        $vendors       = \App\Models\Vendor::orderBy('name')->get();
+        $paymentTerms  = \App\Models\PaymentTerm::orderBy('name')->get();
+        $currencies    = \App\Models\Currency::where('is_active', true)->orderBy('name')->get();
+        $taxes         = \App\Models\Tax::where('is_active', true)->orderBy('name')->get();
+        $chargeTypes   = \App\Models\ChargeType::where('is_active', true)->orderBy('name')->get();
+        $discountTypes = \App\Models\DiscountType::where('is_active', true)->orderBy('name')->get();
+        $uoms          = \App\Models\Uom::orderBy('name')->get();
+        $masterItems   = \App\Models\Item::with(['uom', 'itemUoms', 'aliases'])->orderBy('name')->get();
+
+        $charges        = $po->charges ?? collect([]);
+        $extraDiscounts = \Illuminate\Support\Facades\DB::table('purchase_order_discounts')->where('purchase_order_id', $po->id)->get();
+        $attachments    = \Illuminate\Support\Facades\DB::table('purchase_order_attachments')->where('purchase_order_id', $po->id)->get();
+
+        $customWorkflows = [];
+        $selectedWorkflowId = null;
+
+        if (class_exists('\App\Models\ApprovalWorkflow')) {
+            $customWorkflows = \App\Models\ApprovalWorkflow::with('steps')
+                ->where('is_active', true)
+                ->whereIn('document_type', ['PurchaseOrder', 'PO', 'App\Models\PurchaseOrder'])
+                ->get();
+
+            $currentApprovals = \App\Models\DocumentApproval::where('document_id', $po->id)
+                ->whereIn('document_type', [get_class($po), 'App\Models\PurchaseOrder', 'PO', 'PurchaseOrder'])
+                ->orderBy('step_order', 'asc')
+                ->get();
+
+            if ($currentApprovals->count() > 0) {
+                $poRoles = $currentApprovals->pluck('role_id')->toArray();
+                foreach ($customWorkflows as $cw) {
+                    if ($cw->steps && $cw->steps->count() === count($poRoles)) {
+                        $cwRoles = $cw->steps->sortBy('step_order')->pluck('role_id')->toArray();
+                        if ($poRoles === $cwRoles) {
+                            $selectedWorkflowId = $cw->id;
+                            break;
+                        }
+                    }
+                }
+            }
+
+            if (!$selectedWorkflowId) {
+                $historyLog = \App\Models\History::where('record_id', $po->id)
+                    ->whereIn('record_type', [get_class($po), 'App\Models\PurchaseOrder', 'PO', 'PurchaseOrder'])
+                    ->where('action', 'SYSTEM')
+                    ->where('note', 'like', '%Menggunakan Rute Persetujuan Khusus%')
+                    ->orderBy('id', 'desc')->first();
+
+                if ($historyLog) {
+                    $workflowName = trim(str_replace(['Menggunakan Rute Persetujuan Khusus (Update):', 'Menggunakan Rute Persetujuan Khusus:'], '', $historyLog->note));
+                    $matchedWorkflow = $customWorkflows->where('name', $workflowName)->first();
+                    if ($matchedWorkflow) {
+                        $selectedWorkflowId = $matchedWorkflow->id;
+                    }
+                }
+            }
+        }
+
+        return view('po.edit', compact(
+            'po', 'companies', 'vendors', 'paymentTerms', 'currencies',
+            'masterItems', 'uoms', 'taxes', 'chargeTypes', 'discountTypes',
+            'customWorkflows', 'selectedWorkflowId',
+            'charges', 'extraDiscounts', 'attachments'
+        ));
+    }
+
+    // =========================================================================
     // 4. UPDATE PO (EDIT DATA PO) - ANTI BADAI, FULL FLEXIBILITY & SEQUENTIAL APPROVAL
     // =========================================================================
     public function update(Request $request, $slug, \App\Services\SystemSettingService $settingService)
     {
-        // 🔥 PERBAIKAN: Hapus validasi 'po_items' wajib array, karena bisa jadi isinya cuma new_items
         $request->validate([
             'billing_company_id' => 'required|exists:companies,id',
             'payment_term_id'    => 'required|exists:payment_terms,id',
             'delivery_date'      => 'required|date',
         ]);
 
-        // Validasi Custom: Harus ada setidaknya 1 item (lama atau baru)
         if (!$request->has('po_items') && !$request->has('new_items')) {
             return back()->withInput()->with('error', 'Gagal: PO harus memiliki setidaknya 1 item barang!');
         }
@@ -527,10 +608,9 @@ class PurchaseOrderController extends Controller
                     foreach ($request->po_items as $itemId => $itemData) {
                         if (!$poItem = \App\Models\PurchaseOrderItem::find($itemId)) continue;
 
-                        // 🔥 LOGIKA HAPUS ITEM (DIRECT PO) 🔥
                         if (isset($itemData['is_deleted']) && $itemData['is_deleted'] == "1") {
                             $poItem->delete();
-                            continue; // Langsung lompati ke item berikutnya
+                            continue;
                         }
 
                         $newQty = (float) ($itemData['qty'] ?? 0);
@@ -594,6 +674,11 @@ class PurchaseOrderController extends Controller
                             'tax_value'       => $taxVal,
                             'tax_amount'      => $taxAmt,
                         ]);
+
+                        // Simpan Nama Alternatif ke Kamus ItemAlias
+                        if (!empty($itemData['item_name_override'])) {
+                            \App\Models\ItemAlias::recordAlias($poItem->item_id, $itemData['item_name_override'], 'PO');
+                        }
                     }
                 }
 
@@ -602,7 +687,6 @@ class PurchaseOrderController extends Controller
                 // ================================================================
                 if ($request->has('new_items')) {
                     foreach ($request->new_items as $newItemData) {
-                        // Tolak jika item_id kosong
                         if (empty($newItemData['item_id'])) continue;
 
                         $newQty = (float) ($newItemData['qty'] ?? 0);
@@ -627,7 +711,6 @@ class PurchaseOrderController extends Controller
                         preg_match('/\d+/', (string)$rawUomId, $idMatches);
                         $uomIdSafe = !empty($idMatches[0]) ? (int)$idMatches[0] : null;
 
-                        // Simpan Item Baru ke Database
                         $createdPoItem = \App\Models\PurchaseOrderItem::create([
                             'purchase_order_id' => $po->id,
                             'item_id'           => $newItemData['item_id'],
@@ -648,9 +731,13 @@ class PurchaseOrderController extends Controller
                             'tax_value'         => $taxVal,
                             'tax_amount'        => $taxAmt,
                         ]);
+
+                        // Simpan Nama Alternatif ke Kamus ItemAlias
+                        if (!empty($newItemData['item_name_override'])) {
+                            \App\Models\ItemAlias::recordAlias($newItemData['item_id'], $newItemData['item_name_override'], 'PO');
+                        }
                     }
                 }
-                // ================================================================
 
                 // 3. LAMPIRAN HEADER PO
                 if ($request->hasFile('header_attachments')) {
@@ -754,7 +841,7 @@ class PurchaseOrderController extends Controller
                 if ($customWorkflowId) {
                     $workflow = \App\Models\ApprovalWorkflow::with('steps')->find($customWorkflowId);
                     if ($workflow && $workflow->steps->count() > 0) {
-                        $isFirstStep = true; // KUNCI SEQUENTIAL APPROVAL
+                        $isFirstStep = true;
 
                         foreach ($workflow->steps->sortBy('step_order') as $step) {
                             $targetDept = $step->target_department_id ?? $step->department_id ?? null;
@@ -767,7 +854,6 @@ class PurchaseOrderController extends Controller
                                 'target_department_id' => $targetDept,
                                 'user_id'              => $specificUserId,
                                 'step_order'           => $step->step_order,
-                                // LAPIS 1 = PENDING, LAPIS 2 DST = WAITING
                                 'status'               => $isFirstStep ? 'PENDING' : 'WAITING',
                                 'created_at'           => now(),
                                 'updated_at'           => now()
@@ -780,7 +866,6 @@ class PurchaseOrderController extends Controller
                 } else {
                     $needsApproval = \App\Services\ApprovalService::generateWorkflow($po);
                     if ($needsApproval) {
-                        // Kunci Berurutan Untuk Workflow Standar
                         $allAppr = \App\Models\DocumentApproval::where('document_id', $po->id)
                             ->whereIn('document_type', [get_class($po), 'PO', 'PurchaseOrder'])
                             ->orderBy('step_order', 'asc')->get();
@@ -805,94 +890,13 @@ class PurchaseOrderController extends Controller
 
                 $this->logHistory($po->id, 'PO Direvisi', 'Perubahan telah disimpan.');
 
-                // 🔥 SYNC GOOGLE SHEET 🔥
                 \App\Jobs\SyncPoToGoogleSheet::dispatch($po->refresh());
-
             });
 
             return redirect()->route('po.show', $slug)->with('success', 'Perubahan Purchase Order berhasil disimpan!');
         } catch (\Exception $e) {
             return back()->withInput()->with('error', 'Gagal menyimpan perubahan: ' . $e->getMessage());
         }
-    }
-
-    // =========================================================================
-    // 3. EDIT (FORM EDIT PO BERBASIS SLUG) - DENGAN REVERSE ENGINEER WORKFLOW
-    // =========================================================================
-    public function edit($slug)
-    {
-        $po = \App\Models\PurchaseOrder::with(['items', 'status', 'charges'])->where('po_number', $slug)->firstOrFail();
-
-        if (!in_array(strtolower(optional($po->status)->slug ?? ''), ['draft', 'pending_approval', 'pending', 'rejected', ''])) {
-            return back()->with('error', 'Gagal: PO ini sudah tidak dapat diedit karena statusnya ' . optional($po->status)->name);
-        }
-
-        $companies     = \App\Models\Company::orderBy('name')->get();
-        $vendors       = \App\Models\Vendor::orderBy('name')->get();
-        $paymentTerms  = \App\Models\PaymentTerm::orderBy('name')->get();
-        $currencies    = \App\Models\Currency::where('is_active', true)->orderBy('name')->get();
-        $taxes         = \App\Models\Tax::where('is_active', true)->orderBy('name')->get();
-        $chargeTypes   = \App\Models\ChargeType::where('is_active', true)->orderBy('name')->get();
-        $discountTypes = \App\Models\DiscountType::where('is_active', true)->orderBy('name')->get();
-        $uoms          = \App\Models\Uom::orderBy('name')->get();
-        $masterItems   = \App\Models\Item::with(['uom', 'itemUoms'])->orderBy('name')->get();
-
-        $charges        = $po->charges ?? collect([]);
-        $extraDiscounts = \Illuminate\Support\Facades\DB::table('purchase_order_discounts')->where('purchase_order_id', $po->id)->get();
-        $attachments    = \Illuminate\Support\Facades\DB::table('purchase_order_attachments')->where('purchase_order_id', $po->id)->get();
-
-        $customWorkflows = [];
-        $selectedWorkflowId = null;
-
-        if (class_exists('\App\Models\ApprovalWorkflow')) {
-            $customWorkflows = \App\Models\ApprovalWorkflow::with('steps')
-                ->where('is_active', true)
-                ->whereIn('document_type', ['PurchaseOrder', 'PO', 'App\Models\PurchaseOrder'])
-                ->get();
-
-            // 🔥 STRATEGI 1: BACA DARI TABEL DOCUMENT_APPROVALS (REVERSE ENGINEER) 🔥
-            $currentApprovals = \App\Models\DocumentApproval::where('document_id', $po->id)
-                ->whereIn('document_type', [get_class($po), 'App\Models\PurchaseOrder', 'PO', 'PurchaseOrder'])
-                ->orderBy('step_order', 'asc')
-                ->get();
-
-            if ($currentApprovals->count() > 0) {
-                $poRoles = $currentApprovals->pluck('role_id')->toArray();
-                foreach ($customWorkflows as $cw) {
-                    if ($cw->steps && $cw->steps->count() === count($poRoles)) {
-                        $cwRoles = $cw->steps->sortBy('step_order')->pluck('role_id')->toArray();
-                        if ($poRoles === $cwRoles) {
-                            $selectedWorkflowId = $cw->id;
-                            break;
-                        }
-                    }
-                }
-            }
-
-            // 🔥 STRATEGI 2: BACA DARI HISTORY LOG JIKA STRATEGI 1 GAGAL 🔥
-            if (!$selectedWorkflowId) {
-                $historyLog = \App\Models\History::where('record_id', $po->id)
-                    ->whereIn('record_type', [get_class($po), 'App\Models\PurchaseOrder', 'PO', 'PurchaseOrder'])
-                    ->where('action', 'SYSTEM')
-                    ->where('note', 'like', '%Menggunakan Rute Persetujuan Khusus%')
-                    ->orderBy('id', 'desc')->first();
-
-                if ($historyLog) {
-                    $workflowName = trim(str_replace(['Menggunakan Rute Persetujuan Khusus (Update):', 'Menggunakan Rute Persetujuan Khusus:'], '', $historyLog->note));
-                    $matchedWorkflow = $customWorkflows->where('name', $workflowName)->first();
-                    if ($matchedWorkflow) {
-                        $selectedWorkflowId = $matchedWorkflow->id;
-                    }
-                }
-            }
-        }
-
-        return view('po.edit', compact(
-            'po', 'companies', 'vendors', 'paymentTerms', 'currencies',
-            'masterItems', 'uoms', 'taxes', 'chargeTypes', 'discountTypes',
-            'customWorkflows', 'selectedWorkflowId',
-            'charges', 'extraDiscounts', 'attachments'
-        ));
     }
 
 
@@ -1030,7 +1034,7 @@ class PurchaseOrderController extends Controller
     // =========================================================================
     public function processPr($slug)
     {
-        $pr = \App\Models\PurchaseRequest::with(['items.item.uom', 'items.item.itemUoms', 'items.vendorQuotes.vendor', 'user', 'company'])->where('pr_number', $slug)->firstOrFail();
+        $pr = \App\Models\PurchaseRequest::with(['items.item.uom', 'items.item.itemUoms', 'items.item.aliases', 'items.vendorQuotes.vendor', 'user', 'company'])->where('pr_number', $slug)->firstOrFail();
         $prStatusSlug = strtolower(optional($pr->status)->slug ?? '');
 
         if (!in_array($prStatusSlug, ['approved', 'partial_po'])) {
@@ -1647,20 +1651,17 @@ class PurchaseOrderController extends Controller
                 $globalDiscType = strtoupper($request->global_discount_type ?? 'FIXED');
                 $globalDiscVal = (float) ($request->global_discount_value ?? 0);
 
-                // 🔥 PERBAIKAN: Hitung diskon global secara langsung tanpa looping array global_discounts 🔥
                 $poGlobalDiscount = ($globalDiscType === 'PERCENT') ? (($poSubtotalGross - $poTotalItemDiscount) * ($globalDiscVal / 100)) : $globalDiscVal;
                 $dppAfterGlobalDisc = ($poSubtotalGross - $poTotalItemDiscount) - $poGlobalDiscount;
 
                 $globalTaxType = strtoupper($request->global_tax_type ?? 'FIXED');
                 $globalTaxVal = (float) ($request->global_tax_value ?? 0);
 
-                // 🔥 PERBAIKAN: Hitung pajak global secara langsung 🔥
                 $poGlobalTax = ($globalTaxType === 'PERCENT') ? ($dppAfterGlobalDisc * ($globalTaxVal / 100)) : $globalTaxVal;
 
                 $poChargeTotal = 0; $appliedCharges = [];
                 if ($request->has('charges')) {
                     foreach ($request->charges as $charge) {
-                        // 🔥 PERBAIKAN: Hapus pengecekan vendor_id karena ini Direct PO (semua untuk 1 vendor) 🔥
                         if (!empty($charge['amount'])) {
                             $poChargeTotal += (float)$charge['amount'];
                             $appliedCharges[] = $charge;
@@ -1671,7 +1672,6 @@ class PurchaseOrderController extends Controller
                 $poExtraDiscountTotal = 0; $appliedExtraDiscs = [];
                 if ($request->has('extra_discounts')) {
                     foreach ($request->extra_discounts as $disc) {
-                        // 🔥 PERBAIKAN: Hapus pengecekan vendor_id 🔥
                         if (!empty($disc['amount'])) {
                             $poExtraDiscountTotal += (float)$disc['amount'];
                             $appliedExtraDiscs[] = $disc;
@@ -1767,6 +1767,11 @@ class PurchaseOrderController extends Controller
                         'subtotal'                 => $line['dpp'],
                     ]);
 
+                    // Simpan Nama Alternatif ke Kamus ItemAlias
+                    if (!empty($itemData['item_name_override'])) {
+                        \App\Models\ItemAlias::recordAlias($itemData['item_id'], $itemData['item_name_override'], 'PO');
+                    }
+
                     $files = $request->file("po_items.{$line['originalIndex']}.attachments");
                     if (!empty($files)) {
                         foreach (is_array($files) ? $files : [$files] as $file) {
@@ -1813,7 +1818,6 @@ class PurchaseOrderController extends Controller
                         $needsApproval = true;
                         $this->logHistory($po->id, 'SYSTEM', "Menggunakan Rute Persetujuan Khusus: " . $workflow->name);
                     }
-
                 } else {
                     $needsApproval = \App\Services\ApprovalService::generateWorkflow($po);
                     if ($needsApproval) {
@@ -1840,11 +1844,9 @@ class PurchaseOrderController extends Controller
                 }
 
                 \App\Jobs\SyncPoToGoogleSheet::dispatch($po->refresh());
-
             });
 
             return redirect()->route('po.index')->with('success', 'Direct PO berhasil diterbitkan!');
-
         } catch (\Exception $e) {
             return back()->withInput()->with('error', 'Gagal memproses pembuatan PO: ' . $e->getMessage());
         }

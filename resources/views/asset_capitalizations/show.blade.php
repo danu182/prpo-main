@@ -16,11 +16,16 @@
         <a href="{{ route('fixed-assets.index') }}" class="border shadow-sm btn btn-light rounded-pill fw-bold text-secondary">
             <i class="bi bi-arrow-left me-1"></i> Kembali ke Daftar
         </a>
+        <a href="{{ route('fixed-assets.edit', $asset->id) }}" class="shadow-sm btn btn-outline-primary rounded-pill fw-bold">
+            <i class="bi bi-pencil-square me-1"></i> Edit Data & Upgrade Aset
+        </a>
     </div>
 
     @php
-        // Deteksi apakah aset ini sudah dibatalkan dari catatan sistemnya
-        $isVoid = str_contains($asset->notes, '[DIBATALKAN');
+        $isVoid = str_contains((string) $asset->notes, '[DIBATALKAN');
+        $upgrades = $asset->upgrades ?? collect();
+        $totalUpgradeCost = (float) $upgrades->sum('cost');
+        $totalInvestasiAset = (float) $asset->purchase_price + $totalUpgradeCost;
     @endphp
 
     @if(session('success'))
@@ -50,18 +55,15 @@
 
             @php
                 $statusAvailableId = \App\Models\Status::where('type', 'AST')->where('slug', 'available')->value('id') ?? 31;
-                // Cek apakah ada riwayat penyerahan
-                $hasBeenUsed = $asset->histories->whereIn('status', ['Aset Diserahkan', 'Aset Dikembalikan'])->isNotEmpty();
+                $hasBeenUsed = $asset->histories->whereIn('status', ['Aset Diserahkan', 'Aset Dikembalikan', 'HANDOVER', 'RETURNED'])->isNotEmpty();
             @endphp
 
             @if($asset->status_id == $statusAvailableId && !$isVoid)
                 @if($hasBeenUsed)
-                    {{-- Tampilkan tombol tapi DISABLE jika sudah pernah dipakai --}}
                     <button type="button" class="shadow-sm btn btn-secondary rounded-pill fw-bold" style="cursor: not-allowed;" title="Tidak bisa di-void karena sudah ada riwayat transaksi">
                         <i class="bi bi-shield-lock me-1"></i> Void Terkunci (Ada Riwayat)
                     </button>
                 @else
-                    {{-- Tombol VOID normal jika aset masih perawan --}}
                     <form id="form-void-asset" action="{{ route('asset-capitalizations.void', $asset->id) }}" method="POST" class="m-0">
                         @csrf
                         <button type="button" class="border-2 border-white shadow-sm btn btn-danger rounded-pill fw-bold" onclick="confirmVoid()">
@@ -84,10 +86,17 @@
                         <div class="card-body">
                             <div class="row">
                                 <div class="col-md-6">
-                                    <div class="detail-label">Nama Spesifik Aset</div>
+                                    <div class="detail-label">Nama Aset Akuntansi</div>
                                     <div class="detail-value fw-bold {{ $isVoid ? 'text-danger text-strike' : 'text-primary' }} mb-1">{{ $asset->name }}</div>
-                                    
-                                    {{-- 🔥 MENAMPILKAN NAMA ASLI DARI PO 🔥 --}}
+
+                                    @if(!empty($asset->item_alias_name))
+                                        <div class="mb-1">
+                                            <span class="border badge bg-info-subtle text-info-emphasis border-info-subtle">
+                                                <i class="bi bi-tag-fill me-1"></i> Varian: {{ $asset->item_alias_name }}
+                                            </span>
+                                        </div>
+                                    @endif
+
                                     @if(!empty($poItemName))
                                         <div class="mb-3 text-info" style="font-size: 0.8rem; font-weight: 600;">
                                             <i class="bi bi-cart-check me-1"></i> Dari PO: <span class="text-dark">{{ $poItemName }}</span>
@@ -99,7 +108,7 @@
                                 <div class="col-md-6">
                                     <div class="detail-label">Master Item Code</div>
                                     <div class="detail-value">
-                                        <span class="badge bg-secondary me-1">{{ $asset->item->code ?? '-' }}</span> 
+                                        <span class="badge bg-secondary me-1">{{ $asset->item->code ?? '-' }}</span>
                                         <span class="small text-muted">{{ $asset->item->name ?? '-' }}</span>
                                     </div>
                                 </div>
@@ -126,14 +135,12 @@
                                     <div class="detail-value fw-bold text-dark">{{ $asset->accounting_asset_number ?: '-' }}</div>
                                 </div>
 
-                                {{-- 🔥 KOTAK PT TAMBAHKAN DI SINI 🔥 --}}
                                 <div class="mb-3 col-md-6">
                                     <div class="detail-label">Kepemilikan PT</div>
                                     <div class="detail-value fw-bold text-dark">
                                         <i class="bi bi-building-fill text-primary me-1"></i> {{ optional($asset->company)->name ?? 'Belum Diset' }}
                                     </div>
                                 </div>
-
                             </div>
                         </div>
                     </div>
@@ -147,8 +154,21 @@
                         </div>
                         <div class="card-body">
                             <div class="px-3 py-2 mb-3 border {{ $isVoid ? 'bg-danger-subtle text-danger-emphasis border-danger-subtle text-strike' : 'bg-success-subtle text-success-emphasis border-success-subtle' }} rounded-3">
-                                <div class="mb-1 small fw-bold text-uppercase">Harga Perolehan (PSAK 16)</div>
+                                <div class="mb-1 small fw-bold text-uppercase">Harga Perolehan Awal (PSAK 16)</div>
                                 <div class="fs-4 fw-bolder">Rp {{ number_format($asset->purchase_price, 2, ',', '.') }}</div>
+
+                                @if($totalUpgradeCost > 0)
+                                    <div class="pt-2 mt-2 border-top border-success-subtle small">
+                                        <div class="d-flex justify-content-between">
+                                            <span>Total Biaya Upgrade ({{ $upgrades->count() }} item):</span>
+                                            <span class="fw-bold text-warning-emphasis">+ Rp {{ number_format($totalUpgradeCost, 2, ',', '.') }}</span>
+                                        </div>
+                                        <div class="mt-1 d-flex justify-content-between fw-bolder text-dark">
+                                            <span>Total Nilai Perolehan + Upgrade:</span>
+                                            <span>Rp {{ number_format($totalInvestasiAset, 2, ',', '.') }}</span>
+                                        </div>
+                                    </div>
+                                @endif
                             </div>
 
                             <div class="row">
@@ -174,6 +194,62 @@
                     </div>
                 </div>
 
+                {{-- KOTAK RINCIAN KOMPONEN UPGRADE MULTI-BARIS --}}
+                <div class="col-12">
+                    <div class="border-0 shadow-sm card rounded-4">
+                        <div class="py-3 bg-white card-header border-bottom d-flex justify-content-between align-items-center">
+                            <h6 class="mb-0 fw-bold text-dark">
+                                <i class="bi bi-cpu-fill text-warning me-2"></i> Riwayat & Rincian Komponen Upgrade ({{ $upgrades->count() }} Komponen)
+                            </h6>
+                            <a href="{{ route('fixed-assets.edit', $asset->id) }}" class="px-3 btn btn-sm btn-outline-warning text-dark fw-bold rounded-pill">
+                                <i class="bi bi-plus-circle me-1"></i> Kelola Upgrade
+                            </a>
+                        </div>
+                        <div class="p-0 card-body">
+                            @if($upgrades->isNotEmpty())
+                                <div class="table-responsive">
+                                    <table class="table mb-0 align-middle table-hover table-sm">
+                                        <thead class="table-light small text-uppercase text-muted">
+                                            <tr>
+                                                <th class="py-2 ps-4" style="width: 6%;">No</th>
+                                                <th class="py-2" style="width: 16%;">Tanggal Upgrade</th>
+                                                <th class="py-2" style="width: 36%;">Komponen Upgrade</th>
+                                                <th class="py-2" style="width: 22%;">Pelaksana / Keterangan</th>
+                                                <th class="py-2 text-end pe-4" style="width: 20%;">Biaya Upgrade</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            @foreach($upgrades as $upg)
+                                                <tr>
+                                                    <td class="ps-4 text-muted small">{{ $loop->iteration }}</td>
+                                                    <td class="small">{{ $upg->upgrade_date ? $upg->upgrade_date->format('d M Y') : '-' }}</td>
+                                                    <td class="fw-bold text-dark">{{ $upg->component_name }}</td>
+                                                    <td class="small text-muted">{{ $upg->vendor_or_executor ?: ($upg->notes ?: '-') }}</td>
+                                                    <td class="text-end pe-4 fw-bold text-primary">
+                                                        {{ optional($upg->currency)->code ?? 'IDR' }} {{ number_format($upg->cost, 0, ',', '.') }}
+                                                    </td>
+                                                </tr>
+                                            @endforeach
+                                        </tbody>
+                                        <tfoot class="table-light fw-bold">
+                                            <tr>
+                                                <td colspan="4" class="py-2 text-end">Total Biaya Upgrade:</td>
+                                                <td class="py-2 text-end pe-4 text-success">
+                                                    Rp {{ number_format($totalUpgradeCost, 0, ',', '.') }}
+                                                </td>
+                                            </tr>
+                                        </tfoot>
+                                    </table>
+                                </div>
+                            @else
+                                <div class="p-4 text-center text-muted small fst-italic">
+                                    Belum ada riwayat upgrade komponen untuk unit aset ini.
+                                </div>
+                            @endif
+                        </div>
+                    </div>
+                </div>
+
                 {{-- KOTAK BAWAH --}}
                 <div class="col-12">
                     <div class="border-0 shadow-sm card rounded-4">
@@ -193,28 +269,24 @@
                                 </div>
                             </div>
 
-                            {{-- 🔥 GALERI FOTO & DOKUMEN ASET 🔥 --}}
+                            {{-- GALERI FOTO & DOKUMEN ASET --}}
                             @if(isset($asset->photos) && $asset->photos->isNotEmpty())
                             <hr class="my-4 text-muted">
                             <h6 class="mb-3 fw-bold text-dark"><i class="bi bi-images text-primary me-2"></i> Galeri Foto Fisik & Dokumen Aset</h6>
                             <div class="flex-wrap gap-3 p-3 border rounded d-flex bg-light">
                                 @foreach($asset->photos as $photo)
                                     @php
-                                        // Deteksi ekstensi file
                                         $extension = strtolower(pathinfo($photo->file_path, PATHINFO_EXTENSION));
                                         $isImage = in_array($extension, ['jpg', 'jpeg', 'png', 'gif']);
                                     @endphp
 
                                     @if($isImage)
-                                        {{-- JIKA GAMBAR: Tampilkan pakai tag IMG --}}
                                         <a href="{{ asset('storage/' . $photo->file_path) }}" target="_blank" title="Klik untuk memperbesar">
                                             <img src="{{ asset('storage/' . $photo->file_path) }}" class="border rounded shadow-sm img-thumbnail" style="width: 150px; height: 150px; object-fit: cover; transition: transform 0.2s;" onmouseover="this.style.transform='scale(1.05)'" onmouseout="this.style.transform='scale(1)'">
                                         </a>
                                     @else
-                                        {{-- JIKA DOKUMEN (PDF, Excel, dll): Tampilkan Kotak Ikon yang seragam ukurannya --}}
                                         <a href="{{ asset('storage/' . $photo->file_path) }}" target="_blank" title="Klik untuk membuka dokumen" class="text-decoration-none">
                                             <div class="bg-white border rounded shadow-sm img-thumbnail d-flex flex-column align-items-center justify-content-center" style="width: 150px; height: 150px; transition: transform 0.2s;" onmouseover="this.style.transform='scale(1.05)'" onmouseout="this.style.transform='scale(1)'">
-                                                
                                                 @if($extension == 'pdf')
                                                     <i class="bi bi-file-earmark-pdf-fill text-danger" style="font-size: 4rem;"></i>
                                                 @elseif(in_array($extension, ['doc', 'docx']))
@@ -224,7 +296,6 @@
                                                 @else
                                                     <i class="bi bi-file-earmark-zip-fill text-secondary" style="font-size: 4rem;"></i>
                                                 @endif
-                                                
                                                 <span class="px-2 mt-2 text-dark small text-truncate fw-bold" style="max-width: 140px;">Lampiran.{{ $extension }}</span>
                                             </div>
                                         </a>

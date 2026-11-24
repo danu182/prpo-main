@@ -228,6 +228,7 @@
 
     let globalSnData = {};
     let globalSpecData = {};
+    let globalMasterName = {};
 
     function goToStep(step) {
         $('.step-container').removeClass('step-active');
@@ -269,6 +270,7 @@
 
                 globalSnData = {};
                 globalSpecData = {};
+                globalMasterName = {};
 
                 let item = (res.items || []).find(it => it.item_id == targetItemId);
                 if (!item) {
@@ -278,6 +280,7 @@
 
                 globalSnData[item.item_id] = item.available_sns || [];
                 globalSpecData[item.item_id] = item.default_spec || '';
+                globalMasterName[item.item_id] = item.master_name || item.item_name;
 
                 let specificName = item.specific_name || item.item_name;
 
@@ -287,8 +290,9 @@
                 let headerHtml = `
                     <div class="mb-3 col-md-7 mb-md-0">
                         <div class="fw-bolder fs-4 text-dark text-uppercase">${specificName}</div>
-                        <div class="gap-2 mt-2 text-muted d-flex align-items-center">
+                        <div class="flex-wrap gap-2 mt-2 text-muted d-flex align-items-center">
                             <span class="border badge bg-secondary-subtle text-secondary fs-6"><i class="bi bi-upc-scan"></i> ${item.item_code}</span>
+                            <span class="border badge bg-info-subtle text-info-emphasis">Master: ${globalMasterName[item.item_id]}</span>
                             <span class="border badge bg-light text-danger border-danger">Maks: ${item.max_capitalizable} Sisa</span>
                         </div>
                     </div>
@@ -308,7 +312,6 @@
                 $('#item-header-container').html(headerHtml);
                 goToStep(2);
 
-                // Otomatis tampilkan form untuk minimal 1 unit agar user tidak perlu mengetik angka 1 lagi
                 $('.qty-input').trigger('input');
             },
             error: function() {
@@ -331,6 +334,8 @@
         let container = $('#dynamic-spec-container');
         let availableSns = globalSnData[itemId] || [];
         let rawSpecHtml = globalSpecData[itemId] || '';
+        let masterName = globalMasterName[itemId] || itemName;
+        let defaultAlias = (itemName.toLowerCase() !== masterName.toLowerCase()) ? itemName : '';
 
         container.empty();
         $('#btn-submit').prop('disabled', qty === 0);
@@ -368,9 +373,18 @@
                         <div class="p-4 card-body d-flex flex-column">
 
                             <div class="mb-3">
-                                <label class="mb-1 small text-muted fw-bold">Penamaan Spesifik Unit Aset <span class="text-danger">*</span></label>
-                                <input type="text" name="items[${itemId}][details][${i}][specific_name]" class="form-control border-primary-subtle" value="${itemName}" required>
+                                <label class="mb-1 small text-dark fw-bold">
+                                    Nama Alternatif / Varian Barang (dari PO)
+                                    <span class="badge bg-info-subtle text-info-emphasis border border-info-subtle ms-1" style="font-size: 0.65rem;">Auto-Simpan Kamus Varian</span>
+                                </label>
+                                <input type="text" name="items[${itemId}][details][${i}][item_alias_name]" class="form-control form-control-sm border-info fw-semibold" value="${defaultAlias.replace(/"/g, '&quot;')}" placeholder="Cth: Mini PC, Komputer All in One...">
                             </div>
+
+                            <div class="mb-3">
+                                <label class="mb-1 small text-primary fw-bold">Nama Aset Akuntansi (Sesuai Buku Besar / Invoice) <span class="text-danger">*</span></label>
+                                <input type="text" name="items[${itemId}][details][${i}][specific_name]" class="form-control border-primary-subtle fw-bold text-primary" value="${itemName.replace(/"/g, '&quot;')}" required>
+                            </div>
+
                             <div class="mb-3 row g-3">
                                 <div class="col-md-6">
                                     <label class="mb-1 small text-muted fw-bold">No. Akuntansi (FA)</label>
@@ -409,9 +423,23 @@
                             </div>
 
                             <input type="hidden" name="items[${itemId}][details][${i}][notes]" id="hidden-notes-${itemId}-${i}">
-                            <div class="mb-4">
+                            <div class="mb-3">
                                 <label class="mb-1 small text-muted fw-bold">Spesifikasi Detail / Catatan</label>
                                 <div id="editor-${itemId}-${i}" class="quill-editor"></div>
+                            </div>
+
+                            {{-- RINCIAN KOMPONEN UPGRADE MULTI-BARIS (OPSIONAL PER UNIT) --}}
+                            <div class="p-2 mb-3 border rounded-3 bg-warning-subtle border-warning">
+                                <div class="mb-1 d-flex justify-content-between align-items-center">
+                                    <span class="fw-bold text-dark" style="font-size: 0.78rem;">
+                                        <i class="bi bi-cpu-fill text-warning-emphasis me-1"></i> Komponen Upgrade Unit Ini (Opsional)
+                                    </span>
+                                    <button type="button" class="px-2 py-0 btn btn-sm btn-warning fw-bold rounded-pill btn-add-cap-upgrade"
+                                        data-item="${itemId}" data-unit="${i}" data-date="${defaultDate}" style="font-size: 0.72rem;">
+                                        <i class="bi bi-plus-circle me-1"></i> Tambah Baris
+                                    </button>
+                                </div>
+                                <div id="cap-upgrades-${itemId}-${i}" class="gap-1 d-flex flex-column"></div>
                             </div>
 
                             <div class="p-3 mt-auto bg-white border rounded-3 border-primary-subtle">
@@ -454,6 +482,40 @@
         }
 
         refreshSnDropdowns();
+    });
+
+    // Tambah baris komponen upgrade per unit pada form kapitalisasi
+    let capUpgradeCounter = 0;
+    $(document).on('click', '.btn-add-cap-upgrade', function() {
+        let itemId = $(this).data('item');
+        let unitIdx = $(this).data('unit');
+        let defaultDate = $(this).data('date') || "{{ date('Y-m-d') }}";
+        let uIdx = capUpgradeCounter++;
+
+        let container = $(`#cap-upgrades-${itemId}-${unitIdx}`);
+        container.append(`
+            <div class="p-1 bg-white border rounded cap-upgrade-row row g-1 align-items-center">
+                <div class="col-6">
+                    <input type="text" name="items[${itemId}][details][${unitIdx}][upgrades][${uIdx}][component_name]" class="form-control form-control-sm" placeholder="Komponen (RAM/SSD)...">
+                </div>
+                <div class="col-4">
+                    <input type="text" name="items[${itemId}][details][${unitIdx}][upgrades][${uIdx}][cost]" class="form-control form-control-sm text-end cap-upgrade-cost" placeholder="Biaya">
+                    <input type="hidden" name="items[${itemId}][details][${unitIdx}][upgrades][${uIdx}][upgrade_date]" value="${defaultDate}">
+                </div>
+                <div class="col-2 text-center">
+                    <button type="button" class="p-1 btn btn-sm btn-outline-danger btn-remove-cap-upgrade"><i class="bi bi-x"></i></button>
+                </div>
+            </div>
+        `);
+    });
+
+    $(document).on('click', '.btn-remove-cap-upgrade', function() {
+        $(this).closest('.cap-upgrade-row').remove();
+    });
+
+    $(document).on('input', '.cap-upgrade-cost', function() {
+        let raw = $(this).val().replace(/[^0-9]/g, '');
+        $(this).val(raw ? parseInt(raw, 10).toLocaleString('id-ID') : '');
     });
 
     function refreshSnDropdowns() {

@@ -149,7 +149,7 @@
                         $baseUomId = optional($masterItem)->uom_id;
                         $baseUomName = strtoupper(optional($masterItem->uom)->name ?? 'PCS');
 
-                        // 1. KITA HANCURKAN ELOQUENT ORM! BACA DATA MENTAH DARI DATABASE NATIVE
+                        // 1. BACA DATA MENTAH DARI DATABASE NATIVE
                         $nativePrItem = \Illuminate\Support\Facades\DB::table('purchase_request_items')->where('id', $item->id)->first();
 
                         $prUomId = $nativePrItem->uom_id ?? null;
@@ -168,14 +168,11 @@
                         }
 
                         if ($matchedAltById) {
-                            // JIKA ID COCOK DENGAN BARANGNYA, BERARTI PASTI LUSIN/PACK!
                             $prConvRate = (float) $matchedAltById->conversion_qty;
                             $cleanPrUom = strtoupper($matchedAltById->uom_name);
                             $prUomId = $matchedAltById->id;
                         } else {
-                            // 3. PRIORITAS 2: JIKA ID GAGAL (KARENA SMART RESTOCK / MANUAL ERROR), BACA DARI TEKS STRING
-
-                            // Eksekutor Pembersih Sampah JSON di Database
+                            // 3. PRIORITAS 2: BACA DARI TEKS STRING
                             if (is_string($rawPrUom) && str_starts_with(trim($rawPrUom), '{')) {
                                 $uomObj = json_decode($rawPrUom, true);
                                 if ($uomObj) {
@@ -220,6 +217,8 @@
                         $suggestedVendorId = $item->suggested_vendor_id;
                         $quote = $suggestedVendorId ? optional($item->vendorQuotes)->where('vendor_id', $suggestedVendorId)->first() : optional($item->vendorQuotes)->first();
                         $price = $quote ? ($quote->quoted_price ?? $quote->price ?? 0) : 0;
+
+                        $existingAliases = optional($masterItem)->aliases ?? collect();
                     @endphp
 
                     <div class="mb-4 border-0 shadow-sm card item-card item-row" data-original-idx="{{ $index }}">
@@ -253,31 +252,47 @@
                                     <div class="gap-2 mt-3 d-flex">
                                         <button type="button" class="btn btn-sm btn-outline-info rounded-pill fw-bold btn-pecah" onclick="splitItem(this)"><i class="bi bi-diagram-2-fill"></i> Pecah Vendor</button>
                                     </div>
-                                </div>
 
-                                <!-- 🔥 INPUT NAMA TOKO SPESIFIK 🔥 -->
-                                <div class="mb-3 form-group">
-                                    <label>Nama Toko Spesifik (Opsional)</label>
-                                    <input type="text" name="vendor_sub_name" class="form-control" placeholder="Contoh: Vortexindo.Computer (Jika beli di Tokopedia)">
-                                    <small class="text-muted">Gunakan ini jika Anda memilih vendor berupa Marketplace.</small>
+                                    <!-- 🔥 INPUT NAMA TOKO SPESIFIK 🔥 -->
+                                    <div class="mt-3 form-group">
+                                        <label class="form-label small fw-bold text-dark">Nama Toko Spesifik (Opsional)</label>
+                                        <input type="text" name="vendor_sub_name" class="form-control form-input-custom" placeholder="Contoh: Vortexindo.Computer (Jika beli di Tokopedia)">
+                                        <small class="text-muted">Gunakan ini jika Anda memilih vendor berupa Marketplace.</small>
+                                    </div>
                                 </div>
 
                                 <div class="col-md-7">
                                     <div class="row">
                                         <div class="col-md-7">
                                             <div class="mb-3">
-                                                <label class="form-label small fw-bold text-dark">Nama Barang di PO (Bisa disesuaikan)</label>
-                                                <input type="text" name="po_items[{{ $index }}][item_name_override]" class="form-control form-input-custom fw-bold text-primary" value="{{ $item->item_name ?? optional($masterItem)->name }}" placeholder="Ketik nama spesifik barang...">
+                                                <label class="form-label small fw-bold text-dark">
+                                                    Nama Alternatif / Nama Barang di PO (Bisa disesuaikan)
+                                                    <span class="border badge bg-info-subtle text-info-emphasis border-info-subtle ms-1" style="font-size: 0.68rem;">Auto-Simpan Kamus Varian</span>
+                                                </label>
+                                                <input type="text"
+                                                       name="po_items[{{ $index }}][item_name_override]"
+                                                       list="pr_alias_list_{{ $index }}"
+                                                       class="form-control form-input-custom fw-bold text-primary input-alias-override"
+                                                       value="{{ $item->item_name ?? optional($masterItem)->name }}"
+                                                       placeholder="Pilih dari saran varian atau ketik nama alternatif...">
+                                                <datalist id="pr_alias_list_{{ $index }}">
+                                                    @foreach($existingAliases as $al)
+                                                        <option value="{{ $al->alias_name }}"></option>
+                                                    @endforeach
+                                                </datalist>
+                                                @if($existingAliases->count() > 0)
+                                                    <div class="form-text text-muted" style="font-size: 0.72rem;">
+                                                        <i class="bi bi-lightbulb-fill text-warning me-1"></i>Tersedia <strong>{{ $existingAliases->count() }} saran nama alternatif</strong> tersimpan. Klik kolom di atas untuk memilih atau ketik nama baru.
+                                                    </div>
+                                                @endif
                                             </div>
                                             <label class="form-label small fw-bold text-dark">Spesifikasi Detail (Bisa diedit)</label>
                                             <textarea name="po_items[{{ $index }}][notes]" id="spec_{{ $index }}" class="form-control form-input-custom ckeditor-spec" placeholder="Ketik spesifikasi detail di sini...">{!! $item->specification ?? $item->notes !!}</textarea>
 
-                                            {{-- 🔥 TAMBAHKAN KOTAK REMARK DI SINI 🔥 --}}
                                             <div class="mt-3">
                                                 <label class="form-label small fw-bold text-dark">Remark (Opsional)</label>
-                                                <input type="text" name="new_items[NEW_INDEX][remark]" class="form-control form-input-custom" placeholder="Ketik remark di sini...">
+                                                <input type="text" name="po_items[{{ $index }}][remark]" class="form-control form-input-custom" placeholder="Ketik remark di sini...">
                                             </div>
-
                                         </div>
                                         <div class="col-md-5">
                                             <label class="form-label small fw-bold text-dark"><i class="bi bi-paperclip text-primary"></i> Dokumen Pendukung Item</label>
@@ -340,26 +355,20 @@
                                     </div>
 
                                     <select name="po_items[{{ $index }}][uom_id]" class="shadow-sm form-select border-primary text-primary fw-bold uom-selector" data-current-conv="{{ $prConvRate }}" onchange="updateRowUom(this, {{ $index }})">
-
-                                        {{-- Tampilkan Satuan Bawaan PR --}}
                                         <option value="{{ $prUomId }}" data-name="{{ $safePrUom }}" data-conv="{{ $prConvRate }}" selected>
                                             {{ $cleanPrUom }} @if($prConvRate > 1) (Isi: {{(float)$prConvRate}} {{ $baseUomName }}) @endif [PR]
                                         </option>
 
-                                        {{-- Tampilkan Satuan Dasar Jika Bukan Bawaan PR --}}
                                         @if($prConvRate != 1)
                                             <option value="{{ $baseUomId }} " data-name="{{ $baseUomName }}" data-conv="1">{{ $baseUomName }} (Ecer)</option>
                                         @endif
 
-                                        {{-- Tampilkan Satuan Alternatif Lainnya --}}
                                         @if(optional($masterItem)->itemUoms)
                                             @foreach($masterItem->itemUoms as $altUom)
                                                 @php
                                                     $altVal = $altUom->uom_id ?? $altUom->id;
                                                     $altConv = (float)$altUom->conversion_qty;
                                                     $safeAltVal = $altVal . str_repeat(' ', $loop->iteration + 1);
-
-                                                    // 🔥 PERBAIKAN: Hanya sembunyikan jika NAMA dan ISI-nya persis sama dengan PR 🔥
                                                     $isExactSameAsPr = ($altConv == $prConvRate && strtoupper(trim($altUom->uom_name)) === strtoupper($cleanPrUom));
                                                 @endphp
 
@@ -781,6 +790,12 @@
             if(name) { $(this).attr('name', name.replace(/po_items\[\d+\]/, 'po_items[' + splitIdx + ']')); }
             if(!$(this).hasClass('ckeditor-spec')) { $(this).removeAttr('id'); }
         });
+
+        // Hubungkan kembali input nama alternatif pada kartu hasil Pecah Vendor ke datalist asli
+        let origListAttr = originalCard.find('.input-alias-override').attr('list');
+        if (origListAttr) {
+            clonedCard.find('.input-alias-override').attr('list', origListAttr);
+        }
 
         let newSpecId = 'spec_' + splitIdx;
         clonedTextarea.attr('id', newSpecId);

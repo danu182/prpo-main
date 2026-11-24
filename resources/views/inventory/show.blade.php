@@ -67,11 +67,19 @@
             $reversed = collect($mutations->items())->reverse();
 
             foreach ($reversed as $mut) {
-                $isCapitalize = str_contains($mut->notes, '[CAPITALIZE]');
-                $isDeCapitalize = str_contains($mut->notes, '[DE-CAPITALIZE]');
+                $isCapitalize   = str_contains((string) $mut->notes, '[CAPITALIZE]');
+                $isDeCapitalize = str_contains((string) $mut->notes, '[DE-CAPITALIZE]');
+                $isUpgradeOut   = str_starts_with((string) $mut->reference_number, 'UPG/')
+                                  || str_contains((string) $mut->notes, '[UPGRADE ASET]')
+                                  || str_starts_with((string) $mut->notes, 'Upgrade Aset:');
+                $isUpgradeIn    = str_starts_with((string) $mut->reference_number, 'UNUPG/')
+                                  || str_contains((string) $mut->notes, '[RETUR UPGRADE]')
+                                  || str_starts_with((string) $mut->notes, 'Retur Part Upgrade');
 
-                $mut->is_capitalize = $isCapitalize;
+                $mut->is_capitalize   = $isCapitalize;
                 $mut->is_decapitalize = $isDeCapitalize;
+                $mut->is_upgrade_out  = $isUpgradeOut;
+                $mut->is_upgrade_in   = $isUpgradeIn;
 
                 if ($mut->type === 'IN' && !$isDeCapitalize) {
                     $runningBalance += (float) $mut->qty;
@@ -119,8 +127,7 @@
                                     <div>
                                         <i class="bi bi-check2-circle text-info me-1"></i> {{ $ast->serial_number ?: $ast->asset_number }}
                                     </div>
-                                    {{-- 🔥 TOMBOL CETAK LABEL 🔥 --}}
-                                    <a href="{{ route('inventory.print_label', $ast->id) }}" target="_blank" class="btn btn-sm btn-light py-0 px-2 shadow-sm" style="font-size: 0.65rem;" title="Cetak Label Barcode">
+                                    <a href="{{ route('inventory.print_label', $ast->id) }}" target="_blank" class="px-2 py-0 shadow-sm btn btn-sm btn-light" style="font-size: 0.65rem;" title="Cetak Label Barcode">
                                         <i class="bi bi-printer-fill text-primary"></i> Cetak
                                     </a>
                                 </div>
@@ -160,14 +167,14 @@
             <table class="table mb-0 align-middle table-hover">
                 <thead class="bg-light fw-bold text-muted border-bottom text-uppercase small">
                     <tr>
-                        <th class="py-3 ps-4" width="15%">Tanggal</th>
-                        <th class="py-3" width="15%">Gudang</th>
-                        <th class="py-3" width="10%">Tipe</th>
+                        <th class="py-3 ps-4" width="14%">Tanggal</th>
+                        <th class="py-3" width="14%">Gudang</th>
+                        <th class="py-3" width="11%">Tipe</th>
                         <th class="py-3 text-center" width="15%">No. Referensi</th>
-                        <th class="py-3" width="20%">Keterangan</th>
+                        <th class="py-3" width="22%">Keterangan</th>
                         <th class="py-3 text-center" width="8%">Masuk</th>
                         <th class="py-3 text-center" width="8%">Keluar</th>
-                        <th class="py-3 pe-4 text-end" width="9%">Saldo</th>
+                        <th class="py-3 pe-4 text-end" width="8%">Saldo</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -181,6 +188,10 @@
                                 <span class="px-2 border badge bg-info-subtle text-info border-info-subtle">ALOKASI ASET</span>
                             @elseif($mut->is_decapitalize)
                                 <span class="px-2 border badge bg-warning-subtle text-warning border-warning-subtle">VOID ASET</span>
+                            @elseif($mut->is_upgrade_out)
+                                <span class="px-2 border badge bg-warning-subtle text-warning-emphasis border-warning">UPGRADE ASET</span>
+                            @elseif($mut->is_upgrade_in)
+                                <span class="px-2 border badge bg-info-subtle text-info-emphasis border-info">RETUR UPGRADE</span>
                             @elseif($mut->type == 'IN')
                                 <span class="px-2 border badge bg-success-subtle text-success border-success-subtle">MASUK</span>
                             @else
@@ -190,154 +201,157 @@
 
                         <td class="py-3 text-center fw-bold text-dark">{{ $mut->reference_number ?? '-' }}</td>
 
-                        <td class="py-3" style="max-width: 350px;">
+                        <td class="py-3" style="max-width: 370px;">
                             @php
-                                $text = str_replace(['</p>', '<br>', '<br/>'], ' ', $mut->notes);
+                                $text = str_replace(['</p>', '<br>', '<br/>'], ' ', (string) $mut->notes);
                                 $cleanNotes = strip_tags($text);
 
-                                $cleanNotes = str_replace('[CAPITALIZE]', '', $cleanNotes);
-                                $cleanNotes = str_replace('[DE-CAPITALIZE]', '', $cleanNotes);
+                                $cleanNotes = str_replace(['[CAPITALIZE]', '[DE-CAPITALIZE]', '[UPGRADE ASET]', '[RETUR UPGRADE]'], '', $cleanNotes);
 
-                                $mainText = $cleanNotes;
+                                // Deteksi record FixedAssetUpgrade jika mutasi ini berasal dari Upgrade / Retur Upgrade
+                                $upgradeRecords = collect();
+                                if ($mut->is_upgrade_out) {
+                                    $upgradeRecords = \App\Models\FixedAssetUpgrade::with(['asset.assignee', 'purchaseOrder', 'goodsReceipt'])
+                                        ->where('upgrade_number', $mut->reference_number)
+                                        ->where('item_id', $mut->item_id)
+                                        ->get();
+                                } elseif ($mut->is_upgrade_in) {
+                                    $upgradeRecords = \App\Models\FixedAssetUpgrade::with(['asset.assignee', 'purchaseOrder', 'goodsReceipt'])
+                                        ->where('removal_number', $mut->reference_number)
+                                        ->where('item_id', $mut->item_id)
+                                        ->get();
+                                }
+
+                                $mainText = trim($cleanNotes);
                                 $snText = '';
-                                if (str_contains($cleanNotes, '[')) {
+
+                                // Hanya ekstrak kurung siku sebagai SN jika BUKAN transaksi Upgrade Aset
+                                if (!$mut->is_upgrade_out && !$mut->is_upgrade_in && str_contains($cleanNotes, '[')) {
                                     $parts = explode('[', $cleanNotes);
                                     $mainText = trim($parts[0]);
                                     $snText = trim(str_replace(']', '', $parts[1] ?? ''));
                                 }
 
-                                // =========================================================================
-                                // 🔥 SULAP REFERENSI MENJADI BADGE (REGEX CERDAS ANTI-GAGAL) 🔥
-                                // =========================================================================
-
-                                // 1. Ref PO
+                                // Sulap referensi dokumen menjadi badge rapi
                                 $mainText = preg_replace('/\(?Ref PO:\s*([^),.]+)\)?/i', '<div class="mt-2 mb-1"><span class="px-2 py-1 border badge bg-primary-subtle text-primary border-primary-subtle"><i class="bi bi-receipt me-1"></i>Ref PO: $1</span></div>', $mainText);
-
-                                // 2. Ref GR (Penerimaan)
                                 $mainText = preg_replace('/\(?Ref GR:\s*([^),.]+)\)?/i', '<div class="mt-2 mb-1"><span class="px-2 py-1 border badge bg-success-subtle text-success border-success-subtle"><i class="bi bi-box-seam me-1"></i>Ref GR: $1</span></div>', $mainText);
-
-                                // 3. Ref RTV (Retur)
                                 $mainText = preg_replace('/\(?Ref RTV:\s*([^),.]+)\)?/i', '<div class="mt-2 mb-1"><span class="px-2 py-1 border badge bg-danger-subtle text-danger border-danger-subtle"><i class="bi bi-arrow-return-left me-1"></i>Ref RTV: $1</span></div>', $mainText);
-
-                                // 4. Ref GI (Pemakaian / Hibah)
                                 $mainText = preg_replace('/\(?Ref GI:\s*([^),.]+)\)?/i', '<div class="mt-2 mb-1"><span class="px-2 py-1 border badge bg-warning-subtle text-warning-emphasis border-warning-subtle"><i class="bi bi-box-arrow-right me-1"></i>Ref GI: $1</span></div>', $mainText);
 
-                                // Pemolesan awalan
                                 $mainText = str_replace('Retur ke Vendor.', '<strong class="text-danger"><i class="bi bi-arrow-return-left me-1"></i>Retur ke Vendor.</strong><br>', $mainText);
                                 $mainText = preg_replace('/^Masuk:/i', '<strong class="text-success"><i class="bi bi-box-arrow-in-right me-1"></i>Masuk:</strong>', $mainText);
                                 $mainText = preg_replace('/^Keluar:/i', '<strong class="text-danger"><i class="bi bi-box-arrow-right me-1"></i>Keluar:</strong>', $mainText);
 
-                                // =========================================================================
-                                // 🔥 KECERDASAN BUATAN UNTUK MELACAK SN DI SEMUA TRANSAKSI 🔥
-                                // =========================================================================
                                 $realSns = [];
 
-                                if ($mut->is_capitalize || $mut->is_decapitalize) {
-                                    $assetsData = \DB::table('fixed_assets')
-                                        ->where('item_id', $mut->item_id)
-                                        ->where('warehouse_id', $mut->warehouse_id)
-                                        ->whereBetween('created_at', [\Carbon\Carbon::parse($mut->created_at)->subMinutes(1), \Carbon\Carbon::parse($mut->created_at)->addMinutes(1)])
-                                        ->get();
+                                if (!$mut->is_upgrade_out && !$mut->is_upgrade_in) {
+                                    if ($mut->is_capitalize || $mut->is_decapitalize) {
+                                        $assetsData = \DB::table('fixed_assets')
+                                            ->where('item_id', $mut->item_id)
+                                            ->where('warehouse_id', $mut->warehouse_id)
+                                            ->whereBetween('created_at', [\Carbon\Carbon::parse($mut->created_at)->subMinutes(1), \Carbon\Carbon::parse($mut->created_at)->addMinutes(1)])
+                                            ->get();
 
-                                    foreach ($assetsData as $ad) {
-                                        $badgeType = $mut->is_capitalize ? 'bg-primary' : 'bg-danger';
-                                        $badgeText = $mut->is_capitalize ? 'ASET' : 'VOID';
+                                        foreach ($assetsData as $ad) {
+                                            $badgeType = $mut->is_capitalize ? 'bg-primary' : 'bg-danger';
+                                            $badgeText = $mut->is_capitalize ? 'ASET' : 'VOID';
 
-                                        $accNo = $ad->accounting_asset_number ? '<div class="text-success fw-bold" style="font-size:0.7rem; margin-top:2px;">[FA: ' . $ad->accounting_asset_number . ']</div>' : '';
-                                        $snInfo = $ad->serial_number ? '<div class="text-muted" style="font-size:0.7rem;">SN: ' . $ad->serial_number . '</div>' : '';
+                                            $accNo = $ad->accounting_asset_number ? '<div class="text-success fw-bold" style="font-size:0.7rem; margin-top:2px;">[FA: ' . $ad->accounting_asset_number . ']</div>' : '';
+                                            $snInfo = $ad->serial_number ? '<div class="text-muted" style="font-size:0.7rem;">SN: ' . $ad->serial_number . '</div>' : '';
 
-                                        $htmlBlock = '
-                                        <div class="p-2 mb-2 bg-white border rounded shadow-sm border-secondary-subtle ms-3 position-relative">
-                                            <div class="top-0 position-absolute start-0 translate-middle">
-                                                <span class="badge ' . $badgeType . ' px-2 py-1" style="font-size:0.55rem; letter-spacing:0.5px;">' . $badgeText . '</span>
-                                            </div>
-                                            <div class="mt-1 fw-bold text-primary">' . $ad->asset_number . '</div>
-                                            ' . $accNo . '
-                                            ' . $snInfo . '
-                                        </div>';
+                                            $htmlBlock = '
+                                            <div class="p-2 mb-2 bg-white border rounded shadow-sm border-secondary-subtle ms-3 position-relative">
+                                                <div class="top-0 position-absolute start-0 translate-middle">
+                                                    <span class="badge ' . $badgeType . ' px-2 py-1" style="font-size:0.55rem; letter-spacing:0.5px;">' . $badgeText . '</span>
+                                                </div>
+                                                <div class="mt-1 fw-bold text-primary">' . $ad->asset_number . '</div>
+                                                ' . $accNo . '
+                                                ' . $snInfo . '
+                                            </div>';
 
-                                        $realSns[] = $htmlBlock;
-                                    }
-                                } else {
-                                    if (str_starts_with($mut->reference_number, 'GR-')) {
-                                        $grDoc = \DB::table('goods_receipts')->where('gr_number', $mut->reference_number)->first();
-                                        if ($grDoc) {
-                                            $realSns = \DB::table('item_serials')->where('goods_receipt_id', $grDoc->id)->where('item_id', $mut->item_id)->where('warehouse_id', $mut->warehouse_id)->pluck('serial_number')->toArray();
+                                            $realSns[] = $htmlBlock;
                                         }
-                                    } elseif (str_starts_with($mut->reference_number, 'RTV-')) {
-                                        $rtvDoc = \DB::table('return_to_vendors')->where('rtv_number', $mut->reference_number)->first();
-                                        if ($rtvDoc) {
-                                            $realSns = \DB::table('item_serials')->where('return_to_vendor_id', $rtvDoc->id)->where('item_id', $mut->item_id)->where('warehouse_id', $mut->warehouse_id)->pluck('serial_number')->toArray();
-                                        }
-                                    } elseif (str_starts_with($mut->reference_number, 'ADJ/')) {
-                                        $adjDoc = \DB::table('stock_adjustments')->where('adjustment_number', $mut->reference_number)->first();
-                                        if ($adjDoc) {
-                                            $realSns = \DB::table('item_serials')
-                                                ->where('stock_adjustment_id', $adjDoc->id)
-                                                ->where('item_id', $mut->item_id)
-                                                ->pluck('serial_number')
-                                                ->toArray();
-                                        }
-                                    } elseif (str_starts_with($mut->reference_number, 'SO-')) {
-                                        $soDoc = \DB::table('stock_opnames')->where('document_number', $mut->reference_number)->first();
-                                        if ($soDoc) {
-                                            $realSns = \DB::table('item_serials')
-                                                ->where('stock_opname_id', $soDoc->id)
-                                                ->where('item_id', $mut->item_id)
-                                                ->pluck('serial_number')
-                                                ->toArray();
-                                        }
-                                    } elseif (str_starts_with($mut->reference_number, 'GI-') || str_starts_with($mut->reference_number, 'RET-GI')) {
-                                        $baseRefNumber = str_replace('RET-', '', $mut->reference_number);
-                                        $giDoc = \DB::table('goods_issues')->where('gi_number', $baseRefNumber)->orWhere('gi_number', $mut->reference_number)->first();
-
-                                        if ($giDoc) {
-                                            if (\Schema::hasColumn('item_serials', 'goods_issue_id')) {
-                                                $snMinor = \DB::table('item_serials')->where('goods_issue_id', $giDoc->id)->where('item_id', $mut->item_id)->where('warehouse_id', $mut->warehouse_id)->pluck('serial_number')->toArray();
-                                                $realSns = array_merge($realSns, $snMinor);
-                                            } else {
-                                                $snMinor = \DB::table('item_serials')
-                                                    ->where('item_id', $mut->item_id)
-                                                    ->where('warehouse_id', $mut->warehouse_id)
-                                                    ->whereIn('status', ['ISSUED', 'USED', 'OUT', 'DISPATCHED'])
-                                                    ->whereBetween('updated_at', [\Carbon\Carbon::parse($mut->created_at)->subMinutes(1), \Carbon\Carbon::parse($mut->created_at)->addMinutes(1)])
-                                                    ->pluck('serial_number')->toArray();
-                                                $realSns = array_merge($realSns, $snMinor);
+                                    } else {
+                                        if (str_starts_with((string) $mut->reference_number, 'GR-')) {
+                                            $grDoc = \DB::table('goods_receipts')->where('gr_number', $mut->reference_number)->first();
+                                            if ($grDoc) {
+                                                $realSns = \DB::table('item_serials')->where('goods_receipt_id', $grDoc->id)->where('item_id', $mut->item_id)->where('warehouse_id', $mut->warehouse_id)->pluck('serial_number')->toArray();
                                             }
+                                        } elseif (str_starts_with((string) $mut->reference_number, 'RTV-')) {
+                                            $rtvDoc = \DB::table('return_to_vendors')->where('rtv_number', $mut->reference_number)->first();
+                                            if ($rtvDoc) {
+                                                $realSns = \DB::table('item_serials')->where('return_to_vendor_id', $rtvDoc->id)->where('item_id', $mut->item_id)->where('warehouse_id', $mut->warehouse_id)->pluck('serial_number')->toArray();
+                                            }
+                                        } elseif (str_starts_with((string) $mut->reference_number, 'ADJ/')) {
+                                            $adjDoc = \DB::table('stock_adjustments')->where('adjustment_number', $mut->reference_number)->first();
+                                            if ($adjDoc) {
+                                                $realSns = \DB::table('item_serials')
+                                                    ->where('stock_adjustment_id', $adjDoc->id)
+                                                    ->where('item_id', $mut->item_id)
+                                                    ->pluck('serial_number')
+                                                    ->toArray();
+                                            }
+                                        } elseif (str_starts_with((string) $mut->reference_number, 'SO-')) {
+                                            $soDoc = \DB::table('stock_opnames')->where('document_number', $mut->reference_number)->first();
+                                            if ($soDoc) {
+                                                $realSns = \DB::table('item_serials')
+                                                    ->where('stock_opname_id', $soDoc->id)
+                                                    ->where('item_id', $mut->item_id)
+                                                    ->pluck('serial_number')
+                                                    ->toArray();
+                                            }
+                                        } elseif (str_starts_with((string) $mut->reference_number, 'GI-') || str_starts_with((string) $mut->reference_number, 'RET-GI')) {
+                                            $baseRefNumber = str_replace('RET-', '', $mut->reference_number);
+                                            $giDoc = \DB::table('goods_issues')->where('gi_number', $baseRefNumber)->orWhere('gi_number', $mut->reference_number)->first();
 
-                                            $giAssets = \DB::table('fixed_assets')
-                                                ->where('item_id', $mut->item_id)
-                                                ->where('warehouse_id', $mut->warehouse_id)
-                                                ->whereBetween('updated_at', [\Carbon\Carbon::parse($mut->created_at)->subMinutes(1), \Carbon\Carbon::parse($mut->created_at)->addMinutes(1)])
-                                                ->get();
-
-                                            foreach ($giAssets as $ad) {
-                                                $accNo = $ad->accounting_asset_number ? '<div class="text-success fw-bold" style="font-size:0.7rem; margin-top:2px;">[FA: ' . $ad->accounting_asset_number . ']</div>' : '';
-                                                $snInfo = $ad->serial_number ? '<div class="text-muted" style="font-size:0.7rem;">SN: ' . $ad->serial_number . '</div>' : '';
-
-                                                $htmlBlock = '
-                                                <div class="p-2 mb-2 bg-white border rounded shadow-sm border-secondary-subtle ms-3 position-relative">
-                                                    <div class="top-0 position-absolute start-0 translate-middle">
-                                                        <span class="px-2 py-1 badge bg-primary" style="font-size:0.55rem; letter-spacing:0.5px;">ASET</span>
-                                                    </div>
-                                                    <div class="mt-1 fw-bold text-primary">' . $ad->asset_number . '</div>
-                                                    ' . $accNo . '
-                                                    ' . $snInfo . '
-                                                </div>';
-
-                                                if ($ad->serial_number) {
-                                                    $key = array_search($ad->serial_number, $realSns);
-                                                    if ($key !== false) unset($realSns[$key]);
+                                            if ($giDoc) {
+                                                if (\Schema::hasColumn('item_serials', 'goods_issue_id')) {
+                                                    $snMinor = \DB::table('item_serials')->where('goods_issue_id', $giDoc->id)->where('item_id', $mut->item_id)->where('warehouse_id', $mut->warehouse_id)->pluck('serial_number')->toArray();
+                                                    $realSns = array_merge($realSns, $snMinor);
+                                                } else {
+                                                    $snMinor = \DB::table('item_serials')
+                                                        ->where('item_id', $mut->item_id)
+                                                        ->where('warehouse_id', $mut->warehouse_id)
+                                                        ->whereIn('status', ['ISSUED', 'USED', 'OUT', 'DISPATCHED'])
+                                                        ->whereBetween('updated_at', [\Carbon\Carbon::parse($mut->created_at)->subMinutes(1), \Carbon\Carbon::parse($mut->created_at)->addMinutes(1)])
+                                                        ->pluck('serial_number')->toArray();
+                                                    $realSns = array_merge($realSns, $snMinor);
                                                 }
 
-                                                if (!in_array($htmlBlock, $realSns)) $realSns[] = $htmlBlock;
+                                                $giAssets = \DB::table('fixed_assets')
+                                                    ->where('item_id', $mut->item_id)
+                                                    ->where('warehouse_id', $mut->warehouse_id)
+                                                    ->whereBetween('updated_at', [\Carbon\Carbon::parse($mut->created_at)->subMinutes(1), \Carbon\Carbon::parse($mut->created_at)->addMinutes(1)])
+                                                    ->get();
+
+                                                foreach ($giAssets as $ad) {
+                                                    $accNo = $ad->accounting_asset_number ? '<div class="text-success fw-bold" style="font-size:0.7rem; margin-top:2px;">[FA: ' . $ad->accounting_asset_number . ']</div>' : '';
+                                                    $snInfo = $ad->serial_number ? '<div class="text-muted" style="font-size:0.7rem;">SN: ' . $ad->serial_number . '</div>' : '';
+
+                                                    $htmlBlock = '
+                                                    <div class="p-2 mb-2 bg-white border rounded shadow-sm border-secondary-subtle ms-3 position-relative">
+                                                        <div class="top-0 position-absolute start-0 translate-middle">
+                                                            <span class="px-2 py-1 badge bg-primary" style="font-size:0.55rem; letter-spacing:0.5px;">ASET</span>
+                                                        </div>
+                                                        <div class="mt-1 fw-bold text-primary">' . $ad->asset_number . '</div>
+                                                        ' . $accNo . '
+                                                        ' . $snInfo . '
+                                                    </div>';
+
+                                                    if ($ad->serial_number) {
+                                                        $key = array_search($ad->serial_number, $realSns);
+                                                        if ($key !== false) unset($realSns[$key]);
+                                                    }
+
+                                                    if (!in_array($htmlBlock, $realSns)) $realSns[] = $htmlBlock;
+                                                }
+                                                $realSns = array_values($realSns);
                                             }
-                                            $realSns = array_values($realSns);
                                         }
                                     }
                                 }
 
-                                if (empty($realSns) && $snText && !$mut->is_capitalize && !$mut->is_decapitalize) {
+                                if (empty($realSns) && $snText && !$mut->is_capitalize && !$mut->is_decapitalize && !$mut->is_upgrade_out && !$mut->is_upgrade_in) {
                                     $cleanSn = str_replace(['SN Diretur: ', 'SN Terdaftar: ', 'SN: '], '', $snText);
                                     $snArray = array_map('trim', explode('|', $cleanSn));
                                 } else {
@@ -348,12 +362,60 @@
                                     return stripos($val, 'Auto-FIFO') === false && trim($val) !== '';
                                 });
 
-                                $mainText = preg_replace('/\[SN:.*?\]/', '', $mainText);
+                                if (!$mut->is_upgrade_out && !$mut->is_upgrade_in) {
+                                    $mainText = preg_replace('/\[SN:.*?\]/', '', $mainText);
+                                }
                             @endphp
 
-                            <div class="text-dark text-wrap" style="font-size: 0.85rem; line-height: 1.6;">
-                                {!! trim($mainText) !!}
-                            </div>
+                            {{-- TAMPILAN KHUSUS UNTUK MUTASI UPGRADE / RETUR UPGRADE ASET --}}
+                            @if(($mut->is_upgrade_out || $mut->is_upgrade_in) && $upgradeRecords->isNotEmpty())
+                                @foreach($upgradeRecords as $upgRec)
+                                    <div class="p-2 mb-1 border rounded-3 {{ $mut->is_upgrade_out ? 'bg-warning-subtle border-warning' : 'bg-info-subtle border-info' }}">
+                                        <div class="fw-bold text-dark" style="font-size: 0.8rem;">
+                                            <i class="bi bi-cpu-fill text-warning-emphasis me-1"></i>
+                                            {{ $mut->is_upgrade_out ? 'Dipasang ke Aset:' : 'Dicopot dari Aset:' }}
+                                            @if($upgRec->asset)
+                                                <a href="{{ route('asset-capitalizations.show', $upgRec->asset->id) }}" class="text-primary text-decoration-underline">
+                                                    {{ $upgRec->asset->asset_number }}
+                                                </a>
+                                            @endif
+                                        </div>
+                                        @if($upgRec->asset)
+                                            <div class="small text-dark fw-semibold">{{ $upgRec->asset->name }}</div>
+                                            @if($upgRec->asset->accounting_asset_number)
+                                                <div class="text-success fw-bold" style="font-size: 0.72rem;">No. FA: {{ $upgRec->asset->accounting_asset_number }}</div>
+                                            @endif
+                                            @if($upgRec->asset->assignee)
+                                                <div class="text-muted" style="font-size: 0.72rem;"><i class="bi bi-person me-1"></i>Pemegang: {{ $upgRec->asset->assignee->name }}</div>
+                                            @endif
+                                        @endif
+                                        <div class="pt-1 mt-1 border-top border-secondary-subtle d-flex flex-wrap gap-1 align-items-center" style="font-size: 0.72rem;">
+                                            <span class="badge bg-dark text-white">
+                                                Nilai: Rp {{ number_format($upgRec->cost, 0, ',', '.') }}
+                                            </span>
+                                            @if($upgRec->purchaseOrder)
+                                                <span class="badge bg-primary-subtle text-primary border border-primary-subtle">
+                                                    PO: {{ $upgRec->purchaseOrder->po_number }}
+                                                </span>
+                                            @endif
+                                            @if($upgRec->goodsReceipt)
+                                                <span class="badge bg-success-subtle text-success border border-success-subtle">
+                                                    GR: {{ $upgRec->goodsReceipt->gr_number }}
+                                                </span>
+                                            @endif
+                                        </div>
+                                        @if($mut->is_upgrade_in && $upgRec->removal_reason)
+                                            <div class="mt-1 text-danger fst-italic" style="font-size: 0.72rem;">
+                                                Alasan: {{ $upgRec->removal_reason }}
+                                            </div>
+                                        @endif
+                                    </div>
+                                @endforeach
+                            @else
+                                <div class="text-dark text-wrap" style="font-size: 0.85rem; line-height: 1.6;">
+                                    {!! trim($mainText) !!}
+                                </div>
+                            @endif
 
                             @if(count($snArray) > 0)
                                 <div class="mt-2 overflow-hidden border rounded shadow-sm border-warning-subtle">
@@ -372,7 +434,6 @@
                                                         @if(str_contains($sn, '<div'))
                                                             {!! $sn !!}
                                                         @else
-                                                            {{-- 🔥 TOMBOL CETAK UNTUK SN MENTAH 🔥 --}}
                                                             <div class="p-2 mb-1 bg-white border rounded shadow-sm d-flex justify-content-between align-items-center">
                                                                 <div>
                                                                     <span class="text-success fw-bold me-1">✓</span> <strong class="text-dark">{{ $sn }}</strong>

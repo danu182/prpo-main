@@ -150,13 +150,65 @@ Route::middleware('auth')->group(function () {
     // =========================================================================
     // ASET TETAP (FIXED ASSETS)
     // =========================================================================
+    // Route::prefix('fixed-assets')->name('fixed-assets.')->middleware(['can:view_assets'])->group(function () {
+    //     Route::get('/search-items', [FixedAssetController::class, 'searchItems'])->name('search-items');
+    //     Route::get('/create-manual', [FixedAssetController::class, 'createManual'])->name('create_manual');
+    //     Route::get('/create-import', [FixedAssetController::class, 'createImport'])->name('create_import');
+    //     Route::get('/master-list', [FixedAssetController::class, 'masterList'])->name('master_list');
+    //     Route::get('/master-list/export', [FixedAssetController::class, 'exportMasterList'])->name('master_list_export');
+    //     // Route::get('/transactions', [FixedAssetController::class, 'transactions'])->name('transactions');
+    //     Route::get('/hibah-history', [FixedAssetController::class, 'hibahHistory'])->name('hibah_history');
+    //     Route::get('/import-history', [FixedAssetController::class, 'importHistory'])->name('import_history');
+    //     Route::get('/template/download', [FixedAssetController::class, 'downloadTemplate'])->name('download_template');
+    //     Route::post('/import/preview', [FixedAssetController::class, 'previewImport'])->name('preview_import');
+    //     Route::post('/import/process', [FixedAssetController::class, 'processImport'])->name('process_import');
+
+    //     Route::get('/import-staging/{batch_id}', [FixedAssetController::class, 'importStaging'])->name('import_staging');
+    //     Route::post('/import/submit-approval/{batch_id}', [FixedAssetController::class, 'submitApproval'])->name('submit_approval');
+    //     Route::post('/import/decide/{batch_id}', [FixedAssetController::class, 'decide'])->name('decide');
+    //     Route::delete('/import-staging/{batch_id}/cancel', [FixedAssetController::class, 'cancelImport'])->name('cancel_import');
+
+    //     Route::get('/import-history/{batch_id}', [FixedAssetController::class, 'showImportBatch'])->name('show_import_batch');
+    //     Route::get('/import-history/{batch_id}/print-bast', [FixedAssetController::class, 'printBastByBatch'])->name('print_bast_batch');
+    //     Route::get('/import-history/{batch_id}/print-qr', [FixedAssetController::class, 'printMassQrLabel'])->name('print_mass_qr');
+
+    //     Route::get('/', [FixedAssetController::class, 'index'])->name('index');
+    //     Route::post('/', [FixedAssetController::class, 'store'])->name('store');
+
+    //     Route::put('/{id}', [FixedAssetController::class, 'update'])->name('update');
+    //     Route::get('/{id}/history', [FixedAssetController::class, 'history'])->name('history');
+    //     Route::post('/{id}/return', [FixedAssetController::class, 'returnAsset'])->name('return');
+    //     Route::post('/{id}/handover', [FixedAssetController::class, 'handoverAsset'])->name('handover');
+
+    //     Route::get('/{id}/bast', [FixedAssetController::class, 'printBast'])->name('bast');
+    //     Route::get('/{id}/bapa', [FixedAssetController::class, 'printBapa'])->name('bapa');
+    //     Route::get('/{id}/bapp', [FixedAssetController::class, 'printBapp'])->name('bapp');
+    //     Route::get('/{id}/print-qr', [FixedAssetController::class, 'printQrLabel'])->name('print_qr');
+    //     Route::get('/{id}/edit', [FixedAssetController::class, 'edit'])->name('edit');
+    //     Route::delete('/{id}', [FixedAssetController::class, 'destroy'])->name('destroy');
+
+    //     Route::get('/transactions', [FixedAssetController::class, 'transactions'])->name('transactions');
+    //     Route::get('/transactions/create', [FixedAssetController::class, 'createTransaction'])->name('transactions.create');
+    //     Route::post('/transactions', [FixedAssetController::class, 'storeTransaction'])->name('transactions.store');
+    //     Route::get('/transactions/{id}', [FixedAssetController::class, 'showTransaction'])->name('transactions.show');
+    //     Route::get('/transactions/{id}/print', [FixedAssetController::class, 'printTransactionDocument'])->name('transactions.print');
+        
+    //     Route::get('/fixed-assets/item-aliases/{itemId}', [App\Http\Controllers\FixedAssetController::class, 'getItemAliases'])->name('fixed-assets.item_aliases');
+        
+    // });
+
+
+
+     // =========================================================================
+    // ASET TETAP (FIXED ASSETS)
+    // =========================================================================
     Route::prefix('fixed-assets')->name('fixed-assets.')->middleware(['can:view_assets'])->group(function () {
         Route::get('/search-items', [FixedAssetController::class, 'searchItems'])->name('search-items');
+        Route::get('/item-aliases/{itemId}', [FixedAssetController::class, 'getItemAliases'])->name('item_aliases');
         Route::get('/create-manual', [FixedAssetController::class, 'createManual'])->name('create_manual');
         Route::get('/create-import', [FixedAssetController::class, 'createImport'])->name('create_import');
         Route::get('/master-list', [FixedAssetController::class, 'masterList'])->name('master_list');
         Route::get('/master-list/export', [FixedAssetController::class, 'exportMasterList'])->name('master_list_export');
-        // Route::get('/transactions', [FixedAssetController::class, 'transactions'])->name('transactions');
         Route::get('/hibah-history', [FixedAssetController::class, 'hibahHistory'])->name('hibah_history');
         Route::get('/import-history', [FixedAssetController::class, 'importHistory'])->name('import_history');
         Route::get('/template/download', [FixedAssetController::class, 'downloadTemplate'])->name('download_template');
@@ -171,6 +223,19 @@ Route::middleware('auth')->group(function () {
         Route::get('/import-history/{batch_id}', [FixedAssetController::class, 'showImportBatch'])->name('show_import_batch');
         Route::get('/import-history/{batch_id}/print-bast', [FixedAssetController::class, 'printBastByBatch'])->name('print_bast_batch');
         Route::get('/import-history/{batch_id}/print-qr', [FixedAssetController::class, 'printMassQrLabel'])->name('print_mass_qr');
+
+        Route::get('/transactions', [FixedAssetController::class, 'transactions'])->name('transactions');
+        Route::get('/transactions/create', [FixedAssetController::class, 'createTransaction'])->name('transactions.create');
+        Route::post('/transactions', [FixedAssetController::class, 'storeTransaction'])->name('transactions.store');
+        Route::get('/transactions/{id}', [FixedAssetController::class, 'showTransaction'])->name('transactions.show');
+        Route::get('/transactions/{id}/print', [FixedAssetController::class, 'printTransactionDocument'])->name('transactions.print');
+
+        // UPGRADE & PENGELUARAN PART ASET (Wajib di atas /{id})
+        Route::get('/upgrades', [App\Http\Controllers\AssetUpgradeController::class, 'index'])->name('upgrades.index');
+        Route::get('/upgrades/create', [App\Http\Controllers\AssetUpgradeController::class, 'create'])->name('upgrades.create');
+        Route::post('/upgrades', [App\Http\Controllers\AssetUpgradeController::class, 'store'])->name('upgrades.store');
+        Route::get('/upgrades/warehouse-items/{warehouseId}', [App\Http\Controllers\AssetUpgradeController::class, 'getWarehouseItems'])->name('upgrades.warehouse_items');
+        Route::post('/upgrades/{id}/remove-part', [App\Http\Controllers\AssetUpgradeController::class, 'removePart'])->name('upgrades.remove_part');
 
         Route::get('/', [FixedAssetController::class, 'index'])->name('index');
         Route::post('/', [FixedAssetController::class, 'store'])->name('store');
@@ -187,13 +252,12 @@ Route::middleware('auth')->group(function () {
         Route::get('/{id}/edit', [FixedAssetController::class, 'edit'])->name('edit');
         Route::delete('/{id}', [FixedAssetController::class, 'destroy'])->name('destroy');
 
-        Route::get('/transactions', [FixedAssetController::class, 'transactions'])->name('transactions');
-        Route::get('/transactions/create', [FixedAssetController::class, 'createTransaction'])->name('transactions.create');
-        Route::post('/transactions', [FixedAssetController::class, 'storeTransaction'])->name('transactions.store');
-        Route::get('/transactions/{id}', [FixedAssetController::class, 'showTransaction'])->name('transactions.show');
-        Route::get('/transactions/{id}/print', [FixedAssetController::class, 'printTransactionDocument'])->name('transactions.print');
-        
-        
+
+        Route::get('/employee-matrix', [FixedAssetController::class, 'employeeMatrix'])->name('employee_matrix');
+
+
+        Route::get('/analytics', [FixedAssetController::class, 'analytics'])->name('analytics');
+
     });
 
 

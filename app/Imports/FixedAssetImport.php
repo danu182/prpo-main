@@ -42,12 +42,14 @@ class FixedAssetImport implements ToCollection, WithHeadingRow, WithCalculatedFo
 
         foreach ($rows as $rowIndex => $row) {
             $rawKodeBarang  = $row['kode_barang'] ?? $row['item_code'] ?? null;
+            $rawNamaAlt     = $row['nama_alternatif_varian'] ?? $row['nama_alternatif'] ?? $row['varian'] ?? null;
             $rawNamaAset    = $row['nama_spesifik_aset'] ?? $row['nama_aset'] ?? null;
             $rawCompanyId   = $row['id_pt'] ?? $row['pt_id'] ?? $row['company_id'] ?? null;
             $rawWarehouseId = $row['id_gudang'] ?? $row['gudang_id'] ?? $row['warehouse_id'] ?? null;
             $rawCategoryId  = $row['id_kategori_aset'] ?? $row['kategori_aset_id'] ?? $row['asset_category_id'] ?? null;
             $rawStatusId    = $row['id_status'] ?? $row['status_id'] ?? null;
             $rawPeminjamId  = $row['id_peminjam'] ?? $row['peminjam_id'] ?? $row['user_id'] ?? null;
+            $rawUpgrades    = $row['upgrade_komponen_biaya'] ?? $row['upgrade_items'] ?? $row['upgrade'] ?? null;
 
             // Lewati baris kosong melompong
             if (empty($rawCompanyId) && empty($rawNamaAset) && empty($rawKodeBarang)) {
@@ -74,15 +76,13 @@ class FixedAssetImport implements ToCollection, WithHeadingRow, WithCalculatedFo
             if (!empty($labelAkuntansi) && $labelAkuntansi !== '-') {
                 $normalizedAcc = strtoupper($labelAkuntansi);
 
-                // Cek 1: Apakah sudah pernah muncul di baris sebelumnya pada file Excel yang sama?
                 if (isset($seenAccountingNumbers[$normalizedAcc])) {
                     $barisSebelumnya = $seenAccountingNumbers[$normalizedAcc];
                     $errors[] = "Nomor Aset Akuntansi '{$labelAkuntansi}' duplikat dengan baris ke-{$barisSebelumnya} di file Excel ini.";
                 } else {
-                    $seenAccountingNumbers[$normalizedAcc] = $rowIndex + 2; // +2 karena baris 1 adalah header Excel
+                    $seenAccountingNumbers[$normalizedAcc] = $rowIndex + 2;
                 }
 
-                // Cek 2: Apakah sudah terdaftar di Buku Induk Aset (fixed_assets) yang aktif?
                 $existsInDb = FixedAsset::where('accounting_asset_number', $labelAkuntansi)
                     ->where(function ($q) {
                         $q->whereNull('notes')
@@ -140,7 +140,7 @@ class FixedAssetImport implements ToCollection, WithHeadingRow, WithCalculatedFo
                 }
             }
 
-            // 10. Validasi Mata Uang & Harga Beli (Support Desimal & Pemisah Ribuan)
+            // 10. Validasi Mata Uang & Harga Beli
             $currCode = strtoupper(trim($row['kode_mata_uang'] ?? 'IDR'));
             if (!Currency::where('code', $currCode)->exists()) {
                 $errors[] = "Kode Mata Uang '{$currCode}' tidak terdaftar.";
@@ -149,11 +149,9 @@ class FixedAssetImport implements ToCollection, WithHeadingRow, WithCalculatedFo
             $rawHarga = $row['harga_beli_angka_murni'] ?? 0;
             if (is_string($rawHarga)) {
                 $trimmedHarga = trim($rawHarga);
-                // Jika format Indonesia (contoh: 1.500,50 -> 1500.50)
                 if (preg_match('/^\d{1,3}(\.\d{3})*(,\d+)?$/', $trimmedHarga)) {
                     $rawHarga = str_replace(['.', ','], ['', '.'], $trimmedHarga);
                 } else {
-                    // Jika format internasional/Excel (contoh: 19,489,966 atau 758.12)
                     $rawHarga = str_replace(',', '', $trimmedHarga);
                 }
             }
@@ -162,6 +160,38 @@ class FixedAssetImport implements ToCollection, WithHeadingRow, WithCalculatedFo
             $rawTanggal = $row['tanggal_perolehan'] ?? null;
             if (!empty($rawTanggal) && !is_numeric($rawTanggal) && strtotime($rawTanggal) === false) {
                 $errors[] = "Format Tanggal Perolehan ('{$rawTanggal}') tidak valid.";
+            }
+
+            // 12. Normalisasi Baris Komponen Upgrade (Multi-baris dipisah newline atau ;)
+            $normalizedUpgrades = null;
+            if (!empty($rawUpgrades) && trim((string) $rawUpgrades) !== '-') {
+                $cleanLines = [];
+                $lines = preg_split('/\r\n|\r|\n|;/', (string) $rawUpgrades);
+                foreach ($lines as $line) {
+                    $line = trim($line);
+                    if ($line === '' || $line === '-') continue;
+
+                    $parts = preg_split('/\||:/', $line, 2);
+                    $compName = trim($parts[0]);
+                    $compCost = 0;
+
+                    if (isset($parts[1])) {
+                        $rawCostStr = trim($parts[1]);
+                        if (preg_match('/^\d{1,3}(\.\d{3})*(,\d+)?$/', $rawCostStr)) {
+                            $rawCostStr = str_replace(['.', ','], ['', '.'], $rawCostStr);
+                        } else {
+                            $rawCostStr = preg_replace('/[^0-9.]/', '', $rawCostStr);
+                        }
+                        $compCost = is_numeric($rawCostStr) ? (float) $rawCostStr : 0;
+                    }
+
+                    if ($compName !== '') {
+                        $cleanLines[] = $compCost > 0 ? "{$compName} | {$compCost}" : $compName;
+                    }
+                }
+                if (!empty($cleanLines)) {
+                    $normalizedUpgrades = implode("\n", $cleanLines);
+                }
             }
 
             // Susun hasil validasi
@@ -174,8 +204,9 @@ class FixedAssetImport implements ToCollection, WithHeadingRow, WithCalculatedFo
 
             $dataToCreate = [
                 'batch_id'           => $this->batchId,
-                'kode_barang'        => $rawKodeBarang,
-                'nama_spesifik_aset' => $rawNamaAset,
+                'kode_barang'        => $rawKodeBarang ? trim((string) $rawKodeBarang) : null,
+                'nama_alternatif'    => $rawNamaAlt ? trim((string) $rawNamaAlt) : null,
+                'nama_spesifik_aset' => $rawNamaAset ? trim((string) $rawNamaAset) : null,
                 'kategori_aset'      => $catId,
                 'serial_number'      => $row['serial_number'] ?? null,
                 'label_akuntansi'    => $labelAkuntansi,
@@ -187,6 +218,7 @@ class FixedAssetImport implements ToCollection, WithHeadingRow, WithCalculatedFo
                 'mata_uang'          => $currCode,
                 'harga_beli'         => is_numeric($rawHarga) ? (float) $rawHarga : 0,
                 'spesifikasi'        => $row['spesifikasi'] ?? null,
+                'upgrade_items'      => $normalizedUpgrades,
                 'catatan'            => $catatanFinal,
                 'is_valid'           => $isValid,
             ];

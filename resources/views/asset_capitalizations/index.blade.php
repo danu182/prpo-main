@@ -38,8 +38,9 @@
                     <tbody>
                         @forelse($assets as $asset)
                             @php
-                                // Deteksi apakah aset ini sudah dibatalkan
-                                $isVoid = str_contains($asset->notes, '[DIBATALKAN');
+                                $isVoid = str_contains((string) $asset->notes, '[DIBATALKAN');
+                                $upgradeCount = $asset->upgrades ? $asset->upgrades->count() : 0;
+                                $upgradeTotal = $asset->upgrades ? (float) $asset->upgrades->sum('cost') : 0;
                             @endphp
                             <tr class="{{ $isVoid ? 'bg-danger-subtle' : '' }}">
                                 <td class="px-4 py-3 fw-bold">
@@ -49,7 +50,6 @@
                                 </td>
                                 <td class="py-3">
                                     <div class="d-flex align-items-center">
-                                        {{-- 🔥 THUMBNAIL FOTO ASET DARI TABEL ASSET_PHOTOS 🔥 --}}
                                         @if($asset->photos->isNotEmpty())
                                             <img src="{{ asset('storage/' . $asset->photos->first()->file_path) }}" class="shadow-sm img-thumbnail me-3 rounded-3" style="width: 55px; height: 55px; object-fit: cover; border: 2px solid #dee2e6;" alt="Aset">
                                         @else
@@ -60,11 +60,27 @@
 
                                         <div>
                                             <div class="fw-bold {{ $isVoid ? 'text-danger' : 'text-dark' }}">{{ $asset->name }}</div>
+
+                                            <div class="flex-wrap gap-1 mt-1 d-flex align-items-center">
+                                                @if(!empty($asset->item_alias_name))
+                                                    <span class="border badge bg-info-subtle text-info-emphasis border-info-subtle" style="font-size: 0.7rem;">
+                                                        <i class="bi bi-tag-fill me-1"></i>Varian: {{ $asset->item_alias_name }}
+                                                    </span>
+                                                @endif
+
+                                                @if($upgradeCount > 0)
+                                                    <span class="border badge bg-warning-subtle text-warning-emphasis border-warning" style="font-size: 0.7rem;" title="Total Biaya Upgrade: Rp {{ number_format($upgradeTotal, 0, ',', '.') }}">
+                                                        <i class="bi bi-cpu-fill me-1"></i>{{ $upgradeCount }} Upgrade (+Rp {{ number_format($upgradeTotal, 0, ',', '.') }})
+                                                    </span>
+                                                @endif
+                                            </div>
+
                                             @if($asset->item)
-                                                <div class="small text-muted"><i class="bi bi-box me-1"></i>Master: {{ $asset->item->code }}</div>
+                                                <div class="mt-1 small text-muted">
+                                                    <i class="bi bi-box me-1"></i>Master: <strong>{{ $asset->item->code }}</strong> — {{ $asset->item->name }}
+                                                </div>
                                             @endif
-                                            
-                                            {{-- 🔥 TAMBAHAN: Nama PT Kepemilikan Aset 🔥 --}}
+
                                             <div class="mt-1 small text-primary" style="font-weight: 600;">
                                                 <i class="bi bi-building-fill me-1"></i> PT: {{ optional($asset->company)->name ?? 'Belum Diset' }}
                                             </div>
@@ -102,7 +118,6 @@
             </div>
         </div>
 
-        {{-- Pagination --}}
         @if($assets->hasPages())
             <div class="p-3 bg-white card-footer border-top d-flex justify-content-end rounded-bottom-4">
                 {{ $assets->links() }}

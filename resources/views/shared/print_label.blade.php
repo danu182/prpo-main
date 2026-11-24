@@ -138,11 +138,17 @@
                 <div class="label-details">
                     <div class="company-name" title="{{ $asset->company_name }}">{{ $asset->company_name }}</div>
 
-                    <!-- Nama Master Item sebagai Judul Utama -->
-                    <div class="item-title" title="{{ $asset->master_item_name }}">{{ $asset->master_item_name }}</div>
+                    <!-- Nama Master Item + Nama Alternatif / Varian -->
+                    @php
+                        $headerTitle = $asset->master_item_name;
+                        if (!empty($asset->item_alias_name) && strtolower(trim($asset->item_alias_name)) !== strtolower(trim($asset->master_item_name))) {
+                            $headerTitle .= ' — ' . $asset->item_alias_name;
+                        }
+                    @endphp
+                    <div class="item-title" title="{{ $headerTitle }}">{{ $headerTitle }}</div>
 
-                    <!-- Deskripsi Spesifik PO sebagai Sub-judul -->
-                    @if($asset->po_item_name !== $asset->master_item_name)
+                    <!-- Deskripsi Spesifik PO / Akuntansi sebagai Sub-judul -->
+                    @if(!empty($asset->po_item_name) && strtolower(trim($asset->po_item_name)) !== strtolower(trim($asset->master_item_name)) && strtolower(trim($asset->po_item_name)) !== strtolower(trim($asset->item_alias_name ?? '')))
                         <div class="master-title" title="{{ $asset->po_item_name }}">{{ $asset->po_item_name }}</div>
                     @endif
 
@@ -169,6 +175,8 @@
                         </tr>
                     </table>
                 </div>
+
+
             </div>
         @endforeach
     </div>

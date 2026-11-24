@@ -29,9 +29,22 @@ class AssetsTemplateExport implements WithMultipleSheets
             new class implements FromArray, WithTitle {
                 public function array(): array {
                     return [[
-                        'Kode Barang', 'Nama Spesifik Aset', 'ID Kategori Aset',
-                        'Serial Number', 'Label Akuntansi', 'ID PT', 'ID Gudang', 'ID Status', 'ID Peminjam',
-                        'Tanggal Perolehan', 'Kode Mata Uang', 'Harga Beli Angka Murni', 'Spesifikasi', 'Catatan'
+                        'Kode Barang',
+                        'Nama Alternatif / Varian',
+                        'Nama Spesifik Aset',
+                        'ID Kategori Aset',
+                        'Serial Number',
+                        'Label Akuntansi',
+                        'ID PT',
+                        'ID Gudang',
+                        'ID Status',
+                        'ID Peminjam',
+                        'Tanggal Perolehan',
+                        'Kode Mata Uang',
+                        'Harga Beli Angka Murni',
+                        'Spesifikasi',
+                        'Upgrade (Komponen & Biaya)',
+                        'Catatan'
                     ]];
                 }
                 public function title(): string { return '1. Form Import Aset'; }
@@ -42,7 +55,6 @@ class AssetsTemplateExport implements WithMultipleSheets
             // =======================================================
             new class implements FromCollection, WithHeadings, WithTitle {
                 public function collection() {
-                    // 🔥 Tambahkan ID di paling depan
                     return User::select('id', 'name', 'email', 'job_title')->orderBy('name')->get();
                 }
                 public function headings(): array { return ['ID PEMINJAM (COPAS KE FORM)', 'NAMA PEMINJAM', 'EMAIL', 'JABATAN']; }
@@ -50,17 +62,26 @@ class AssetsTemplateExport implements WithMultipleSheets
             },
 
             // =======================================================
-            // SHEET 3: REFERENSI BARANG (KATALOG) -> Sudah pakai Code
+            // SHEET 3: REFERENSI BARANG (KATALOG + DAFTAR VARIAN/ALIAS)
             // =======================================================
             new class implements FromCollection, WithHeadings, WithTitle {
                 public function collection() {
-                    return Item::select('code', 'name')
-                               // ->where('item_type_code', 'AST') // 🔥 Filter ini dihapus agar semua item muncul
-                               ->where('is_active', 1)
-                               ->orderBy('name')
-                               ->get();
+                    return Item::with('aliases')
+                        ->where('is_active', 1)
+                        ->orderBy('name')
+                        ->get()
+                        ->map(function ($item) {
+                            $aliases = $item->aliases ? $item->aliases->pluck('alias_name')->implode(', ') : '-';
+                            return [
+                                'code'    => $item->code,
+                                'name'    => $item->name,
+                                'aliases' => $aliases !== '' ? $aliases : '-',
+                            ];
+                        });
                 }
-                public function headings(): array { return ['KODE BARANG (COPAS KE FORM)', 'NAMA ASET TETAP']; }
+                public function headings(): array {
+                    return ['KODE BARANG (COPAS KE FORM)', 'NAMA MASTER BARANG', 'NAMA ALTERNATIF / VARIAN TERSIMPAN'];
+                }
                 public function title(): string { return '3. Referensi Barang'; }
             },
 
@@ -69,7 +90,6 @@ class AssetsTemplateExport implements WithMultipleSheets
             // =======================================================
             new class implements FromCollection, WithHeadings, WithTitle {
                 public function collection() {
-                    // 🔥 Tambahkan ID di paling depan
                     return Company::select('id', 'name')->orderBy('name')->get();
                 }
                 public function headings(): array { return ['ID PT (COPAS KE FORM)', 'NAMA PT / ENTITAS']; }
@@ -81,7 +101,6 @@ class AssetsTemplateExport implements WithMultipleSheets
             // =======================================================
             new class implements FromCollection, WithHeadings, WithTitle {
                 public function collection() {
-                    // 🔥 Tambahkan ID di paling depan
                     return Warehouse::select('id', 'name')->orderBy('name')->get();
                 }
                 public function headings(): array { return ['ID GUDANG (COPAS KE FORM)', 'NAMA GUDANG']; }
@@ -93,7 +112,6 @@ class AssetsTemplateExport implements WithMultipleSheets
             // =======================================================
             new class implements FromCollection, WithHeadings, WithTitle {
                 public function collection() {
-                    // 🔥 Tambahkan ID di paling depan
                     return Status::where('type', 'AST')->orderBy('sequence')->select('id', 'name', 'slug')->get();
                 }
                 public function headings(): array { return ['ID STATUS (COPAS KE FORM)', 'NAMA STATUS', 'KODE SISTEM (SLUG)']; }
@@ -101,7 +119,7 @@ class AssetsTemplateExport implements WithMultipleSheets
             },
 
             // =======================================================
-            // SHEET 7: REFERENSI MATA UANG -> Sudah pakai Code
+            // SHEET 7: REFERENSI MATA UANG
             // =======================================================
             new class implements FromCollection, WithHeadings, WithTitle {
                 public function collection() {
@@ -116,7 +134,6 @@ class AssetsTemplateExport implements WithMultipleSheets
             // =======================================================
             new class implements FromCollection, WithHeadings, WithTitle {
                 public function collection() {
-                    // 🔥 Tambahkan ID di paling depan
                     return AssetCategory::where('is_active', 1)
                                         ->select('id', 'name', 'useful_life_years')
                                         ->orderBy('useful_life_years')
@@ -132,8 +149,9 @@ class AssetsTemplateExport implements WithMultipleSheets
             new class implements FromArray, WithHeadings, WithTitle {
                 public function array(): array {
                     return [
-                        ['Kode Barang', 'OPSIONAL', 'Ambil dari Sheet 3. KOSONGKAN jika barang belum ada di Katalog, sistem akan membuatkannya otomatis.'],
-                        ['Nama Spesifik Aset', 'WAJIB (Jika Kode Kosong)', 'Cth: Laptop Core i7. WAJIB DIISI jika Kode Barang di atas dikosongkan.'],
+                        ['Kode Barang', 'OPSIONAL', 'Ambil dari Sheet 3 (Cth: SKU-00002). KOSONGKAN jika barang belum ada di Katalog, sistem akan membuatkannya otomatis.'],
+                        ['Nama Alternatif / Varian', 'OPSIONAL', 'Teks bebas untuk varian barang (Cth: Mini PC, Komputer Rakitan, Komputer All in One). Otomatis tersimpan ke kamus varian Master Barang.'],
+                        ['Nama Spesifik Aset', 'WAJIB (Jika Kode Kosong)', 'Nama resmi aset sesuai pembukuan Akuntansi / Invoice (Cth: 1 SET Lenovo AIO 24IRH9 - i5, 16GB, 512GB for Arie HRD).'],
                         ['ID Kategori Aset', 'OPSIONAL', 'Ambil ANGKA ID dari Sheet 8. Jika kosong, otomatis masuk ke Kelompok 1 (4 Tahun).'],
                         ['Serial Number', 'OPSIONAL', 'Nomor Seri / S/N fisik dari barang.'],
                         ['Label Akuntansi', 'OPSIONAL', 'Nomor aset dari Keuangan (Cth: FA-001).'],
@@ -144,8 +162,9 @@ class AssetsTemplateExport implements WithMultipleSheets
                         ['Tanggal Perolehan', 'OPSIONAL', 'Format: YYYY-MM-DD atau format Date bawaan Excel.'],
                         ['Kode Mata Uang', 'OPSIONAL', 'Ketik IDR, USD, dll. Kosong = IDR. Ambil KODE dari Sheet 7.'],
                         ['Harga Beli Angka Murni', 'OPSIONAL', 'Hanya angka murni, tanpa titik/koma! (Cth: 15000000)'],
-                        ['Spesifikasi', 'OPSIONAL', 'Detail spek khusus unit ini.'],
-                        ['Catatan', 'OPSIONAL', 'Keterangan tambahan jika ada.'],
+                        ['Spesifikasi', 'OPSIONAL', 'Detail spek bawaan unit ini (Cth: Core i5, SSD 512GB, RAM 16GB).'],
+                        ['Upgrade (Komponen & Biaya)', 'OPSIONAL', 'Bisa lebih dari 1 komponen dalam 1 sel (pisahkan dengan baris baru Alt+Enter atau tanda ;). Format: Nama Komponen | Biaya. Contoh: RAM Imperion DDR3 16GB | 660000; SSD Samsung 870 EVO 500GB | 634000'],
+                        ['Catatan', 'OPSIONAL', 'Keterangan tambahan / Remarks (Cth: Done by vendor, iMac ex Irfana).'],
                     ];
                 }
                 public function headings(): array { return ['NAMA KOLOM', 'SIFAT', 'PANDUAN PENGISIAN (PASTIKAN COPAS ID BUKAN NAMA)']; }

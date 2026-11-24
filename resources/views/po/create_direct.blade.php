@@ -21,6 +21,14 @@
 @endpush
 
 @section('content')
+@php
+    $itemAliasesMap = [];
+    if (isset($masterItems)) {
+        foreach ($masterItems as $mItem) {
+            $itemAliasesMap[$mItem->id] = $mItem->aliases ? $mItem->aliases->pluck('alias_name')->toArray() : [];
+        }
+    }
+@endphp
 
 <form action="{{ route('po.store_direct') }}" method="POST" id="poForm" enctype="multipart/form-data" novalidate>
     @csrf
@@ -66,10 +74,9 @@
                                 @foreach($vendors as $v) <option value="{{ $v->id }}">{{ $v->name }}</option> @endforeach
                             </select>
                         </div>
-                        <!-- 🔥 INPUT NAMA TOKO SPESIFIK 🔥 -->
                         <div class="col-md-5">
-                            <label>Nama Toko Spesifik (Opsional)</label>
-                            <input type="text" name="vendor_sub_name" class="form-control" placeholder="Contoh: Vortexindo.Computer (Jika beli di Tokopedia)">
+                            <label class="form-label small fw-bold text-dark">Nama Toko Spesifik (Opsional)</label>
+                            <input type="text" name="vendor_sub_name" class="form-control form-input-custom" placeholder="Contoh: Vortexindo.Computer (Jika beli di Tokopedia)">
                             <small class="text-muted">Gunakan ini jika Anda memilih vendor berupa Marketplace.</small>
                         </div>
                         <div class="col-md-5">
@@ -86,7 +93,6 @@
                             </select>
                         </div>
 
-                        {{-- 🔥 KOLOM BARU: INVOICE & REKENING 🔥 --}}
                         <div class="col-md-5">
                             <label class="form-label small fw-bold text-dark">No. Invoice (Opsional)</label>
                             <input type="text" name="invoice_number" class="form-control form-input-custom fw-bold text-primary" placeholder="Bisa dikosongkan & diisi menyusul...">
@@ -260,17 +266,14 @@
 <datalist id="chargeTypeList">@foreach($chargeTypes as $type) <option value="{{ $type->name }}"></option> @endforeach</datalist>
 <datalist id="discountTypeList">@foreach($discountTypes as $type) <option value="{{ $type->name }}"></option> @endforeach</datalist>
 
-
 {{-- MASTER ITEM LIST (UNTUK DROPDOWN CLONE) --}}
 <div id="masterItemSelectTemplate" class="d-none">
     <select class="form-select select2-item item-select" required onchange="onItemSelect(this, 'INDEX')">
         <option value="">-- Pilih Barang Master --</option>
         @foreach($masterItems as $m)
             @php
-                // Cari nama UOM dasarnya melalui relasi uom()
                 $baseUomName = 'PCS';
                 if ($m->uom_id && $m->uom) {
-                    // Gunakan $m->uom->name (atau $m->uom->uom_name jika nama fieldnya uom_name)
                     $baseUomName = $m->uom->name ?? $m->uom->uom_name ?? 'PCS';
                 } elseif (!empty($m->unit)) {
                     $baseUomName = $m->unit;
@@ -282,7 +285,6 @@
         @endforeach
     </select>
 </div>
-
 
 <template id="chargeRowTemplate">
     <tr class="charge-row border-bottom">
@@ -320,18 +322,28 @@
             <div class="pb-4 mb-4 row g-3 border-bottom">
                 <div class="col-md-7">
                     <div class="mb-3">
-                        <label class="form-label small fw-bold text-dark">Nama Barang di PO (Custom)</label>
-                        <input type="text" name="po_items[INDEX][item_name_override]" id="name_override_INDEX" class="form-control form-input-custom fw-bold text-primary" placeholder="Bisa dikosongkan untuk memakai nama asli...">
+                        <label class="form-label small fw-bold text-dark">
+                            Nama Alternatif / Nama Barang di PO (Custom)
+                            <span class="border badge bg-info-subtle text-info-emphasis border-info-subtle ms-1" style="font-size: 0.68rem;">Auto-Simpan Kamus Varian</span>
+                        </label>
+                        <input type="text"
+                               name="po_items[INDEX][item_name_override]"
+                               id="name_override_INDEX"
+                               list="alias_list_INDEX"
+                               class="form-control form-input-custom fw-bold text-primary"
+                               placeholder="Pilih dari saran varian atau ketik nama alternatif baru...">
+                        <datalist id="alias_list_INDEX"></datalist>
+                        <div class="form-text text-muted" style="font-size: 0.72rem;" id="aliasHint_INDEX">
+                            Pilih barang master di atas untuk melihat daftar nama alternatif yang pernah dipakai.
+                        </div>
                     </div>
                     <label class="form-label small fw-bold text-dark">Spesifikasi Detail (Catatan)</label>
                     <textarea name="po_items[INDEX][notes]" class="form-control form-input-custom" rows="3" placeholder="Ketik catatan spek..."></textarea>
 
-                    {{-- 🔥 TAMBAHKAN KOTAK REMARK DI SINI 🔥 --}}
                     <div class="mt-3">
                         <label class="form-label small fw-bold text-dark">Remark (Opsional)</label>
-                        <input type="text" name="new_items[NEW_INDEX][remark]" class="form-control form-input-custom" placeholder="Ketik remark di sini...">
+                        <input type="text" name="po_items[INDEX][remark]" class="form-control form-input-custom" placeholder="Ketik remark di sini...">
                     </div>
-
                 </div>
                 <div class="col-md-5">
                     <label class="form-label small fw-bold text-dark"><i class="bi bi-paperclip text-primary"></i> Dokumen Pendukung Item</label>
@@ -401,6 +413,8 @@
 <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
 
 <script>
+    window.ITEM_ALIASES_MAP = @json($itemAliasesMap);
+
     let itemIdx = 0;
     let chargeIdx = 100;
     let discIdx = 100;
@@ -462,9 +476,7 @@
         let template = document.getElementById('itemRowTemplate').innerHTML.replace(/INDEX/g, itemIdx);
         document.getElementById('itemsContainer').insertAdjacentHTML('beforeend', template);
 
-        // Suntikkan Dropdown Item (Select2)
         let selectHtml = document.getElementById('masterItemSelectTemplate').innerHTML.replace(/INDEX/g, itemIdx);
-        // Tambahkan attribut name agar terkirim
         selectHtml = selectHtml.replace('class="form-select', `name="po_items[${itemIdx}][item_id]" class="form-select`);
 
         document.getElementById('selectContainer_' + itemIdx).innerHTML = selectHtml;
@@ -475,6 +487,7 @@
 
     function onItemSelect(selectObj, index) {
         let selectedOption = selectObj.options[selectObj.selectedIndex];
+        let selectedItemId = selectObj.value;
         let baseUom = selectedOption.getAttribute('data-base-uom') || 'PCS';
         let uomsJson = selectedOption.getAttribute('data-uoms');
 
@@ -483,6 +496,24 @@
         let cleanName = itemNameSplit.length > 1 ? itemNameSplit.slice(1).join(' - ') : itemNameRaw;
 
         document.getElementById('name_override_' + index).value = cleanName;
+
+        // Isi Datalist Saran Nama Alternatif dari Kamus ItemAlias
+        let aliasList = document.getElementById('alias_list_' + index);
+        let aliasHint = document.getElementById('aliasHint_' + index);
+        if (aliasList) {
+            aliasList.innerHTML = '';
+            let aliases = (window.ITEM_ALIASES_MAP && window.ITEM_ALIASES_MAP[selectedItemId]) || [];
+            aliases.forEach(function (aliasName) {
+                let opt = document.createElement('option');
+                opt.value = aliasName;
+                aliasList.appendChild(opt);
+            });
+            if (aliasHint) {
+                aliasHint.innerHTML = aliases.length > 0
+                    ? `<i class="bi bi-lightbulb-fill text-warning me-1"></i>Tersedia <strong>${aliases.length} saran nama alternatif</strong> tersimpan. Klik kolom di atas untuk memilih atau ketik nama baru.`
+                    : `Belum ada nama alternatif tersimpan untuk barang ini. Ketik nama baru untuk menyimpannya otomatis.`;
+            }
+        }
 
         let uomSelect = document.getElementById('uomSelect_' + index);
         uomSelect.innerHTML = `<option value="" data-name="${baseUom}">${baseUom} (Dasar)</option>`;
