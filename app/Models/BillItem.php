@@ -18,4 +18,6 @@ class BillItem extends Model
         return $this->belongsTo(\App\Models\Item::class, 'item_id');
     }
 
+    
+
 }

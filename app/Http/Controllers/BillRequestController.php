@@ -2731,6 +2731,237 @@ class BillRequestController extends Controller
     }
 
 
+    // =========================================================================
+    // HALAMAN KHUSUS: MATRIKS & MONITORING TAGIHAN OPEX BERULANG (PER BULAN/PT/ITEM)
+    // =========================================================================
+    public function recurringMatrix(Request $request)
+    {
+        // Ambil daftar tahun murni dari transaksi bill di database (tanpa hardcode)
+        $invoiceYears = \App\Models\BillRequest::whereNotNull('invoice_date')
+            ->selectRaw('DISTINCT YEAR(invoice_date) as y')
+            ->pluck('y')
+            ->map(fn($v) => (int)$v);
+
+        $dueYears = \App\Models\BillRequest::whereNotNull('due_date')
+            ->selectRaw('DISTINCT YEAR(due_date) as y')
+            ->pluck('y')
+            ->map(fn($v) => (int)$v);
+
+        $availableYears = $invoiceYears->merge($dueYears)
+            ->filter(fn($y) =>$y > 0)
+            ->unique()
+            ->sortDesc()
+            ->values();
+
+        $currentYear  = (int) date('Y');$currentMonth = (int) date('n');
+
+        $defaultYear = $availableYears->contains($currentYear)
+            ? $currentYear
+            : ($availableYears->first() ?? $currentYear);
+
+        if ($availableYears->isEmpty()) {
+            $availableYears = collect([$currentYear]);
+        }
+
+        // Default Bulan = bulan sekarang; jika user memilih "all", tampilkan 12 bulan
+        $year  = (int) $request->input('year',$defaultYear);
+        $month =$request->has('month')
+            ? ($request->input('month') === 'all' ? null : (int) $request->input('month'))
+            : $currentMonth;
+
+        $companyId   =$request->input('company_id');
+        $vendorName  = trim((string)$request->input('vendor'));
+        $itemSearch  = trim((string)$request->input('item_search'));
+        $cycleStatus =$request->input('cycle_status', 'all'); // all | active | stopped
+
+        $user         = auth()->user();
+        $userRoleIds  = $user->roles->pluck('id')->toArray();
+        $isSuperAdmin = $user->hasAnyRole(['Super Admin', 'Super Administrator', 'super-admin']) || $user->id === 1;
+
+        $billCols = \Illuminate\Support\Facades\Schema::getColumnListing('bill_requests');
+
+        // 1. Ambil semua tagihan berulang
+        $query = \App\Models\BillRequest::with(['company', 'user', 'status', 'items.item'])
+            ->where(function ($q) use ($billCols) {$q->where('is_recurring', true)
+                  ->orWhere('description', 'like', '%otomatis%')
+                  ->orWhere('description', 'like', '%recurring%')
+                  ->orWhereHas('histories', function ($qh) {$qh->where('note', 'like', '%Recurring dari:%')
+                         ->orWhere('action', 'STOP LANGGANAN');
+                  });
+
+                if (in_array('parent_id', $billCols)) {$q->orWhereNotNull('parent_id');
+                }
+                if (in_array('notes', $billCols)) {$q->orWhere('notes', 'like', '%Recurring dari:%')
+                      ->orWhere('notes', 'like', '%otomatis%');
+                }
+            })
+            ->whereHas('status', function ($q) {$q->whereNotIn('slug', ['void', 'cancelled', 'rejected']);
+            });
+
+        if (!$isSuperAdmin) {
+            $query->where(function ($q) use ($user,$userRoleIds) {
+                $q->where('bill_requests.user_id',$user->id)
+                  ->orWhereExists(function ($subQuery) use ($user, $userRoleIds) {$subQuery->select(\DB::raw(1))
+                               ->from('document_approvals')
+                               ->whereColumn('document_approvals.document_id', 'bill_requests.id')
+                               ->whereIn('document_approvals.document_type', [\App\Models\BillRequest::class, 'OPEX', 'BillRequest'])
+                               ->where(function ($apprQ) use ($user,$userRoleIds) {
+                                   $apprQ->where('document_approvals.user_id',$user->id)
+                                         ->orWhere('document_approvals.approved_by', $user->id);
+                                   if (!empty($userRoleIds)) {$apprQ->orWhere(function ($roleQ) use ($user, $userRoleIds) {$roleQ->whereNull('document_approvals.user_id')
+                                                 ->whereIn('document_approvals.role_id', $userRoleIds);
+                                       });
+                                   }
+                               });
+                  });
+            });
+        }
+
+        if ($companyId) {
+            $query->where('company_id',$companyId);
+        }
+        if ($vendorName !== '') {
+            $query->where('vendor_name', 'like', "\%{$vendorName}%");
+        }
+        if ($itemSearch !== '') {$query->where(function ($q) use ($itemSearch) {
+                $q->where('title', 'like', "\%{$itemSearch}%")
+                  ->orWhere('account_number', 'like', "%{$itemSearch}%")
+                  ->orWhere('bill_number', 'like', "%{$itemSearch}%")
+                  ->orWhereHas('items', function ($qi) use ($itemSearch) {
+                      $qi->where('name', 'like', "\%{$itemSearch}%")
+                         ->orWhere('description', 'like', "%{$itemSearch}%");
+                  });
+            });
+        }
+
+        $allRecurringBills =$query->orderBy('invoice_date', 'asc')->orderBy('id', 'asc')->get();
+
+        $visibleMonths = $month ? [$month] : range(1, 12);
+
+        // 2. Kelompokkan berdasarkan Kunci Kontrak Langganan
+        $matrixGroups     = [];
+        $totalsByCurrency = [];$unpaidByCurrency = [];
+
+        foreach ($allRecurringBills as$bill) {
+            $itemNames =$bill->items->pluck('name')->filter()->unique()->implode(', ');
+            if ($itemNames === '') {
+                $itemNames = trim(str_replace('Tagihan Opex - ', '', (string)$bill->title)) ?: 'Layanan Berulang';
+            }
+
+            $acctNo   = trim((string) ($bill->account_number ?? ''));
+            $currCode = strtoupper(trim((string) ($bill->currency ?? 'IDR')));
+            $groupKey =$bill->company_id . '|' . strtolower(trim($bill->vendor_name)) . 'vert{}' . strtolower($itemNames) . '|' . strtolower($acctNo) . 'vert{}' .$currCode;
+
+            $statusSlug = strtolower(optional($bill->status)->slug ?? 'pending');
+            $canEdit    = in_array($statusSlug, ['pending', 'draft']);
+
+            if (!isset($matrixGroups[$groupKey])) {
+                $matrixGroups[$groupKey] = [
+                    'company_name'       => optional($bill->company)->name ?? '-',
+                    'company_code'       => optional($bill->company)->code ?? '-',
+                    'vendor_name'        => $bill->vendor_name,
+                    'item_names'         => $itemNames,
+                    'account_number'     => $acctNo ?: '-',
+                    'pic_name'           => optional($bill->user)->name ?? '-',
+                    'currency'           => $currCode,
+                    'is_active'          => false,
+                    'interval_label'     => '-',
+                    'next_gen_date'      => null,
+                    'latest_bill_number' => $bill->bill_number,
+                    'latest_can_edit'    => $canEdit,
+                    'months'             => array_fill(1, 12, []),
+                    'period_total'       => 0.0,
+                    'matched_bills'      => 0,
+                ];
+            }
+
+            // Simpan referensi bill terbaru untuk tombol cepat Detail/Edit di kolom kontrak
+            $matrixGroups[$groupKey]['latest_bill_number'] =$bill->bill_number;
+            $matrixGroups[$groupKey]['latest_can_edit']    =$canEdit;
+
+            if ($bill->is_recurring) {
+                $matrixGroups[$groupKey]['is_active']      = true;
+                $matrixGroups[$groupKey]['interval_label'] = 'Setiap ' . ($bill->recurring_interval ?? 1) . ' ' . ($bill->recurring_period ?? 'month');
+                $matrixGroups[$groupKey]['next_gen_date']  =$bill->next_generation_date;
+                $matrixGroups[$groupKey]['pic_name']       = optional($bill->user)->name ?? $matrixGroups[$groupKey]['pic_name'];
+            }
+
+            if ($bill->invoice_date) {
+                $invDate = \Carbon\Carbon::parse($bill->invoice_date);
+                $invYear = (int)$invDate->year;
+                $invMon  = (int)$invDate->month;
+
+                if ($invYear ===$year && in_array($invMon,$visibleMonths)) {
+                    $amt       = (float)$bill->amount;
+                    $isOverdue =$bill->due_date && \Carbon\Carbon::parse($bill->due_date)->isPast() && !in_array($statusSlug, ['paid', 'rejected', 'cancelled']);
+
+                    $matrixGroups[$groupKey]['months'][$invMon][] = [
+                        'id'          => $bill->id,
+                        'bill_number' => $bill->bill_number,
+                        'amount'      => $amt,
+                        'status_slug' => $statusSlug,
+                        'status_name' => optional($bill->status)->name ?? strtoupper($statusSlug),
+                        'can_edit'    => $canEdit,
+                        'is_overdue'  => $isOverdue,
+                        'due_date'    => $bill->due_date ? \Carbon\Carbon::parse($bill->due_date)->format('d M Y') : '-',
+                    ];
+
+                    $matrixGroups[$groupKey]['period_total']  +=$amt;
+                    $matrixGroups[$groupKey]['matched_bills'] += 1;
+
+                    $totalsByCurrency[$currCode] = ($totalsByCurrency[$currCode] ?? 0) +$amt;
+
+                    if (in_array($statusSlug, ['pending', 'approved', 'partial'])) {$unpaidByCurrency[$currCode] = ($unpaidByCurrency[$currCode] ?? 0) +$amt;
+                    }
+                }
+            }
+        }
+
+        // 3. Saring baris sesuai periode bulan/tahun & status siklus yang dipilih
+        $matrixRows = collect($matrixGroups)->filter(function ($row) use ($cycleStatus) {
+            // Hanya tampilkan kontrak yang memang memiliki tagihan di periode bulan/tahun yang dipilih
+            if ($row['matched_bills'] === 0) {
+                return false;
+            }
+            if ($cycleStatus === 'active') return$row['is_active'] === true;
+            if ($cycleStatus === 'stopped') return$row['is_active'] === false;
+            return true;
+        })->sortBy([
+            ['company_name', 'asc'],
+            ['vendor_name', 'asc'],
+            ['item_names', 'asc'],
+        ])->values();
+
+        // Data pendukung filter dropdown
+        $companies = \App\Models\Company::orderBy('name')->get();$vendors   = \App\Models\BillRequest::where('is_recurring', true)
+            ->distinct()
+            ->orderBy('vendor_name')
+            ->pluck('vendor_name');
+
+        $recurringItems = \DB::table('bill_items')
+            ->join('bill_requests', 'bill_requests.id', '=', 'bill_items.bill_request_id')
+            ->where('bill_requests.is_recurring', true)
+            ->distinct()
+            ->orderBy('bill_items.name')
+            ->pluck('bill_items.name');
+
+        return view('bills.recurring_matrix', compact(
+            'matrixRows',
+            'companies',
+            'vendors',
+            'recurringItems',
+            'availableYears',
+            'year',
+            'month',
+            'visibleMonths',
+            'companyId',
+            'vendorName',
+            'itemSearch',
+            'cycleStatus',
+            'totalsByCurrency',
+            'unpaidByCurrency'
+        ));
+    }
 
 
 }

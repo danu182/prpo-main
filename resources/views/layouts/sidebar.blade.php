@@ -137,7 +137,8 @@
                     <a href="{{ route('vendor-invoices.index') }}" class="sidebar-sublink {{ request()->routeIs('vendor-invoices.*') ? 'active' : '' }}">Tagihan Vendor (A/P)</a>
                 @endcan
                 @can('view_bills')
-                    <a href="{{ route('bills.index') }}" class="sidebar-sublink {{ request()->routeIs('bills.*') ? 'active' : '' }}">Pengajuan Opex</a>
+                    <a href="{{ route('bills.index') }}" class="sidebar-sublink {{ request()->routeIs('bills.index', 'bills.create', 'bills.show', 'bills.edit') ? 'active' : '' }}">Pengajuan Opex</a>
+                    <a href="{{ route('bills.recurring_matrix') }}" class="sidebar-sublink {{ request()->routeIs('bills.recurring_matrix') ? 'active' : '' }}">Matriks Opex Berulang</a>
                 @endcan
                 @can('view_payments')
                     <a href="{{ route('payments.index') }}" class="sidebar-sublink {{ request()->routeIs('payments.*') ? 'active' : '' }}">Proses Pembayaran</a>
@@ -148,7 +149,6 @@
             </div>
         </div>
         @endcan
-
         {{-- 8. REPORT CENTER --}}
         @can('menu_reports')
         <div class="sidebar-dropdown">

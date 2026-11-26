@@ -192,9 +192,9 @@ Route::middleware('auth')->group(function () {
     //     Route::post('/transactions', [FixedAssetController::class, 'storeTransaction'])->name('transactions.store');
     //     Route::get('/transactions/{id}', [FixedAssetController::class, 'showTransaction'])->name('transactions.show');
     //     Route::get('/transactions/{id}/print', [FixedAssetController::class, 'printTransactionDocument'])->name('transactions.print');
-        
+
     //     Route::get('/fixed-assets/item-aliases/{itemId}', [App\Http\Controllers\FixedAssetController::class, 'getItemAliases'])->name('fixed-assets.item_aliases');
-        
+
     // });
 
 
@@ -380,7 +380,7 @@ Route::middleware('auth')->group(function () {
 
         // Rute Cetak Label Barcode / QR Aset Fisik
         Route::get('/print-label/{asset_id?}', [\App\Http\Controllers\InventoryController::class, 'printLabel'])->name('print_label');
-        
+
         Route::get('/{inventory}', [InventoryController::class, 'show'])->name('show');
 
 
@@ -543,6 +543,9 @@ Route::middleware('auth')->group(function () {
 
         // 🔥 TAMBAHKAN ROUTE GANTI PIC DI SINI 🔥
         Route::post('/{slug}/change-pic', [\App\Http\Controllers\BillRequestController::class, 'changePic'])->name('change_pic')->where('slug', '.*');
+
+        Route::get('/recurring-matrix', [App\Http\Controllers\BillRequestController::class, 'recurringMatrix'])->name('recurring_matrix');
+
     });
 
 

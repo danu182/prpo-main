@@ -43,7 +43,12 @@ class SyncBillToGoogleSheet implements ShouldQueue
             $this->bill->load(['items.item.category', 'company', 'user', 'charges.chargeType', 'discounts.discountType']);
 
             $companyName = $this->bill->company ? $this->bill->company->name : '-';
-            $periodeTagihan = \Carbon\Carbon::parse($this->bill->invoice_date)->translatedFormat('F Y');
+            $periodOffset = (int) ($this->bill->period_offset ?? 0);
+            $periodeTagihan = \Carbon\Carbon::parse($this->bill->invoice_date)->addMonths($periodOffset)->translatedFormat('F Y');
+
+            // Tambahkan tanda petik tunggal di depan agar Google Sheets tidak mengubah tanggal menjadi angka serial (46011, dst.)
+            $tanggalSheet = "'" . \Carbon\Carbon::parse($this->bill->invoice_date)->format('d-M-Y');
+
             $childRows = [];
 
             // --- A. LOOPING ITEM ---
@@ -56,7 +61,7 @@ class SyncBillToGoogleSheet implements ShouldQueue
                 $categoryName = optional(optional($item->item)->category)->name ?? 'Lainnya';
 
                 $childRows[] = [
-                    \Carbon\Carbon::parse($this->bill->invoice_date)->format('d-M-Y'), $companyName, $this->bill->vendor_name,
+                    $tanggalSheet, $companyName, $this->bill->vendor_name,
                     "  ↳ [Item] " . $item->name . $infoTambahan, $categoryName, $dppSheet, $item->tax_amount, $item->amount,
                     $this->bill->vendor_invoice_number ?? '-', $this->bill->account_number ?? '-', $this->bill->bill_number,
                     $this->bill->user->name ?? 'System', '-', $item->description ?? '-'
@@ -68,7 +73,7 @@ class SyncBillToGoogleSheet implements ShouldQueue
                 $chargeName = optional($charge->chargeType)->name ?? 'Biaya Tambahan';
                 $note = !empty($charge->note) ? ' (' . $charge->note . ')' : '';
                 $childRows[] = [
-                    \Carbon\Carbon::parse($this->bill->invoice_date)->format('d-M-Y'), $companyName, $this->bill->vendor_name,
+                    $tanggalSheet, $companyName, $this->bill->vendor_name,
                     "  ↳ [+] " . $chargeName . $note, 'Biaya Tambahan', $charge->amount, 0, $charge->amount,
                     $this->bill->vendor_invoice_number ?? '-', $this->bill->account_number ?? '-', $this->bill->bill_number,
                     $this->bill->user->name ?? 'System', '-', $charge->note ?? '-'
@@ -80,7 +85,7 @@ class SyncBillToGoogleSheet implements ShouldQueue
                 $discName = optional($discount->discountType)->name ?? 'Potongan';
                 $note = !empty($discount->note) ? ' (' . $discount->note . ')' : '';
                 $childRows[] = [
-                    \Carbon\Carbon::parse($this->bill->invoice_date)->format('d-M-Y'), $companyName, $this->bill->vendor_name,
+                    $tanggalSheet, $companyName, $this->bill->vendor_name,
                     "  ↳ [-] " . $discName . $note, 'Potongan / Diskon', -abs($discount->amount), 0, -abs($discount->amount),
                     $this->bill->vendor_invoice_number ?? '-', $this->bill->account_number ?? '-', $this->bill->bill_number,
                     $this->bill->user->name ?? 'System', '-', $discount->note ?? '-'
@@ -94,7 +99,7 @@ class SyncBillToGoogleSheet implements ShouldQueue
             if ($actualGlobalDisc > 0) {
                 $globalDiscLabel = " (-Disc Global Rp" . number_format($actualGlobalDisc, 0, ',', '.') . ")";
                 $childRows[] = [
-                    \Carbon\Carbon::parse($this->bill->invoice_date)->format('d-M-Y'), $companyName, $this->bill->vendor_name,
+                    $tanggalSheet, $companyName, $this->bill->vendor_name,
                     "  ↳ [-] Diskon Komersial (Global)", 'Potongan / Diskon', -$actualGlobalDisc, 0, -$actualGlobalDisc,
                     $this->bill->vendor_invoice_number ?? '-', $this->bill->account_number ?? '-', $this->bill->bill_number,
                     $this->bill->user->name ?? 'System', '-', '-'
@@ -107,7 +112,7 @@ class SyncBillToGoogleSheet implements ShouldQueue
             if ($actualGlobalTax > 0) {
                 $globalTaxLabel = " (+Pajak Global Rp" . number_format($actualGlobalTax, 0, ',', '.') . ")";
                 $childRows[] = [
-                    \Carbon\Carbon::parse($this->bill->invoice_date)->format('d-M-Y'), $companyName, $this->bill->vendor_name,
+                    $tanggalSheet, $companyName, $this->bill->vendor_name,
                     "  ↳ [+] Pajak Header (VAT/PPN)", 'Pajak', $actualGlobalTax, 0, $actualGlobalTax,
                     $this->bill->vendor_invoice_number ?? '-', $this->bill->account_number ?? '-', $this->bill->bill_number,
                     $this->bill->user->name ?? 'System', '-', '-'
@@ -120,7 +125,7 @@ class SyncBillToGoogleSheet implements ShouldQueue
             $totalDPP = ($this->bill->amount ?? 0) - ($this->bill->total_tax ?? 0);
 
             $parentRow = [
-                \Carbon\Carbon::parse($this->bill->invoice_date)->format('d-M-Y'), $companyName, $this->bill->vendor_name,
+                $tanggalSheet, $companyName, $this->bill->vendor_name,
                 $judulParent, "SUMMARY", $totalDPP, $this->bill->total_tax, $this->bill->amount,
                 $this->bill->vendor_invoice_number ?? '-', $this->bill->account_number ?? '-', $this->bill->bill_number,
                 $this->bill->user->name ?? 'System', $catatanParent, '-'

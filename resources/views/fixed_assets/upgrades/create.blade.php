@@ -17,8 +17,8 @@
 <div class="pb-5 container-fluid text-dark">
     <div class="mb-4 d-flex justify-content-between align-items-center">
         <div>
-            <h4 class="mb-1 fw-bold text-dark"><i class="bi bi-cpu-fill text-warning me-2"></i> Pengeluaran Barang Gudang untuk Upgrade Aset</h4>
-            <div class="text-muted small">Keluarkan sparepart dari stok gudang langsung ke unit aset tertentu, lengkap dengan nama varian PO & kontrol dampak nilai/umur aset.</div>
+            <h4 class="mb-1 fw-bold text-dark"><i class="bi bi-cpu-fill text-warning me-2"></i> Pengeluaran Barang / Penggabungan Aset untuk Upgrade</h4>
+            <div class="text-muted small">Pasang sparepart dari stok gudang atau gabungkan aset terdaftar (AST/FA) ke unit aset induk (penyusutan mengikuti aset induk).</div>
         </div>
         <a href="{{ route('fixed-assets.upgrades.index') }}" class="btn btn-outline-secondary rounded-pill fw-bold">
             <i class="bi bi-arrow-left me-1"></i> Riwayat Upgrade
@@ -46,12 +46,12 @@
                 {{-- 1. PILIH UNIT ASET TARGET --}}
                 <div class="mb-4 border-0 shadow-sm card rounded-4">
                     <div class="py-3 bg-white card-header border-bottom">
-                        <h6 class="mb-0 fw-bold text-primary"><i class="bi bi-1-circle-fill me-2"></i>Pilih Unit Aset yang Akan Di-Upgrade</h6>
+                        <h6 class="mb-0 fw-bold text-primary"><i class="bi bi-1-circle-fill me-2"></i>Pilih Unit Aset Induk yang Akan Di-Upgrade</h6>
                     </div>
                     <div class="p-4 card-body">
                         <div class="row g-3">
                             <div class="col-md-8">
-                                <label class="form-label small fw-bold text-muted text-uppercase">Unit Aset Target <span class="text-danger">*</span></label>
+                                <label class="form-label small fw-bold text-muted text-uppercase">Unit Aset Target (Induk) <span class="text-danger">*</span></label>
                                 <select name="fixed_asset_id" id="selectTargetAsset" class="form-select select2-asset" required>
                                     <option value="">-- Cari No. Aset / Varian / Nama / Label FA / Pemegang --</option>
                                     @foreach($assets as $ast)
@@ -98,7 +98,7 @@
                                     <strong class="text-primary fs-6" id="infoCurrentNbv">Rp 0</strong>
                                 </div>
                                 <div class="col-12 pt-1 border-top mt-2 d-flex justify-content-between align-items-center">
-                                    <span>Tanggal Beli: <strong id="infoAcqDate">-</strong> (Kategori Umur: <strong id="infoLifeYears">4</strong> Thn)</span>
+                                    <span>Tanggal Beli: <strong id="infoAcqDate">-</strong> (Kategori Umur PC: <strong id="infoLifeYears">4</strong> Thn)</span>
                                     <span id="infoRemainingBadge" class="badge bg-info text-dark">Sisa Umur: - Bulan</span>
                                 </div>
                             </div>
@@ -108,11 +108,14 @@
 
                 {{-- 2. DAFTAR PART / KOMPONEN YANG DIPASANG --}}
                 <div class="mb-4 border-0 shadow-sm card rounded-4">
-                    <div class="py-3 bg-white card-header border-bottom d-flex justify-content-between align-items-center">
+                    <div class="py-3 bg-white card-header border-bottom d-flex flex-wrap gap-2 justify-content-between align-items-center">
                         <h6 class="mb-0 fw-bold text-primary"><i class="bi bi-2-circle-fill me-2"></i>Daftar Part / Komponen Upgrade</h6>
-                        <div class="gap-2 d-flex">
+                        <div class="gap-2 d-flex flex-wrap">
                             <button type="button" class="btn btn-sm btn-primary rounded-pill fw-bold" id="btnAddWarehousePart">
-                                <i class="bi bi-box-seam me-1"></i> + Ambil Part dari Gudang
+                                <i class="bi bi-box-seam me-1"></i> + Part Stok Gudang
+                            </button>
+                            <button type="button" class="btn btn-sm btn-warning text-dark rounded-pill fw-bold" id="btnAddMergedAssetPart">
+                                <i class="bi bi-intersect me-1"></i> + Gabung Aset Terdaftar (Merge FA)
                             </button>
                             <button type="button" class="btn btn-sm btn-outline-secondary rounded-pill fw-bold" id="btnAddServicePart">
                                 <i class="bi bi-wrench me-1"></i> + Jasa / Non-Stok
@@ -122,7 +125,7 @@
                     <div class="p-3 card-body bg-light">
                         <div id="partsContainer" class="gap-3 d-flex flex-column"></div>
                         <div id="emptyPartsNotice" class="p-4 text-center bg-white border border-dashed rounded-3 text-muted small">
-                            Klik <strong>"+ Ambil Part dari Gudang"</strong> untuk memilih sparepart (RAM, SSD, NVMe, dll) yang sudah dibeli lewat PO dan tersedia di gudang.
+                            Pilih <strong>"+ Part Stok Gudang"</strong> untuk sparepart biasa, atau <strong>"+ Gabung Aset Terdaftar (Merge FA)"</strong> jika komponen sudah terlanjur dibuatkan Nomor Aset / No. FA sendiri dan akan dilebur ke penyusutan PC induk.
                         </div>
                     </div>
                 </div>
@@ -130,12 +133,12 @@
                 {{-- 3. PERLAKUAN AKUNTANSI (PILIHAN EKSPLISIT USER) --}}
                 <div class="border-0 shadow-sm card rounded-4">
                     <div class="py-3 bg-white card-header border-bottom">
-                        <h6 class="mb-0 fw-bold text-primary"><i class="bi bi-3-circle-fill me-2"></i>Perlakuan Nilai & Umur Aset (Wajib Ditentukan)</h6>
+                        <h6 class="mb-0 fw-bold text-primary"><i class="bi bi-3-circle-fill me-2"></i>Perlakuan Nilai & Umur Aset Induk (Wajib Ditentukan)</h6>
                     </div>
                     <div class="p-4 card-body">
                         <div class="alert alert-warning small mb-3">
                             <i class="bi bi-info-circle-fill me-1"></i>
-                            <strong>Penting:</strong> Sistem tidak mengubah nilai buku maupun umur aset tanpa pilihan Anda. Tentukan dampak biaya upgrade ini terhadap pembukuan aset:
+                            <strong>Penting:</strong> Untuk penggabungan aset terdaftar (<em>Merge FA</em>), gunakan <strong>Opsi 2</strong> atau <strong>Opsi 3</strong> agar nilai komponen memindahkan nilai bukunya ke PC induk dan disusutkan mengikuti masa manfaat PC induk.
                         </div>
 
                         <div class="row g-3">
@@ -144,7 +147,7 @@
                                     <input type="radio" name="accounting_treatment" value="EXPENSE" class="form-check-input me-1 treatment-radio" checked>
                                     <span class="fw-bold text-dark">1. Beban Pemeliharaan (Expense)</span>
                                     <div class="mt-2 small text-muted">
-                                        Part tetap keluar dari gudang & tercatat di riwayat aset, namun <strong>Nilai Buku tidak bertambah</strong> dan <strong>Umur tetap</strong>.
+                                        Part keluar dari gudang & tercatat di riwayat aset, namun <strong>Nilai Buku PC tidak bertambah</strong> dan <strong>Umur tetap</strong>.
                                     </div>
                                 </label>
                             </div>
@@ -152,12 +155,12 @@
                             <div class="col-md-4">
                                 <label class="p-3 rounded-3 treatment-card h-100 d-block" id="card_CAPITALIZE_VALUE">
                                     <input type="radio" name="accounting_treatment" value="CAPITALIZE_VALUE" id="radioCapValue" class="form-check-input me-1 treatment-radio">
-                                    <span class="fw-bold text-primary">2. Tambah Nilai Aset (Sisa Umur Tetap)</span>
+                                    <span class="fw-bold text-primary">2. Tambah Nilai PC (Sisa Umur PC Tetap)</span>
                                     <div class="mt-2 small text-muted">
-                                        Biaya part <strong>menambah Nilai Buku saat ini</strong>, dan disusutkan mengikuti <strong>sisa bulan umur ekonomis yang ada</strong>.
+                                        Biaya part / nilai aset komponen <strong>menambah Nilai Buku PC saat ini</strong>, dan disusutkan mengikuti <strong>sisa umur ekonomis PC induk</strong>.
                                     </div>
                                     <div id="capValueExpiredWarn" class="mt-1 text-danger fw-bold" style="font-size: 0.72rem; display: none;">
-                                        *Tidak tersedia karena sisa umur aset sudah 0 bulan. Gunakan Opsi 3.
+                                        *Tidak tersedia karena sisa umur PC sudah 0 bulan. Gunakan Opsi 3.
                                     </div>
                                 </label>
                             </div>
@@ -167,7 +170,7 @@
                                     <input type="radio" name="accounting_treatment" value="CAPITALIZE_EXTEND" id="radioCapExtend" class="form-check-input me-1 treatment-radio">
                                     <span class="fw-bold text-success">3. Tambah Nilai + Setel Sisa Umur Baru</span>
                                     <div class="mt-2 small text-muted">
-                                        Biaya part <strong>menambah Nilai Buku</strong> DAN menetapkan <strong>sisa umur ekonomis baru (bulan)</strong> sejak tgl upgrade. Cocok untuk aset yang umurnya sudah habis (Nilai Buku 0).
+                                        Biaya part <strong>menambah Nilai Buku PC</strong> DAN menetapkan <strong>sisa umur ekonomis baru (bulan)</strong> sejak tgl upgrade.
                                     </div>
                                 </label>
                             </div>
@@ -175,20 +178,17 @@
 
                         <div id="extendMonthsWrapper" class="p-3 mt-3 border rounded-3 bg-success-subtle border-success" style="display: none;">
                             <label class="form-label small fw-bold text-success-emphasis">
-                                Estimasi Sisa Umur Ekonomis Baru Terhitung Sejak Tanggal Upgrade (dalam Bulan) <span class="text-danger">*</span>
+                                Estimasi Sisa Umur Ekonomis Baru PC Induk Terhitung Sejak Tanggal Upgrade (Bulan) <span class="text-danger">*</span>
                             </label>
                             <div class="input-group" style="max-width: 280px;">
                                 <input type="number" name="new_remaining_months" id="newRemainingMonthsInput" class="form-control fw-bold border-success" min="1" max="600" placeholder="Cth: 12 atau 24">
                                 <span class="input-group-text bg-success text-white fw-bold">Bulan</span>
                             </div>
-                            <div class="form-text text-dark small mt-1">
-                                Contoh: Jika laptop berumur 10 tahun (nilai buku Rp 0) di-upgrade Rp 5.000.000 dan diperkirakan layak pakai 2 tahun lagi, isi <strong>24 Bulan</strong>.
-                            </div>
                         </div>
 
                         <div class="mt-3">
                             <label class="form-label small fw-bold text-muted">Keterangan / Alasan Upgrade (Tercatat Permanen di Log Aset)</label>
-                            <textarea name="notes" class="form-control" rows="2" placeholder="Cth: Upgrade RAM 4GB ke 16GB & SSD 512GB ke 1TB untuk kebutuhan desain...">{{ old('notes') }}</textarea>
+                            <textarea name="notes" class="form-control" rows="2" placeholder="Cth: Pemasangan Harddisk 1 TB ke PC Induk dan penggabungan nilai penyusutan...">{{ old('notes') }}</textarea>
                         </div>
                     </div>
                 </div>
@@ -198,31 +198,31 @@
             <div class="col-lg-4">
                 <div class="border-0 shadow-lg card rounded-4 sticky-top" style="top: 20px;">
                     <div class="p-3 text-white card-header bg-dark rounded-top-4">
-                        <h6 class="mb-0 fw-bold"><i class="bi bi-calculator me-2 text-warning"></i>Simulasi Dampak Akuntansi Aset</h6>
+                        <h6 class="mb-0 fw-bold"><i class="bi bi-calculator me-2 text-warning"></i>Simulasi Penyusutan PC Induk</h6>
                     </div>
                     <div class="p-4 card-body">
                         <div class="mb-2 d-flex justify-content-between small">
-                            <span class="text-muted">Nilai Buku Sebelum Upgrade:</span>
+                            <span class="text-muted">Nilai Buku PC Sebelum Upgrade:</span>
                             <strong id="simNbvBefore">Rp 0</strong>
                         </div>
                         <div class="mb-2 d-flex justify-content-between small">
-                            <span class="text-muted">Total Biaya Part Upgrade:</span>
+                            <span class="text-muted">Total Nilai Part / Aset Digabung:</span>
                             <strong class="text-warning-emphasis" id="simTotalUpgrade">Rp 0</strong>
                         </div>
                         <hr>
                         <div class="mb-2 d-flex justify-content-between">
-                            <span class="fw-bold text-dark">Nilai Buku Setelah Upgrade:</span>
+                            <span class="fw-bold text-dark">Nilai Buku PC Setelah Upgrade:</span>
                             <strong class="text-primary fs-5" id="simNbvAfter">Rp 0</strong>
                         </div>
                         <div class="mb-2 d-flex justify-content-between small">
-                            <span class="text-muted">Sisa Umur Penyusutan:</span>
+                            <span class="text-muted">Sisa Umur Penyusutan PC:</span>
                             <strong id="simRemMonths">0 Bulan</strong>
                         </div>
                         <div class="p-3 mt-3 border rounded-3 bg-light">
-                            <div class="small text-muted">Estimasi Beban Penyusutan Baru:</div>
+                            <div class="small text-muted">Estimasi Beban Penyusutan PC Baru:</div>
                             <div class="fs-5 fw-bolder text-success" id="simMonthlyDep">Rp 0 / bulan</div>
                             <div class="mt-1 text-muted" style="font-size: 0.72rem;" id="simNoteText">
-                                Pilih aset dan part upgrade untuk melihat simulasi.
+                                Pilih aset induk dan part upgrade untuk melihat simulasi.
                             </div>
                         </div>
 
@@ -241,7 +241,8 @@
 <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
 <script>
-    const WAREHOUSES = @json($warehouses);
+    const WAREHOUSES       = @json($warehouses);
+    const MERGEABLE_ASSETS = @json($mergeableAssets);
     let warehouseItemsCache = {};
     let partIdx = 0;
 
@@ -313,6 +314,10 @@
             addPartRow('WAREHOUSE');
         });
 
+        $('#btnAddMergedAssetPart').on('click', function () {
+            addPartRow('MERGED_ASSET');
+        });
+
         $('#btnAddServicePart').on('click', function () {
             addPartRow('DIRECT_SERVICE');
         });
@@ -328,7 +333,7 @@
 
         let whOptions = '<option value="">-- Pilih Gudang --</option>';
         WAREHOUSES.forEach(w => {
-            whOptions += `<option value="${w.id}">${w.name}</option>`;
+            whOptions += `<option value="${w.id}">${escapeAttr(w.name)}</option>`;
         });
 
         let html = '';
@@ -348,7 +353,7 @@
                             </select>
                         </div>
                         <div class="col-md-8">
-                            <label class="form-label small fw-bold">2. Pilih Barang / Sparepart Tersedia (Master & Varian PO) <span class="text-danger">*</span></label>
+                            <label class="form-label small fw-bold">2. Pilih Barang / Sparepart Tersedia <span class="text-danger">*</span></label>
                             <select name="parts[${idx}][item_id]" class="form-select form-select-sm item-wh-select" required>
                                 <option value="">-- Pilih Gudang Dulu --</option>
                             </select>
@@ -380,6 +385,64 @@
                     </div>
                 </div>
             `;
+        } else if (sourceType === 'MERGED_ASSET') {
+            let targetId = $('#selectTargetAsset').val();
+            let astOpts = '<option value="">-- Pilih Aset Terdaftar (AST / No. FA) yang Akan Dilebur --</option>';
+            MERGEABLE_ASSETS.forEach(ma => {
+                if (String(ma.id) === String(targetId)) return;
+                let faStr   = ma.accounting_asset_number ? ` | FA: ${ma.accounting_asset_number}` : '';
+                let varStr  = ma.item_alias_name ? `${ma.item_alias_name} — ` : '';
+                let nbvVal  = parseFloat(ma.computed_nbv) || 0;
+                let compStr = (ma.company && ma.company.name) ? ma.company.name : '-';
+                astOpts += `<option value="${ma.id}"
+                    data-price="${nbvVal}"
+                    data-name="${escapeAttr((ma.item_alias_name || ma.name) + ' (' + ma.asset_number + ')')}">
+                    [${ma.asset_number}${faStr}] ${varStr}${ma.name} — ${compStr} (Nilai: ${formatRp(nbvVal)})
+                </option>`;
+            });
+
+            html = `
+                <div class="p-3 bg-white border border-warning rounded-3 shadow-sm part-row" data-idx="${idx}">
+                    <input type="hidden" name="parts[${idx}][source_type]" value="MERGED_ASSET">
+                    <div class="mb-2 d-flex justify-content-between align-items-center border-bottom pb-2">
+                        <span class="badge bg-warning text-dark fw-bold"><i class="bi bi-intersect me-1"></i>Penggabungan Aset Terdaftar (Merge Fixed Asset ke PC Induk)</span>
+                        <button type="button" class="btn btn-sm btn-outline-danger py-0 px-2 btn-remove-part"><i class="bi bi-trash"></i></button>
+                    </div>
+                    <div class="alert alert-info py-2 px-3 small mb-2">
+                        Aset komponen yang dipilih di bawah ini akan otomatis ditutup (<strong>Disposed / Merged</strong>) agar tidak menyusut 2x, dan nilainya dipindahkan untuk menyusut mengikuti umur <strong>PC Induk</strong>.
+                    </div>
+                    <div class="row g-2">
+                        <div class="col-md-12">
+                            <label class="form-label small fw-bold">1. Pilih Unit Aset Komponen (AST / No. FA) <span class="text-danger">*</span></label>
+                            <select name="parts[${idx}][merged_asset_id]" class="form-select form-select-sm merged-asset-select" required>
+                                ${astOpts}
+                            </select>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label small fw-bold">Nama Komponen Tercatat di PC Induk <span class="text-danger">*</span></label>
+                            <input type="text" name="parts[${idx}][component_name]" class="form-control form-control-sm comp-name-input" placeholder="Cth: Harddisk Internal 1 TB" required>
+                        </div>
+                        <div class="col-md-2">
+                            <label class="form-label small fw-bold">Qty</label>
+                            <input type="number" name="parts[${idx}][qty]" class="form-control form-control-sm text-center bg-light part-qty" value="1" readonly>
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label small fw-bold">Nilai Buku Dipindahkan <span class="text-danger">*</span></label>
+                            <input type="number" name="parts[${idx}][unit_cost]" class="form-control form-control-sm text-end fw-bold text-primary part-unit-cost" value="0" min="0" step="any" required>
+                            <input type="hidden" class="part-subtotal" value="Rp 0">
+                        </div>
+                    </div>
+                </div>
+            `;
+
+            // Otomatis pilih Opsi 2 (Kapitalisasi ke Nilai PC Induk) jika user masih di Opsi 1 (Expense)
+            if ($('input[name="accounting_treatment"]:checked').val() === 'EXPENSE') {
+                if (!$('#radioCapValue').is(':disabled')) {
+                    $('#radioCapValue').prop('checked', true).trigger('change');
+                } else {
+                    $('#radioCapExtend').prop('checked', true).trigger('change');
+                }
+            }
         } else {
             html = `
                 <div class="p-3 bg-white border rounded-3 shadow-sm part-row" data-idx="${idx}">
@@ -426,6 +489,17 @@
         recalcSimulation();
     });
 
+    // Event saat aset komponen (Merge FA) dipilih
+    $(document).on('change', '.merged-asset-select', function () {
+        let opt = $(this).find('option:selected');
+        let row = $(this).closest('.part-row');
+        if (!opt.val()) return;
+
+        row.find('.comp-name-input').val(opt.data('name') || '');
+        row.find('.part-unit-cost').val(parseFloat(opt.data('price')) || 0);
+        recalcRow(row);
+    });
+
     // Tarik item stok gudang + nama alternatif/varian PO saat gudang dipilih
     $(document).on('change', '.wh-select', function () {
         let whId = $(this).val();
@@ -464,7 +538,6 @@
         }
     });
 
-    // Isi otomatis nama komponen spesifik/varian (dari PO), harga dari PO, dan pilihan referensi PO/GR saat part dipilih
     $(document).on('change', '.item-wh-select', function () {
         let opt = $(this).find('option:selected');
         let row = $(this).closest('.part-row');
@@ -554,15 +627,15 @@
         if (treatment === 'EXPENSE') {
             nbvAfter = nbvBefore;
             remAfter = remBefore;
-            note = 'Biaya dicatat sebagai Beban Pemeliharaan. Nilai buku dan umur penyusutan aset tidak berubah.';
+            note = 'Biaya dicatat sebagai Beban Pemeliharaan. Nilai buku dan umur penyusutan PC induk tidak berubah.';
         } else if (treatment === 'CAPITALIZE_VALUE') {
             nbvAfter = nbvBefore + totalUpgrade;
             remAfter = remBefore;
-            note = 'Nilai buku bertambah sebesar biaya upgrade, dan disusutkan pada sisa umur ekonomis yang berjalan.';
+            note = 'Nilai buku PC bertambah sebesar Rp ' + Math.round(totalUpgrade).toLocaleString('id-ID') + ', dan disusutkan mengikuti sisa umur PC induk (' + remAfter + ' bulan).';
         } else if (treatment === 'CAPITALIZE_EXTEND') {
             nbvAfter = nbvBefore + totalUpgrade;
             remAfter = parseInt($('#newRemainingMonthsInput').val()) || 0;
-            note = 'Nilai buku bertambah sebesar biaya upgrade, dan disusutkan prospektif selama ' + remAfter + ' bulan ke depan.';
+            note = 'Nilai buku PC bertambah sebesar Rp ' + Math.round(totalUpgrade).toLocaleString('id-ID') + ', dan disusutkan prospektif selama ' + remAfter + ' bulan ke depan.';
         }
 
         let monthlyDep = (remAfter > 0 && nbvAfter > 0) ? (nbvAfter / remAfter) : 0;

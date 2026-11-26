@@ -53,16 +53,34 @@ class AssetUpgradeController extends Controller
             ->get()
             ->map(function ($a) {
                 $summary = $a->calculateDepreciationSummary();
-                $a->computed_nbv = $summary['net_book_value'];
+                $a->computed_nbv              = $summary['net_book_value'];
                 $a->computed_remaining_months = $summary['remaining_months'];
-                $a->computed_total_cost = $summary['total_historical_cost'];
+                $a->computed_total_cost       = $summary['total_historical_cost'];
                 return $a;
+            });
+
+        // Daftar Aset Terdaftar (AST / No. FA) yang tersedia untuk digabungkan (Merge) sebagai komponen upgrade
+        $mergeableAssets = FixedAsset::with(['item', 'company', 'warehouse', 'status'])
+            ->where(function ($q) {
+                $q->whereNull('notes')->orWhere('notes', 'not like', '%[DIBATALKAN%');
+            })
+            ->whereHas('status', function ($q) {
+                $q->whereIn('slug', ['available', 'in_use']);
+            })
+            ->orderBy('asset_number', 'desc')
+            ->get()
+            ->map(function ($ast) {
+                $summary = $ast->calculateDepreciationSummary();
+                $ast->computed_nbv = $summary['net_book_value'] > 0
+                    ? $summary['net_book_value']
+                    : (float) ($ast->purchase_price ?? 0);
+                return $ast;
             });
 
         $warehouses = Warehouse::orderBy('name')->get();
         $selectedAssetId = $request->query('asset_id');
 
-        return view('fixed_assets.upgrades.create', compact('assets', 'warehouses', 'selectedAssetId'));
+        return view('fixed_assets.upgrades.create', compact('assets', 'mergeableAssets', 'warehouses', 'selectedAssetId'));
     }
 
     /**
@@ -181,242 +199,265 @@ class AssetUpgradeController extends Controller
     public function store(Request $request)
     {
         $request->validate([
-            'fixed_asset_id'             => 'required|exists:fixed_assets,id',
-            'upgrade_date'               => 'required|date',
-            'accounting_treatment'       => 'required|in:EXPENSE,CAPITALIZE_VALUE,CAPITALIZE_EXTEND',
-            'new_remaining_months'       => 'required_if:accounting_treatment,CAPITALIZE_EXTEND|nullable|integer|min:1|max:600',
-            'notes'                      => 'nullable|string',
-            'parts'                      => 'required|array|min:1',
-            'parts.*.source_type'        => 'required|in:WAREHOUSE,DIRECT_SERVICE',
-            'parts.*.warehouse_id'       => 'required_if:parts.*.source_type,WAREHOUSE|nullable|exists:warehouses,id',
-            'parts.*.item_id'            => 'required_if:parts.*.source_type,WAREHOUSE|nullable|exists:items,id',
-            'parts.*.component_name'     => 'required|string|max:255',
-            'parts.*.qty'                => 'required|numeric|min:0.01',
-            'parts.*.unit_cost'          => 'required|numeric|min:0',
-            'parts.*.purchase_order_id'  => 'nullable|exists:purchase_orders,id',
-            'parts.*.goods_receipt_id'   => 'nullable|exists:goods_receipts,id',
-        ], [
-            'parts.required'                     => 'Tambahkan minimal 1 komponen / part upgrade.',
-            'new_remaining_months.required_if'   => 'Estimasi sisa umur ekonomis baru (bulan) wajib diisi jika memilih perpanjangan umur aset.',
+            'fixed_asset_id'              => 'required|exists:fixed_assets,id',
+            'upgrade_date'                => 'required|date',
+            'accounting_treatment'        => 'required|in:EXPENSE,CAPITALIZE_VALUE,CAPITALIZE_EXTEND',
+            'new_remaining_months'        => 'nullable|required_if:accounting_treatment,CAPITALIZE_EXTEND|integer|min:1|max:600',
+            'notes'                       => 'nullable|string|max:1000',
+            'parts'                       => 'required|array|min:1',
+            'parts.*.source_type'         => 'required|in:WAREHOUSE,DIRECT_SERVICE,MERGED_ASSET',
+            'parts.*.component_name'      => 'required|string|max:255',
+            'parts.*.qty'                 => 'required|numeric|min:0.01',
+            'parts.*.unit_cost'           => 'required|numeric|min:0',
+            'parts.*.warehouse_id'        => 'nullable|exists:warehouses,id',
+            'parts.*.item_id'             => 'nullable|exists:items,id',
+            'parts.*.merged_asset_id'     => 'nullable|exists:fixed_assets,id',
+            'parts.*.purchase_order_id'   => 'nullable|exists:purchase_orders,id',
+            'parts.*.goods_receipt_id'    => 'nullable|exists:goods_receipts,id',
+            'parts.*.vendor_name'         => 'nullable|string|max:255',
         ]);
 
+        // Cegah penggabungan aset ke dirinya sendiri
+        foreach ($request->parts as $p) {
+            if (($p['source_type'] ?? '') === 'MERGED_ASSET' && (int) ($p['merged_asset_id'] ?? 0) === (int) $request->fixed_asset_id) {
+                return back()->withInput()->with('error', 'Aset komponen tidak boleh sama dengan Unit Aset Target (PC Induk).');
+            }
+        }
+
+        DB::beginTransaction();
         try {
-            $upgNumber = null;
+            $asset = FixedAsset::with(['assetCategory', 'upgrades', 'company', 'currency', 'status'])
+                ->lockForUpdate()
+                ->findOrFail($request->fixed_asset_id);
 
-            DB::transaction(function () use ($request, &$upgNumber) {
-                $asset = FixedAsset::with(['assetCategory', 'upgrades', 'currency'])->lockForUpdate()->findOrFail($request->fixed_asset_id);
+            $upgradeDate = Carbon::parse($request->upgrade_date);
+            $treatment   = $request->accounting_treatment;
 
-                // Hitung posisi nilai buku & sisa umur tepat pada tanggal upgrade
-                $summaryBefore   = $asset->calculateDepreciationSummary($request->upgrade_date);
-                $nbvBefore       = $summaryBefore['net_book_value'];
-                $remMonthsBefore = $summaryBefore['remaining_months'];
+            $summaryBefore = $asset->calculateDepreciationSummary($upgradeDate);
+            $nbvBefore     = (float) $summaryBefore['net_book_value'];
+            $remBefore     = (int) $summaryBefore['remaining_months'];
 
-                $treatment     = $request->accounting_treatment;
-                $isCapitalized = in_array($treatment, ['CAPITALIZE_VALUE', 'CAPITALIZE_EXTEND']);
+            $totalUpgradeCost = 0.0;
+            foreach ($request->parts as $p) {
+                $totalUpgradeCost += ((float) $p['qty'] * (float) $p['unit_cost']);
+            }
 
-                // Pengaman Akuntansi: Jika sisa umur aset sudah 0 (misal umur 10 thn > 4 thn) dan user pilih CAPITALIZE_VALUE tanpa umur baru
-                if ($treatment === 'CAPITALIZE_VALUE' && $remMonthsBefore <= 0) {
-                    throw new \Exception(
-                        "VALIDASI AKUNTANSI: Sisa umur ekonomis aset ini sudah habis (0 bulan, Nilai Buku Rp " .
-                        number_format($nbvBefore, 0, ',', '.') .
-                        "). Jika ingin mengkapitalisasi biaya upgrade ke nilai aset, pilih opsi 'Kapitalisasi Nilai + Setel/Perpanjang Sisa Umur Baru (Bulan)', atau pilih 'Beban Pemeliharaan' jika tidak menambah nilai aset."
-                    );
+            $isCapitalized      = in_array($treatment, ['CAPITALIZE_VALUE', 'CAPITALIZE_EXTEND']);
+            $newRemainingMonths = null;
+
+            if ($treatment === 'CAPITALIZE_VALUE') {
+                if ($remBefore <= 0 && $totalUpgradeCost > 0) {
+                    DB::rollBack();
+                    return back()->withInput()->with('error', 'Sisa umur ekonomis PC induk sudah 0 bulan. Silakan pilih opsi "Tambah Nilai + Setel Sisa Umur Baru (Bulan)" agar penyusutan PC dapat berjalan.');
                 }
+                $nbvAfter = $nbvBefore + $totalUpgradeCost;
+                $remAfter = $remBefore;
+            } elseif ($treatment === 'CAPITALIZE_EXTEND') {
+                $newRemainingMonths = (int) $request->new_remaining_months;
+                $nbvAfter           = $nbvBefore + $totalUpgradeCost;
+                $remAfter           = $newRemainingMonths;
+            } else {
+                $nbvAfter = $nbvBefore;
+                $remAfter = $remBefore;
+            }
 
-                // Hitung total biaya seluruh part yang diinput
-                $totalUpgradeCost = 0;
-                foreach ($request->parts as $p) {
-                    $totalUpgradeCost += ((float) $p['qty']) * ((float) $p['unit_cost']);
-                }
+            $disposedStatus = \App\Models\Status::where('type', 'ASSET')->where('slug', 'disposed')->first()
+                ?? \App\Models\Status::where('slug', 'disposed')->first();
 
-                $nbvAfter     = $isCapitalized ? ($nbvBefore + $totalUpgradeCost) : $nbvBefore;
-                $newRemMonths = ($treatment === 'CAPITALIZE_EXTEND') ? (int) $request->new_remaining_months : null;
+            $runningNbv   = $nbvBefore;
+            $createdCount = 0;
 
-                // Generate Nomor Dokumen Pengeluaran Upgrade (UPG/YYYY/MM/XXXX)
-                $yearMonth = date('Y/m');
-                $lastUpg = FixedAssetUpgrade::where('upgrade_number', 'like', "UPG/{$yearMonth}/%")
-                    ->orderBy('id', 'desc')->lockForUpdate()->first();
-                $nextSeq = $lastUpg ? ((int) substr($lastUpg->upgrade_number, -4)) + 1 : 1;
-                $upgNumber = "UPG/{$yearMonth}/" . str_pad($nextSeq, 4, '0', STR_PAD_LEFT);
+            foreach ($request->parts as $p) {
+                $qty      = (float) $p['qty'];
+                $unitCost = (float) $p['unit_cost'];
+                $lineCost = round($qty * $unitCost, 2);
+                $srcType  = $p['source_type'];
 
-                // Cek kolom valuasi pada stock_mutations & inventory_stocks
-                $smCols  = \Illuminate\Support\Facades\Schema::getColumnListing('stock_mutations');
-                $invCols = \Illuminate\Support\Facades\Schema::getColumnListing('inventory_stocks');
+                $upgNumber = $this->generateUpgradeNumber($upgradeDate);
+                $itemId    = !empty($p['item_id']) ? (int) $p['item_id'] : null;
+                $whId      = !empty($p['warehouse_id']) ? (int) $p['warehouse_id'] : null;
+                $poId      = !empty($p['purchase_order_id']) ? (int) $p['purchase_order_id'] : null;
+                $grId      = !empty($p['goods_receipt_id']) ? (int) $p['goods_receipt_id'] : null;
+                $vendorStr = $p['vendor_name'] ?? null;
+                $compName  = trim((string) $p['component_name']);
 
-                $partDescriptions = [];
-                $faLabel = $asset->accounting_asset_number ? " / FA: {$asset->accounting_asset_number}" : "";
+                // =============================================================
+                // KASUS 1: PENGELUARAN STOK GUDANG BIASA (WAREHOUSE)
+                // =============================================================
+                if ($srcType === 'WAREHOUSE') {
+                    if (!$whId || !$itemId) {
+                        throw new \Exception("Gudang dan Item wajib dipilih untuk pengeluaran dari stok.");
+                    }
 
-                foreach ($request->parts as $p) {
-                    $qty      = (float) $p['qty'];
-                    $unitCost = (float) $p['unit_cost'];
-                    $lineCost = $qty * $unitCost;
-                    $compName = trim($p['component_name']);
-                    $poId     = !empty($p['purchase_order_id']) ? (int) $p['purchase_order_id'] : null;
-                    $grId     = !empty($p['goods_receipt_id']) ? (int) $p['goods_receipt_id'] : null;
+                    $stock = InventoryStock::where('warehouse_id', $whId)
+                        ->where('item_id', $itemId)
+                        ->lockForUpdate()
+                        ->first();
 
-                    $poNumberText = $poId ? (DB::table('purchase_orders')->where('id', $poId)->value('po_number') ?? '-') : 'Non-PO/Manual';
-                    $grNumberText = $grId ? (DB::table('goods_receipts')->where('id', $grId)->value('gr_number') ?? '-') : '-';
+                    if (!$stock || (float) $stock->stock_qty < $qty) {
+                        $itemObj = Item::find($itemId);
+                        $avail   = $stock ? (float) $stock->stock_qty : 0;
+                        throw new \Exception("Stok tidak mencukupi untuk '{$itemObj->name}'. Tersedia: {$avail}, Diminta: {$qty}.");
+                    }
 
-                    if ($p['source_type'] === 'WAREHOUSE') {
-                        $whId   = (int) $p['warehouse_id'];
-                        $itemId = (int) $p['item_id'];
+                    $stock->decrement('stock_qty', $qty);
 
-                        $item = Item::lockForUpdate()->findOrFail($itemId);
-                        $invStock = InventoryStock::where('item_id', $itemId)
-                            ->where('warehouse_id', $whId)
-                            ->lockForUpdate()
-                            ->first();
+                    $holderInfo = $asset->assignee ? $asset->assignee->name : 'Gudang / Belum Diserahkan';
+                    $faInfo     = $asset->accounting_asset_number ? " | No. FA: {$asset->accounting_asset_number}" : '';
+                    $poInfo     = $poId ? (' | PO: ' . (PurchaseOrder::find($poId)->po_number ?? '-')) : '';
+                    $grInfo     = $grId ? (' | GR: ' . (GoodsReceipt::find($grId)->gr_number ?? '-')) : '';
 
-                        if (!$invStock || (float) $invStock->stock_qty < $qty) {
-                            $avail = $invStock ? (float) $invStock->stock_qty : 0;
-                            throw new \Exception("Stok '{$item->name}' di gudang tidak mencukupi (Tersedia: {$avail}, Diminta: {$qty}).");
-                        }
-
-                        // 1. Potong kuantitas & nilai valuasi pada InventoryStock gudang
-                        $whQtyBefore = (float) $invStock->stock_qty;
-                        $whQtyAfter  = max(0, $whQtyBefore - $qty);
-                        $invUpdateData = ['stock_qty' => $whQtyAfter];
-
-                        if (in_array('stock_value', $invCols)) {
-                            $invUpdateData['stock_value'] = max(0, (float) $invStock->stock_value - $lineCost);
-                        }
-                        if (in_array('total_value', $invCols)) {
-                            $invUpdateData['total_value'] = max(0, (float) $invStock->total_value - $lineCost);
-                        }
-                        $invStock->update($invUpdateData);
-
-                        // 2. Potong kuantitas pada Master Item
-                        $beforeMaster = (float) $item->current_stock;
-                        $afterMaster  = max(0, $beforeMaster - $qty);
-                        $item->update(['current_stock' => $afterMaster]);
-
-                        // 3. Susun catatan kartu stok yang lengkap & eksplisit (Qty + Nilai + Referensi PO/GR + Aset Tujuan)
-                        $formattedUnitCost = number_format($unitCost, 0, ',', '.');
-                        $formattedLineCost = number_format($lineCost, 0, ',', '.');
-                        $treatmentShort    = $isCapitalized ? 'Kapitalisasi ke Aset' : 'Beban Pemeliharaan';
-                        $holderName        = optional($asset->assignee)->name ? " (User: {$asset->assignee->name})" : "";
-                        $faInfo            = $asset->accounting_asset_number ? " | No. FA: {$asset->accounting_asset_number}" : "";
-
-                        $stockCardNote = "Upgrade Aset: {$asset->asset_number} - {$asset->name}{$faInfo}{$holderName} | " .
-                                         "Komponen: {$compName} ({$qty} unit @ Rp {$formattedUnitCost} = Rp {$formattedLineCost}) | " .
-                                         "Asal PO: {$poNumberText} (GR: {$grNumberText}) | Status: {$treatmentShort}";
-
-                        $mutationData = [
-                            'item_id'          => $item->id,
+                    if (class_exists('\App\Models\StockMovement')) {
+                        \App\Models\StockMovement::create([
                             'warehouse_id'     => $whId,
+                            'item_id'          => $itemId,
                             'type'             => 'OUT',
                             'qty'              => $qty,
-                            'balance_before'   => $beforeMaster,
-                            'balance_after'    => $afterMaster,
                             'reference_number' => $upgNumber,
-                            'notes'            => $stockCardNote,
-                            'created_by'       => auth()->id(),
-                        ];
-
-                        // Isi kolom harga/nilai jika tersedia di tabel stock_mutations
-                        if (in_array('unit_price', $smCols)) {
-                            $mutationData['unit_price'] = $unitCost;
-                        }
-                        if (in_array('unit_cost', $smCols)) {
-                            $mutationData['unit_cost'] = $unitCost;
-                        }
-                        if (in_array('total_price', $smCols)) {
-                            $mutationData['total_price'] = $lineCost;
-                        }
-                        if (in_array('total_cost', $smCols)) {
-                            $mutationData['total_cost'] = $lineCost;
-                        }
-                        if (in_array('total_value', $smCols)) {
-                            $mutationData['total_value'] = $lineCost;
-                        }
-
-                        StockMutation::create($mutationData);
-
-                        // 4. Simpan Rincian Upgrade Aset
-                        FixedAssetUpgrade::create([
-                            'upgrade_number'       => $upgNumber,
-                            'fixed_asset_id'       => $asset->id,
-                            'item_id'              => $item->id,
-                            'warehouse_id'         => $whId,
-                            'purchase_order_id'    => $poId,
-                            'goods_receipt_id'     => $grId,
-                            'upgrade_date'         => $request->upgrade_date,
-                            'component_name'       => $compName,
-                            'qty'                  => $qty,
-                            'unit_cost'            => $unitCost,
-                            'cost'                 => $lineCost,
-                            'accounting_treatment' => $treatment,
-                            'is_capitalized'       => $isCapitalized,
-                            'book_value_before'    => $nbvBefore,
-                            'book_value_after'     => $nbvAfter,
-                            'new_remaining_months' => $newRemMonths,
-                            'currency_id'          => $asset->currency_id ?? 1,
-                            'vendor_or_executor'   => "Gudang (PO: {$poNumberText} | GR: {$grNumberText})",
-                            'notes'                => $request->notes,
-                            'created_by'           => auth()->id(),
+                            'notes'            => "Dipasang ke Aset: {$asset->asset_number} - {$asset->name}{$faInfo} | Pemegang: {$holderInfo} | Nilai: Rp " . number_format($lineCost, 0, ',', '.') . "{$poInfo}{$grInfo}",
+                            'user_id'          => auth()->id(),
                         ]);
-
-                        $partDescriptions[] = "{$compName} ({$qty} unit @ Rp {$formattedUnitCost} = Rp {$formattedLineCost} | PO: {$poNumberText})";
-                    } else {
-                        // Jasa / Part Langsung Vendor tanpa stok gudang
-                        $formattedLineCost = number_format($lineCost, 0, ',', '.');
-                        FixedAssetUpgrade::create([
-                            'upgrade_number'       => $upgNumber,
-                            'fixed_asset_id'       => $asset->id,
-                            'item_id'              => null,
-                            'warehouse_id'         => null,
-                            'purchase_order_id'    => $poId,
-                            'goods_receipt_id'     => $grId,
-                            'upgrade_date'         => $request->upgrade_date,
-                            'component_name'       => $compName,
-                            'qty'                  => $qty,
-                            'unit_cost'            => $unitCost,
-                            'cost'                 => $lineCost,
-                            'accounting_treatment' => $treatment,
-                            'is_capitalized'       => $isCapitalized,
-                            'book_value_before'    => $nbvBefore,
-                            'book_value_after'     => $nbvAfter,
-                            'new_remaining_months' => $newRemMonths,
-                            'currency_id'          => $asset->currency_id ?? 1,
-                            'vendor_or_executor'   => $p['vendor_name'] ?? "Vendor / Jasa (PO: {$poNumberText})",
-                            'notes'                => $request->notes,
-                            'created_by'           => auth()->id(),
-                        ]);
-
-                        $partDescriptions[] = "{$compName} (Rp {$formattedLineCost} | PO: {$poNumberText})";
                     }
                 }
 
-                // Update keterangan perpanjangan umur di header aset jika dipilih
-                if ($treatment === 'CAPITALIZE_EXTEND' && $newRemMonths) {
-                    $asset->update(['extended_useful_life_months' => $newRemMonths]);
+                // =============================================================
+                // KASUS 2: MERGE FIXED ASSET (ASET KOMPONEN AST DIGABUNG KE PC INDUK)
+                // Penyusutan komponen berhenti, nilainya melebur & menyusut ikut PC Induk!
+                // =============================================================
+                if ($srcType === 'MERGED_ASSET') {
+                    $mergedAssetId = (int) ($p['merged_asset_id'] ?? 0);
+                    if (!$mergedAssetId) {
+                        throw new \Exception("Unit Aset Komponen wajib dipilih untuk mode Merge Fixed Asset.");
+                    }
+
+                    $compAsset = FixedAsset::with(['status', 'item', 'warehouse'])
+                        ->lockForUpdate()
+                        ->findOrFail($mergedAssetId);
+
+                    if (optional($compAsset->status)->slug === 'disposed') {
+                        throw new \Exception("Aset {$compAsset->asset_number} sudah berstatus Disposed/Merged.");
+                    }
+
+                    $itemId    = $compAsset->item_id;
+                    $whId      = $compAsset->warehouse_id;
+                    $poId      = $compAsset->purchase_order_id;
+                    $grId      = $compAsset->goods_receipt_id;
+                    $vendorStr = $compAsset->vendor_name;
+
+                    $compFaLabel = $compAsset->accounting_asset_number ?: $compAsset->asset_number;
+                    if (stripos($compName, $compAsset->asset_number) === false) {
+                        $compName .= " [Merge FA: {$compFaLabel}]";
+                    }
+
+                    // Jika komponen sebelumnya masih tercatat sebagai Aset Terdaftar (Siap GI) di gudang, kurangi 1 dari saldo kartu stok
+                    if (optional($compAsset->status)->slug === 'available' && empty($compAsset->assigned_to) && $compAsset->warehouse_id && $compAsset->item_id) {
+                        $astStock = InventoryStock::where('warehouse_id', $compAsset->warehouse_id)
+                            ->where('item_id', $compAsset->item_id)
+                            ->lockForUpdate()
+                            ->first();
+                        if ($astStock && isset($astStock->asset_qty) && (float) $astStock->asset_qty >= 1) {
+                            $astStock->decrement('asset_qty', 1);
+                        }
+                    }
+
+                    // Tutup / nonaktifkan aset komponen mandiri agar tidak menyusut 2x
+                    $oldCompNote = trim((string) $compAsset->notes);
+                    $mergeNote   = "[MERGED KE ASET INDUK: {$asset->asset_number}" . ($asset->accounting_asset_number ? " / FA: {$asset->accounting_asset_number}" : "") . " pada " . $upgradeDate->format('d/m/Y') . " — Penyusutan mengikuti aset induk]";
+
+                    $compAsset->update([
+                        'status_id'      => $disposedStatus ? $disposedStatus->id : $compAsset->status_id,
+                        'assigned_to'    => null,
+                        'disposed_at'    => $upgradeDate->toDateString(),
+                        'disposal_notes' => $mergeNote,
+                        'notes'          => trim($oldCompNote . "\n" . $mergeNote),
+                    ]);
+
+                    if (class_exists('\App\Models\FixedAssetHistory')) {
+                        \App\Models\FixedAssetHistory::create([
+                            'fixed_asset_id' => $compAsset->id,
+                            'action'         => 'MERGED_INTO_PARENT',
+                            'description'    => "Aset komponen digabungkan (Merged) ke unit induk {$asset->asset_number} ({$asset->name}). Nilai Rp " . number_format($lineCost, 0, ',', '.') . " dipindahkan dan disusutkan mengikuti masa manfaat aset induk.",
+                            'user_id'        => auth()->id(),
+                        ]);
+                    }
                 }
 
-                // 5. Susun Log Audit yang jelas di Timeline Riwayat Aset
-                $treatmentSummary = match ($treatment) {
-                    'CAPITALIZE_VALUE'  => "KAPITALISASI NILAI: Nilai Buku naik dari Rp " . number_format($nbvBefore, 0, ',', '.') . " menjadi Rp " . number_format($nbvAfter, 0, ',', '.') . " (Sisa umur tetap {$remMonthsBefore} bulan).",
-                    'CAPITALIZE_EXTEND' => "KAPITALISASI + PERPANJANG UMUR: Nilai Buku naik dari Rp " . number_format($nbvBefore, 0, ',', '.') . " menjadi Rp " . number_format($nbvAfter, 0, ',', '.') . " & Sisa Umur Ekonomis ditetapkan menjadi {$newRemMonths} bulan sejak {$request->upgrade_date}.",
-                    default             => "BEBAN PEMELIHARAAN (EXPENSE): Biaya Rp " . number_format($totalUpgradeCost, 0, ',', '.') . " dicatat sebagai perawatan tanpa mengubah Nilai Buku (tetap Rp " . number_format($nbvBefore, 0, ',', '.') . ") maupun umur aset.",
-                };
+                $lineNbvBefore = $runningNbv;
+                $lineNbvAfter  = $isCapitalized ? ($runningNbv + $lineCost) : $runningNbv;
+                $runningNbv    = $lineNbvAfter;
 
-                $historyNote = "[{$upgNumber}] UPGRADE KOMPONEN ASET: " . implode('; ', $partDescriptions) .
-                               " | Perlakuan Akuntansi: {$treatmentSummary}" .
-                               ($request->filled('notes') ? " | Keterangan: " . trim($request->notes) : "");
+                $upgData = [
+                    'fixed_asset_id'       => $asset->id,
+                    'upgrade_number'       => $upgNumber,
+                    'item_id'              => $itemId,
+                    'warehouse_id'         => $whId,
+                    'purchase_order_id'    => $poId,
+                    'goods_receipt_id'     => $grId,
+                    'source_type'          => $srcType,
+                    'qty'                  => $qty,
+                    'unit_cost'            => $unitCost,
+                    'component_name'       => $compName,
+                    'cost'                 => $lineCost,
+                    'currency_id'          => $asset->currency_id,
+                    'upgrade_date'         => $upgradeDate->toDateString(),
+                    'is_capitalized'       => $isCapitalized,
+                    'accounting_treatment' => $treatment,
+                    'new_remaining_months' => $newRemainingMonths,
+                    'book_value_before'    => $lineNbvBefore,
+                    'book_value_after'     => $lineNbvAfter,
+                    'vendor_name'          => $vendorStr,
+                    'notes'                => $request->notes,
+                    'status'               => 'ACTIVE',
+                    'created_by'           => auth()->id(),
+                ];
 
-                FixedAssetHistory::create([
-                    'fixed_asset_id' => $asset->id,
-                    'status'         => 'UPGRADED',
-                    'assigned_to'    => $asset->assigned_to,
-                    'notes'          => $historyNote,
-                    'created_by'     => auth()->id(),
+                if (\Illuminate\Support\Facades\Schema::hasColumn('fixed_asset_upgrades', 'merged_asset_id')) {
+                    $upgData['merged_asset_id'] = !empty($p['merged_asset_id']) ? (int) $p['merged_asset_id'] : null;
+                }
+
+                FixedAssetUpgrade::create($upgData);
+
+                $createdCount++;
+            }
+
+            if ($treatment === 'CAPITALIZE_EXTEND' && $newRemainingMonths !== null) {
+                $monthsElapsedUntilUpgrade = $asset->acquisition_date
+                    ? Carbon::parse($asset->acquisition_date)->startOfDay()->diffInMonths($upgradeDate->copy()->startOfDay())
+                    : 0;
+                $baseLifeMonths     = (int) ((optional($asset->assetCategory)->useful_life_years ?? 4) * 12);
+                $totalTargetMonths  = $monthsElapsedUntilUpgrade + $newRemainingMonths;
+                $extendedDiffMonths = max(0, $totalTargetMonths - $baseLifeMonths);
+
+                $asset->update([
+                    'extended_useful_life_months' => $extendedDiffMonths,
+                    'last_revaluation_date'       => $upgradeDate->toDateString(),
                 ]);
-            });
+            } elseif ($treatment === 'CAPITALIZE_VALUE') {
+                $asset->update([
+                    'last_revaluation_date' => $upgradeDate->toDateString(),
+                ]);
+            }
 
+            if (class_exists('\App\Models\FixedAssetHistory')) {
+                $treatDesc = $isCapitalized
+                    ? "Dikapitalisasi ke nilai PC induk (Sisa umur penyusutan PC: {$remAfter} bulan)."
+                    : "Dicatat sebagai Beban Pemeliharaan (Expense).";
+
+                \App\Models\FixedAssetHistory::create([
+                    'fixed_asset_id' => $asset->id,
+                    'action'         => 'UPGRADE',
+                    'description'    => "Pemasangan {$createdCount} komponen upgrade senilai Rp " . number_format($totalUpgradeCost, 0, ',', '.') . ". {$treatDesc} Nilai buku: Rp " . number_format($nbvBefore, 0, ',', '.') . " -> Rp " . number_format($nbvAfter, 0, ',', '.'),
+                    'user_id'        => auth()->id(),
+                ]);
+            }
+
+            DB::commit();
             return redirect()->route('fixed-assets.upgrades.index')
-                ->with('success', "Dokumen Upgrade Aset ({$upgNumber}) berhasil disimpan! Stok fisik & nilai pada Kartu Stok telah terpotong otomatis.");
+                ->with('success', "Berhasil memproses {$createdCount} komponen upgrade pada aset {$asset->asset_number} (penyusutan mengikuti aset induk).");
 
         } catch (\Exception $e) {
-            return back()->withInput()->with('error', $e->getMessage());
+            DB::rollBack();
+            return back()->withInput()->with('error', 'Gagal memproses upgrade aset: ' . $e->getMessage());
         }
     }
 
