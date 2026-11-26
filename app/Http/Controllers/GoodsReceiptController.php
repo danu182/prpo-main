@@ -352,7 +352,8 @@ class GoodsReceiptController extends Controller
         try {
             $newGrNumber = DB::transaction(function () use ($request, $slug, $settingService) {
                 $po = \App\Models\PurchaseOrder::with('items')->where('po_number', $slug)->firstOrFail();
-                $grNumber = $this->generateGrNumber($po->bill_to_company_id);
+                $grNumber = \App\Services\DocumentNumberService::gr($po->bill_to_company_id, $request->receipt_date);
+// Hasil: GR-PND-20261126-0001
 
                 $gr = \App\Models\GoodsReceipt::create([
                     'purchase_order_id'    => $po->id,

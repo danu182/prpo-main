@@ -243,7 +243,8 @@ class PurchaseRequestController extends Controller
 
         try {
             \Illuminate\Support\Facades\DB::transaction(function () use ($request, $settingService) {
-                $newPrNumber = $this->generatePrNumber($request->company_id);
+                $newPrNumber = \App\Services\DocumentNumberService::pr($request->company_id, $request->request_date);
+// Hasil: PR-HO-20261126-0001
 
                 $estimasiGrandTotal = 0;
                 foreach ($request->items as $itemData) {

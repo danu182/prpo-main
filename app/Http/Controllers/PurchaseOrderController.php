@@ -235,7 +235,8 @@ class PurchaseOrderController extends Controller
                 $prItemIdsToHeal = [];
 
                 foreach ($itemsByVendor as $vendorId => $items) {
-                    $newPoNumber = $this->generatePoNumber($request->billing_company_id);
+                    $newPoNumber = \App\Services\DocumentNumberService::po($request->billing_company_id, $request->po_date);
+// Hasil: PO-PND-20261126-0001
                     $storagePath = (\Illuminate\Support\Facades\DB::table('system_settings')->where('setting_key', 'path_po_attachment')->value('setting_value') ?: 'attachments/purchase_orders') . '/' . str_replace(['/', '\\'], '-', $newPoNumber);
 
                     $poSubtotalGross = 0; $poTotalItemDiscount = 0; $poTotalTaxItem = 0;
@@ -1613,7 +1614,8 @@ class PurchaseOrderController extends Controller
         try {
             \Illuminate\Support\Facades\DB::transaction(function () use ($request) {
 
-                $newPoNumber = $this->generatePoNumber($request->billing_company_id);
+                $newPoNumber = \App\Services\DocumentNumberService::po($request->billing_company_id, $request->po_date);
+// Hasil: PO-PND-20261126-0001
                 $storagePath = (\Illuminate\Support\Facades\DB::table('system_settings')->where('setting_key', 'path_po_attachment')->value('setting_value') ?: 'attachments/purchase_orders') . '/' . str_replace(['/', '\\'], '-', $newPoNumber);
                 $paymentTermName = \App\Models\PaymentTerm::find($request->payment_term_id)->name ?? null;
 
