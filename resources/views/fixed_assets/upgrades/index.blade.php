@@ -69,7 +69,8 @@
                     <tbody>
                         @forelse($upgrades as $upg)
                             @php
-                                $isRemoved = in_array($upg->status ?? 'ACTIVE', ['REMOVED_GOOD', 'REMOVED_DEFECTIVE']);
+                                $upgStatus = trim((string) ($upg->status ?? '')) ?: 'ACTIVE';
+                                $isRemoved = in_array($upgStatus, ['REMOVED_GOOD', 'REMOVED_DEFECTIVE']);
                             @endphp
                             <tr class="{{ $isRemoved ? 'table-light text-muted' : '' }}">
                                 <td class="ps-4">
@@ -128,26 +129,22 @@
                                 </td>
                                 <td class="text-center pe-4">
                                     @php
-                                        $upgStatus = $upg->status ?: 'ACTIVE';
+                                        $upgStatus = strtoupper(trim((string) ($upg->status ?? '')));
+                                        $isRemoved = in_array($upgStatus, ['REMOVED_GOOD', 'REMOVED_DEFECTIVE']) || !empty($upg->removal_number) || !empty($upg->removed_at);
                                     @endphp
 
-                                    @if($upgStatus === 'ACTIVE')
+                                    @if(!$isRemoved)
                                         <button type="button" class="btn btn-sm btn-outline-danger rounded-pill fw-bold"
                                                 data-bs-toggle="modal" data-bs-target="#modalRemoveUpgrade{{ $upg->id }}">
                                             <i class="bi bi-x-circle me-1"></i> Copot Part
                                         </button>
-
-                                        {{-- Modal Copot Part (biarkan sama seperti sebelumnya) --}}
-                                        <div class="modal fade text-start" id="modalRemoveUpgrade{{ $upg->id }}" tabindex="-1" aria-hidden="true">
-                                            ...
-                                        </div>
                                     @else
                                         <button type="button" class="btn btn-sm btn-secondary rounded-pill fw-bold opacity-75" disabled style="cursor: not-allowed;">
                                             <i class="bi bi-slash-circle me-1"></i> Sudah Dicopot
                                         </button>
                                         <div class="mt-1">
-                                            <span class="badge {{ $upgStatus === 'REMOVED_GOOD' ? 'bg-info-subtle text-info-emphasis border-info-subtle' : 'bg-danger-subtle text-danger border-danger-subtle' }} border" style="font-size: 0.68rem;">
-                                                {{ $upgStatus === 'REMOVED_GOOD' ? 'Retur ke Stok Gudang' : 'Rusak / Karantina RMA' }}
+                                            <span class="badge {{ $upgStatus === 'REMOVED_DEFECTIVE' ? 'bg-danger-subtle text-danger border-danger-subtle' : 'bg-info-subtle text-info-emphasis border-info-subtle' }} border" style="font-size: 0.68rem;">
+                                                {{ $upgStatus === 'REMOVED_DEFECTIVE' ? 'Rusak / Karantina RMA' : 'Retur ke Stok Gudang' }}
                                             </span>
                                         </div>
                                         @if($upg->removal_number)
@@ -176,17 +173,80 @@
         @endif
     </div>
 </div>
+
+{{-- MODAL COPOT PART DI LUAR TABLE AGAR TIDAK TERPOTONG OVERFLOW --}}
+@php
+    $allWarehouses = \App\Models\Warehouse::orderBy('name')->get();
+@endphp
+@foreach($upgrades as $upg)
+    @php
+        $upgStatus = trim((string) ($upg->status ?? '')) ?: 'ACTIVE';
+    @endphp
+    @if($upgStatus === 'ACTIVE')
+        <div class="modal fade text-start" id="modalRemoveUpgrade{{ $upg->id }}" tabindex="-1" aria-hidden="true">
+            <div class="modal-dialog modal-dialog-centered">
+                <form action="{{ route('fixed-assets.upgrades.remove_part', $upg->id) }}" method="POST" class="modal-content rounded-4 border-0 shadow">
+                    @csrf
+                    <div class="modal-header bg-danger text-white rounded-top-4">
+                        <h6 class="modal-title fw-bold"><i class="bi bi-tools me-2"></i>Copot / Batalkan Part Upgrade</h6>
+                        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                    </div>
+                    <div class="modal-body text-dark">
+                        <div class="p-2 mb-3 rounded bg-light border small">
+                            <div>Komponen: <strong>{{ $upg->component_name }}</strong> ({{ (float)($upg->qty ?? 1) }} unit)</div>
+                            <div>Aset: <strong>{{ optional($upg->asset)->asset_number }}</strong> — {{ optional($upg->asset)->name }}</div>
+                            <div>Biaya Tercatat: <strong>Rp {{ number_format($upg->cost, 0, ',', '.') }}</strong></div>
+                        </div>
+
+                        <div class="mb-3">
+                            <label class="form-label small fw-bold">Tanggal Pencopotan <span class="text-danger">*</span></label>
+                            <input type="date" name="removed_at" class="form-control" value="{{ date('Y-m-d') }}" required>
+                        </div>
+
+                        <div class="mb-3">
+                            <label class="form-label small fw-bold">Kondisi Fisik Part Saat Dicopot <span class="text-danger">*</span></label>
+                            <select name="removal_condition" class="form-select removal-cond-select" data-target="#whReturnWrap{{ $upg->id }}" required>
+                                <option value="GOOD_RETURN_STOCK">1. Bagus / Hanya Tidak Cocok (Kembalikan ke Stok Gudang)</option>
+                                <option value="DEFECTIVE_NO_STOCK">2. Rusak / Cacat Pabrik (Jangan Masuk Stok Siap Pakai / RMA)</option>
+                            </select>
+                        </div>
+
+                        <div class="mb-3" id="whReturnWrap{{ $upg->id }}">
+                            <label class="form-label small fw-bold">Gudang Tujuan Pengembalian Stok <span class="text-danger">*</span></label>
+                            <select name="return_warehouse_id" class="form-select">
+                                @foreach($allWarehouses as $wh)
+                                    <option value="{{ $wh->id }}" {{ $upg->warehouse_id == $wh->id ? 'selected' : '' }}>{{ $wh->name }}</option>
+                                @endforeach
+                            </select>
+                        </div>
+
+                        <div class="mb-2">
+                            <label class="form-label small fw-bold">Alasan Pencopotan <span class="text-danger">*</span></label>
+                            <textarea name="removal_reason" class="form-control" rows="2" placeholder="Cth: Slot tidak cocok / Part dead on arrival..." required></textarea>
+                        </div>
+                    </div>
+                    <div class="modal-footer bg-light rounded-bottom-4">
+                        <button type="button" class="btn btn-light border rounded-pill" data-bs-dismiss="modal">Batal</button>
+                        <button type="submit" class="btn btn-danger fw-bold rounded-pill">Proses Pencopotan Part</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    @endif
+@endforeach
 @endsection
 
 @push('scripts')
 <script>
-    $(document).on('change', '.removal-cond-select', function () {
-        let target = $($(this).data('target'));
-        if ($(this).val() === 'GOOD_RETURN_STOCK') {
-            target.slideDown();
-        } else {
-            target.slideUp();
+    document.addEventListener('change', function (e) {
+        if (e.target && e.target.classList.contains('removal-cond-select')) {
+            const targetSelector = e.target.getAttribute('data-target');
+            const targetEl = document.querySelector(targetSelector);
+            if (targetEl) {
+                targetEl.style.display = (e.target.value === 'GOOD_RETURN_STOCK') ? 'block' : 'none';
+            }
         }
     });
 </script>
 @endpush
+

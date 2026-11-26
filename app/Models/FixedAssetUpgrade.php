@@ -9,37 +9,40 @@ class FixedAssetUpgrade extends Model
 {
     use HasFactory;
 
-    protected $fillable = [
-        'upgrade_number',
-        'fixed_asset_id',
-        'item_id',
-        'warehouse_id',
-        'purchase_order_id',
-        'goods_receipt_id',
-        'upgrade_date',
-        'component_name',
-        'qty',
-        'unit_cost',
-        'cost',
-        'accounting_treatment', // EXPENSE, CAPITALIZE_VALUE, CAPITALIZE_EXTEND
-        'is_capitalized',
-        'book_value_before',
-        'book_value_after',
-        'new_remaining_months',
-        'currency_id',
-        'vendor_or_executor',
-        'notes',
-        'created_by',
-    ];
+    protected $guarded = [];
+    //  [
+    //     'upgrade_number',
+    //     'fixed_asset_id',
+    //     'item_id',
+    //     'warehouse_id',
+    //     'purchase_order_id',
+    //     'goods_receipt_id',
+    //     'upgrade_date',
+    //     'component_name',
+    //     'qty',
+    //     'unit_cost',
+    //     'cost',
+    //     'accounting_treatment', // EXPENSE, CAPITALIZE_VALUE, CAPITALIZE_EXTEND
+    //     'is_capitalized',
+    //     'book_value_before',
+    //     'book_value_after',
+    //     'new_remaining_months',
+    //     'currency_id',
+    //     'vendor_or_executor',
+    //     'notes',
+    //     'created_by',
+    // ];
 
     protected $casts = [
-        'upgrade_date'   => 'date',
-        'qty'            => 'decimal:2',
-        'unit_cost'      => 'decimal:2',
-        'cost'           => 'decimal:2',
-        'is_capitalized' => 'boolean',
-        'book_value_before' => 'decimal:2',
-        'book_value_after'  => 'decimal:2',
+        'upgrade_date'          => 'date',
+        'removed_at'            => 'date',
+        'is_capitalized'        => 'boolean',
+        'qty'                   => 'decimal:2',
+        'unit_cost'             => 'decimal:2',
+        'cost'                  => 'decimal:2',
+        'book_value_before'     => 'decimal:2',
+        'book_value_after'      => 'decimal:2',
+        'new_remaining_months'  => 'integer',
     ];
 
     public function asset()
