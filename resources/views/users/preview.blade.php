@@ -19,46 +19,85 @@
     <div class="card border-0 shadow-sm rounded-4 overflow-hidden mb-4">
         <div class="card-body p-0">
             <div class="table-responsive" style="max-height: 500px; overflow-y: auto;">
-                <table class="table table-hover align-middle mb-0 text-nowrap">
-                    <thead class="table-dark sticky-top">
+                <table class="table mb-0 align-middle table-hover">
+                    <thead class="table-dark">
                         <tr>
                             <th class="ps-4">No</th>
                             <th>Nama Lengkap</th>
                             <th>Email</th>
                             <th>Password</th>
-                            <th>PT ID</th>
-                            <th>Dept ID</th>
+                            <th>Perusahaan (PT)</th>
+                            <th>Departemen</th>
+                            <th>Jabatan</th>
                             <th>Role</th>
-                            <th class="pe-4">Status & Keterangan</th>
+                            <th>Status & Keterangan</th>
                         </tr>
                     </thead>
                     <tbody>
-                        @forelse($previewData as $idx => $row)
-                            <tr class="{{ count($row['errors']) > 0 ? 'table-danger' : '' }}">
-                                <td class="ps-4 fw-bold text-muted">{{ $idx + 1 }}</td>
+                        @foreach($previewData as $index => $row)
+                            @php
+                                $isValid = empty($row['errors']);
+                            @endphp
+                            <tr class="{{ $isValid ? '' : 'table-danger' }}">
+                                <td class="ps-4 fw-bold text-secondary">{{ $index + 1 }}</td>
                                 <td class="fw-bold text-dark">{{ $row['name'] ?: '-' }}</td>
                                 <td>{{ $row['email'] ?: '-' }}</td>
-                                <td class="text-muted fst-italic">{{ $row['password'] ?: '123456 (Default)' }}</td>
-                                <td>{{ $row['company_id'] ?: '-' }}</td>
-                                <td>{{ $row['department_id'] ?: '-' }}</td>
-                                <td><span class="badge bg-secondary rounded-pill">{{ $row['role'] ?: 'Staff' }}</span></td>
-                                <td class="pe-4">
-                                    @if(count($row['errors']) == 0)
-                                        <span class="badge bg-success-subtle text-success border-success-subtle border"><i class="bi bi-check-circle me-1"></i> Siap Simpan</span>
+                                <td class="text-muted fst-italic">{{ !empty($row['password']) ? $row['password'] : '123456' }}</td>
+
+                                {{-- ID + NAMA PERUSAHAAN --}}
+                                <td>
+                                    @if(!empty($row['company_id']))
+                                        <span class="badge bg-primary-subtle text-primary border border-primary-subtle me-1">ID: {{ $row['company_id'] }}</span>
+                                        <span class="fw-semibold text-dark">{{ $row['company_name'] ?? '-' }}</span>
                                     @else
-                                        <ul class="mb-0 text-danger fw-bold small ps-3" style="list-style-type: square;">
-                                            @foreach($row['errors'] as $err)
-                                                <li>{{ $err }}</li>
-                                            @endforeach
-                                        </ul>
+                                        <span class="text-muted fst-italic">Pusat (Tanpa PT)</span>
+                                    @endif
+                                </td>
+
+                                {{-- ID + NAMA DEPARTEMEN --}}
+                                <td>
+                                    @if(!empty($row['department_id']))
+                                        <span class="badge bg-info-subtle text-info-emphasis border border-info-subtle me-1">ID: {{ $row['department_id'] }}</span>
+                                        <span class="fw-semibold text-dark">{{ $row['dept_name'] ?? '-' }}</span>
+                                    @else
+                                        <span class="text-muted">-</span>
+                                    @endif
+                                </td>
+
+                                {{-- JABATAN HASIL KONVERSI --}}
+                                <td>
+                                    @php
+                                        $rawJobInput = $row['job_title_id'] ?? $row['job_title'] ?? '';
+                                    @endphp
+                                    @if(is_numeric($rawJobInput))
+                                        <span class="badge bg-warning-subtle text-dark border border-warning-subtle me-1">ID: {{ $rawJobInput }}</span>
+                                    @endif
+                                    <span class="fw-semibold text-dark">{{ $row['job_title'] ?? 'Staff' }}</span>
+                                </td>
+
+                                {{-- ROLE --}}
+                                <td>
+                                    <span class="badge bg-secondary">{{ $row['role'] ?? 'Staff' }}</span>
+                                </td>
+
+                                {{-- STATUS VALIDASI --}}
+                                <td>
+                                    @if($isValid)
+                                        <span class="badge bg-success-subtle text-success border border-success px-3 py-1 rounded-pill">
+                                            <i class="bi bi-check-circle me-1"></i> Siap Simpan
+                                        </span>
+                                    @else
+                                        <div class="text-danger small fw-bold">
+                                            <ul class="mb-0 ps-3">
+                                                @foreach($row['errors'] as $err)
+                                                    <li>{{ $err }}</li>
+                                                @endforeach
+                                            </ul>
+                                        </div>
                                     @endif
                                 </td>
                             </tr>
-                        @empty
-                            <tr>
-                                <td colspan="8" class="text-center py-5 text-muted">Tidak ada data valid yang bisa dibaca.</td>
-                            </tr>
-                        @endforelse
+                        @endforeach
                     </tbody>
                 </table>
             </div>

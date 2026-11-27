@@ -14,9 +14,13 @@
         </a>
     </div>
 
-    @if(session('error'))
-        <div class="border-0 shadow-sm alert alert-danger rounded-3 fw-bold">
-            <i class="bi bi-exclamation-triangle-fill me-2"></i> {{ session('error') }}
+    @if($errors->any())
+        <div class="border-0 shadow-sm alert alert-danger rounded-3">
+            <ul class="mb-0 small fw-bold">
+                @foreach($errors->all() as $err)
+                    <li>{{ $err }}</li>
+                @endforeach
+            </ul>
         </div>
     @endif
 

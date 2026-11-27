@@ -6,43 +6,44 @@ use App\Models\Company;
 use App\Models\Department;
 use App\Models\Warehouse;
 use App\Models\User;
-use App\Models\JobTitle; // 🔥 Import Model JobTitle
+use App\Models\JobTitle;
 use Illuminate\Http\Request;
 use Spatie\Permission\Models\Role;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Storage;
 use Maatwebsite\Excel\Facades\Excel;
 use App\Imports\UsersImport;
 use App\Exports\UsersExport;
 
 class UserController extends Controller
 {
-    // 1. TAMPILKAN DAFTAR PENGGUNA (DENGAN MODAL)
+    // 1. TAMPILKAN DAFTAR PENGGUNA
     public function index(Request $request)
     {
-        $search = $request->input('search');
+        $search = trim((string) $request->input('search'));
 
         $users = User::with(['company', 'department', 'roles', 'warehouses'])
-            ->when($search, function ($query) use ($search) {
-                $query->where('name', 'like', "%{$search}%")
+            ->when($search !== '', function ($query) use ($search) {
+                $query->where(function ($q) use ($search) {
+                    $q->where('name', 'like', "%{$search}%")
                       ->orWhere('email', 'like', "%{$search}%")
                       ->orWhere('job_title', 'like', "%{$search}%");
+                });
             })
             ->orderBy('name', 'asc')
             ->paginate(10)
             ->withQueryString();
 
-        $companies = Company::orderBy('name', 'asc')->get();
+        $companies   = Company::orderBy('name', 'asc')->get();
         $departments = Department::orderBy('name', 'asc')->get();
-        $roles = Role::orderBy('name', 'asc')->get();
-        $warehouses = Warehouse::orderBy('name', 'asc')->get();
-
-        // 🔥 Tarik Master Data Jabatan untuk Dropdown 🔥
-        $jobTitles = JobTitle::where('is_active', true)->orderBy('name', 'asc')->get();
+        $roles       = Role::orderBy('name', 'asc')->get();
+        $warehouses  = Warehouse::orderBy('name', 'asc')->get();
+        $jobTitles   = JobTitle::where('is_active', true)->orderBy('name', 'asc')->get();
 
         return view('users.index', compact('users', 'search', 'companies', 'departments', 'roles', 'warehouses', 'jobTitles'));
     }
 
-    // 2. SIMPAN PENGGUNA BARU
     // 2. SIMPAN PENGGUNA BARU
     public function store(Request $request)
     {
@@ -59,8 +60,8 @@ class UserController extends Controller
             'signature'     => 'nullable|image|mimes:png,jpg,jpeg|max:2048',
         ]);
 
+        DB::beginTransaction();
         try {
-            // A. Simpan data dasar terlebih dahulu untuk mendapatkan ID User
             $user = User::create([
                 'name'          => $request->name,
                 'email'         => $request->email,
@@ -71,27 +72,22 @@ class UserController extends Controller
                 'is_active'     => 1,
             ]);
 
-            // B. LOGIKA UPLOAD GAMBAR (Persis seperti ProfileController)
             $needsUpdate = false;
 
-            // Upload Avatar -> public/users/{id}/avatar
             if ($request->hasFile('avatar')) {
                 $user->avatar = $request->file('avatar')->store("users/{$user->id}/avatar", 'public');
                 $needsUpdate = true;
             }
 
-            // Upload Signature -> public/users/{id}/signature
             if ($request->hasFile('signature')) {
                 $user->signature = $request->file('signature')->store("users/{$user->id}/signature", 'public');
                 $needsUpdate = true;
             }
 
-            // Jika ada gambar yang diupload, update record usernya
             if ($needsUpdate) {
                 $user->save();
             }
 
-            // C. Sync Hak Akses dan Gudang
             if ($request->has('roles')) {
                 $user->syncRoles($request->roles);
             }
@@ -99,19 +95,20 @@ class UserController extends Controller
                 $user->warehouses()->sync($request->warehouse_ids);
             }
 
-            return back()->with('success', 'Pengguna baru ('.$user->name.') berhasil ditambahkan!');
+            DB::commit();
+            return back()->with('success', 'Pengguna baru (' . $user->name . ') berhasil ditambahkan!');
         } catch (\Exception $e) {
-            return back()->with('error', 'Gagal menambahkan user: ' . $e->getMessage());
+            DB::rollBack();
+            return back()->withInput()->with('error', 'Gagal menambahkan user: ' . $e->getMessage());
         }
     }
-
 
     // 3. UPDATE DATA PENGGUNA & ROLE
     public function update(Request $request, $id)
     {
         $user = User::findOrFail($id);
 
-        $request->validate([
+        $rules = [
             'name'          => 'required|string|max:255',
             'email'         => 'required|string|email|max:255|unique:users,email,' . $id,
             'company_id'    => 'nullable|exists:companies,id',
@@ -122,8 +119,15 @@ class UserController extends Controller
             'warehouse_ids' => 'nullable|array',
             'avatar'        => 'nullable|image|mimes:jpg,jpeg,png|max:2048',
             'signature'     => 'nullable|image|mimes:png,jpg,jpeg|max:2048',
-        ]);
+        ];
 
+        if ($request->filled('password')) {
+            $rules['password'] = 'string|min:6|confirmed';
+        }
+
+        $request->validate($rules);
+
+        DB::beginTransaction();
         try {
             $user->name          = $request->name;
             $user->email         = $request->email;
@@ -133,24 +137,19 @@ class UserController extends Controller
             $user->is_active     = $request->is_active;
 
             if ($request->filled('password')) {
-                $request->validate(['password' => 'min:6|confirmed']);
                 $user->password = Hash::make($request->password);
             }
 
-            // LOGIKA REPLACE GAMBAR LAMA (Persis seperti ProfileController)
-
-            // 1. Upload Avatar
             if ($request->hasFile('avatar')) {
-                if ($user->avatar && \Illuminate\Support\Facades\Storage::disk('public')->exists($user->avatar)) {
-                    \Illuminate\Support\Facades\Storage::disk('public')->delete($user->avatar);
+                if ($user->avatar && Storage::disk('public')->exists($user->avatar)) {
+                    Storage::disk('public')->delete($user->avatar);
                 }
                 $user->avatar = $request->file('avatar')->store("users/{$user->id}/avatar", 'public');
             }
 
-            // 2. Upload Signature
             if ($request->hasFile('signature')) {
-                if ($user->signature && \Illuminate\Support\Facades\Storage::disk('public')->exists($user->signature)) {
-                    \Illuminate\Support\Facades\Storage::disk('public')->delete($user->signature);
+                if ($user->signature && Storage::disk('public')->exists($user->signature)) {
+                    Storage::disk('public')->delete($user->signature);
                 }
                 $user->signature = $request->file('signature')->store("users/{$user->id}/signature", 'public');
             }
@@ -159,9 +158,11 @@ class UserController extends Controller
             $user->syncRoles($request->roles ?? []);
             $user->warehouses()->sync($request->warehouse_ids ?? []);
 
-            return back()->with('success', 'Data & Hak Akses ('.$user->name.') berhasil diperbarui!');
+            DB::commit();
+            return back()->with('success', 'Data & Hak Akses (' . $user->name . ') berhasil diperbarui!');
         } catch (\Exception $e) {
-            return back()->with('error', 'Gagal memperbarui user: ' . $e->getMessage());
+            DB::rollBack();
+            return back()->withInput()->with('error', 'Gagal memperbarui user: ' . $e->getMessage());
         }
     }
 
@@ -172,8 +173,14 @@ class UserController extends Controller
         if (auth()->id() == $user->id) {
             return back()->with('error', 'Akses Ditolak: Anda tidak dapat menghapus akun Anda sendiri!');
         }
+
         try {
+            $userId = $user->id;
             $user->delete();
+
+            // Bersihkan folder avatar & signature milik user jika penghapusan berhasil
+            Storage::disk('public')->deleteDirectory("users/{$userId}");
+
             return back()->with('success', 'Pengguna berhasil dihapus permanen!');
         } catch (\Exception $e) {
             return back()->with('error', 'Gagal menghapus user. Pastikan user ini belum memiliki riwayat transaksi.');
@@ -189,13 +196,13 @@ class UserController extends Controller
     // 6. DOWNLOAD TEMPLATE EXCEL
     public function downloadTemplate()
     {
-        return Excel::download(new \App\Exports\UsersExport(true), 'Template_Import_Users.xlsx');
+        return Excel::download(new UsersExport(true), 'Template_Import_Users.xlsx');
     }
 
     // 7. EXPORT DATA USER KE EXCEL
     public function export()
     {
-        return Excel::download(new \App\Exports\UsersExport(false), 'Data_Users_Export.xlsx');
+        return Excel::download(new UsersExport(false), 'Data_Users_Export.xlsx');
     }
 
     // 8. PROSES BACA EXCEL & TAMPILKAN PREVIEW
@@ -208,35 +215,118 @@ class UserController extends Controller
             $rows = $data[0] ?? [];
 
             $previewData = [];
-            $hasError = false;
+            $hasError    = false;
+            $seenEmails  = [];
 
-            $companyIds = Company::pluck('id')->toArray();
-            $deptIds = Department::pluck('id')->toArray();
+            // Peta ID => Nama untuk Perusahaan & Departemen
+            $companiesMap = Company::pluck('name', 'id')->toArray();    // [6 => 'PT PANDU DEWANATA', ...]
+            $deptsMap     = Department::pluck('name', 'id')->toArray(); // [4 => 'EDITORIAL', ...]
+
+            // Peta role case-insensitive: ['staff' => 'Staff', ...]
+            $validRoles = Role::pluck('name')->mapWithKeys(fn($r) => [strtolower(trim($r)) => $r])->toArray();
+
+            // Peta jabatan aktif (mendukung ID angka maupun teks nama jabatan)
+            $activeJobs = JobTitle::where('is_active', true)->get();
+            $jobById    = $activeJobs->pluck('name', 'id')->toArray();
+            $jobByName  = $activeJobs->mapWithKeys(fn($j) => [strtolower(trim($j->name)) => $j->name])->toArray();
 
             foreach ($rows as $row) {
-                if (empty($row['name']) && empty($row['email'])) continue;
+                $name  = trim((string) ($row['name'] ?? ''));
+                $email = strtolower(trim((string) ($row['email'] ?? '')));
+
+                if ($name === '' && $email === '') {
+                    continue;
+                }
+
                 $errors = [];
 
-                if (empty($row['name'])) $errors[] = 'Nama Lengkap wajib diisi.';
-                if (empty($row['email'])) {
+                if ($name === '') {
+                    $errors[] = 'Nama Lengkap wajib diisi.';
+                }
+
+                if ($email === '') {
                     $errors[] = 'Email wajib diisi.';
-                } elseif (!filter_var($row['email'], FILTER_VALIDATE_EMAIL)) {
+                } elseif (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
                     $errors[] = 'Format Email tidak valid.';
-                } elseif (User::where('email', $row['email'])->exists()) {
+                } elseif (in_array($email, $seenEmails)) {
+                    $errors[] = 'Email duplikat di dalam file Excel ini.';
+                } elseif (User::where('email', $email)->exists()) {
                     $errors[] = 'Email sudah terdaftar di sistem.';
                 }
 
-                if (!empty($row['company_id']) && !in_array($row['company_id'], $companyIds)) {
-                    $errors[] = 'ID Perusahaan tidak ditemukan.';
-                }
-                if (!empty($row['department_id']) && !in_array($row['department_id'], $deptIds)) {
-                    $errors[] = 'ID Departemen tidak ditemukan.';
+                if ($email !== '') {
+                    $seenEmails[] = $email;
                 }
 
-                if (count($errors) > 0) $hasError = true;
+                // Cek Perusahaan & siapkan label teksnya
+                $rawCompId   = $row['company_id'] ?? null;
+                $companyName = '-';
+                if (!empty($rawCompId)) {
+                    $compIdInt = (int) $rawCompId;
+                    if (isset($companiesMap[$compIdInt])) {
+                        $companyName = $companiesMap[$compIdInt];
+                    } else {
+                        $companyName = 'Tidak Ditemukan';
+                        $errors[] = "ID Perusahaan '{$rawCompId}' tidak ditemukan.";
+                    }
+                }
 
-                $row['errors'] = $errors;
-                $previewData[] = $row;
+                // Cek Departemen & siapkan label teksnya
+                $rawDeptId = $row['department_id'] ?? null;
+                $deptName  = '-';
+                if (!empty($rawDeptId)) {
+                    $deptIdInt = (int) $rawDeptId;
+                    if (isset($deptsMap[$deptIdInt])) {
+                        $deptName = $deptsMap[$deptIdInt];
+                    } else {
+                        $deptName = 'Tidak Ditemukan';
+                        $errors[] = "ID Departemen '{$rawDeptId}' tidak ditemukan.";
+                    }
+                }
+
+                // Validasi & konversi Jabatan (mendukung header job_title_id maupun job_title)
+                $rawJob = trim((string) ($row['job_title_id'] ?? $row['job_title'] ?? ''));
+                if ($rawJob === '') {
+                    $resolvedJob = $jobByName['staff'] ?? 'Staff';
+                } elseif (is_numeric($rawJob)) {
+                    $jobId = (int) $rawJob;
+                    if (isset($jobById[$jobId])) {
+                        $resolvedJob = $jobById[$jobId];
+                    } else {
+                        $resolvedJob = $rawJob;
+                        $errors[] = "ID Jabatan '{$rawJob}' tidak ditemukan di Master Jabatan.";
+                    }
+                } else {
+                    if (isset($jobByName[strtolower($rawJob)])) {
+                        $resolvedJob = $jobByName[strtolower($rawJob)];
+                    } else {
+                        $resolvedJob = $rawJob;
+                        $errors[] = "Jabatan '{$rawJob}' tidak terdaftar di Master Jabatan.";
+                    }
+                }
+
+                // Validasi nama Role
+                $rawRole = trim((string) ($row['role'] ?? ''));
+                if ($rawRole !== '' && !isset($validRoles[strtolower($rawRole)])) {
+                    $errors[] = "Role '{$rawRole}' tidak ditemukan di Master Role.";
+                }
+
+                if (count($errors) > 0) {
+                    $hasError = true;
+                }
+
+                $row['name']         = $name;
+                $row['email']        = $email;
+                $row['company_name'] = $companyName;
+                $row['dept_name']    = $deptName;
+                $row['job_title']    = $resolvedJob;
+                $row['role']         = $rawRole !== '' ? ($validRoles[strtolower($rawRole)] ?? $rawRole) : ($validRoles['staff'] ?? 'Staff');
+                $row['errors']       = $errors;
+                $previewData[]       = $row;
+            }
+
+            if (empty($previewData)) {
+                return back()->with('error', 'File Excel kosong atau tidak memiliki baris data user.');
             }
 
             session()->put('users_preview_data', $previewData);
@@ -251,36 +341,41 @@ class UserController extends Controller
     public function processImport(Request $request)
     {
         $rows = session()->get('users_preview_data');
-        if (!$rows) return redirect()->route('users.import_form')->with('error', 'Sesi habis. Upload ulang file Anda.');
+        if (!$rows) {
+            return redirect()->route('users.import_form')->with('error', 'Sesi habis. Upload ulang file Anda.');
+        }
 
-        \Illuminate\Support\Facades\DB::beginTransaction();
+        DB::beginTransaction();
         try {
             $countSuccess = 0;
             foreach ($rows as $row) {
-                if (count($row['errors']) > 0) continue;
+                if (!empty($row['errors'])) {
+                    continue;
+                }
 
                 $user = User::create([
                     'name'          => $row['name'],
                     'email'         => $row['email'],
-                    'password'      => Hash::make($row['password'] ?: '123456'),
-                    'company_id'    => $row['company_id'] ?: null,
-                    'department_id' => $row['department_id'] ?: null,
-                    'job_title'     => $row['job_title'] ?: 'Staff',
+                    'password'      => Hash::make(!empty($row['password']) ? $row['password'] : '123456'),
+                    'company_id'    => !empty($row['company_id']) ? $row['company_id'] : null,
+                    'department_id' => !empty($row['department_id']) ? $row['department_id'] : null,
+                    'job_title'     => !empty($row['job_title']) ? $row['job_title'] : 'Staff',
                     'is_active'     => 1,
                 ]);
 
-                $roleName = !empty($row['role']) ? trim($row['role']) : 'Staff';
-                $user->assignRole($roleName);
+                if (!empty($row['role']) && Role::where('name', $row['role'])->exists()) {
+                    $user->assignRole($row['role']);
+                }
 
                 $countSuccess++;
             }
 
-            \Illuminate\Support\Facades\DB::commit();
+            DB::commit();
             session()->forget('users_preview_data');
 
             return redirect()->route('users.index')->with('success', "$countSuccess Data Karyawan (Valid) berhasil di-import!");
         } catch (\Exception $e) {
-            \Illuminate\Support\Facades\DB::rollBack();
+            DB::rollBack();
             return redirect()->route('users.import_form')->with('error', 'Gagal menyimpan ke database: ' . $e->getMessage());
         }
     }
