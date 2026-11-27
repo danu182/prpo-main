@@ -101,16 +101,19 @@ class GoodsReceiptController extends Controller
             $poConvFactor = $poConvFactor > 0 ? $poConvFactor : 1;
 
             $totalReceivedInBaseUom = 0;
-            foreach ($grItems as $grItem) {
-                $grConvFactor = 1;
-                if ($grItem->uom_id && $grItem->uom_id != $baseUomId) {
-                    $altGr = \Illuminate\Support\Facades\DB::table('item_uoms')->where('id', $grItem->uom_id)->first();
-                    if ($altGr) $grConvFactor = (float)$altGr->conversion_qty;
-                } elseif (preg_match('/\(Isi:?\s*([0-9.]+)/i', $grItem->uom, $m)) {
-                    $grConvFactor = (float)$m[1];
+                foreach ($grItems as $grItem) {
+                    $grConvFactor = 1;
+                    if ($grItem->uom_id && $grItem->uom_id != $baseUomId) {
+                        $altGr = \Illuminate\Support\Facades\DB::table('item_uoms')->where('id', $grItem->uom_id)->first();
+                        if ($altGr) $grConvFactor = (float)$altGr->conversion_qty;
+                    } elseif (preg_match('/\(Isi:?\s*([0-9.]+)/i', $grItem->uom, $m)) {
+                        $grConvFactor = (float)$m[1];
+                    }
+
+                    // Hitung penerimaan bersih (Diterima dikurangi yang Diretur ke Vendor)
+                    $netReceived = max(0, (float)$grItem->qty_received - (float)($grItem->qty_returned ?? 0));
+                    $totalReceivedInBaseUom += ($netReceived * $grConvFactor);
                 }
-                $totalReceivedInBaseUom += ((float)$grItem->qty_received * $grConvFactor);
-            }
 
             $qtyReceivedForPo = $totalReceivedInBaseUom / $poConvFactor;
 

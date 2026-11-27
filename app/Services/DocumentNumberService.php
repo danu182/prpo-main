@@ -16,7 +16,7 @@ class DocumentNumberService
     public const SEPARATOR       = '-';     // Gunakan '-' (aman di URL/PDF) atau '/'
     public const DATE_FORMAT     = 'Ymd';   // 'Ymd' (20261126) atau 'Ym' (202611)
     public const SEQUENCE_DIGITS = 4;       // Panjang nomor urut (0001)
-    public const RESET_PER_MONTH = false;    // true = nomor urut lanjut sebulan (202611%), false = reset per hari (20261126%)
+    public const RESET_PER_MONTH = false;   // true = nomor urut lanjut sebulan (202611%), false = reset per hari (20261126%)
 
     /**
      * Generator Inti (Thread-Safe dengan lockForUpdate)
@@ -51,7 +51,7 @@ class DocumentNumberService
         // Prefix lengkap untuk dokumen baru
         $fullPrefix = "{$basePrefix}{$sep}{$datePart}{$sep}";
 
-        // Pola pencarian nomor urut terakhir (jika RESET_PER_MONTH = true, urutan berjalan 1 bulan penuh walau tanggalnya YYYYMMDD)
+        // Pola pencarian nomor urut terakhir
         $searchLike = "{$basePrefix}{$sep}{$resetPart}%";
 
         $lastRecord = DB::table($table)
@@ -63,7 +63,6 @@ class DocumentNumberService
         $nextSeq = 1;
         if ($lastRecord && !empty($lastRecord->{$column})) {
             $lastNumberStr = (string) $lastRecord->{$column};
-            // Ambil angka urut di bagian paling akhir setelah pemisah terakhir
             if (preg_match('/(\d+)$/', $lastNumberStr, $matches)) {
                 $nextSeq = ((int) $matches[1]) + 1;
             }
@@ -135,5 +134,59 @@ class DocumentNumberService
     public static function assetTransaction(string $prefix, $date = null): string
     {
         return self::generate($prefix, 'fixed_asset_transactions', 'transaction_number', null, $date, false);
+    }
+
+    // =========================================================================
+    // SHORTCUT MODUL MASTER ITEM & BATCH IMPORT
+    // =========================================================================
+
+    /**
+     * Generate Kode SKU Master Barang (Contoh: SKU-CNS-00001)
+     */
+    public static function itemSku(?string $categoryCode): string
+    {
+        $sep  = self::SEPARATOR;
+        $cat  = !empty($categoryCode) ? strtoupper(trim($categoryCode)) : 'UMM';
+        $pref = "SKU{$sep}{$cat}{$sep}";
+
+        $lastItem = DB::table('items')
+            ->where('code', 'like', $pref . '%')
+            ->orderBy('id', 'desc')
+            ->lockForUpdate()
+            ->first();
+
+        $nextSeq = 1;
+        if ($lastItem && !empty($lastItem->code)) {
+            if (preg_match('/(\d+)$/', (string) $lastItem->code, $matches)) {
+                $nextSeq = ((int) $matches[1]) + 1;
+            }
+        }
+
+        return $pref . str_pad((string) $nextSeq, 5, '0', STR_PAD_LEFT);
+    }
+
+    /**
+     * Generate Nomor Batch Import Master Item (Contoh: IMP-20261127-001)
+     */
+    public static function itemImportBatch($date = null): string
+    {
+        $sep      = self::SEPARATOR;
+        $datePart = $date ? Carbon::parse($date)->format('Ymd') : now()->format('Ymd');
+        $pref     = "ITM{$sep}IMP{$sep}{$datePart}{$sep}";
+
+        $lastBatch = DB::table('item_import_batches')
+            ->where('batch_number', 'like', $pref . '%')
+            ->orderBy('id', 'desc')
+            ->lockForUpdate()
+            ->first();
+
+        $nextSeq = 1;
+        if ($lastBatch && !empty($lastBatch->batch_number)) {
+            if (preg_match('/(\d+)$/', (string) $lastBatch->batch_number, $matches)) {
+                $nextSeq = ((int) $matches[1]) + 1;
+            }
+        }
+
+        return $pref . str_pad((string) $nextSeq, 3, '0', STR_PAD_LEFT);
     }
 }

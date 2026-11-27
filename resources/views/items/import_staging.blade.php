@@ -15,7 +15,6 @@
     {{-- HEADER --}}
     <div class="mb-4 d-flex justify-content-between align-items-end">
         <div>
-            {{-- 🔥 RUTE DIPERBAIKI: Kembali ke items.import_index 🔥 --}}
             <a href="{{ route('items.import_index') }}" class="mb-2 text-decoration-none text-muted small fw-bold d-inline-block">
                 <i class="bi bi-arrow-left me-1"></i> Kembali ke Riwayat Import
             </a>
@@ -61,7 +60,15 @@
         <div class="col-md-4">
             <div class="p-3 border-0 shadow-sm card rounded-4 h-100 d-flex flex-column justify-content-center">
                 <div class="mb-2 small text-muted fw-bold">Dokumen Pendukung</div>
-                @if($batch->support_doc)
+                @if($batch->attachments && $batch->attachments->count() > 0)
+                    <div class="flex-wrap gap-1 d-flex">
+                        @foreach($batch->attachments as $att)
+                            <a href="{{ asset('storage/' . $att->file_path) }}" target="_blank" class="p-2 border shadow-sm badge bg-light text-dark text-decoration-none">
+                                <i class="bi bi-paperclip me-1"></i> {{ $att->file_name }}
+                            </a>
+                        @endforeach
+                    </div>
+                @elseif(!empty($batch->support_doc))
                     <div>
                         <a href="{{ asset('storage/' . $batch->support_doc) }}" target="_blank" class="p-2 border shadow-sm badge bg-light text-dark text-decoration-none">
                             <i class="bi bi-paperclip me-1"></i> Lihat Dokumen Dilampirkan
@@ -73,14 +80,13 @@
             </div>
         </div>
 
-        {{-- KOLOM TOMBOL AKSI (TUNGGAL & BERSIH) --}}
+        {{-- KOLOM TOMBOL AKSI --}}
         <div class="col-md-3">
             <div class="p-3 text-center text-white border-0 shadow-sm card rounded-4 h-100 bg-dark d-flex flex-column justify-content-center">
                 @php
                     $errCount = $batch->details->where('is_valid', false)->count();
                     $batchStatus = strtolower(trim($batch->status));
 
-                    // 1. Ambil Giliran Persetujuan Saat Ini
                     $currentApproval = \App\Models\DocumentApproval::with('role')
                         ->where('document_id', $batch->id)
                         ->where('document_type', get_class($batch))
@@ -88,7 +94,6 @@
                         ->orderBy('step_order', 'asc')
                         ->first();
 
-                    // 2. Evaluasi Hak Akses (Is Approver)
                     $isApprover = false;
                     $isSuperAdmin = false;
 
@@ -96,14 +101,12 @@
                         $user = auth()->user();
                         $uid = $currentApproval->user_id ?? $currentApproval->approver_id ?? $currentApproval->specific_user_id ?? null;
 
-                        // Cek manual jika ID user = 1 atau Role = Super Admin/Super Administrator
                         $roles = $user->getRoleNames()->map(fn($role) => strtolower(trim($role)))->toArray();
                         if ($user->id === 1 || in_array('super admin', $roles) || in_array('super administrator', $roles)) {
                             $isSuperAdmin = true;
-                            $isApprover = true; // Super Admin otomatis jadi Approver
+                            $isApprover = true;
                         }
 
-                        // Jika bukan Super Admin, cek spesifik UID atau Role Workflow
                         if (!$isSuperAdmin) {
                             if ($uid && (int)$user->id === (int)$uid) {
                                 $isApprover = true;
@@ -119,7 +122,6 @@
 
                 {{-- KONDISI 1: DRAFT / REJECTED --}}
                 @if(in_array($batchStatus, ['draft', 'rejected']))
-
                     <form id="formSubmitApproval" action="{{ route('items.import.submit_approval', $batch->id) }}" method="POST" class="w-100">
                         @csrf
                         <button type="button" id="btnSubmitApproval" class="mb-2 shadow-sm btn btn-warning w-100 fw-bold rounded-pill" {{ $errCount > 0 ? 'disabled' : '' }}>
@@ -135,9 +137,8 @@
                         </button>
                     </form>
 
-                {{-- KONDISI 2: PENDING & USER ADALAH ATASAN (ATAU SUPER ADMIN) --}}
+                {{-- KONDISI 2: PENDING & USER ADALAH ATASAN --}}
                 @elseif($batchStatus === 'pending' && $isApprover)
-
                     <div class="mb-2 small text-warning fw-bold">
                         <i class="bi bi-exclamation-circle-fill me-1"></i> Menunggu Keputusan Anda
                         @if($isSuperAdmin) <br><span style="font-size: 10px; color:#fff;">(Super Admin Access)</span> @endif
@@ -161,14 +162,12 @@
 
                 {{-- KONDISI 3: PENDING TAPI USER BUKAN ATASAN --}}
                 @elseif($batchStatus === 'pending' && !$isApprover)
-
                     <div class="mb-2 display-4 text-warning"><i class="bi bi-hourglass-split"></i></div>
                     <div class="small fw-bold">Menunggu Persetujuan</div>
                     <div class="text-white-50" style="font-size: 0.75rem;">Giliran: <strong>{{ strtoupper($currentApproval->role->name ?? 'Atasan') }}</strong></div>
 
                 {{-- KONDISI 4: APPROVED --}}
                 @elseif($batchStatus === 'approved')
-
                     <div class="mb-2 display-4 text-success"><i class="bi bi-check-circle-fill"></i></div>
                     <h6 class="mb-0 fw-bold text-success">TELAH DISETUJUI</h6>
                     <div class="text-white-50" style="font-size: 0.75rem;">Barang telah masuk ke Katalog Utama</div>
@@ -179,66 +178,77 @@
             </div>
         </div>
     </div>
-    {{-- TABEL DATA --}}
+
+    {{-- TABEL DATA MASTER BARANG --}}
     <div class="border-0 border-4 shadow-sm card rounded-4 border-top border-warning">
         <div class="py-3 bg-white card-header d-flex justify-content-between align-items-center">
-            <h6 class="mb-0 fw-bold">Data Barang dari Excel ({{ $batch->details->count() }} Baris)</h6>
-            <span class="badge bg-{{ $errCount > 0 ? 'danger' : 'success' }} rounded-pill px-3 py-2">
+            <h6 class="mb-0 fw-bold">Data Master Barang dari Excel ({{ $batch->details->count() }} Baris)</h6>
+            <span class="px-3 py-2 badge bg-{{ $errCount > 0 ? 'danger' : 'success' }} rounded-pill">
                 <i class="bi bi-{{ $errCount > 0 ? 'exclamation-triangle' : 'check-circle' }}-fill me-1"></i>
-                {{ $errCount > 0 ? $errCount . ' Error Ditemukan (Hapus Baris Error)' : 'Semua Data Valid' }}
+                {{ $errCount > 0 ? $errCount . ' Error Ditemukan (Perbaiki Baris Merah)' : 'Semua Data Valid' }}
             </span>
         </div>
         <div class="p-0 card-body table-responsive table-container">
-            <table class="table mb-0 align-middle table-hover table-staging" style="min-width: 1400px;">
+            <table class="table mb-0 align-middle table-hover table-staging" style="min-width: 1200px;">
                 <thead class="text-uppercase small text-muted">
                     <tr>
                         <th class="ps-4">No</th>
-                        <th>Katalog Item</th>
-                        <th>Nama Fisik Aset & S/N</th>
-                        <th>Nilai & Tgl Beli</th>
-                        <th>Penempatan & Milik</th>
+                        <th>Nama Master Barang</th>
+                        <th>Kategori</th>
+                        <th>Satuan (UOM)</th>
+                        <th>Tipe & Pelacakan SN</th>
+                        <th>Spesifikasi</th>
                         <th>Status Validasi Sistem</th>
+                        @if(in_array($batchStatus, ['draft', 'rejected']))
+                            <th class="text-center pe-4">Aksi</th>
+                        @endif
                     </tr>
                 </thead>
                 <tbody>
                     @foreach($batch->details as $index => $d)
                     <tr class="{{ $d->is_valid ? 'is-valid' : 'is-invalid' }}">
-                        <td class="ps-4 fw-bold text-secondary">{{ $index+1 }}</td>
+                        <td class="ps-4 fw-bold text-secondary">{{ $index + 1 }}</td>
 
-                        {{-- IDENTITAS MASTER BARANG --}}
+                        {{-- NAMA BARANG --}}
                         <td>
-                            @if($d->kode_barang)
-                                <span class="badge bg-primary">{{ $d->kode_barang }}</span>
+                            <div class="fw-bold text-dark">{{ $d->name ?: '-' }}</div>
+                            @php
+                                $existingItem = \App\Models\Item::where('name', $d->name)->first();
+                            @endphp
+                            @if($existingItem)
+                                <span class="badge bg-info text-dark" style="font-size: 0.65rem;">Update: {{ $existingItem->code }}</span>
                             @else
-                                <span class="badge bg-warning text-dark"><i class="bi bi-stars"></i> Auto-Create Item</span>
+                                <span class="badge bg-primary-subtle text-primary border border-primary-subtle" style="font-size: 0.65rem;">SKU Baru ({{ 'SKU-' . strtoupper($d->category_code ?: 'UMM') . '-...' }})</span>
                             @endif
                         </td>
 
-                        {{-- NAMA FISIK ASET --}}
+                        {{-- KATEGORI --}}
                         <td>
-                            <div class="fw-bold text-dark">{{ $d->nama_spesifik_aset ?: '(Sesuai Katalog)' }}</div>
-                            @if($d->serial_number)<div class="small text-muted"><i class="bi bi-upc-scan me-1"></i> S/N: {{ $d->serial_number }}</div>@endif
-                            @if($d->label_akuntansi)<div class="small text-muted"><i class="bi bi-tag me-1"></i> Akuntansi: {{ $d->label_akuntansi }}</div>@endif
+                            <span class="badge bg-light text-dark border fw-bold">{{ strtoupper($d->category_code ?: '-') }}</span>
                         </td>
 
-                        {{-- HARGA & TANGGAL --}}
+                        {{-- SATUAN --}}
                         <td>
-                            <div class="fw-bold text-success">{{ $d->mata_uang }} {{ number_format((float)$d->harga_beli, 0, ',', '.') }}</div>
-                            <div class="small text-muted"><i class="bi bi-calendar-check me-1"></i> {{ $d->tanggal_perolehan ?: '-' }}</div>
+                            <span class="badge bg-secondary-subtle text-dark fw-bold">{{ strtoupper($d->uom_code ?: '-') }}</span>
                         </td>
 
-                        {{-- PENEMPATAN --}}
+                        {{-- TIPE & SERIAL NUMBER --}}
                         <td>
-                            <div class="small fw-bold text-dark"><i class="bi bi-building"></i> {{ $d->nama_pt }}</div>
-                            <div class="small text-muted"><i class="bi bi-box-seam"></i> {{ $d->nama_gudang }}</div>
-                            <div class="mt-1">
-                                <span class="badge bg-secondary" style="font-size: 0.65rem;">{{ $d->status_aset }}</span>
-                                @if($d->nama_peminjam) <span class="badge bg-info text-dark" style="font-size: 0.65rem;"><i class="bi bi-person"></i> {{ $d->nama_peminjam }}</span> @endif
-                            </div>
+                            <span class="badge bg-dark">{{ strtoupper($d->item_type_code ?: '-') }}</span>
+                            @if($d->is_trackable)
+                                <span class="badge bg-warning text-dark ms-1"><i class="bi bi-upc-scan me-1"></i>Wajib SN</span>
+                            @else
+                                <span class="badge bg-light text-muted border ms-1">Non-SN</span>
+                            @endif
+                        </td>
+
+                        {{-- SPESIFIKASI --}}
+                        <td class="small text-muted" style="max-width: 260px;">
+                            {{ $d->specification ?: '-' }}
                         </td>
 
                         {{-- VALIDASI --}}
-                        <td class="pe-4">
+                        <td>
                             @if($d->is_valid)
                                 <span class="text-success small fw-bold"><i class="bi bi-check-circle-fill me-1"></i> Data Aman</span>
                             @else
@@ -246,7 +256,86 @@
                                 <div class="mt-1 small text-danger" style="font-size: 0.75rem;">{{ $d->validation_error }}</div>
                             @endif
                         </td>
+
+                        {{-- TOMBOL EDIT BARIS --}}
+                        @if(in_array($batchStatus, ['draft', 'rejected']))
+                            <td class="text-center pe-4">
+                                <button type="button" class="btn btn-sm btn-outline-primary rounded-pill fw-bold" data-bs-toggle="modal" data-bs-target="#editDetailModal{{ $d->id }}">
+                                    <i class="bi bi-pencil-square me-1"></i> Edit
+                                </button>
+                            </td>
+                        @endif
                     </tr>
+
+                    {{-- MODAL EDIT BARIS STAGING --}}
+                    @if(in_array($batchStatus, ['draft', 'rejected']))
+                    <div class="modal fade" id="editDetailModal{{ $d->id }}" tabindex="-1" aria-hidden="true">
+                        <div class="modal-dialog modal-dialog-centered">
+                            <form action="{{ route('items.import_staging.update_detail', $d->id) }}" method="POST" class="modal-content rounded-4 border-0 shadow">
+                                @csrf
+                                @method('PUT')
+                                <div class="modal-header">
+                                    <h6 class="modal-title fw-bold">Perbaiki Data Barang (Baris #{{ $index + 1 }})</h6>
+                                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                                </div>
+                                <div class="modal-body">
+                                    <div class="mb-3">
+                                        <label class="form-label small fw-bold">Nama Barang <span class="text-danger">*</span></label>
+                                        <input type="text" name="name" class="form-control" value="{{ $d->name }}" required>
+                                    </div>
+                                    <div class="row g-2 mb-3">
+                                        <div class="col-md-4">
+                                            <label class="form-label small fw-bold">Kategori <span class="text-danger">*</span></label>
+                                            <select name="category_code" class="form-select" required>
+                                                @foreach($categories as $cat)
+                                                    <option value="{{ $cat->code }}" {{ strtoupper($d->category_code) == strtoupper($cat->code) ? 'selected' : '' }}>
+                                                        {{ $cat->code }} - {{ $cat->name }}
+                                                    </option>
+                                                @endforeach
+                                            </select>
+                                        </div>
+                                        <div class="col-md-4">
+                                            <label class="form-label small fw-bold">Satuan <span class="text-danger">*</span></label>
+                                            <select name="uom_code" class="form-select" required>
+                                                @foreach($uoms as $u)
+                                                    <option value="{{ $u->code }}" {{ strtoupper($d->uom_code) == strtoupper($u->code) ? 'selected' : '' }}>
+                                                        {{ $u->code }} - {{ $u->name }}
+                                                    </option>
+                                                @endforeach
+                                            </select>
+                                        </div>
+                                        <div class="col-md-4">
+                                            <label class="form-label small fw-bold">Tipe Barang <span class="text-danger">*</span></label>
+                                            <select name="item_type_code" class="form-select" required>
+                                                @foreach($itemTypes as $it)
+                                                    <option value="{{ $it->code }}" {{ strtoupper($d->item_type_code) == strtoupper($it->code) ? 'selected' : '' }}>
+                                                        {{ $it->code }} - {{ $it->name }}
+                                                    </option>
+                                                @endforeach
+                                            </select>
+                                        </div>
+                                    </div>
+                                    <div class="mb-3">
+                                        <label class="form-label small fw-bold">Wajib Serial Number (SN)? <span class="text-danger">*</span></label>
+                                        <select name="is_trackable" class="form-select" required>
+                                            <option value="0" {{ !$d->is_trackable ? 'selected' : '' }}>Tidak (Non-SN)</option>
+                                            <option value="1" {{ $d->is_trackable ? 'selected' : '' }}>Ya (Wajib Lacak SN)</option>
+                                        </select>
+                                    </div>
+                                    <div class="mb-0">
+                                        <label class="form-label small fw-bold">Spesifikasi</label>
+                                        <textarea name="specification" class="form-control" rows="2">{{ $d->specification }}</textarea>
+                                    </div>
+                                </div>
+                                <div class="modal-footer">
+                                    <button type="button" class="btn btn-light rounded-pill" data-bs-dismiss="modal">Batal</button>
+                                    <button type="submit" class="btn btn-primary rounded-pill fw-bold">Simpan Perubahan</button>
+                                </div>
+                            </form>
+                        </div>
+                    </div>
+                    @endif
+
                     @endforeach
                 </tbody>
             </table>
@@ -258,8 +347,6 @@
 <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
 <script>
     document.addEventListener("DOMContentLoaded", function() {
-
-        // SWEETALERT AJUKAN APPROVAL
         const btnSubmit = document.getElementById('btnSubmitApproval');
         if (btnSubmit) {
             btnSubmit.addEventListener('click', function() {
@@ -281,7 +368,6 @@
             });
         }
 
-        // SWEETALERT PERSETUJUAN ATASAN (APPROVE)
         document.querySelectorAll('.btn-approve-final').forEach(btn => {
             btn.addEventListener('click', function() {
                 const form = this.closest('form');
@@ -309,7 +395,6 @@
             });
         });
 
-        // SWEETALERT PENOLAKAN ATASAN (REJECT)
         document.querySelectorAll('.btn-reject-final').forEach(btn => {
             btn.addEventListener('click', function() {
                 const form = this.closest('form');
@@ -336,7 +421,6 @@
             });
         });
 
-        // SWEETALERT BATAL DRAFT
         const btnCancel = document.getElementById('btnCancelDraft');
         if (btnCancel) {
             btnCancel.addEventListener('click', function(e) {
@@ -364,7 +448,6 @@
                 });
             });
         }
-
     });
 </script>
 @endpush

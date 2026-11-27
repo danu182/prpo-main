@@ -59,7 +59,7 @@ class ItemController extends Controller
 
 
     // =========================================================================
-    // 3. PROSES SIMPAN DATA (MENGGUNAKAN FORM REQUEST & SERVICE)
+    // 3. PROSES SIMPAN DATA (MENGGUNAKAN DOCUMENT NUMBER SERVICE)
     // =========================================================================
     public function store(Request $request)
     {
@@ -68,8 +68,6 @@ class ItemController extends Controller
             'category_id'    => 'required|exists:categories,id',
             'uom_id'         => 'required|exists:uoms,id',
             'item_type_code' => 'required|exists:item_types,code',
-            // 'min_stock'      => 'nullable|numeric|min:0',
-            // 'max_stock'      => 'nullable|numeric|min:0',
             'specification'  => 'nullable|string',
             'uoms'           => 'nullable|array',
         ]);
@@ -80,43 +78,26 @@ class ItemController extends Controller
                 $baseSlug = \Illuminate\Support\Str::slug($request->name);
                 $slug = $baseSlug . '-' . \Illuminate\Support\Str::random(4);
 
-                // 🔥 1. TARIK DATA KATEGORI UNTUK MENDAPATKAN KODENYA (Misal: CNS) 🔥
+                // Tarik Kode Kategori dan Generate Kode SKU via DocumentNumberService
                 $category = \App\Models\Category::find($request->category_id);
-                $categoryCode = $category && $category->code ? strtoupper($category->code) : 'UMM'; // UMM = Umum sbg fallback
+                $itemCode = \App\Services\DocumentNumberService::itemSku($category->code ?? null);
 
-                // 🔥 2. BUAT PREFIX BERDASARKAN KODE KATEGORI 🔥
-                $prefix = 'SKU-' . $categoryCode . '-';
-
-                // Tambahkan lockForUpdate() agar aman jika 2 admin klik simpan di detik yang sama
-                $lastItem = \App\Models\Item::where('code', 'like', $prefix . '%')
-                                ->orderBy('id', 'desc')
-                                ->lockForUpdate()
-                                ->first();
-
-                $nextNumber = $lastItem ? ((int) str_replace($prefix, '', $lastItem->code)) + 1 : 1;
-                $itemCode = $prefix . str_pad($nextNumber, 5, '0', STR_PAD_LEFT);
-
-                // 3. Simpan ke Tabel Utama (items)
+                // Simpan ke Tabel Utama (items)
                 $item = \App\Models\Item::create([
                     'category_id'    => $request->category_id,
-                    'code'           => $itemCode, // Akan menjadi SKU-CNS-00001
+                    'code'           => $itemCode, // Contoh: SKU-CNS-00001
                     'slug'           => $slug,
                     'name'           => $request->name,
                     'current_stock'  => 0,
-                    // 'min_stock'      => $request->min_stock ?? 0,
-                    // 'max_stock'      => $request->max_stock ?? 0,
                     'is_trackable'   => $request->has('is_trackable') ? 1 : 0,
-
-                    // 🔥 TAMBAHKAN BARIS INI: Paksa jadi 0 (Bukan Aset)
                     'is_asset'       => 0,
-
                     'is_active'      => 1,
                     'specification'  => $request->specification,
                     'uom_id'         => $request->uom_id,
                     'item_type_code' => $request->item_type_code,
                 ]);
 
-                // 4. Simpan ke Tabel Anak (item_uoms) JIKA ADA INPUTAN
+                // Simpan ke Tabel Anak (item_uoms) JIKA ADA INPUTAN
                 if ($request->has('uoms')) {
                     foreach ($request->uoms as $uomData) {
                         if (!empty($uomData['uom_name']) && !empty($uomData['conversion_qty'])) {
@@ -230,9 +211,7 @@ class ItemController extends Controller
     // =========================================================================
     public function show(Item $item)
     {
-        $item = Item::findOrFail($item);
-
-        $holders = \App\Models\EmployeeInventory::where('item_id', $item)
+        $holders = \App\Models\EmployeeInventory::where('item_id', $item->id)
                         ->where('qty', '>', 0)
                         ->orderBy('employee_name', 'asc')
                         ->get()
@@ -244,14 +223,13 @@ class ItemController extends Controller
 
         $categories = \App\Models\Category::orderBy('name', 'asc')->get();
 
-        // 🔥 AMBIL RINCIAN STOK PER GUDANG 🔥
         $stockPerWarehouse = [];
         if ($item->is_stockable) {
             $stockPerWarehouse = \App\Models\InventoryStock::with('warehouse')
                 ->selectRaw('warehouse_id, sum(stock_qty) as total_qty')
-                ->where('item_id', $item)
+                ->where('item_id', $item->id)
                 ->groupBy('warehouse_id')
-                ->havingRaw('total_qty > 0') // Hanya tampilkan gudang yang ada isinya
+                ->havingRaw('total_qty > 0')
                 ->get();
         }
 
@@ -306,9 +284,8 @@ class ItemController extends Controller
     public function previewImport(Request $request)
     {
         $request->validate([
-            'import_file' => 'required|file|mimes:xlsx,xls,csv|max:10240',
-            // Opsional: Lampiran dibuat nullable, jaga-jaga jika user hanya ingin import Excel saja tanpa dokumen pendukung
-            'attachments' => 'nullable|array',
+            'import_file'   => 'required|file|mimes:xlsx,xls,csv|max:10240',
+            'attachments'   => 'nullable|array',
             'attachments.*' => 'file|mimes:pdf,jpg,jpeg,png|max:5120',
         ]);
 
@@ -318,17 +295,13 @@ class ItemController extends Controller
         try {
             DB::beginTransaction();
 
-            // 1. GENERATE NOMOR BATCH (RESET PER HARI)
-            $today = now()->format('Ymd');
-            $prefix = "IMP-{$today}-";
-            $lastBatch = \App\Models\ItemImportBatch::where('batch_number', 'like', "{$prefix}%")->orderBy('id', 'desc')->first();
-            $nextSeq = $lastBatch ? ((int) substr($lastBatch->batch_number, -3)) + 1 : 1;
-            $batchNumber = $prefix . str_pad($nextSeq, 3, '0', STR_PAD_LEFT);
+            // 1. GENERATE NOMOR BATCH VIA DOCUMENT NUMBER SERVICE
+            $batchNumber = \App\Services\DocumentNumberService::itemImportBatch();
 
             $batch = \App\Models\ItemImportBatch::create([
                 'batch_number' => $batchNumber,
-                'created_by' => auth()->id(),
-                'status' => 'draft',
+                'created_by'   => auth()->id(),
+                'status'       => 'draft',
             ]);
 
             // 2. SIMPAN EXCEL ASLI (FOLDER AUDIT)
@@ -341,8 +314,8 @@ class ItemController extends Controller
                     $path = $file->storeAs("master_item_import/{$batchNumber}/file_pendukung", $file->getClientOriginalName(), 'public');
                     \App\Models\ItemImportAttachment::create([
                         'item_import_batch_id' => $batch->id,
-                        'file_name' => $file->getClientOriginalName(),
-                        'file_path' => $path,
+                        'file_name'            => $file->getClientOriginalName(),
+                        'file_path'            => $path,
                     ]);
                 }
             }
@@ -356,7 +329,7 @@ class ItemController extends Controller
         } catch (\Exception $e) {
             DB::rollBack();
 
-            // 🔥 PERBAIKAN PENTING: HAPUS FOLDER SAMPAH JIKA IMPORT EXCEL GAGAL 🔥
+            // HAPUS FOLDER SAMPAH JIKA IMPORT EXCEL GAGAL
             if ($batchNumber) {
                 \Illuminate\Support\Facades\Storage::disk('public')->deleteDirectory("master_item_import/{$batchNumber}");
             }
@@ -580,20 +553,10 @@ class ItemController extends Controller
         foreach ($details as $row) {
             $item = \App\Models\Item::where('name', $row->name)->first();
 
-            if (!$item) {
-                // 🔥 PERBAIKAN: Gunakan rumus SKU-KATEGORI seperti di fitur Tambah Manual 🔥
-                $categoryCode = !empty($row->category_code) ? strtoupper($row->category_code) : 'UMM';
-                $prefix = 'SKU-' . $categoryCode . '-';
-
-                $lastItem = \App\Models\Item::where('code', 'like', $prefix . '%')
-                                ->orderBy('id', 'desc')
-                                ->first();
-
-                $nextNumber = $lastItem ? ((int) str_replace($prefix, '', $lastItem->code)) + 1 : 1;
-                $newCode  = $prefix . str_pad($nextNumber, 5, '0', STR_PAD_LEFT);
-            } else {
-                $newCode  = $item->code;
-            }
+            // Jika barang belum ada di katalog, generate SKU baru via DocumentNumberService
+            $newCode = $item
+                ? $item->code
+                : \App\Services\DocumentNumberService::itemSku($row->category_code ?? null);
 
             // Generate Slug otomatis dari Nama Barang
             $slug = \Illuminate\Support\Str::slug($row->name) . '-' . \Illuminate\Support\Str::random(4);
@@ -611,12 +574,67 @@ class ItemController extends Controller
                     'max_stock'      => $row->max_stock,
                     'specification'  => $row->specification,
                     'is_active'      => 1,
-                    'is_asset'       => 0, // Pastikan diset 0 untuk Master Barang biasa
+                    'is_asset'       => 0,
                 ]
             );
         }
     }
 
+
+
+    // =========================================================================
+    // SHORTCUT MODUL MASTER ITEM & BATCH IMPORT
+    // =========================================================================
+
+    /**
+     * Generate Kode SKU Master Barang (Contoh: SKU-CNS-00001)
+     */
+    public static function itemSku(?string $categoryCode): string
+    {
+        $sep  = self::SEPARATOR;
+        $cat  = !empty($categoryCode) ? strtoupper(trim($categoryCode)) : 'UMM';
+        $pref = "SKU{$sep}{$cat}{$sep}";
+
+        $lastItem = DB::table('items')
+            ->where('code', 'like', $pref . '%')
+            ->orderBy('id', 'desc')
+            ->lockForUpdate()
+            ->first();
+
+        $nextSeq = 1;
+        if ($lastItem && !empty($lastItem->code)) {
+            if (preg_match('/(\d+)$/', (string) $lastItem->code, $matches)) {
+                $nextSeq = ((int) $matches[1]) + 1;
+            }
+        }
+
+        return $pref . str_pad((string) $nextSeq, 5, '0', STR_PAD_LEFT);
+    }
+
+    /**
+     * Generate Nomor Batch Import Master Item (Contoh: IMP-20261127-001)
+     */
+    public static function itemImportBatch($date = null): string
+    {
+        $sep      = self::SEPARATOR;
+        $datePart = $date ? Carbon::parse($date)->format('Ymd') : now()->format('Ymd');
+        $pref     = "IMP{$sep}{$datePart}{$sep}";
+
+        $lastBatch = DB::table('item_import_batches')
+            ->where('batch_number', 'like', $pref . '%')
+            ->orderBy('id', 'desc')
+            ->lockForUpdate()
+            ->first();
+
+        $nextSeq = 1;
+        if ($lastBatch && !empty($lastBatch->batch_number)) {
+            if (preg_match('/(\d+)$/', (string) $lastBatch->batch_number, $matches)) {
+                $nextSeq = ((int) $matches[1]) + 1;
+            }
+        }
+
+        return $pref . str_pad((string) $nextSeq, 3, '0', STR_PAD_LEFT);
+    }
 
 
 

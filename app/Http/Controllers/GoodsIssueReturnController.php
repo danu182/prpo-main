@@ -7,11 +7,11 @@ use App\Models\GoodsIssue;
 use App\Models\GoodsIssueItem;
 use App\Models\GoodsIssueReturn;
 use App\Models\GoodsIssueReturnItem;
-// use App\Models\GoodsIssueReturn; // 🔥 PASTIKAN BARIS INI ADA! 🔥
 use App\Models\Item;
 use App\Models\Warehouse;
 use App\Models\InventoryStock;
 use App\Models\StockMutation;
+use App\Services\DocumentNumberService;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 
@@ -76,7 +76,7 @@ class GoodsIssueReturnController extends Controller
                                         ->where('status_id', 31)->get();
 
                 if ($assets->isEmpty() && !empty($giItem->notes)) {
-                    preg_match_all('/AST\/[0-9]{4}\/[0-9]{2}\/[0-9]{4}/', $giItem->notes, $matches);
+                    preg_match_all('/AST[-\/][0-9]{4}[-\/][0-9]{2}[-\/][0-9]{4}|AST-[0-9]{8}-[0-9]{4}/', $giItem->notes, $matches);
                     if (!empty($matches[0])) {
                         $assets = \App\Models\FixedAsset::whereIn('asset_number', $matches[0])->get();
                     }
@@ -101,7 +101,7 @@ class GoodsIssueReturnController extends Controller
                 if (empty($allSns) && !empty($giItem->notes)) {
                     if (preg_match('/SN[^\:]*:\s*(.*?)(?:\s*\||$)/i', $giItem->notes, $match)) {
                         $extractedSns = array_filter(array_map('trim', explode(',', $match[1])));
-                        foreach($extractedSns as $sn) {
+                        foreach ($extractedSns as $sn) {
                             if (!preg_match('/\(\+[0-9]+/i', $sn)) $allSns[] = $sn;
                         }
                     }
@@ -116,14 +116,19 @@ class GoodsIssueReturnController extends Controller
     public function store(Request $request, $gi_id)
     {
         $request->validate([
-            'warehouse_id'     => 'required|exists:warehouses,id',
-            'return_date'      => 'required|date|before_or_equal:today',
-            'returned_by_name' => 'required|string|max:255',
-            'notes'            => 'nullable|string',
-            'items'            => 'required|array|min:1',
-            'items.*.gi_item_id' => 'required|exists:goods_issue_items,id',
+            'warehouse_id'         => 'required|exists:warehouses,id',
+            'return_date'          => 'required|date|before_or_equal:today',
+            'returned_by_name'     => 'required|string|max:255',
+            'notes'                => 'nullable|string',
+            'items'                => 'required|array|min:1',
+            'items.*.gi_item_id'   => 'required|exists:goods_issue_items,id',
             'items.*.qty_returned' => 'required|numeric|min:0',
         ]);
+
+        $targetWarehouse = Warehouse::find($request->warehouse_id);
+        if ($targetWarehouse && $targetWarehouse->is_frozen) {
+            return back()->withInput()->with('error', "GAGAL: Gudang {$targetWarehouse->name} sedang dalam status DIBEKUKAN (Stock Opname). Anda tidak dapat memasukkan barang ke gudang ini sampai proses audit selesai!");
+        }
 
         try {
             $newReturn = null;
@@ -131,16 +136,10 @@ class GoodsIssueReturnController extends Controller
             DB::transaction(function () use ($request, $gi_id, &$newReturn) {
                 $gi = GoodsIssue::findOrFail($gi_id);
                 $targetWarehouseId = $request->warehouse_id;
+                $companyId = auth()->user()->company_id ?? null;
 
-                $year = date('Y', strtotime($request->return_date));
-                $month = date('m', strtotime($request->return_date));
-
-                $lastRet = GoodsIssueReturn::whereYear('created_at', $year)
-                            ->whereMonth('created_at', $month)
-                            ->orderBy('id', 'desc')->first();
-
-                $nextId = $lastRet ? ((int) substr($lastRet->return_number, -4)) + 1 : 1;
-                $retNumber = 'RET-GI/' . $year . '/' . $month . '/' . str_pad($nextId, 4, '0', STR_PAD_LEFT);
+                // Generate nomor dokumen seragam via DocumentNumberService (RET-GI-{PT}-{YYYYMMDD}-{0001})
+                $retNumber = DocumentNumberService::giReturn($companyId, $request->return_date);
 
                 $newReturn = GoodsIssueReturn::create([
                     'goods_issue_id'   => $gi->id,
@@ -152,12 +151,15 @@ class GoodsIssueReturnController extends Controller
                     'notes'            => $request->notes,
                 ]);
 
+                $totalProcessedItems = 0;
+
                 foreach ($request->items as $data) {
-                    $qtyReturnedInput = (float) $data['qty_returned'];
+                    $qtyReturnedInput = (float) ($data['qty_returned'] ?? 0);
                     if ($qtyReturnedInput <= 0) continue;
 
+                    $totalProcessedItems++;
                     $giItem = GoodsIssueItem::findOrFail($data['gi_item_id']);
-                    $masterItem = Item::with('itemUoms')->lockForUpdate()->findOrFail($giItem->item_id);
+                    $masterItem = Item::with('itemUoms', 'uom')->lockForUpdate()->findOrFail($giItem->item_id);
                     $baseUomName = optional($masterItem->uom)->name ?? 'PCS';
 
                     $rawGiUom = $giItem->getRawOriginal('uom') ?: 'PCS';
@@ -195,7 +197,14 @@ class GoodsIssueReturnController extends Controller
                         $finalUomString .= ' (Isi ' . (float)$inputConvFactor . ' ' . $baseUomName . ')';
                     }
 
-                    // 🔥 DETEKSI APA YANG DISUBMIT OLEH USER 🔥
+                    // Ekstrak referensi GR asal dari catatan GoodsIssueItem agar jejak batch GR tersambung kembali ke RTV
+                    $grRefText = '';
+                    if (preg_match_all('/Ref GR:\s*([A-Z0-9\-\/]+)/i', $giItem->notes ?? '', $grMatches)) {
+                        $uniqueGrRefs = array_unique($grMatches[1]);
+                        $grRefText = ' | Ref GR: ' . implode(', ', $uniqueGrRefs);
+                    }
+
+                    // DETEKSI APA YANG DISUBMIT OLEH USER
                     $isReturningAsset = !empty($data['returned_asset_numbers']);
                     $isReturningSn = !empty($data['returned_minor_sns']);
 
@@ -203,7 +212,7 @@ class GoodsIssueReturnController extends Controller
                         'goods_issue_return_id' => $newReturn->id,
                         'goods_issue_item_id'   => $giItem->id,
                         'item_id'               => $masterItem->id,
-                        'item_name'             => $giItem->item_name ?? $masterItem->name, // 🔥 TARIK NAMA DARI GI LAMA
+                        'item_name'             => $giItem->item_name ?? $masterItem->name,
                         'qty_returned'          => $qtyReturnedInput,
                         'notes'                 => "Satuan: {$finalUomString} | " . ($data['notes'] ?? ''),
                     ]);
@@ -251,12 +260,12 @@ class GoodsIssueReturnController extends Controller
                             }
                         }
 
-                        // 🔥 PERBAIKAN: Bebaskan SN dan arahkan ke Gudang Tujuan 🔥
+                        // Bebaskan SN dan arahkan ke Gudang Tujuan
                         \DB::table('item_serials')
                             ->whereIn('serial_number', $pureSns)
                             ->update([
                                 'status'       => 'AVAILABLE',
-                                'warehouse_id' => $targetWarehouseId, // 👈 KUNCI PERBAIKAN
+                                'warehouse_id' => $targetWarehouseId,
                                 'updated_at'   => now()
                             ]);
 
@@ -269,7 +278,7 @@ class GoodsIssueReturnController extends Controller
                             if (!$updated) {
                                 $oldInv = \App\Models\EmployeeInventory::where('employee_name', $gi->requester_name)
                                     ->where('item_id', $masterItem->id)
-                                    ->where('specific_details', 'like', "%".trim($retSnFull)."%")
+                                    ->where('specific_details', 'like', "%" . trim($retSnFull) . "%")
                                     ->where('qty', '>', 0)->first();
 
                                 if ($oldInv) {
@@ -308,7 +317,7 @@ class GoodsIssueReturnController extends Controller
                             $invStock->increment('stock_qty', $baseQtyReturned);
                         } else {
                             InventoryStock::create([
-                                'company_id'       => auth()->user()->company_id ?? 1,
+                                'company_id'       => $companyId ?? 1,
                                 'warehouse_id'     => $targetWarehouseId,
                                 'item_id'          => $masterItem->id,
                                 'stock_qty'        => $baseQtyReturned,
@@ -332,12 +341,16 @@ class GoodsIssueReturnController extends Controller
                             'balance_before'   => $balanceBefore,
                             'balance_after'    => $balanceAfter,
                             'reference_number' => $retNumber,
-                            'notes'            => "Retur masuk dari: {$request->returned_by_name} (Ref GI: {$gi->gi_number}).{$mutasiNoteExt}",
+                            'notes'            => "Retur masuk dari: {$request->returned_by_name} (Ref GI: {$gi->gi_number}){$grRefText}.{$mutasiNoteExt}",
                             'created_by'       => auth()->id(),
                         ]);
 
                         $masterItem->update(['current_stock' => $balanceAfter]);
                     }
+                }
+
+                if ($totalProcessedItems === 0) {
+                    throw new \Exception("Isi minimal 1 kuantitas barang yang dikembalikan.");
                 }
 
                 $giToUpdate = GoodsIssue::with('items')->find($gi->id);
@@ -360,12 +373,12 @@ class GoodsIssueReturnController extends Controller
             if (!$newReturn) throw new \Exception("Gagal menyimpan dokumen retur.");
 
             return redirect()->route('goods-issue-returns.index')->with([
-                'success' => 'Retur barang berhasil diproses! Stok dan status SN telah dikembalikan ke gudang tujuan.',
+                'success'      => 'Retur barang berhasil diproses! Stok dan status SN telah dikembalikan ke gudang tujuan.',
                 'print_ret_id' => $newReturn->id
             ]);
 
         } catch (\Exception $e) {
-            \Illuminate\Support\Facades\Log::error('Error Goods Issue Return: ' . $e->getMessage() . ' - L: ' . $e->getLine());
+            Log::error('Error Goods Issue Return: ' . $e->getMessage() . ' - L: ' . $e->getLine());
             return back()->withInput()->with('error', $e->getMessage());
         }
     }

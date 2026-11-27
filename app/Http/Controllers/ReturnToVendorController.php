@@ -13,25 +13,47 @@ use App\Models\InventoryStock;
 use App\Models\StockMutation;
 use App\Models\FixedAsset;
 use App\Models\Status;
+use App\Services\DocumentNumberService;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 
 class ReturnToVendorController extends Controller
 {
-    private function generateRtvNumber($companyId)
+    /**
+     * Menghitung sisa stok fisik yang benar-benar berasal dari dokumen GR tertentu
+     * dan belum terpakai oleh transaksi keluar (Goods Issue / RTV sebelumnya).
+     */
+    private function getRemainingGrStockInWarehouse($grNumber, $itemId, $warehouseId = null)
     {
-        $company = \App\Models\Company::find($companyId);
-        $companyCode = $company && $company->code ? strtoupper($company->code) : 'UMUM';
-        $year = date('Y');
-        $month = date('m');
+        // 1. Total masuk dari dokumen GR ini
+        $inQuery = StockMutation::where('reference_number', $grNumber)
+            ->where('item_id', $itemId)
+            ->where('type', 'IN');
+        if ($warehouseId) {
+            $inQuery->where('warehouse_id', $warehouseId);
+        }
+        $totalIn = (float) $inQuery->sum('qty');
 
-        $prefix = "RTV-{$companyCode}-{$year}-{$month}-";
+        // 2. Total keluar yang merujuk ke nomor GR ini (dari Goods Issue / Auto-FIFO maupun RTV sebelumnya)
+        $outQuery = StockMutation::where('item_id', $itemId)
+            ->where('type', 'OUT')
+            ->where('notes', 'LIKE', "%{$grNumber}%");
+        if ($warehouseId) {
+            $outQuery->where('warehouse_id', $warehouseId);
+        }
+        $totalOut = (float) $outQuery->sum('qty');
 
-        $lastRtv = ReturnToVendor::where('rtv_number', 'LIKE', "{$prefix}%")
-                    ->orderBy('id', 'desc')->lockForUpdate()->first();
+        // 3. Total pengembalian dari user ke gudang (jika ada) yang merujuk ke nomor GR ini
+        $returnFromUserQuery = StockMutation::where('item_id', $itemId)
+            ->where('type', 'IN')
+            ->where('reference_number', '!=', $grNumber)
+            ->where('notes', 'LIKE', "%{$grNumber}%");
+        if ($warehouseId) {
+            $returnFromUserQuery->where('warehouse_id', $warehouseId);
+        }
+        $totalReturnIn = (float) $returnFromUserQuery->sum('qty');
 
-        $nextSequence = $lastRtv ? ((int) substr($lastRtv->rtv_number, -4)) + 1 : 1;
-        return $prefix . str_pad($nextSequence, 4, '0', STR_PAD_LEFT);
+        return max(0, ($totalIn + $totalReturnIn) - $totalOut);
     }
 
     public function index(Request $request)
@@ -76,7 +98,7 @@ class ReturnToVendorController extends Controller
             $baseUomId = optional($masterItem)->uom_id;
             $baseUomName = strtoupper(optional($masterItem->uom)->name ?? 'PCS');
 
-            // 🔥 A. CARI KONVERSI GR ASLI (DENGAN KUNCI ITEM_ID AGAR TIDAK TABRAKAN) 🔥
+            // A. CARI KONVERSI GR ASLI (DENGAN KUNCI ITEM_ID AGAR TIDAK TABRAKAN)
             $grConvRate = 1;
             $rawGrUom = $item->getRawOriginal('uom') ?: $item->uom ?: $baseUomName;
 
@@ -138,8 +160,19 @@ class ReturnToVendorController extends Controller
                 $stokGudangQuery = \App\Models\InventoryStock::where('item_id', $item->item_id);
                 if ($warehouseIdForRtv) $stokGudangQuery->where('warehouse_id', $warehouseIdForRtv);
 
-                $stokGudang_Base = $stokGudangQuery->sum('stock_qty');
-                $stokGudang_GR = $stokGudang_Base / $grConvRate;
+                $stokGudang_Base = (float) $stokGudangQuery->sum('stock_qty');
+
+                // Validasi sisa stok yang benar-benar milik GR ini (belum di-GI ke user)
+                $sisaStokSpesifikGr_Base = $this->getRemainingGrStockInWarehouse(
+                    $gr->gr_number,
+                    $item->item_id,
+                    $warehouseIdForRtv
+                );
+
+                // Ambil batas terkecil antara stok fisik gudang & sisa stok milik dokumen GR ini
+                $validStockBase = min($stokGudang_Base, $sisaStokSpesifikGr_Base);
+                $stokGudang_GR = $validStockBase / $grConvRate;
+
                 $maxReturnable = min($sisaKuotaGR, $stokGudang_GR);
             }
 
@@ -152,7 +185,7 @@ class ReturnToVendorController extends Controller
         });
 
         if ($returnableItems->isEmpty()) {
-            return redirect()->route('gr.show', $gr->gr_number)->with('error', 'Semua barang dari GR ini sudah diretur, ATAU stok/SN-nya sudah tidak ada di gudang (mungkin sedang dipinjam).');
+            return redirect()->route('gr.show', $gr->gr_number)->with('error', 'Semua barang dari GR ini sudah diretur, ATAU stok/SN-nya sudah keluar dari gudang ke user (harap kembalikan barang dari user ke gudang terlebih dahulu).');
         }
 
         return view('rtv.create', compact('gr', 'reasons', 'returnableItems'));
@@ -173,8 +206,11 @@ class ReturnToVendorController extends Controller
                 $gr = GoodsReceipt::with('po')->where('gr_number', $slug)->firstOrFail();
                 $companyId = $gr->po->bill_to_company_id;
 
+                // Generate nomor RTV menggunakan DocumentNumberService (Format: RTV-{PT}-{YYYYMMDD}-{0001})
+                $rtvNumber = DocumentNumberService::rtv($companyId, $request->return_date);
+
                 $rtv = ReturnToVendor::create([
-                    'rtv_number'           => $this->generateRtvNumber($companyId),
+                    'rtv_number'           => $rtvNumber,
                     'goods_receipt_id'     => $gr->id,
                     'vendor_id'            => $gr->po->vendor_id,
                     'return_date'          => $request->return_date,
@@ -223,14 +259,13 @@ class ReturnToVendorController extends Controller
                     $warehouseIdForRtv = $data['warehouse_id'] ?? null;
 
                     // =========================================================
-                    // 🔥 LOGIKA KONVERSI MUTLAK & ANTI-TABRAKAN LINTAS ITEM 🔥
+                    // LOGIKA KONVERSI MUTLAK & ANTI-TABRAKAN LINTAS ITEM
                     // =========================================================
 
                     // A. CARI KONVERSI PO ASLI
                     $poConvFactorSafe = 1;
                     $rawPoUom = $poItem->getRawOriginal('uom') ?: $poItem->uom ?: $baseUomName;
                     if (!empty($poItem->uom_id) && $poItem->uom_id != $baseUomId) {
-                        // KUNCI: Tambahkan ->where('item_id', $masterItem->id)
                         $uomDb = \App\Models\ItemUom::where('id', $poItem->uom_id)->where('item_id', $masterItem->id)->first();
                         if ($uomDb) $poConvFactorSafe = (float) $uomDb->conversion_qty;
                     } elseif (preg_match('/\(Isi:\s*([0-9.]+)/i', $rawPoUom, $matches)) {
@@ -241,7 +276,6 @@ class ReturnToVendorController extends Controller
                     $grConvFactorSafe = 1;
                     $rawGrUom = $grItem->getRawOriginal('uom') ?: $grItem->uom ?: $baseUomName;
                     if (!empty($grItem->uom_id) && $grItem->uom_id != $baseUomId) {
-                        // KUNCI: Tambahkan ->where('item_id', $masterItem->id)
                         $uomDb = \App\Models\ItemUom::where('id', $grItem->uom_id)->where('item_id', $masterItem->id)->first();
                         if ($uomDb) $grConvFactorSafe = (float) $uomDb->conversion_qty;
                     } elseif (preg_match('/\(Isi:\s*([0-9.]+)/i', $rawGrUom, $matches)) {
@@ -253,7 +287,6 @@ class ReturnToVendorController extends Controller
                     $inputUomStr = $data['uom'] ?? '';
 
                     if (!empty($data['uom_id']) && $data['uom_id'] != $baseUomId) {
-                        // KUNCI: Tambahkan ->where('item_id', $masterItem->id)
                         $uomDb = \App\Models\ItemUom::where('id', $data['uom_id'])->where('item_id', $masterItem->id)->first();
                         if ($uomDb) $inputConvFactor = (float) $uomDb->conversion_qty;
                     } elseif (preg_match('/\(Isi:\s*([0-9.]+)/i', $inputUomStr, $matches)) {
@@ -267,7 +300,7 @@ class ReturnToVendorController extends Controller
                         }
                     }
 
-                    // D. KALKULASI ABSOLUT DALAM ECERAN (PIECES)
+                    // D. KALKULASI ABSOLUT DALAM ECERAN (PIECES / BASE UOM)
                     $baseQtyReturned = $inputQty * $inputConvFactor;
                     $baseQtyReceivedSoFar = $grItem->qty_received * $grConvFactorSafe;
                     $baseQtyReturnedSoFar = ($grItem->qty_returned ?? 0) * $grConvFactorSafe;
@@ -296,6 +329,17 @@ class ReturnToVendorController extends Controller
                             throw new \Exception("Jumlah centangan Serial Number ({$jumlahSnCentang}) tidak sesuai dengan Qty Retur ({$jumlahHarusnya}) untuk barang {$masterItem->name}!");
                         }
 
+                        // Pastikan SN yang dicentang benar-benar masih AVAILABLE dan milik GR ini
+                        $validSnCount = \DB::table('item_serials')
+                            ->whereIn('serial_number', $snRetur)
+                            ->where('goods_receipt_id', $gr->id)
+                            ->where('status', 'AVAILABLE')
+                            ->count();
+
+                        if ($validSnCount !== $jumlahHarusnya) {
+                            throw new \Exception("Terdapat Serial Number yang sudah dikeluarkan ke user atau bukan milik GR ini untuk barang {$masterItem->name}!");
+                        }
+
                         \DB::table('item_serials')
                             ->whereIn('serial_number', $snRetur)
                             ->update([
@@ -311,9 +355,20 @@ class ReturnToVendorController extends Controller
                     if ($snStringRetur) $catatanKonversi .= " | SN: {$snStringRetur}";
 
                     // =========================================================================
-                    // E. PEMOTONGAN STOK GUDANG MENGGUNAKAN FILTER WAREHOUSE
+                    // E. PEMOTONGAN STOK GUDANG MENGGUNAKAN FILTER WAREHOUSE & VALIDASI GR
                     // =========================================================================
                     if ($masterItem->is_stockable ?? true) {
+                        // Validasi ketat: pastikan stok milik GR ini belum dipakai oleh Goods Issue ke user
+                        $sisaStokSpesifikGr = $this->getRemainingGrStockInWarehouse(
+                            $gr->gr_number,
+                            $masterItem->id,
+                            $warehouseIdForRtv
+                        );
+
+                        if (round($baseQtyReturned, 4) > round($sisaStokSpesifikGr, 4)) {
+                            throw new \Exception("Gagal! Barang '{$masterItem->name}' dari dokumen {$gr->gr_number} sudah dikeluarkan dari gudang ke user (sisa yang belum terpakai di gudang: {$sisaStokSpesifikGr} {$baseUomName}). Harap lakukan pengembalian dari user ke gudang terlebih dahulu.");
+                        }
+
                         $stockQuery = \App\Models\InventoryStock::where('item_id', $masterItem->id)
                                                                 ->where('stock_qty', '>', 0)
                                                                 ->orderBy('created_at', 'asc')->lockForUpdate();
@@ -378,8 +433,7 @@ class ReturnToVendorController extends Controller
                     ]);
 
                     // =========================================================================
-                    // 🔥 F. MENGEMBALIKAN (MEMBUKA) KUOTA PO & MENAMBAH RETUR DI GR 🔥
-                    // Matematika: Eceran dikembalikan lalu dibagi dengan porsi konversi masing2
+                    // F. MENGEMBALIKAN (MEMBUKA) KUOTA PO & MENAMBAH RETUR DI GR
                     // =========================================================================
 
                     // 1. Tambah qty_returned di form GR
@@ -423,7 +477,6 @@ class ReturnToVendorController extends Controller
             return back()->withInput()->with('error', 'Gagal memproses Retur: ' . $e->getMessage());
         }
     }
-
 
     public function print($slug)
     {
