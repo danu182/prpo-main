@@ -27,7 +27,7 @@
             <span class="px-3 py-1 mb-2 badge bg-warning text-dark rounded-pill fw-bold">KODE 419 • PAGE EXPIRED</span>
             <h4 class="mb-2 fw-bold text-dark">Sesi Formulir Telah Berakhir</h4>
             <p class="mb-4 text-muted small">
-                Halaman ini didiamkan terlalu lama sehingga token keamanan (CSRF) kedaluwarsa. Silakan muat ulang halaman sebelumnya dan coba kirim ulang data Anda.
+                Halaman ini didiamkan terlalu lama sehingga token keamanan kedaluwarsa. Silakan muat ulang halaman sebelumnya dan coba kirim ulang data Anda.
             </p>
 
             <div class="gap-2 d-grid d-sm-flex justify-content-sm-center">
